@@ -1,10 +1,16 @@
-"""Integration tests for /v1/kg/* UUID validation (TAP-2140).
+"""Integration tests for /v1/kg/* UUID validation (TAP-2140) and the
+populate-then-retrieve KG flow (TAP-2723 / TAP-2727).
 
-Non-UUID strings POSTed to UUID-bound fields previously surfaced as HTTP 500
-with a raw psycopg.errors.InvalidTextRepresentation traceback because UUID
-validation only happened when the DB cursor bound the parameter. These tests
-lock in the new behavior: 422 with a typed field-level error, and no psycopg
-substring leakage in the response body.
+UUID-validation tests lock in the behaviour that was broken: non-UUID strings
+POSTed to UUID-bound fields previously surfaced as HTTP 500 with a raw
+psycopg.errors.InvalidTextRepresentation traceback.  The new behaviour is 422
+with a typed field-level error and no psycopg substring in the response body.
+
+Populate-then-retrieve tests verify the end-to-end path through the HTTP
+adapter using mocked kg_service calls:
+  1. POST /v1/kg/resolve_entity  — name → UUID
+  2. POST /v1/experience          — record event + edge with that UUID
+  3. POST /v1/kg/neighbors        — read back the edge neighbourhood
 """
 
 from __future__ import annotations
@@ -158,3 +164,243 @@ class TestKgNeighborsUuidValidation:
         )
         assert resp.status_code == 422
         assert resp.json().get("field") == "entity_ids[1]"
+
+
+# ---------------------------------------------------------------------------
+# Populate-then-retrieve flow (TAP-2723 / TAP-2727)
+# ---------------------------------------------------------------------------
+
+_ENTITY_UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+_EDGE_UUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+_EVENT_UUID = "c3d4e5f6-a7b8-9012-cdef-123456789012"
+
+
+def _kg_svc_patches(
+    resolve_result: dict[str, Any] | None = None,
+    record_result: dict[str, Any] | None = None,
+    neighbors_result: dict[str, Any] | None = None,
+) -> tuple[Any, Any, Any, Any]:
+    """Return four (patcher, patcher, patcher, patcher) for the kg_service calls.
+
+    The four patches are: _get_or_create_cm, resolve_entity, record_event,
+    get_neighbors.  Call .start()/.stop() or use as context managers.
+    """
+    cm_mock = MagicMock()
+    p_cm = patch(
+        "tapps_brain.services.kg_service._get_or_create_cm",
+        return_value=cm_mock,
+    )
+    p_resolve = patch(
+        "tapps_brain.services.kg_service.resolve_entity",
+        return_value=resolve_result
+        or {
+            "entity_id": _ENTITY_UUID,
+            "entity_type": "module",
+            "canonical_name": "retrieval",
+            "created": True,
+            "confidence": 0.6,
+            "reason": "created",
+        },
+    )
+    p_record = patch(
+        "tapps_brain.services.kg_service.record_event",
+        return_value=record_result
+        or {
+            "event_id": _EVENT_UUID,
+            "memory_key": None,
+            "entity_ids": [_ENTITY_UUID],
+            "edge_ids": [_EDGE_UUID],
+            "evidence_ids": [],
+        },
+    )
+    p_neighbors = patch(
+        "tapps_brain.services.kg_service.get_neighbors",
+        return_value=neighbors_result
+        or {
+            "neighbors": [
+                {
+                    "edge_id": _EDGE_UUID,
+                    "predicate": "uses",
+                    "edge_confidence": 0.6,
+                    "neighbor_id": _ENTITY_UUID,
+                    "entity_type": "module",
+                    "canonical_name": "retrieval",
+                    "hop": 1,
+                }
+            ],
+            "entity_ids": [_ENTITY_UUID],
+        },
+    )
+    return p_cm, p_resolve, p_record, p_neighbors
+
+
+class TestResolveEntityEndpoint:
+    """`/v1/kg/resolve_entity` — name → UUID (TAP-2725)."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_entity_returns_entity_id_uuid(self) -> None:
+        p_cm, p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, p_resolve:
+            resp = await _post(
+                "/v1/kg/resolve_entity",
+                {"entity_type": "module", "canonical_name": "retrieval"},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["entity_id"] == _ENTITY_UUID
+        assert body["entity_type"] == "module"
+        assert body["canonical_name"] == "retrieval"
+        assert body["created"] is True
+
+    @pytest.mark.asyncio
+    async def test_resolve_entity_idempotent_returns_same_uuid(self) -> None:
+        existing = {
+            "entity_id": _ENTITY_UUID,
+            "entity_type": "agent",
+            "canonical_name": "ralph",
+            "created": False,
+            "confidence": 0.9,
+            "reason": "canonical_match",
+        }
+        p_cm, p_resolve, _p_record, _p_neighbors = _kg_svc_patches(resolve_result=existing)
+        with p_cm, p_resolve:
+            resp = await _post(
+                "/v1/kg/resolve_entity",
+                {"entity_type": "agent", "canonical_name": "ralph"},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["entity_id"] == _ENTITY_UUID
+        assert body["created"] is False
+        assert body["reason"] == "canonical_match"
+
+    @pytest.mark.asyncio
+    async def test_resolve_entity_missing_entity_type_returns_400(self) -> None:
+        resp = await _post("/v1/kg/resolve_entity", {"canonical_name": "retrieval"})
+        assert resp.status_code == 400
+        assert "entity_type" in resp.json().get("detail", "")
+
+    @pytest.mark.asyncio
+    async def test_resolve_entity_missing_canonical_name_returns_400(self) -> None:
+        resp = await _post("/v1/kg/resolve_entity", {"entity_type": "module"})
+        assert resp.status_code == 400
+        assert "canonical_name" in resp.json().get("detail", "")
+
+    @pytest.mark.asyncio
+    async def test_resolve_entity_no_psycopg_in_error_response(self) -> None:
+        """Service errors must not leak Postgres implementation details."""
+        p_cm, _, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, patch(
+            "tapps_brain.services.kg_service.resolve_entity",
+            side_effect=RuntimeError("connection lost"),
+        ):
+            resp = await _post(
+                "/v1/kg/resolve_entity",
+                {"entity_type": "module", "canonical_name": "retrieval"},
+            )
+        # Should be a 5xx error, and the traceback must not leak psycopg details
+        assert resp.status_code >= 500
+        assert "psycopg" not in resp.text.lower()
+
+
+class TestKgPopulateThenRetrieve:
+    """End-to-end populate-then-retrieve KG flow (TAP-2723 / TAP-2727).
+
+    1. POST /v1/kg/resolve_entity  — obtain a UUID for a named entity.
+    2. POST /v1/experience          — record an event with an edge using that UUID.
+    3. POST /v1/kg/neighbors        — read back the neighbourhood.
+
+    All calls use the ASGI transport against a real (test) FastAPI app with
+    kg_service functions mocked so no live Postgres connection is required.
+    """
+
+    @pytest.mark.asyncio
+    async def test_record_event_with_valid_entity_uuid_succeeds(self) -> None:
+        p_cm, _p_resolve, p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, p_record:
+            resp = await _post(
+                "/v1/experience",
+                {
+                    "event_type": "tool_called",
+                    "subject_key": "recall.step",
+                    "entities": [
+                        {
+                            "entity_type": "module",
+                            "canonical_name": "retrieval",
+                        }
+                    ],
+                    "edges": [
+                        {
+                            "subject_entity_id": _ENTITY_UUID,
+                            "predicate": "uses",
+                            "object_entity_id": _ENTITY_UUID,
+                        }
+                    ],
+                },
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("event_id") == _EVENT_UUID
+        assert _EDGE_UUID in body.get("edge_ids", [])
+
+    @pytest.mark.asyncio
+    async def test_neighbors_returned_for_resolved_entity(self) -> None:
+        p_cm, _p_resolve, _p_record, p_neighbors = _kg_svc_patches()
+        with p_cm, p_neighbors:
+            resp = await _post(
+                "/v1/kg/neighbors",
+                {"entity_ids": [_ENTITY_UUID], "hops": 1},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        neighbors = body.get("neighbors", [])
+        assert len(neighbors) == 1
+        assert neighbors[0]["edge_id"] == _EDGE_UUID
+        assert neighbors[0]["predicate"] == "uses"
+        assert neighbors[0]["hop"] == 1
+
+    @pytest.mark.asyncio
+    async def test_full_populate_then_retrieve_flow(self) -> None:
+        """Resolve → record event → get neighbours in one test."""
+        p_cm, p_resolve, p_record, p_neighbors = _kg_svc_patches()
+        with p_cm, p_resolve, p_record, p_neighbors:
+            # Step 1: resolve entity name → UUID
+            resolve_resp = await _post(
+                "/v1/kg/resolve_entity",
+                {"entity_type": "module", "canonical_name": "retrieval"},
+            )
+            assert resolve_resp.status_code == 200, resolve_resp.text
+            entity_id = resolve_resp.json()["entity_id"]
+            assert entity_id == _ENTITY_UUID
+
+            # Step 2: record an event referencing the resolved entity UUID
+            event_resp = await _post(
+                "/v1/experience",
+                {
+                    "event_type": "workflow_completed",
+                    "subject_key": "memory.recall",
+                    "utility_score": 0.8,
+                    "entities": [{"entity_type": "module", "canonical_name": "retrieval"}],
+                    "edges": [
+                        {
+                            "subject_entity_id": entity_id,
+                            "predicate": "produces",
+                            "object_entity_id": entity_id,
+                        }
+                    ],
+                },
+            )
+            assert event_resp.status_code == 200, event_resp.text
+            assert _EDGE_UUID in event_resp.json().get("edge_ids", [])
+
+            # Step 3: read back the neighbourhood — the edge we recorded should appear
+            neighbors_resp = await _post(
+                "/v1/kg/neighbors",
+                {"entity_ids": [entity_id], "hops": 1, "limit": 10},
+            )
+            assert neighbors_resp.status_code == 200, neighbors_resp.text
+            neighbors = neighbors_resp.json().get("neighbors", [])
+            assert len(neighbors) >= 1
+            first = neighbors[0]
+            assert first["edge_id"] == _EDGE_UUID
+            assert first["neighbor_id"] == _ENTITY_UUID
