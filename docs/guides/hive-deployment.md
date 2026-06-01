@@ -556,6 +556,23 @@ the role `SET` privilege or run the reindex from the `tapps` owner role.
 For a managed Postgres (RDS, Cloud SQL, Azure), set `maintenance_work_mem`
 via the parameter group before the weekly window and restore it afterward.
 
+### Recovering from a failed REINDEX
+
+A failed `REINDEX INDEX CONCURRENTLY` leaves an **INVALID** index in Postgres.
+Check for and remove any invalid HNSW indexes after a failure:
+
+```sql
+-- List invalid indexes
+SELECT relname FROM pg_class c
+JOIN pg_index i ON c.oid = i.indexrelid
+WHERE i.indisvalid = false AND relname LIKE '%hnsw%';
+
+-- Drop and recreate the invalid index (example: private plane).
+-- Set maintenance_work_mem high first for a faster rebuild.
+DROP INDEX CONCURRENTLY IF EXISTS idx_priv_embedding_hnsw;
+-- Then re-apply the migration or run tapps-brain maintenance hnsw-reindex.
+```
+
 ### Automating via cron
 
 ```cron
