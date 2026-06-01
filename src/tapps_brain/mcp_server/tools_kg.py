@@ -24,6 +24,7 @@ trivial — no Pydantic models are imported in the hot path.
 from __future__ import annotations
 
 import json
+import uuid as _stdlib_uuid
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,34 @@ from tapps_brain.services import kg_service
 def _bad_json_error(field: str, detail: str) -> dict[str, str]:
     """Build the canonical bad-JSON envelope used across KG MCP tools (TAP-1967)."""
     return {"error": "bad_json", "field": field, "detail": detail}
+
+
+def _bad_uuid_error(field: str, value: str) -> dict[str, str]:
+    """Build the canonical bad-UUID envelope (TAP-2726).
+
+    Returned when a caller passes a non-UUID string to a KG tool parameter
+    that requires a pre-resolved entity or edge UUID.  The ``field`` names
+    the offending parameter so the caller knows exactly what to fix.
+    """
+    return {
+        "error": "bad_uuid",
+        "field": field,
+        "detail": f"'{field}' must be a valid UUID; got {value!r}",
+    }
+
+
+def _validate_uuid(value: str, field: str) -> dict[str, str] | None:
+    """Return ``None`` when *value* is a valid UUID string, or the bad_uuid envelope.
+
+    Validates identifier strings **before** any ``::uuid`` cast reaches
+    Postgres, preventing raw ``invalid input syntax for type uuid`` errors
+    from leaking to callers (TAP-2726).
+    """
+    try:
+        _stdlib_uuid.UUID(value)
+        return None
+    except (ValueError, AttributeError):
+        return _bad_uuid_error(field, value)
 
 
 def _validate_optional_json_object(raw: str, field: str) -> dict[str, str] | None:
@@ -228,6 +257,15 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             if err is not None:
                 return json.dumps(err)
 
+        # TAP-2726: validate edge entity UUIDs before any DB ::uuid cast.
+        for _i, _edge in enumerate(eff_edges):
+            for _uid_field in ("subject_entity_id", "object_entity_id"):
+                _val = _edge.get(_uid_field)
+                if _val:
+                    _uuid_err = _validate_uuid(str(_val), f"edges[{_i}].{_uid_field}")
+                    if _uuid_err is not None:
+                        return json.dumps(_uuid_err)
+
         result = kg_service.record_event(
             cm,
             project_id,
@@ -320,14 +358,69 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
             )
 
-        result = kg_service.record_events_batch_per_event_tx(
-            cm,
-            project_id,
-            kg_service._DEFAULT_BRAIN_ID,
-            eff_aid,
-            events=parsed,
-        )
-        return json.dumps(result, default=str)
+        # TAP-2726: pre-validate edge entity UUIDs per event before any DB
+        # ::uuid cast.  Invalid events are collected in pre_failures and
+        # excluded from the service call; they appear in the unified ``failed``
+        # array alongside service-layer failures so callers get one coherent
+        # response.
+        valid_events: list[Any] = []
+        pre_failures: list[dict[str, Any]] = []
+        for _i, _event in enumerate(parsed):
+            _uuid_err = None
+            if isinstance(_event, dict):
+                for _edge in (_event.get("edges") or []):
+                    if not isinstance(_edge, dict):
+                        continue
+                    for _uid_field in ("subject_entity_id", "object_entity_id"):
+                        _val = _edge.get(_uid_field)
+                        if _val:
+                            _uuid_err = _validate_uuid(
+                                str(_val), f"events[{_i}].edges.{_uid_field}"
+                            )
+                            if _uuid_err is not None:
+                                break
+                    if _uuid_err is not None:
+                        break
+            if _uuid_err is not None:
+                pre_failures.append(
+                    {
+                        "index": _i,
+                        "error": _uuid_err["error"],
+                        "field": _uuid_err.get("field", ""),
+                        "detail": _uuid_err["detail"],
+                    }
+                )
+            else:
+                valid_events.append(_event)
+
+        if valid_events:
+            svc_result: dict[str, Any] = kg_service.record_events_batch_per_event_tx(
+                cm,
+                project_id,
+                kg_service._DEFAULT_BRAIN_ID,
+                eff_aid,
+                events=valid_events,
+            )
+        else:
+            svc_result = {
+                "succeeded": [],
+                "failed": [],
+                "count": 0,
+                "succeeded_count": 0,
+                "failed_count": 0,
+            }
+
+        if pre_failures:
+            existing_failed = svc_result.get("failed") or []
+            merged_failed = list(existing_failed) + pre_failures
+            svc_result = dict(svc_result)
+            svc_result["failed"] = merged_failed
+            svc_result["failed_count"] = len(merged_failed)
+            svc_result["count"] = len(parsed)
+            # succeeded_count comes from the service result unchanged; it
+            # already reflects only the valid_events slice.
+
+        return json.dumps(svc_result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_get_neighbors(
@@ -401,6 +494,12 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 )
             entity_ids = [str(e) for e in parsed if e]
 
+        # TAP-2726: validate each entity ID is a UUID before the DB ::uuid cast.
+        for i, eid in enumerate(entity_ids):
+            uuid_err = _validate_uuid(eid, f"entity_ids_json[{i}]")
+            if uuid_err is not None:
+                return json.dumps(uuid_err)
+
         result = kg_service.get_neighbors(
             cm,
             project_id,
@@ -461,6 +560,12 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             return json.dumps(
                 {"error": "bad_request", "detail": "subject_id and object_id are required."}
             )
+
+        # TAP-2726: validate UUIDs before the DB ::uuid cast.
+        for _field, _val in (("subject_id", subject_id), ("object_id", object_id)):
+            _uuid_err = _validate_uuid(_val, _field)
+            if _uuid_err is not None:
+                return json.dumps(_uuid_err)
 
         cm = kg_service._get_or_create_cm()
         if cm is None:
@@ -560,6 +665,12 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         # as "no useful signal" (fixed-step delta) and only weights when
         # |score| > 0 — see kg_service.record_kg_feedback.
         us = float(utility_score)
+
+        # TAP-2726: validate edge_id UUID before the DB ::uuid cast.
+        if edge_id:
+            _edge_uuid_err = _validate_uuid(edge_id, "edge_id")
+            if _edge_uuid_err is not None:
+                return json.dumps(_edge_uuid_err)
 
         # Edge feedback path
         if edge_id:

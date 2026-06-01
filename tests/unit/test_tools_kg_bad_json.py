@@ -250,16 +250,18 @@ class TestBrainGetNeighborsBadJson:
     def test_valid_entity_ids_json_passes_through(self, mcp: Any, fake_ctx: ToolContext) -> None:
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
+        uuid_a = "11111111-1111-1111-1111-111111111111"
+        uuid_b = "22222222-2222-2222-2222-222222222222"
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
             svc._get_or_create_cm.return_value = MagicMock(name="cm")
             svc._DEFAULT_BRAIN_ID = "brain"
-            svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": ["a", "b"]}
+            svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": [uuid_a, uuid_b]}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_get_neighbors")
-            body = json.loads(tool.fn(entity_ids_json='["a", "b"]'))
-            assert body == {"neighbors": [], "entity_ids": ["a", "b"]}
+            body = json.loads(tool.fn(entity_ids_json=json.dumps([uuid_a, uuid_b])))
+            assert body == {"neighbors": [], "entity_ids": [uuid_a, uuid_b]}
             svc.get_neighbors.assert_called_once()
-            assert svc.get_neighbors.call_args.kwargs["entity_ids"] == ["a", "b"]
+            assert svc.get_neighbors.call_args.kwargs["entity_ids"] == [uuid_a, uuid_b]
 
     def test_empty_entity_ids_json_still_calls_service(
         self, mcp: Any, fake_ctx: ToolContext
