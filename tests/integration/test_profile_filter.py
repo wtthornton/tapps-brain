@@ -598,8 +598,8 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 59),
-            ("coder", 17),
+            ("full", 8),
+            ("coder", 18),
             ("reviewer", 8),
             ("seeder", 6),
         ],
@@ -623,14 +623,16 @@ class TestEndToEndProfileFiltering:
 
     @pytest.mark.asyncio
     async def test_no_profile_returns_full_tool_set(self, _mcp_server) -> None:
-        """No REQUEST_PROFILE (None) → same 60-tool surface as 'full' profile (TAP-1973)."""
+        """No REQUEST_PROFILE (None) → same eager surface as 'full': 8 daily-driver
+        tools (the 56 deferred tools are hidden from the default tools/list payload,
+        TAP-1985/TAP-2725)."""
         from tapps_brain.mcp_server import REQUEST_PROFILE
 
         # Ensure contextvar is None (simulates no X-Brain-Profile header)
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 60
+            assert len(tools) == 8
         finally:
             REQUEST_PROFILE.reset(token)
 

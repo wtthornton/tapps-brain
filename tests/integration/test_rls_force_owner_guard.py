@@ -35,6 +35,20 @@ def _migrator_dsn() -> str:
     return urlunparse(parts._replace(netloc=netloc))
 
 
+@pytest.fixture(autouse=True)
+def _no_global_privileged_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep this module hermetic w.r.t. the privileged-role escape hatch.
+
+    These tests verify the guard *fires* for a privileged role, so the
+    connection under test must run with ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE``
+    unset.  The full-suite release gate sets that variable to ``1`` globally
+    for the rest of the suite (the dev Postgres connects as a superuser);
+    clear it here so the guard is actually exercised.  Owner-side DDL setup
+    re-enables it locally via :func:`_owner_override`.
+    """
+    monkeypatch.delenv("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", raising=False)
+
+
 @contextlib.contextmanager
 def _owner_override() -> Iterator[None]:
     """Scope the privileged-role override to owner-side setup only.

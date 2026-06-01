@@ -62,7 +62,9 @@ def _make_settings(*, sync_store: Any = None) -> _Settings:
     return s
 
 
-async def _post(path: str, payload: dict[str, Any]) -> httpx.Response:
+async def _post(
+    path: str, payload: dict[str, Any], *, raise_app_exceptions: bool = True
+) -> httpx.Response:
     settings = _make_settings(sync_store=_make_sync_store())
     _mcp_dummy = MagicMock()
     _mcp_dummy.session_manager = None
@@ -71,7 +73,7 @@ async def _post(path: str, payload: dict[str, Any]) -> httpx.Response:
         patch.object(_http_mod, "get_settings", return_value=settings),
     ):
         app = create_app(mcp_server=_mcp_dummy)
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.post(path, json=payload, headers=_HEADERS)
 
@@ -290,13 +292,17 @@ class TestResolveEntityEndpoint:
     async def test_resolve_entity_no_psycopg_in_error_response(self) -> None:
         """Service errors must not leak Postgres implementation details."""
         p_cm, _, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm, patch(
-            "tapps_brain.services.kg_service.resolve_entity",
-            side_effect=RuntimeError("connection lost"),
+        with (
+            p_cm,
+            patch(
+                "tapps_brain.services.kg_service.resolve_entity",
+                side_effect=RuntimeError("connection lost"),
+            ),
         ):
             resp = await _post(
                 "/v1/kg/resolve_entity",
                 {"entity_type": "module", "canonical_name": "retrieval"},
+                raise_app_exceptions=False,
             )
         # Should be a 5xx error, and the traceback must not leak psycopg details
         assert resp.status_code >= 500
@@ -338,7 +344,7 @@ class TestKgPopulateThenRetrieve:
                     ],
                 },
             )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body.get("event_id") == _EVENT_UUID
         assert _EDGE_UUID in body.get("edge_ids", [])
@@ -390,7 +396,7 @@ class TestKgPopulateThenRetrieve:
                     ],
                 },
             )
-            assert event_resp.status_code == 200, event_resp.text
+            assert event_resp.status_code == 201, event_resp.text
             assert _EDGE_UUID in event_resp.json().get("edge_ids", [])
 
             # Step 3: read back the neighbourhood — the edge we recorded should appear

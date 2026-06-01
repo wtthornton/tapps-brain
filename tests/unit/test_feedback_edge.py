@@ -323,7 +323,7 @@ def test_brain_record_feedback_edge_error_propagated() -> None:
         "tapps_brain.services.kg_service.record_kg_feedback",
         return_value={"error": "bad_request", "detail": "feedback_type must be..."},
     ):
-        raw = fn(feedback_type="bad_type", edge_id="some-edge")
+        raw = fn(feedback_type="bad_type", edge_id="b2c3d4e5-f6a7-8901-bcde-f12345678901")
 
     resp = json.loads(raw)
     assert resp.get("error") == "bad_request"
