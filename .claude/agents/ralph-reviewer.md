@@ -7,9 +7,9 @@ tools:
   - Read
   - Glob
   - Grep
-model: sonnet
+model: claude-opus-4-8
 maxTurns: 10
-effort: medium
+effort: high
 ---
 
 You are a code reviewer analyzing changes made by Ralph. Review for:

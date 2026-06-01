@@ -272,3 +272,72 @@ RALPH_MCP_PROBE_TIMEOUT_SECONDS=120
 # push the coordinator's session_start + Linear queue scan + brief write past
 # the default on cold start.
 RALPH_COORDINATOR_TIMEOUT_SECONDS=240
+
+# =============================================================================
+# ANTHROPIC BETA FEATURES (TAP-1988)
+# =============================================================================
+
+# Tool Search BETA opt-in. When true (default), Ralph exports
+# ANTHROPIC_BETA=advanced-tool-use-2025-11-20 before invoking the Claude
+# CLI so the API serves the deferred-tool catalog and on-demand fetch.
+# Without this header, tools annotated `defer_loading: true` are hidden
+# from the catalog entirely and the agent has no recovery path.
+#
+# Set to false to disable (operator rollback in case the beta misbehaves).
+# Honored at the build_claude_command boundary, so each loop re-evaluates.
+RALPH_BETA_TOOL_SEARCH=true
+# =============================================================================
+# BRANCH HYGIENE (TAP-1878 / TAP-1880)
+# =============================================================================
+
+# Auto-delete squash-merged tap-* working branches at startup
+# (lib/branch_cleanup.sh). Detection uses `git cherry main <branch>`;
+# branches in RALPH_BRANCH_CLEANUP_PROTECTED, the currently-checked-out
+# branch, RALPH_CURRENT_BRANCH, and any branch younger than
+# RALPH_BRANCH_CLEANUP_MIN_AGE_HOURS are skipped. Failures are WARN-only.
+RALPH_BRANCH_CLEANUP_ENABLED=true
+
+# Branches matching this prefix are eligible for cleanup. Non-matching
+# branches are never touched. Default 'tap-' matches the gitBranchName
+# Linear assigns to tickets in the TAP team.
+RALPH_BRANCH_PREFIX=tap-
+
+# Minimum branch age (in hours) before cleanup considers it. Default 24h
+# avoids deleting branches in active retry / in-flight reviews.
+RALPH_BRANCH_CLEANUP_MIN_AGE_HOURS=24
+
+# Colon-separated patterns (bash glob) that are NEVER deleted regardless
+# of `git cherry` evidence. Default protects main + the standard mirrors.
+RALPH_BRANCH_CLEANUP_PROTECTED=main:master:develop:release/*
+# =============================================================================
+# EPIC-BOUNDARY DESLOP (ralph-workflow skill step 7.5)
+# =============================================================================
+# At each epic boundary, after QA is green, the ralph-workflow skill tells
+# Claude to run the `simplify` skill on the files changed in the epic
+# (removes dead code, unused imports, redundant comments, speculative error
+# handling — never adds). This is an agent-honored flag: it is exported to
+# the Claude CLI subprocess via `set -a`, and the skill checks it. When true,
+# the deslop pass is skipped.
+RALPH_NO_DESLOP=false
+# =============================================================================
+# At each epic boundary, after QA is green, the ralph-workflow skill tells
+# =============================================================================
+# Linear cache-locality optimizer (TAP-589 LINOPT epic)
+# =============================================================================
+# PERIODIC PUSH (AgentForge feedback #1)
+# =============================================================================
+# After each successful loop iteration that produced commits, run `git push`
+# so origin reflects the autonomous work in real time. Prevents the multi-epic
+# state-drift pattern where local main accumulates 10+ unpushed commits while
+# Linear shows tickets as Done — operators expect autonomous work to be
+# upstream-visible without manual push.
+#
+# Safe by default: silent skip when the branch has no upstream (detached HEAD,
+# brand-new local branch) or no commits ahead; WARN on push failure with
+# diagnostic tail in .ralph/.push-failure.err, never trips the circuit
+# breaker. Disable for unattended runs that intentionally batch pushes.
+RALPH_PUSH_EVERY_LOOP=true
+# =============================================================================
+# After each successful loop iteration that produced commits, run `git push`
+# =============================================================================
+# CONTEXT MANAGEMENT (Phase 14)

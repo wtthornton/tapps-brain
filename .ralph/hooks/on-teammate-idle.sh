@@ -17,7 +17,11 @@ teammate_name=$(echo "$INPUT" | jq -r '.teammate_name // "unknown"' 2>/dev/null 
 remaining=0
 if [[ -f "$RALPH_DIR/fix_plan.md" ]]; then
   total=$(grep -c '^\- \[' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || total=0
-  done=$(grep -c '^\- \[x\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || done=0
+  # Match both `[x]` and `[X]` — the codebase treats both as completed (see
+  # lib/complexity.sh and lib/context_management.sh). A lowercase-only grep
+  # here undercounts done tasks, inflating the "remaining" count this hook
+  # writes to live.log.
+  done=$(grep -cE '^- \[[xX]\]' "$RALPH_DIR/fix_plan.md" 2>/dev/null) || done=0
   remaining=$((total - done))
 fi
 

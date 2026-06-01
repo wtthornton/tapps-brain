@@ -95,3 +95,25 @@ docker/secrets/
 # tapps-mcp CLI cache and session metrics (local only)
 .tapps-mcp-cache/
 .tapps-mcp/
+
+# Ralph managed entries
+.ralph/*
+!.ralph/PROMPT.md
+!.ralph/AGENT.md
+!.ralph/fix_plan.md
+!.ralph/hooks/
+!.ralph/hooks/**
+!.ralph/.gitkeep
+.ralph-brief.json
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+.temp/
+target/
+.vscode/
+.idea/
+*.swp
+*.swo
+.ralphrc.local
+.ralph_backup_*
