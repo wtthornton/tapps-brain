@@ -775,8 +775,11 @@ class TestMemoryStoreEmbedding:
     """Tests for embedding provider integration."""
 
     def test_embedding_computed_on_save(self, tmp_path: Path) -> None:
+        # 384 dims to match the private_memories.embedding vector(384) column —
+        # TAP-2672 now persists the vector, so a toy 3-dim stub is rejected by PG.
+        vec = [round(0.001 * i, 3) for i in range(384)]
         provider = MagicMock()
-        provider.embed.return_value = [0.1, 0.2, 0.3]
+        provider.embed.return_value = vec
         s = MemoryStore(tmp_path, embedding_provider=provider)
         result = s.save(key="emb-key", value="embed me")
         assert isinstance(result, MemoryEntry)
@@ -784,7 +787,7 @@ class TestMemoryStoreEmbedding:
         # The entry in the store should have the embedding
         loaded = s.get("emb-key")
         assert loaded is not None
-        assert loaded.embedding == [0.1, 0.2, 0.3]
+        assert loaded.embedding == vec
         s.close()
 
     def test_embedding_failure_does_not_crash(self, tmp_path: Path) -> None:

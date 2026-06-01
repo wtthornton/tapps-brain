@@ -154,8 +154,9 @@ class TestSaveFailedApproaches:
         backend.save(entry)
         assert cur.execute.called
         params = cur.execute.call_args[0][1]
-        # failed_approaches JSONB is followed by status, stale_reason, stale_date, memory_class
-        fa_json = params[-5]
+        # failed_approaches JSONB is followed by status, stale_reason, stale_date,
+        # memory_class, embedding (TAP-2672 appended the embedding param last).
+        fa_json = params[-6]
         assert json.loads(fa_json) == ["tried A", "tried B"]
 
     def test_save_empty_failed_approaches(self) -> None:
@@ -165,7 +166,9 @@ class TestSaveFailedApproaches:
         entry = MemoryEntry(key="empty-key", value="val", failed_approaches=[])
         backend.save(entry)
         params = cur.execute.call_args[0][1]
-        fa_json = params[-5]
+        # -6: embedding is now the last param (TAP-2672); failed_approaches precedes
+        # status, stale_reason, stale_date, memory_class, embedding.
+        fa_json = params[-6]
         assert json.loads(fa_json) == []
 
 
