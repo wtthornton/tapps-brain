@@ -628,3 +628,87 @@ class TestResolvePrivateBackendFromEnv:
         monkeypatch.setenv("TAPPS_BRAIN_DATABASE_URL", "mysql://bad")
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
         assert resolve_private_backend_from_env("project-id", "agent-id") is None
+
+
+# ---------------------------------------------------------------------------
+# HNSW GUC tests (TAP-2728)
+# ---------------------------------------------------------------------------
+
+
+class TestKnnSearchHnswGucs:
+    """knn_search must set HNSW GUCs via SET LOCAL before the vector query."""
+
+    def test_iterative_scan_guc_is_first_execute_call(self) -> None:
+        backend, cur = _make_backend(rows=[("k1", 0.1)])
+        backend.knn_search([0.1, 0.2, 0.3], k=5)
+        first_sql = cur.execute.call_args_list[0].args[0]
+        assert "hnsw.iterative_scan" in first_sql
+        assert "relaxed_order" in first_sql
+
+    def test_ef_search_guc_is_second_execute_call(self) -> None:
+        backend, cur = _make_backend(rows=[("k1", 0.1)])
+        backend.knn_search([0.1, 0.2, 0.3], k=5)
+        second_sql = cur.execute.call_args_list[1].args[0]
+        assert "hnsw.ef_search" in second_sql
+
+    def test_ef_search_default_value_in_sql(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _DEFAULT_HNSW_EF_SEARCH
+
+        monkeypatch.delenv("TAPPS_BRAIN_HNSW_EF_SEARCH", raising=False)
+        backend, cur = _make_backend()
+        backend.knn_search([0.1], k=1)
+        second_sql = cur.execute.call_args_list[1].args[0]
+        assert str(_DEFAULT_HNSW_EF_SEARCH) in second_sql
+
+    def test_ef_search_env_var_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "200")
+        from tapps_brain.postgres_private import PostgresPrivateBackend
+
+        cm, _conn, cur, _ = _make_mocks()
+        backend = PostgresPrivateBackend(cm, project_id="p", agent_id="a")
+        backend.knn_search([0.1], k=1)
+        second_sql = cur.execute.call_args_list[1].args[0]
+        assert "200" in second_sql
+
+    def test_gucs_not_set_when_embedding_empty(self) -> None:
+        backend, cur = _make_backend()
+        result = backend.knn_search([], k=5)
+        assert result == []
+        cur.execute.assert_not_called()
+
+
+class TestResolveHnswEfSearch:
+    """Unit tests for the _resolve_hnsw_ef_search helper."""
+
+    def test_returns_default_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _DEFAULT_HNSW_EF_SEARCH, _resolve_hnsw_ef_search
+
+        monkeypatch.delenv("TAPPS_BRAIN_HNSW_EF_SEARCH", raising=False)
+        assert _resolve_hnsw_ef_search() == _DEFAULT_HNSW_EF_SEARCH
+
+    def test_returns_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _resolve_hnsw_ef_search
+
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "150")
+        assert _resolve_hnsw_ef_search() == 150
+
+    def test_raises_on_non_integer_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _resolve_hnsw_ef_search
+
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "abc")
+        with pytest.raises(ValueError, match="positive integer"):
+            _resolve_hnsw_ef_search()
+
+    def test_raises_on_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _resolve_hnsw_ef_search
+
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "0")
+        with pytest.raises(ValueError, match=">= 1"):
+            _resolve_hnsw_ef_search()
+
+    def test_raises_on_negative(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.postgres_private import _resolve_hnsw_ef_search
+
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "-10")
+        with pytest.raises(ValueError, match=">= 1"):
+            _resolve_hnsw_ef_search()

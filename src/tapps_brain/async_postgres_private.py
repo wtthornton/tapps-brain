@@ -35,6 +35,7 @@ from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain.postgres_private import (
     PostgresPrivateBackend,
     _record_missing_indexes,
+    _resolve_hnsw_ef_search,
 )
 
 if TYPE_CHECKING:
@@ -81,6 +82,9 @@ class AsyncPostgresPrivateBackend:
         # instantiated from sync code.
         self._relations_lock: asyncio.Lock | None = None
         self._relations_ensured = False
+
+        # TAP-2728: HNSW query-time GUC — read once at construction.
+        self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS via async_project_context
@@ -230,12 +234,22 @@ class AsyncPostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     async def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
-        """Approximate nearest-neighbour search via pgvector cosine distance."""
+        """Approximate nearest-neighbour search via pgvector cosine distance.
+
+        TAP-2728: sets ``hnsw.iterative_scan = 'relaxed_order'`` and a tuned
+        ``hnsw.ef_search`` before the query so project/agent-filtered searches
+        are not silently truncated by the pgvector default (ef=40).  Both GUCs
+        use ``SET LOCAL`` so they are transaction-scoped and cannot leak to
+        other queries on the same pooled connection.
+        """
         if not query_embedding:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
+                # TAP-2728: HNSW GUCs for filtered recall correctness.
+                await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 await cur.execute(
                     _sql.KNN_SEARCH_SQL,
                     (vec_str, self._project_id, self._agent_id, k),
