@@ -368,7 +368,7 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         for _i, _event in enumerate(parsed):
             _uuid_err = None
             if isinstance(_event, dict):
-                for _edge in (_event.get("edges") or []):
+                for _edge in _event.get("edges") or []:
                     if not isinstance(_edge, dict):
                         continue
                     for _uid_field in ("subject_entity_id", "object_entity_id"):
@@ -585,7 +585,7 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_record_feedback(
+    def brain_record_feedback(  # noqa: PLR0911 — multi-path dispatcher: UUID guard + KG/memory branches
         feedback_type: str,
         edge_id: str = "",
         entry_key: str = "",
