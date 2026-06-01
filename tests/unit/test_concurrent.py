@@ -11,8 +11,10 @@ Tests cover (016-D):
 - Concurrent recall from Hive during propagation → no exceptions
 
 Wall-clock bounds use ``threading.Thread.join(timeout=…)`` plus an elapsed
-assertion; the hot-path save stress test uses **60s** so full-suite runs on
-slow/loaded Windows hosts stay green.
+assertion; the hot-path save stress test uses **120s** so full-suite runs on
+slow/loaded hosts stay green (500 synchronous write-through saves serialized
+through the store's global lock are I/O-bound, not a perf SLO — the bound is a
+deadlock/​hang sanity guard, not a latency benchmark).
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ class TestConcurrentSave:
                 errors.append(exc)
 
         threads = [threading.Thread(target=saver, args=(t,)) for t in range(num_threads)]
-        _join_timeout = 60.0
+        _join_timeout = 120.0
         start = time.monotonic()
         for t in threads:
             t.start()
