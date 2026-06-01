@@ -37,7 +37,12 @@ class PostgresConnectionManager:
         a ``ValueError`` is raised at construction time if the scheme is wrong.
     min_size:
         Minimum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MIN``
-        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MIN``) env var, then ``2``.
+        (or legacy ``TAPPS_BRAIN_HIVE_POOL_MIN``) env var, then ``1``.
+        TAP-2677 lowered this from 2: the brain opens a pool per backend
+        (private / hive / federation / KG / auth / …), so a min of 2 each held
+        dozens of idle connections (64 idle of Postgres's 100 ``max_connections``
+        in the audit) when only ~1 query was active.  Scale up via the env var
+        for multi-replica deployments.
     max_size:
         Maximum pool connections.  Falls back to ``TAPPS_BRAIN_PG_POOL_MAX``
         (or legacy ``TAPPS_BRAIN_HIVE_POOL_MAX``) env var, then ``10``.
@@ -90,7 +95,7 @@ class PostgresConnectionManager:
             if min_size is not None
             else int(
                 os.environ.get("TAPPS_BRAIN_PG_POOL_MIN")
-                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "2")
+                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "1")
             )
         )
         self._max_size = (
@@ -245,22 +250,31 @@ class PostgresConnectionManager:
             else:
                 current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
 
+            # Owning a tenanted table only defeats isolation when the table
+            # does NOT have FORCE ROW LEVEL SECURITY: a plain owner bypasses
+            # RLS, but a FORCE-RLS owner is subject to the policies like any
+            # role (migration 012_rls_force.sql).  So only flag owned tables
+            # whose relforcerowsecurity is false — this lets a de-privileged
+            # NOSUPERUSER/NOBYPASSRLS migrator role that owns FORCE-RLS tables
+            # pass the guard without the override flag (TAP-2673).
             cur.execute(
                 "SELECT relname FROM pg_class "
                 "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
                 "WHERE relname IN ('private_memories', 'project_profiles') "
-                "  AND pg_get_userbyid(relowner) = current_user"
+                "  AND pg_get_userbyid(relowner) = current_user "
+                "  AND relforcerowsecurity = false"
             )
-            owned = sorted(r[0] for r in cur.fetchall())
+            owned_unforced = sorted(r[0] for r in cur.fetchall())
 
         violations: list[str] = []
         if is_super:
             violations.append("rolsuper=true (superuser bypasses RLS)")
         if bypass_rls:
             violations.append("rolbypassrls=true (BYPASSRLS bypasses RLS)")
-        if owned:
+        if owned_unforced:
             violations.append(
-                f"role owns tenanted tables {owned} (table owners bypass RLS unless FORCE is set)"
+                f"role owns tenanted tables {owned_unforced} without FORCE ROW LEVEL "
+                "SECURITY (table owners bypass RLS unless FORCE is set)"
             )
 
         if not violations:

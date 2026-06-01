@@ -438,3 +438,39 @@ class TestSearchNeighborhood:
         results = retriever.search_neighborhood(["some-entity"], backend)
         scores = [r.blended_score for r in results]
         assert scores == sorted(scores, reverse=True)
+
+
+class TestNullPredicateFilterParam:
+    """TAP-2674: ``predicate_filter=None`` must not raise IndeterminateDatatype.
+
+    Before the ``::text`` cast on the predicate-filter parameter, a NULL
+    ``predicate_filter`` left ``$5`` untyped and Postgres raised
+    ``psycopg.errors.IndeterminateDatatype: could not determine data type of
+    parameter $5`` — 230 occurrences in the audit window. These cover both the
+    1-hop and 2-hop SQL paths (the 2-hop CTE has the same predicate clause in
+    its base and recursive terms).
+    """
+
+    def test_null_predicate_filter_1hop(
+        self, kg_store: Any, seeded_entities: list[str], seeded_edges: list[str]
+    ) -> None:
+        result = kg_store.get_neighbors_multi(
+            seeded_entities[:10], hops=1, limit=100, predicate_filter=None
+        )
+        assert isinstance(result, list)
+
+    def test_null_predicate_filter_2hop(
+        self, kg_store: Any, seeded_entities: list[str], seeded_edges: list[str]
+    ) -> None:
+        result = kg_store.get_neighbors_multi(
+            seeded_entities[:5], hops=2, limit=100, predicate_filter=None
+        )
+        assert isinstance(result, list)
+
+    def test_explicit_predicate_filter_still_filters(
+        self, kg_store: Any, seeded_entities: list[str], seeded_edges: list[str]
+    ) -> None:
+        result = kg_store.get_neighbors_multi(
+            seeded_entities, hops=1, limit=600, predicate_filter="relates_to"
+        )
+        assert all(r["predicate"] == "relates_to" for r in result)
