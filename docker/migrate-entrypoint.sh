@@ -52,6 +52,18 @@ psql "${BOOTSTRAP_DSN}" -v ON_ERROR_STOP=1 \
     > /dev/null
 echo "[migrate] tapps_migrator is NOSUPERUSER NOBYPASSRLS and owns the tenanted tables"
 
+# Pre-create the extensions the migrations need. CREATE EXTENSION requires
+# superuser, which the de-privileged migrator is NOT — so create them here in
+# the privileged bootstrap. The migrations use CREATE EXTENSION IF NOT EXISTS,
+# which is a no-op for a non-superuser once the extension already exists, so the
+# migrator's calls succeed against an already-bootstrapped DB.
+psql "${BOOTSTRAP_DSN}" -v ON_ERROR_STOP=1 <<'SQL' > /dev/null
+  CREATE EXTENSION IF NOT EXISTS vector;
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+SQL
+echo "[migrate] required extensions present (vector, pgcrypto, pg_trgm)"
+
 echo "[migrate] Step 1/4 — apply Hive schema migrations (as tapps_migrator)"
 tapps-brain maintenance migrate-hive --dsn "${MIGRATOR_DSN}"
 
