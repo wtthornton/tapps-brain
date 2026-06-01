@@ -316,6 +316,161 @@ class MemoryGarbageCollector:
 
 
 # ---------------------------------------------------------------------------
+# HNSW index maintenance (TAP-2729)
+# ---------------------------------------------------------------------------
+
+# Known HNSW embedding indexes and their tables — matches migration names:
+# private/002_hnsw_upgrade.sql, hive/003_hnsw_upgrade.sql, federation/002_hnsw_upgrade.sql.
+# Each tuple is (index_name, table_name).  Used by :func:`run_hnsw_maintenance`.
+_HNSW_INDEX_TABLE_PAIRS: list[tuple[str, str]] = [
+    ("idx_priv_embedding_hnsw", "private_memories"),
+    ("idx_hive_embedding_hnsw", "hive_memories"),
+    ("idx_fed_embedding_hnsw", "federated_memories"),
+]
+
+
+class HNSWMaintenanceResult(BaseModel):
+    """Result of a one-shot HNSW index maintenance run (TAP-2729).
+
+    Reports the outcome of ``REINDEX INDEX CONCURRENTLY`` + ``VACUUM (ANALYZE)``
+    across all HNSW embedding indexes.  When ``dry_run=True``, no SQL was
+    issued; the index and table lists reflect what *would* have run.
+    """
+
+    reindexed_indexes: list[str] = Field(default_factory=list)
+    skipped_indexes: list[str] = Field(
+        default_factory=list,
+        description="Indexes not found in pg_class (migration not yet applied).",
+    )
+    vacuumed_tables: list[str] = Field(default_factory=list)
+    dry_run: bool = Field(default=False)
+    duration_seconds: float = Field(default=0.0, ge=0.0)
+    error: str | None = Field(default=None)
+
+
+def run_hnsw_maintenance(
+    dsn: str,
+    *,
+    index_table_pairs: list[tuple[str, str]] | None = None,
+    dry_run: bool = False,
+) -> HNSWMaintenanceResult:
+    """Reindex HNSW embedding indexes and run ``VACUUM (ANALYZE)`` on their tables.
+
+    Runs ``REINDEX INDEX CONCURRENTLY`` on each known HNSW index then
+    ``VACUUM (ANALYZE)`` on each affected table.  Both operations require
+    ``autocommit=True`` — they cannot run inside an explicit transaction block.
+    Live queries are unaffected while the reindex is in progress.
+
+    **Cadence:** run once per week during a low-traffic window.  The HNSW
+    graph grows as rows are inserted; periodic reindex keeps the structure
+    balanced and planner row-count estimates accurate.
+
+    **maintenance_work_mem:** set this GUC to 1-2 GB before running in
+    production to speed up the HNSW rebuild step.  Example::
+
+        -- Run once per database session before REINDEX (not set by this routine):
+        SET maintenance_work_mem = '1GB';
+        REINDEX INDEX CONCURRENTLY idx_priv_embedding_hnsw;
+
+    This routine does **not** alter ``maintenance_work_mem`` automatically.
+    Set it via ``ALTER SYSTEM`` or a per-session SQL block when required.
+
+    Args:
+        dsn: PostgreSQL connection string (``postgres://`` or ``postgresql://``).
+        index_table_pairs: Override the default ``(index_name, table_name)``
+            list.  Defaults to :data:`_HNSW_INDEX_TABLE_PAIRS` (all planes).
+        dry_run: When ``True``, return the *would-run* plan without issuing SQL.
+
+    Returns:
+        :class:`HNSWMaintenanceResult` with reindexed indexes, skipped indexes
+        (absent from ``pg_class``), vacuumed tables, and elapsed duration.
+    """
+    import time
+
+    pairs = index_table_pairs if index_table_pairs is not None else _HNSW_INDEX_TABLE_PAIRS
+    t0 = time.monotonic()
+
+    if dry_run:
+        unique_tables = list(dict.fromkeys(tbl for _, tbl in pairs))
+        return HNSWMaintenanceResult(
+            reindexed_indexes=[idx for idx, _ in pairs],
+            vacuumed_tables=unique_tables,
+            dry_run=True,
+            duration_seconds=round(time.monotonic() - t0, 3),
+        )
+
+    try:
+        import psycopg  # lazy import — Postgres deps only required with a PG DSN
+    except ImportError as exc:
+        raise ImportError(
+            "psycopg is required for HNSW maintenance.\n"
+            "Install with: pip install 'psycopg[binary]'"
+        ) from exc
+
+    reindexed: list[str] = []
+    skipped: list[str] = []
+    vacuumed: list[str] = []
+
+    try:
+        # autocommit=True is required — REINDEX CONCURRENTLY and VACUUM
+        # must not run inside an explicit transaction block.
+        with psycopg.connect(dsn, autocommit=True) as conn:  # type: ignore[attr-defined]
+            # Discover which HNSW indexes actually exist in pg_class.
+            index_names = [idx for idx, _ in pairs]
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT relname FROM pg_class"
+                    " WHERE relkind = 'i' AND relname = ANY(%s)",
+                    (index_names,),
+                )
+                found: set[str] = {row[0] for row in cur.fetchall()}
+
+            # REINDEX each existing HNSW index concurrently.
+            # Index names originate from _HNSW_INDEX_TABLE_PAIRS — a trusted module
+            # constant, not user input.  String interpolation is intentional.
+            for idx_name, _ in pairs:
+                if idx_name not in found:
+                    skipped.append(idx_name)
+                    logger.info("hnsw_maintenance_index_skip", index=idx_name, reason="not_found")
+                    continue
+                logger.info("hnsw_maintenance_reindex_start", index=idx_name)
+                conn.execute(f"REINDEX INDEX CONCURRENTLY {idx_name}")  # nosec B608
+                reindexed.append(idx_name)
+                logger.info("hnsw_maintenance_reindex_done", index=idx_name)
+
+            # VACUUM (ANALYZE) each affected table (deduplicated, only for found indexes).
+            # Table names are also from _HNSW_INDEX_TABLE_PAIRS.
+            seen_tables: set[str] = set()
+            for idx_name, tbl_name in pairs:
+                if idx_name not in found or tbl_name in seen_tables:
+                    continue
+                seen_tables.add(tbl_name)
+                logger.info("hnsw_maintenance_vacuum_start", table=tbl_name)
+                conn.execute(f"VACUUM (ANALYZE) {tbl_name}")  # nosec B608
+                vacuumed.append(tbl_name)
+                logger.info("hnsw_maintenance_vacuum_done", table=tbl_name)
+
+    except Exception as exc:
+        logger.error("hnsw_maintenance_failed", exc_info=True)
+        return HNSWMaintenanceResult(
+            reindexed_indexes=reindexed,
+            skipped_indexes=skipped,
+            vacuumed_tables=vacuumed,
+            dry_run=False,
+            duration_seconds=round(time.monotonic() - t0, 3),
+            error=str(exc),
+        )
+
+    return HNSWMaintenanceResult(
+        reindexed_indexes=reindexed,
+        skipped_indexes=skipped,
+        vacuumed_tables=vacuumed,
+        dry_run=False,
+        duration_seconds=round(time.monotonic() - t0, 3),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
