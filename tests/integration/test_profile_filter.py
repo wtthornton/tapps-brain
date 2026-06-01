@@ -118,13 +118,13 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_63_tools(self) -> None:
-        """Golden file for 'full' must list exactly 63 tools (TAP-2099: +1)."""
-        assert len(_load_golden("full")) == 63
+    def test_full_golden_has_64_tools(self) -> None:
+        """Golden file for 'full' must list exactly 64 tools (TAP-2725: +1)."""
+        assert len(_load_golden("full")) == 64
 
-    def test_operator_golden_has_76_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 76 tools (TAP-2099: +1)."""
-        assert len(_load_golden("operator")) == 76
+    def test_operator_golden_has_77_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 77 tools (TAP-2725: +1)."""
+        assert len(_load_golden("operator")) == 77
 
     def test_coder_golden_has_18_tools(self) -> None:
         """Golden file for 'coder' must list exactly 18 tools (TAP-1973: +1)."""
@@ -219,16 +219,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_76(self) -> None:
-        """The MCP server must have exactly 76 registered tools (63 standard + 13 operator)."""
+    def test_registered_tool_count_is_77(self) -> None:
+        """The MCP server must have exactly 77 registered tools (64 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 76, (
-            f"Expected 76 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 77, (
+            f"Expected 77 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 76 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 77 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -510,12 +510,12 @@ class TestBackwardsCompat:
     def test_no_header_list_tools_returns_8_eager_tools(self) -> None:
         """No profile header → list_tools returns 8 eager tools (TAP-1985).
 
-        Same surface as explicit 'full': the callable set is 63, but 55 are
-        deferred and hidden from the default tools/list payload (TAP-2099).
+        Same surface as explicit 'full': the callable set is 64, but 56 are
+        deferred and hidden from the default tools/list payload (TAP-2725).
         """
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 63  # callable surface unchanged
+        assert len(full_tools) == 64  # callable surface unchanged
         eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
