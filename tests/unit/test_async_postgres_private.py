@@ -401,3 +401,54 @@ class TestSqlSharedWithSyncBackend:
         else:
             asyncio.run(method())
         assert cur.execute.await_args.args[0] is getattr(_sql, expected_sql_attr)
+
+
+# ---------------------------------------------------------------------------
+# HNSW GUC tests for async backend (TAP-2728)
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncKnnSearchHnswGucs:
+    """async knn_search must set HNSW GUCs via SET LOCAL before the vector query."""
+
+    def test_iterative_scan_guc_is_first_execute_call(self) -> None:
+        from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
+
+        cur = _make_async_cursor(fetchall=[])
+        cm = _make_manager(cur)
+        b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
+        asyncio.run(b.knn_search([0.1, 0.2, 0.3], k=5))
+        first_sql = cur.execute.call_args_list[0].args[0]
+        assert "hnsw.iterative_scan" in first_sql
+        assert "relaxed_order" in first_sql
+
+    def test_ef_search_guc_is_second_execute_call(self) -> None:
+        from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
+
+        cur = _make_async_cursor(fetchall=[])
+        cm = _make_manager(cur)
+        b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
+        asyncio.run(b.knn_search([0.1, 0.2, 0.3], k=5))
+        second_sql = cur.execute.call_args_list[1].args[0]
+        assert "hnsw.ef_search" in second_sql
+
+    def test_ef_search_env_var_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
+
+        monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "175")
+        cur = _make_async_cursor(fetchall=[])
+        cm = _make_manager(cur)
+        b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
+        asyncio.run(b.knn_search([0.1], k=1))
+        second_sql = cur.execute.call_args_list[1].args[0]
+        assert "175" in second_sql
+
+    def test_gucs_not_set_when_embedding_empty(self) -> None:
+        from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
+
+        cur = _make_async_cursor()
+        cm = _make_manager(cur)
+        b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
+        result = asyncio.run(b.knn_search([], k=5))
+        assert result == []
+        cur.execute.assert_not_awaited()

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -79,6 +80,41 @@ def _record_missing_indexes(project_id: str) -> None:
         _MISSING_INDEX_COUNTS[project_id] = _MISSING_INDEX_COUNTS.get(project_id, 0) + 1
 
 
+# ---------------------------------------------------------------------------
+# HNSW query-time GUC helpers (TAP-2728)
+# ---------------------------------------------------------------------------
+
+# pgvector default ef_search is 40; the HNSW index was built with
+# ef_construction=200 (migration 002).  For project/agent-filtered queries,
+# iterative_scan requires ef_search >= the number of results you want to
+# return per partition.  80 is a 2x safety margin over the default that
+# keeps P99 latency acceptable on small-corpus private-memory tables.
+_DEFAULT_HNSW_EF_SEARCH: int = 80
+
+
+def _resolve_hnsw_ef_search() -> int:
+    """Return the configured HNSW ef_search value.
+
+    Reads ``TAPPS_BRAIN_HNSW_EF_SEARCH`` from the environment; falls back to
+    :data:`_DEFAULT_HNSW_EF_SEARCH` (80).  Raises ``ValueError`` when the env
+    var is set to a non-positive integer.
+    """
+    raw = os.environ.get("TAPPS_BRAIN_HNSW_EF_SEARCH", "")
+    if not raw:
+        return _DEFAULT_HNSW_EF_SEARCH
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"TAPPS_BRAIN_HNSW_EF_SEARCH must be a positive integer; got '{raw}'"
+        ) from None
+    if value < 1:
+        raise ValueError(
+            f"TAPPS_BRAIN_HNSW_EF_SEARCH must be >= 1; got {value}"
+        )
+    return value
+
+
 class PostgresPrivateBackend:
     """PostgreSQL-backed private memory backend.
 
@@ -118,6 +154,10 @@ class PostgresPrivateBackend:
 
         self._lock = threading.Lock()
         self._relations_ensured = False
+
+        # TAP-2728: HNSW query-time GUC — read once at construction so env-var
+        # parsing is not repeated on every knn_search call.
+        self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS (EPIC-069 STORY-069.8)
@@ -301,6 +341,12 @@ class PostgresPrivateBackend:
         Uses the ``idx_priv_embedding_hnsw`` index (migration 002).  Returns
         ``(key, distance)`` pairs, lowest distance first.  Returns ``[]`` if
         the ``embedding`` column is unpopulated or on any DB error.
+
+        TAP-2728: sets ``hnsw.iterative_scan = 'relaxed_order'`` and a tuned
+        ``hnsw.ef_search`` before the query so project/agent-filtered searches
+        are not silently truncated by the pgvector default (ef=40).  Both GUCs
+        use ``SET LOCAL`` so they are transaction-scoped and cannot leak to
+        other queries on the same pooled connection.
         """
         if not query_embedding:
             return []
@@ -308,6 +354,11 @@ class PostgresPrivateBackend:
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
+                # TAP-2728: HNSW GUCs for filtered recall correctness.
+                # SET LOCAL is transaction-scoped — resets at commit/rollback,
+                # so it cannot leak across pool borrows.
+                cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 cur.execute(
                     _sql.KNN_SEARCH_SQL,
                     (vec_str, self._project_id, self._agent_id, k),
@@ -895,6 +946,9 @@ class AsyncPostgresPrivateBackend:
         self._relations_lock: asyncio.Lock = asyncio.Lock()
         self._relations_ensured = False
 
+        # TAP-2728: HNSW query-time GUC — read once at construction.
+        self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
+
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS (async parity of _scoped_conn)
     # ------------------------------------------------------------------
@@ -1026,12 +1080,22 @@ class AsyncPostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     async def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
-        """Approximate nearest-neighbour search via pgvector cosine distance."""
+        """Approximate nearest-neighbour search via pgvector cosine distance.
+
+        TAP-2728: sets ``hnsw.iterative_scan = 'relaxed_order'`` and a tuned
+        ``hnsw.ef_search`` before the query so project/agent-filtered searches
+        are not silently truncated.  Both GUCs use ``SET LOCAL`` so they are
+        transaction-scoped and cannot leak to other queries on the same pooled
+        connection.
+        """
         if not query_embedding:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
+                # TAP-2728: HNSW GUCs for filtered recall correctness.
+                await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 await cur.execute(
                     _sql.KNN_SEARCH_SQL,
                     (vec_str, self._project_id, self._agent_id, k),
