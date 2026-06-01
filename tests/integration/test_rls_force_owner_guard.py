@@ -125,3 +125,120 @@ def test_non_force_owner_still_raises(_migrator_owns_tenant_tables: Any) -> None
         cm.close()
     finally:
         _exec_as_owner(["ALTER TABLE private_memories FORCE ROW LEVEL SECURITY"])
+
+
+# ---------------------------------------------------------------------------
+# TAP-2686: the real roles/002 de-privilege migration + the migrate path.
+# Proves the de-privileged migrate path applies migrations and the guard does
+# NOT raise — without TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE.
+# ---------------------------------------------------------------------------
+
+_REAL_MIGRATOR_ROLE = "tapps_migrator"
+_REAL_MIGRATOR_PW = "tap2686-test-pw"  # nosec B105 - throwaway test-only credential
+
+
+def _real_migrator_dsn() -> str:
+    parts = urlparse(_PG_DSN)
+    netloc = f"{_REAL_MIGRATOR_ROLE}:{_REAL_MIGRATOR_PW}@{parts.hostname}:{parts.port}"
+    return urlunparse(parts._replace(netloc=netloc))
+
+
+def _roles_002_sql() -> str:
+    from importlib import resources
+
+    return (
+        resources.files("tapps_brain.migrations.roles")
+        .joinpath("002_migrator_deprivilege.sql")
+        .read_text(encoding="utf-8")
+    )
+
+
+@pytest.fixture
+def _deprivileged_migrator() -> Any:
+    """Apply migrations, then run the real roles/002 to de-privilege the migrator.
+
+    Mirrors the migrate-entrypoint bootstrap: roles/002 (as superuser) creates a
+    NOSUPERUSER/NOBYPASSRLS tapps_migrator and reassigns the tenanted tables to
+    it; then the entrypoint sets its password (we do the same here).
+    """
+    _apply_migrations()
+    _exec_as_owner([_roles_002_sql()])
+    _exec_as_owner([f"ALTER ROLE {_REAL_MIGRATOR_ROLE} WITH LOGIN PASSWORD '{_REAL_MIGRATOR_PW}'"])
+    yield
+    owner = urlparse(_PG_DSN).username
+    _exec_as_owner(
+        [
+            f"ALTER TABLE private_memories OWNER TO {owner}",
+            f"ALTER TABLE project_profiles OWNER TO {owner}",
+            # Leave the role in place (roles/001 + the live brain may rely on it);
+            # only restore ownership so the throwaway DB is clean for other tests.
+        ]
+    )
+
+
+def test_roles_002_migrator_is_deprivileged_owner(_deprivileged_migrator: Any) -> None:
+    """roles/002 leaves tapps_migrator NOSUPERUSER/NOBYPASSRLS owning the tables."""
+    import psycopg
+
+    with psycopg.connect(_PG_DSN) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = %s",
+            (_REAL_MIGRATOR_ROLE,),
+        )
+        row = cur.fetchone()
+        assert row is not None
+        assert row[0] is False, "tapps_migrator must be NOSUPERUSER"
+        assert row[1] is False, "tapps_migrator must be NOBYPASSRLS"
+        # roles/002 reassigns ALL public tables to the migrator (it must own the
+        # objects later migrations ALTER/DROP), so assert the two guard-relevant
+        # tenanted tables are among them rather than that they are the only ones.
+        cur.execute(
+            "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND relname IN ('private_memories', 'project_profiles')"
+            "   AND pg_get_userbyid(relowner) = %s",
+            (_REAL_MIGRATOR_ROLE,),
+        )
+        owned = sorted(r[0] for r in cur.fetchall())
+        # And the reassignment is broad — every public table moved to the
+        # migrator, not just the two tenanted ones (so later migrations that
+        # ALTER/DROP non-tenanted objects, e.g. the hive/federation HNSW swap,
+        # succeed as the de-privileged migrator).
+        cur.execute(
+            "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')"
+            "   AND pg_get_userbyid(c.relowner) = %s",
+            (_REAL_MIGRATOR_ROLE,),
+        )
+        row = cur.fetchone()
+        migrator_table_count = int(row[0]) if row else 0
+    assert owned == ["private_memories", "project_profiles"], owned
+    assert migrator_table_count > 2, f"expected all tables reassigned, got {migrator_table_count}"
+
+
+def test_deprivileged_migrate_path_passes_guard(_deprivileged_migrator: Any) -> None:
+    """The migrate path applies migrations as tapps_migrator with NO override."""
+    from tapps_brain.postgres_migrations import apply_private_migrations
+
+    # Sanity: the override must NOT be set for this assertion to be meaningful.
+    assert os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE") in (None, "", "0")
+
+    # Connecting as the de-privileged migrator runs the guard; FORCE-RLS
+    # ownership is not a violation, so this must not raise.
+    applied = apply_private_migrations(_real_migrator_dsn())
+    # Already at head from the fixture, so re-applying is a no-op.
+    assert applied == []
+
+
+def test_roles_002_is_idempotent(_deprivileged_migrator: Any) -> None:
+    """Re-running roles/002 is a no-op (ownership already reassigned)."""
+    _exec_as_owner([_roles_002_sql()])
+    import psycopg
+
+    with psycopg.connect(_PG_DSN) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_get_userbyid(relowner) FROM pg_class c"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND relname = 'private_memories'"
+        )
+        row = cur.fetchone()
+    assert row is not None and row[0] == _REAL_MIGRATOR_ROLE

@@ -34,6 +34,10 @@ export TAPPS_OPERATOR_MCP_PORT="${TAPPS_OPERATOR_MCP_PORT:-18090}"
 # uses at runtime.  Keep both — TAP-1100.
 SMOKE_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-password)"
 SMOKE_RUNTIME_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-runtime-password)"
+# SMOKE_MIGRATOR_PASSWORD is what the bootstrap sets on the de-privileged
+# tapps_migrator role and what the migrate sidecar then uses for schema DDL
+# (TAP-2686).  Required env on the migrate service — keep in sync.
+SMOKE_MIGRATOR_PASSWORD="smoke-$(openssl rand -hex 12 2>/dev/null || echo testonly-migrator-password)"
 SMOKE_AUTH_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-auth)"
 SMOKE_ADMIN_TOKEN="smoke-$(openssl rand -hex 16 2>/dev/null || echo testonly-admin)"
 
@@ -123,6 +127,7 @@ write_smoke_env() {
 # Smoke-test throwaway — do NOT commit. Restored on exit.
 TAPPS_BRAIN_DB_PASSWORD=${SMOKE_PASSWORD}
 TAPPS_BRAIN_RUNTIME_PASSWORD=${SMOKE_RUNTIME_PASSWORD}
+TAPPS_BRAIN_MIGRATOR_PASSWORD=${SMOKE_MIGRATOR_PASSWORD}
 TAPPS_BRAIN_AUTH_TOKEN=${SMOKE_AUTH_TOKEN}
 TAPPS_BRAIN_ADMIN_TOKEN=${SMOKE_ADMIN_TOKEN}
 TAPPS_HTTP_PORT=${ADAPTER_PORT}
