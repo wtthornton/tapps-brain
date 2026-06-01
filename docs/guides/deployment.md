@@ -284,6 +284,20 @@ path has full secondary-write parity with the sync path.
 - Use TLS termination (nginx, Caddy, cloud load balancer) in front of both
   ports for any external-facing deployment.  See `hive-tls.md`.
 
+### Integrity signing key
+
+Memory entries carry an HMAC integrity hash signed with a 256-bit key. By
+default the key lives at `~/.tapps-brain/integrity.key` (created with mode
+`0700`/`0600` on first boot). Two environment variables control it:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TAPPS_BRAIN_INTEGRITY_KEY` | _(unset)_ | Inject the HMAC key directly as a base64- or hex-encoded 32-byte value instead of reading a file. When set, the key never touches disk — suitable for Vault, a k8s Secret, or any env-injecting secrets manager. Generate one with `python -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"`. |
+| `TAPPS_BRAIN_INTEGRITY_KEY_REGENERATE` | `0` | Set to `1` to allow regenerating the key when the on-disk file is **truncated or corrupt**. This is a **destructive, operator-gated** action — it invalidates every existing integrity hash. Leave unset in normal operation; unset it again once a deliberate key rotation is complete. |
+
+Treat `TAPPS_BRAIN_INTEGRITY_KEY` as a secret (rotate if leaked); see
+[Token rotation & secret recovery](token-rotation.md).
+
 ---
 
 ## See Also
