@@ -840,6 +840,65 @@ def maintenance_restore_hive(
         raise typer.Exit(1) from e
 
 
+@maintenance_app.command("hnsw-reindex")
+def maintenance_hnsw_reindex(
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="TAPPS_BRAIN_DATABASE_URL",
+            help="PostgreSQL DSN (or set TAPPS_BRAIN_DATABASE_URL).",
+        ),
+    ] = "",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Report what would run without issuing SQL."),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Reindex HNSW embedding indexes and VACUUM (ANALYZE) their tables (TAP-2729).
+
+    Runs ``REINDEX INDEX CONCURRENTLY`` on every known HNSW embedding index
+    (idx_priv_embedding_hnsw, idx_hive_embedding_hnsw, idx_fed_embedding_hnsw)
+    then ``VACUUM (ANALYZE)`` on each affected table.  Both operations run in
+    autocommit mode, so live queries are unaffected.
+
+    Recommended cadence: weekly, during a low-traffic window.
+
+    Tip: set maintenance_work_mem to 1-2 GB on the database session before
+    running to speed up the HNSW rebuild step:
+
+    \\b
+        SET maintenance_work_mem = '1GB';
+    """
+    if not dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_DATABASE_URL is required.", err=True)
+        raise typer.Exit(code=1)
+
+    from tapps_brain.gc import run_hnsw_maintenance
+
+    result = run_hnsw_maintenance(dsn, dry_run=dry_run)
+    data = result.model_dump(mode="json")
+
+    if as_json:
+        _output(data, as_json=True)
+    elif dry_run:
+        typer.echo("Dry run — no SQL issued.")
+        typer.echo(f"Would reindex: {', '.join(result.reindexed_indexes) or 'none'}")
+        typer.echo(f"Would vacuum:  {', '.join(result.vacuumed_tables) or 'none'}")
+        if result.skipped_indexes:
+            typer.echo(f"Skipped (not found): {', '.join(result.skipped_indexes)}")
+    elif result.error:
+        typer.echo(f"Error: {result.error}", err=True)
+        raise typer.Exit(code=1)
+    else:
+        typer.echo(f"Reindexed: {', '.join(result.reindexed_indexes) or 'none'}")
+        if result.skipped_indexes:
+            typer.echo(f"Skipped (not found): {', '.join(result.skipped_indexes)}")
+        typer.echo(f"Vacuumed:  {', '.join(result.vacuumed_tables) or 'none'}")
+        typer.echo(f"Duration:  {result.duration_seconds:.1f}s")
+
+
 @maintenance_app.command("migrations-rollback")
 def maintenance_migrations_rollback(
     target_version: Annotated[

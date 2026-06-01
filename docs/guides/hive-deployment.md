@@ -494,6 +494,84 @@ See the full runbook: [docs/guides/postgres-tde.md](./postgres-tde.md)
 
 ---
 
+## HNSW Index Maintenance (TAP-2729)
+
+The HNSW embedding indexes grow as rows are inserted.  Periodic reindexing
+keeps the graph structure balanced and planner row-count estimates accurate,
+preventing recall degradation over time (pgvector 2026 production guidance).
+
+### Affected indexes
+
+| Index | Table | Plane |
+|-------|-------|-------|
+| `idx_priv_embedding_hnsw` | `private_memories` | Private |
+| `idx_hive_embedding_hnsw` | `hive_memories` | Hive |
+| `idx_fed_embedding_hnsw` | `federated_memories` | Federation |
+
+### Recommended cadence
+
+Run **once per week** during a low-traffic window (e.g. Sunday 02:00 UTC).
+`REINDEX INDEX CONCURRENTLY` does not lock the table; live queries continue
+while the rebuild is in progress.
+
+### Running the maintenance routine
+
+**Via CLI (recommended):**
+```bash
+# Uses TAPPS_BRAIN_DATABASE_URL by default.
+tapps-brain maintenance hnsw-reindex
+
+# Preview what would run without executing SQL:
+tapps-brain maintenance hnsw-reindex --dry-run
+
+# Or pass the DSN explicitly:
+tapps-brain maintenance hnsw-reindex \
+  --dsn "postgresql://tapps_runtime:SECRET@localhost:5432/tapps_brain"
+
+# JSON output for integration with monitoring pipelines:
+tapps-brain maintenance hnsw-reindex --json
+```
+
+**Via psql (manual):**
+```sql
+-- Set maintenance_work_mem high to speed up HNSW rebuild.
+-- 1–2 GB is recommended for indexes above 10 MB.
+SET maintenance_work_mem = '1GB';
+
+REINDEX INDEX CONCURRENTLY idx_priv_embedding_hnsw;
+REINDEX INDEX CONCURRENTLY idx_hive_embedding_hnsw;
+REINDEX INDEX CONCURRENTLY idx_fed_embedding_hnsw;
+
+VACUUM (ANALYZE) private_memories;
+VACUUM (ANALYZE) hive_memories;
+VACUUM (ANALYZE) federated_memories;
+```
+
+### maintenance_work_mem guidance
+
+The `TAPPS_BRAIN_DATABASE_URL` role (`tapps_runtime`) does not hold superuser
+privileges.  To set `maintenance_work_mem` for the session, the DBA must grant
+the role `SET` privilege or run the reindex from the `tapps` owner role.
+
+For a managed Postgres (RDS, Cloud SQL, Azure), set `maintenance_work_mem`
+via the parameter group before the weekly window and restore it afterward.
+
+### Automating via cron
+
+```cron
+# Weekly HNSW reindex — Sunday 02:00 UTC
+0 2 * * 0 tapps-brain maintenance hnsw-reindex \
+    --dsn "$TAPPS_BRAIN_DATABASE_URL" >> /var/log/tapps-brain-hnsw-reindex.log 2>&1
+```
+
+Or use the Docker exec form inside the compose stack:
+```bash
+docker exec tapps-brain-http \
+  tapps-brain maintenance hnsw-reindex
+```
+
+---
+
 ## Backup and Disaster Recovery
 
 All durable Hive state lives in Postgres. Back it up regularly.
