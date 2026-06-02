@@ -12,12 +12,68 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
-### Fixed
+## [3.22.0] — 2026-06-01
 
-- **`/v1/kg/*` UUID validation — return 422 instead of 500 on malformed UUIDs** ([TAP-2140](https://linear.app/tappscodingagents/issue/TAP-2140)). Non-UUID strings POSTed to `/v1/kg/feedback`, `/v1/kg/neighbors`, and `/v1/kg/explain` previously reached psycopg's cursor and surfaced as HTTP 500 with a raw `psycopg.errors.InvalidTextRepresentation` traceback (5 occurrences observed in brain v3.20.1 between 21:05 and 21:16 UTC on 2026-05-18). The three handlers now validate every UUID-bound field (`edge_id`; `entity_ids[i]`; `subject_id`/`object_id`) via `uuid.UUID(...)` at the request-model layer and emit HTTP 422 with `{error, field, detail}` instead — no `psycopg` substring in the response body or response-path log line. Gives the [TAP-2133](https://linear.app/tappscodingagents/issue/TAP-2133) SDK's `TappsBrainValidationError` a stable shape to map against.
+Stabilisation release on top of the 3.21.0 KG/experience activation. Aligns the KG REST data-plane status codes to the documented contract, hardens the unhandled-error envelope, completes the `brain_resolve_entity` profile wiring, and closes the CI gap that let integration-test failures land on `main`. Strict superset of 3.21.0.
+
+> **Note on the 3.21.0 tag.** `v3.21.0` was tagged from `main` on 2026-06-01 without merging its version-bump PR (#186), so the tagged source still read `3.20.1` and `main` never received a `## [3.21.0]` CHANGELOG section. That section is backfilled below for an accurate history; this 3.22.0 release is the first correctly-versioned cut since 3.20.1.
+
 ### Changed
 
-- **`AsyncMemoryStore.audit()` is now async-native when an `AsyncPostgresPrivateBackend` is wired** ([TAP-2134](https://linear.app/tappscodingagents/issue/TAP-2134)). Previously the method dispatched the call through `asyncio.to_thread(self._store.audit, ...)`, which works but blocks a thread-pool worker on the Postgres round-trip. The async path now calls `AsyncPostgresPrivateBackend.query_audit(...)` directly on the native async pool and wraps the dict rows in `AuditEntry` to preserve the public return type. The legacy `_read_thread` fallback is retained for callers that construct an `AsyncMemoryStore` without an async backend (unit tests, in-memory backends). First concrete read-path conversion in the EPIC-072 follow-on — the deeper orchestrator refactor for `search`/`knn_search` (which requires `MemoryStore.search` to accept an `async_backend` parameter) is out of scope here and tracked separately.
+- **KG REST create-style data-plane writes return 200** ([TAP-2727](https://linear.app/tappscodingagents/issue/TAP-2727) / [TAP-2801](https://linear.app/tappscodingagents/issue/TAP-2801)). `/v1/experience` and `/v1/experience:batch` returned a runtime `201` while the OpenAPI contract and every other data-plane write (`/v1/remember`, `/v1/reinforce`, `/v1/learn_*`) documented and returned `200`. The handlers now return `200`, aligning code to the already-published contract (no OpenAPI snapshot change). `/v1/kg/resolve_entity` stays `200` (idempotent upsert).
+- **`brain_resolve_entity` wired into the `full` + `operator` profiles, integration completed** ([TAP-2725](https://linear.app/tappscodingagents/issue/TAP-2725)). Follows the 3.21.0 tool exposure with profile registration, corrected tool counts, the tools snapshot, and a knowledge-graph edge test.
+
+### Fixed
+
+- **CLI structlog output routed to stderr so `--json` stdout stays clean** ([TAP-2803](https://linear.app/tappscodingagents/issue/TAP-2803)). `cli/_common.py`'s `structlog.configure()` carried a comment claiming output went to stderr but only set `wrapper_class`, never `logger_factory` — so structlog fell back to its default `PrintLoggerFactory()` (stdout). The ERROR-level `postgres.privileged_role_audit_override` audit record (emitted when `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1`) then corrupted the diagnostics `--json` payload. Now sets `logger_factory=PrintLoggerFactory(file=sys.stderr)`, reserving stdout for command output. Surfaced by the new integration-test gate below.
+- **Unhandled-error envelope hardened on the HTTP adapter** ([TAP-2801](https://linear.app/tappscodingagents/issue/TAP-2801)). Added a catch-all `@app.exception_handler(Exception)` returning a structured `{"error": "internal_error"}` 500, consistent with every other error envelope in the adapter, so a dropped psycopg connection (or any unhandled service error) never leaks Postgres internals to the client.
+
+### Security
+
+- **Triaged 6 bandit medium-and-high security findings** ([TAP-2760](https://linear.app/tappscodingagents/issue/TAP-2760)).
+
+### Documentation
+
+- **Documented the integrity-key environment variables; fixed a stale drift-config note** ([TAP-2768](https://linear.app/tappscodingagents/issue/TAP-2768)).
+
+### Internal / CI
+
+- **Gated the 20 mock-based integration test files in the CI `test` job** ([TAP-2803](https://linear.app/tappscodingagents/issue/TAP-2803)). CI previously ran `tests/unit/` only, so any `tests/integration/` failure landed on `main` unblocked — exactly how the TAP-2801 status-code drift shipped. The 20 mock-based files (no live Postgres, ~35 s) are now gated as an explicit list (no directory glob) so a new red test cannot silently ride in. DB-dependent + compat/openapi-snapshot suites stay excluded pending TAP-2803 follow-up.
+- **Suppressed vulture false positives on `_protocols.py` via the dead-code whitelist** ([TAP-2765](https://linear.app/tappscodingagents/issue/TAP-2765)).
+- **Cleared pre-existing lint/format/mypy debt blocking `main`** (PR #191).
+
+## [3.21.0] — 2026-06-01
+
+The **KG/experience-subsystem activation + HNSW-everywhere release.** Brings the knowledge-graph / experience-event path online end to end (embedding population, `resolve_entity` REST + MCP surface, structured UUID errors), migrates the remaining hive/federation vector indexes off IVFFlat onto HNSW with an operator maintenance routine, and de-privileges the migrate sidecar. Strict superset of 3.20.1.
+
+### Added
+
+- **KG/experience subsystem activated end to end** ([TAP-2723](https://linear.app/tappscodingagents/issue/TAP-2723)). New `/v1/kg/resolve_entity` REST endpoint with integration tests and operator doc, wiring the experience-event + entity-resolution path that previously shipped dormant.
+- **`brain_resolve_entity` MCP tool** ([TAP-2725](https://linear.app/tappscodingagents/issue/TAP-2725)). Exposes entity resolution to MCP clients over the same service path as the REST endpoint.
+- **Embedding provider configuration, persistence, and NULL backfill** ([TAP-2672](https://linear.app/tappscodingagents/issue/TAP-2672)). The embedding column is now populated on experience-event INSERT ([TAP-2705](https://linear.app/tappscodingagents/issue/TAP-2705)), and a backfill pass fills previously-NULL embeddings so semantic recall covers historical rows.
+- **HNSW maintenance routine — `REINDEX CONCURRENTLY` + `VACUUM ANALYZE`** ([TAP-2729](https://linear.app/tappscodingagents/issue/TAP-2729)). Documented operator runbook with an INVALID-index recovery note for interrupted concurrent reindexes.
+- **`gen_ai.data_source.id` on recall and search OTel spans** ([TAP-2170](https://linear.app/tappscodingagents/issue/TAP-2170)). Completes the GenAI semantic-convention attribute set on the retrieval spans.
+
+### Changed
+
+- **`hnsw.iterative_scan` + `ef_search` set on `knn_search` queries** ([TAP-2728](https://linear.app/tappscodingagents/issue/TAP-2728)). Recall queries now opt into pgvector iterative scan with a tuned `ef_search`, improving recall under HNSW without a rebuild.
+- **Hive + federation pgvector indexes migrated IVFFlat → HNSW** ([TAP-2676](https://linear.app/tappscodingagents/issue/TAP-2676)). Brings the shared/cross-project stores onto the same HNSW profile (`m=16, ef_construction=200, vector_cosine_ops`) already used for private memory.
+- **Right-sized the `tapps_runtime` connection pool** ([TAP-2677](https://linear.app/tappscodingagents/issue/TAP-2677)). Pool sizing matched to expected concurrency to avoid over-allocating Postgres connections.
+- **KG tools validate UUID inputs and return structured `bad_uuid` errors** ([TAP-2726](https://linear.app/tappscodingagents/issue/TAP-2726)). Malformed UUIDs surface as structured errors at the tool boundary rather than as raw driver exceptions.
+- **`docker-compose` image tags pinned to `BRAIN_VERSION`** ([TAP-2136](https://linear.app/tappscodingagents/issue/TAP-2136)). Dropped the floating `:latest` tag from the compose stack so deploys are reproducible against a known version.
+- **`AsyncMemoryStore.audit()` is now async-native when an `AsyncPostgresPrivateBackend` is wired** ([TAP-2134](https://linear.app/tappscodingagents/issue/TAP-2134)). Previously the method dispatched the call through `asyncio.to_thread(self._store.audit, ...)`, which works but blocks a thread-pool worker on the Postgres round-trip. The async path now calls `AsyncPostgresPrivateBackend.query_audit(...)` directly on the native async pool and wraps the dict rows in `AuditEntry` to preserve the public return type. The legacy `_read_thread` fallback is retained for callers that construct an `AsyncMemoryStore` without an async backend (unit tests, in-memory backends).
+
+### Fixed
+
+- **`/v1/kg/*` UUID validation — return 422 instead of 500 on malformed UUIDs** ([TAP-2140](https://linear.app/tappscodingagents/issue/TAP-2140)). Non-UUID strings POSTed to `/v1/kg/feedback`, `/v1/kg/neighbors`, and `/v1/kg/explain` previously reached psycopg's cursor and surfaced as HTTP 500 with a raw `psycopg.errors.InvalidTextRepresentation` traceback. The three handlers now validate every UUID-bound field (`edge_id`; `entity_ids[i]`; `subject_id`/`object_id`) via `uuid.UUID(...)` at the request-model layer and emit HTTP 422 with `{error, field, detail}` instead. Gives the [TAP-2133](https://linear.app/tappscodingagents/issue/TAP-2133) SDK's `TappsBrainValidationError` a stable shape to map against.
+- **KG entity payloads accept `{'key': ...}` and non-str memory values are coerced** ([TAP-2675](https://linear.app/tappscodingagents/issue/TAP-2675)). Loosens the entity-payload contract and coerces non-string memory values so well-formed-but-loosely-typed callers no longer error.
+- **`get_neighbors` predicate-filter cast + two latent bugs** ([TAP-2674](https://linear.app/tappscodingagents/issue/TAP-2674)). Casts the predicate-filter parameter to the correct type and fixes two latent neighbor-traversal bugs.
+- **Deduplicated `private_schema_version` v15 and resolved tapps-visual state** ([TAP-2679](https://linear.app/tappscodingagents/issue/TAP-2679)).
+
+### Security
+
+- **De-privileged the migrate sidecar role** ([TAP-2686](https://linear.app/tappscodingagents/issue/TAP-2686)). Dropped the privileged override from the one-shot migrate container so schema migrations run with least privilege.
+- **Privileged-role guard treats FORCE-RLS owners as non-privileged** ([TAP-2673](https://linear.app/tappscodingagents/issue/TAP-2673)). Closes a gap where a table owner with FORCE ROW LEVEL SECURITY was incorrectly treated as privileged.
 
 ## [3.20.1] — 2026-05-18
 
