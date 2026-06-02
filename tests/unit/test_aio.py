@@ -24,6 +24,22 @@ async def astore(tmp_path: Path) -> AsyncMemoryStore:
     await store.close()
 
 
+class TestCapturePersistenceBackendSaveMany:
+    """TAP-2800: the async-native capture backend must capture batched persists."""
+
+    def test_save_many_captures_batch_for_later_flush(self) -> None:
+        from unittest.mock import MagicMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        capture = _CapturePersistenceBackend(MagicMock())
+        entries = [MemoryEntry(key=f"k{i}", value=f"v{i}") for i in range(3)]
+        capture.save_many(entries)
+
+        saves, _deletes, _relations, _audit = capture.flush()
+        assert [e.key for e in saves] == ["k0", "k1", "k2"]
+
+
 class TestAsyncCRUD:
     """Basic CRUD through the async wrapper."""
 
