@@ -396,83 +396,159 @@ class MemoryStore:
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
 
-        # STORY-066.8: Auto-migrate private schema on startup when
-        # TAPPS_BRAIN_AUTO_MIGRATE=1.  Runs before the backend is constructed
-        # so the schema is up-to-date before the first connection.
+        self._maybe_auto_migrate_private_schema()
+
+        # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
+        private_backend = self._resolve_private_backend(project_root, agent_id, private_backend)
+        # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
+        # kept in the signature for API compatibility but ignored on Postgres.
+        _ = (store_dir, encryption_key, _lexical)
+        self._persistence: PrivateBackend = private_backend
+        # STORY-069.7: stash resolved project_id so instance methods can bind it
+        # into structured logs.  Falls back to None for backends (e.g.
+        # InMemoryPrivateBackend) that don't carry a project_id.
+        self._project_id: str | None = getattr(private_backend, "_project_id", None)
+
+        self._lock = threading.Lock()
+        self._lock_timeout_sec = self._resolve_lock_timeout(lock_timeout_seconds)
+        self._consolidation_config = self._resolve_consolidation_config(consolidation_config)
+        self._init_embedding_provider(embedding_provider)
+
+        self._write_rules = write_rules
+        self._lookup_engine = lookup_engine
+        self._consolidation_in_progress = False
+        # Write-path policy (TAP-560/STORY-SC04). Resolve in precedence order:
+        # 1. Explicit constructor argument.
+        # 2. TAPPS_BRAIN_WRITE_POLICY env var.
+        # 3. Profile write_policy.mode.
+        # 4. Default → DeterministicWritePolicy (zero-cost, current behaviour).
+        self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
+            self._resolve_write_policy(write_policy)
+        )
+        from tapps_brain.gc import GCConfig as _GCConfig
+
+        self._gc_config = _GCConfig()
+        self._metrics = MetricsCollector()
+        self._hive_store = hive_store
+        self._hive_agent_id = hive_agent_id
+
+        # Cold-start: load entries + relations and rebuild derived indexes.
+        relation_count = self._load_cold_start_state()
+        # In-memory feedback / session / diagnostics / gap-signal state.
+        self._init_in_memory_tracking_state()
+
+        # Auto-register agent in Hive registry + join declared groups
+        # (STORY-053.3 / STORY-056.1).
+        if auto_register and self._agent_id is not None and self._hive_store is not None:
+            self._auto_register_agent()
+        if self._groups and self._hive_store is not None:
+            self._setup_group_memberships()
+
+        logger.info(
+            "memory_store_initialized",
+            project_root=str(project_root),
+            entry_count=len(self._entries),
+            relation_count=relation_count,
+            auto_consolidation=self._consolidation_config.enabled,
+        )
+
+    @staticmethod
+    def _maybe_auto_migrate_private_schema() -> None:
+        """STORY-066.8: auto-migrate the private schema before the backend opens.
+
+        Runs only when ``TAPPS_BRAIN_DATABASE_URL`` names a Postgres DSN and
+        ``TAPPS_BRAIN_AUTO_MIGRATE=1`` (the latter checked inside
+        ``maybe_auto_migrate_private``), so the schema is current before the
+        first connection.
+        """
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
         if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
             from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
             maybe_auto_migrate_private(_auto_migrate_dsn)
 
-        # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
-        # When the caller does not pass one, resolve it from
-        # TAPPS_BRAIN_DATABASE_URL via backends.resolve_private_backend_from_env.
-        # If the env var is also missing we hard-fail — there is no SQLite fallback.
-        if private_backend is None:
-            from tapps_brain.backends import (
-                derive_project_id,
-                resolve_private_backend_from_env,
-            )
+    @staticmethod
+    def _resolve_private_backend(
+        project_root: Path,
+        agent_id: str | None,
+        private_backend: PrivateBackend | None,
+    ) -> PrivateBackend:
+        """Return the caller's backend, or resolve one from the environment.
 
-            _resolved_agent_id = agent_id or "default"
-            # EPIC-069: honor TAPPS_BRAIN_PROJECT (human-readable slug) before
-            # falling back to the legacy path-hash.  The env var is how MCP
-            # clients connecting over stdio declare project identity — see
-            # ADR-010 and project_resolver.resolve_project_id.
-            _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
-            if _env_project:
-                from tapps_brain.project_resolver import validate_project_id
+        ADR-007: when no backend is passed, resolve it from
+        ``TAPPS_BRAIN_DATABASE_URL``.  Hard-fails when the env var is also
+        missing — there is no SQLite fallback.
+        """
+        if private_backend is not None:
+            return private_backend
+        from tapps_brain.backends import (
+            derive_project_id,
+            resolve_private_backend_from_env,
+        )
 
-                _project_id = validate_project_id(_env_project)
-            else:
-                _project_id = derive_project_id(project_root)
-            private_backend = resolve_private_backend_from_env(_project_id, _resolved_agent_id)
-            if private_backend is None:
-                msg = (
-                    "MemoryStore requires a Postgres private_backend (ADR-007). "
-                    "Set TAPPS_BRAIN_DATABASE_URL to a postgres:// or postgresql:// "
-                    "DSN, or pass an explicit private_backend constructed via "
-                    "tapps_brain.backends.create_private_backend(dsn, ...). "
-                    "SQLite is no longer supported."
-                )
-                raise ValueError(msg)
-        # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
-        # kept in the signature for API compatibility but ignored on Postgres.
-        _ = (store_dir, encryption_key, _lexical)
-        self._persistence: PrivateBackend = private_backend
-        # STORY-069.7: stash resolved project_id so instance methods can bind
-        # it into structured logs without reaching into the backend each time.
-        # Falls back to None for backends (e.g. InMemoryPrivateBackend) that
-        # don't carry a project_id.
-        self._project_id: str | None = getattr(private_backend, "_project_id", None)
-        self._lock = threading.Lock()
-        if lock_timeout_seconds is not None:
-            self._lock_timeout_sec = (
-                float(lock_timeout_seconds) if lock_timeout_seconds > 0 else None
-            )
+        _resolved_agent_id = agent_id or "default"
+        # EPIC-069: honor TAPPS_BRAIN_PROJECT (human-readable slug) before
+        # falling back to the legacy path-hash.  The env var is how MCP clients
+        # connecting over stdio declare project identity — see ADR-010 and
+        # project_resolver.resolve_project_id.
+        _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
+        if _env_project:
+            from tapps_brain.project_resolver import validate_project_id
+
+            _project_id = validate_project_id(_env_project)
         else:
-            self._lock_timeout_sec = _env_lock_timeout_seconds()
+            _project_id = derive_project_id(project_root)
+        resolved = resolve_private_backend_from_env(_project_id, _resolved_agent_id)
+        if resolved is None:
+            msg = (
+                "MemoryStore requires a Postgres private_backend (ADR-007). "
+                "Set TAPPS_BRAIN_DATABASE_URL to a postgres:// or postgresql:// "
+                "DSN, or pass an explicit private_backend constructed via "
+                "tapps_brain.backends.create_private_backend(dsn, ...). "
+                "SQLite is no longer supported."
+            )
+            raise ValueError(msg)
+        return resolved
+
+    @staticmethod
+    def _resolve_lock_timeout(lock_timeout_seconds: float | None) -> float | None:
+        """Resolve the store-lock timeout: explicit arg (>0) or the env default."""
+        if lock_timeout_seconds is not None:
+            return float(lock_timeout_seconds) if lock_timeout_seconds > 0 else None
+        return _env_lock_timeout_seconds()
+
+    def _resolve_consolidation_config(
+        self,
+        consolidation_config: ConsolidationConfig | None,
+    ) -> ConsolidationConfig:
+        """Resolve consolidation config: explicit arg, then profile, then default."""
         if consolidation_config is not None:
-            self._consolidation_config = consolidation_config
-        elif self._profile is not None and hasattr(self._profile, "consolidation"):
+            return consolidation_config
+        if self._profile is not None and hasattr(self._profile, "consolidation"):
             _pc = self._profile.consolidation
-            self._consolidation_config = ConsolidationConfig(
+            return ConsolidationConfig(
                 enabled=_pc.enabled,
                 threshold=_pc.threshold,
                 min_entries=_pc.min_entries,
             )
-        else:
-            self._consolidation_config = ConsolidationConfig()
+        return ConsolidationConfig()
+
+    def _init_embedding_provider(
+        self,
+        embedding_provider: SentenceTransformerProvider | None,
+    ) -> None:
+        """Resolve + validate the embedding provider (TAP-2672 fail-loud).
+
+        When ``TAPPS_BRAIN_EMBEDDING_REQUIRED=1`` and no provider could be
+        loaded, raise rather than silently degrading semantic recall to
+        BM25-only while health still reports ``db_ok=true``.
+        """
         if embedding_provider is _UNSET_EMBEDDING:
             from tapps_brain.embeddings import get_embedding_provider
 
             self._embedding_provider = get_embedding_provider()
         else:
             self._embedding_provider = embedding_provider
-        # TAP-2672: fail loud when an embedding provider is expected but absent.
-        # Without this, semantic recall silently degrades to BM25-only while
-        # health still reports db_ok=true — exactly the drift the audit found.
         if (
             os.environ.get("TAPPS_BRAIN_EMBEDDING_REQUIRED", "0") == "1"
             and self._embedding_provider is None
@@ -492,28 +568,15 @@ class MemoryStore:
                 "embedding_provider_loaded",
                 **embedding_startup_status(self._embedding_provider),
             )
-        self._write_rules = write_rules
-        self._lookup_engine = lookup_engine
-        self._consolidation_in_progress = False
-        # Write-path policy (TAP-560/STORY-SC04). Resolve in precedence order:
-        # 1. Explicit constructor argument.
-        # 2. TAPPS_BRAIN_WRITE_POLICY env var.
-        # 3. Profile write_policy.mode.
-        # 4. Default → DeterministicWritePolicy (zero-cost, current behaviour).
-        self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
-            self._resolve_write_policy(write_policy)
-        )
-        from tapps_brain.gc import GCConfig as _GCConfig
 
-        self._gc_config = _GCConfig()
-        self._metrics = MetricsCollector()
-        self._hive_store = hive_store
-        self._hive_agent_id = hive_agent_id
+    def _load_cold_start_state(self) -> int:
+        """Cold-start: load entries + relations, rebuild bloom + entity indexes.
 
-        # Cold-start: load all entries into memory.
-        # Pass the effective max-entries cap so backends that support early-cutoff
-        # (e.g. PostgresPrivateBackend with ORDER BY updated_at DESC) can stop
-        # streaming once we have the most-recent entries up to the limit.
+        Returns the number of relations loaded (for the init log line).  Passes
+        the effective max-entries cap so backends that support early-cutoff
+        (e.g. PostgresPrivateBackend ``ORDER BY updated_at DESC``) can stop
+        streaming once the most-recent entries up to the limit are collected.
+        """
         self._entries: dict[str, MemoryEntry] = {}
         for entry in self._persistence.load_all(limit=self._max_entries):
             self._entries[entry.key] = entry
@@ -523,47 +586,50 @@ class MemoryStore:
         if callable(_verify):
             _verify()
 
-        # Bloom filter for write-path deduplication (GitHub #31)
+        # Bloom filter for write-path deduplication (GitHub #31).
         self._bloom = BloomFilter()
         for _entry in self._entries.values():
             self._bloom.add(normalize_for_dedup(_entry.value))
 
-        # Entity index for graph centrality scoring (TAP-734).
-        # Maps BM25 token → set of entry keys that contain it.
-        # Derived state only — never persisted; rebuilt from _entries at startup.
+        # Entity index for graph centrality scoring (TAP-734).  Maps BM25 token
+        # → set of entry keys; derived state only, rebuilt from _entries here.
         self._entity_index: dict[str, set[str]] = {}
         for _entry in self._entries.values():
             self._index_entry_entities(_entry.key, _entry.value)
 
-        # Cold-start: load all relations into memory, indexed by entry key
+        # Cold-start: load all relations into memory, indexed by entry key.
         self._relations: dict[str, list[dict[str, Any]]] = {}
         all_relations = self._persistence.list_relations()
         for rel in all_relations:
             for src_key in rel["source_entry_keys"]:
                 self._relations.setdefault(src_key, []).append(rel)
+        return len(all_relations)
 
+    def _init_in_memory_tracking_state(self) -> None:
+        """Initialise the lazy feedback store + in-memory session / diagnostics /
+        gap-signal state (EPIC-029 / 030 / 031).
+
+        All session dicts must be accessed under ``_serialized()``.
+        """
         # EPIC-029: Lazy-initialized feedback store.
         self._feedback_store_instance: FeedbackStore | InMemoryFeedbackStore | None = None
 
-        # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
-        # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
-        # Maps session_id → set of entry_keys that were reinforced in the session.
-        # All access must run under ``_serialized()`` (same underlying lock).
+        # EPIC-029 story 029.3: in-memory session tracking for implicit feedback.
+        # session_id → list of (entry_key, monotonic_time) recalled; and
+        # session_id → set of entry_keys reinforced in the session.
         self._session_recall_log: dict[str, list[tuple[str, float]]] = {}
         self._session_reinforced: dict[str, set[str]] = {}
 
-        # EPIC-029 story 029-4b: In-memory tracking for reformulation + correction.
-        # _session_query_log: session_id → list of (query_text, recalled_keys, mono_time)
-        #   Used to detect when a new query is a reformulation of a recent one.
-        # _session_recalled_values: session_id → list of (entry_key, entry_value, mono_time)
-        #   Used to detect when a save() corrects a recently recalled entry.
+        # EPIC-029 story 029-4b: in-memory tracking for reformulation + correction.
+        # _session_query_log: session_id → list of (query_text, recalled_keys, mono_time).
+        # _session_recalled_values: session_id → list of (entry_key, entry_value, mono_time).
         self._session_query_log: dict[str, list[tuple[str, list[str], float]]] = {}
         self._session_recalled_values: dict[str, list[tuple[str, str, float]]] = {}
 
-        # EPIC-029 story 029-7: session → hive memory key → namespace for feedback propagation.
+        # EPIC-029 story 029-7: session → hive memory key → namespace for feedback.
         self._hive_feedback_key_index: dict[str, dict[str, str]] = {}
 
-        # EPIC-030: diagnostics circuit breaker + history (lazy SQLite).
+        # EPIC-030: diagnostics circuit breaker + history (lazy).
         from tapps_brain.diagnostics import AnomalyDetector, CircuitBreaker
 
         self._circuit_breaker = CircuitBreaker()
@@ -575,27 +641,10 @@ class MemoryStore:
         self._zero_result_queries: deque[tuple[str, str]] = deque(maxlen=2000)
         self._latest_quality_report: dict[str, Any] | None = None
 
-        # STORY-032.6: Last-known candidate counts for tapps_brain.* gauges.
-        # Updated when health() or gc() is called; stale between runs — that is fine
-        # because computing them requires a full-entry scan.
+        # STORY-032.6: last-known candidate counts for tapps_brain.* gauges.
+        # Updated when health() or gc() is called; stale between runs is fine.
         self._last_consolidation_candidates: int = 0
         self._last_gc_candidates: int = 0
-
-        # Auto-register agent in Hive registry (STORY-053.3)
-        if auto_register and self._agent_id is not None and self._hive_store is not None:
-            self._auto_register_agent()
-
-        # Auto-join declared groups (STORY-056.1)
-        if self._groups and self._hive_store is not None:
-            self._setup_group_memberships()
-
-        logger.info(
-            "memory_store_initialized",
-            project_root=str(project_root),
-            entry_count=len(self._entries),
-            relation_count=len(all_relations),
-            auto_consolidation=self._consolidation_config.enabled,
-        )
 
     def _auto_register_agent(self) -> None:
         """Register this agent in the Hive registry if not already present."""
