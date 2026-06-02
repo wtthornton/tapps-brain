@@ -1,26 +1,21 @@
 # docs-mcp configuration for tapps-brain.
 #
 # This file is the canonical manifest for `docs_check_drift` ignore patterns.
-# At the time of writing, docs-mcp does NOT load `drift_ignore_patterns` from
-# `.docsmcp.yaml` automatically — patterns must be passed at call time via the
-# `ignore_patterns` argument. Keep this file in sync with the wrapper invocation;
-# audits should always quote from here as the source of truth.
-#
-# To run drift cleanly (zero false positives), pass these patterns joined by
-# commas as `ignore_patterns`:
-#
-#   docs_check_drift(ignore_patterns="defaults,scripts.*,examples.*,...")
-#
-# Bash one-liner that joins the YAML list:
-#
-#   docs_check_drift_args=$(python -c "import yaml; \
-#     print(','.join(yaml.safe_load(open('.docsmcp.yaml'))['drift_ignore_patterns']))")
+# docs-mcp auto-loads `drift_ignore_patterns` from `.docsmcp.yaml` when
+# `docs_check_drift` is called with an EMPTY `ignore_patterns` argument — so the
+# canonical clean run is simply `docs_check_drift()` with no arguments. (TAP-2768:
+# an earlier note here claimed the file was not auto-loaded; that is no longer
+# true. An explicit `ignore_patterns` value still WINS and bypasses this list —
+# notably `ignore_patterns="defaults"` uses ONLY docs-mcp's built-in private/test
+# globs and will re-flag the internal constants below, so do not use it for a
+# clean audit. Call with no `ignore_patterns` instead.)
 #
 # Patterns are fnmatch globs on fully-qualified symbol names (e.g.
 # `tapps_brain.module.NAME`). The literal string `defaults` opts into
-# docs-mcp's built-in private/test list (`_*`, `test_*`, `tests.*`, etc.).
+# docs-mcp's built-in private/test list (`_*`, `test_*`, `tests.*`, etc.) and is
+# kept as the first entry below so the config list is a superset of the defaults.
 #
-# When updating: re-run `docs_check_drift` and confirm only signal remains.
+# When updating: re-run `docs_check_drift` (no args) and confirm only signal remains.
 
 drift_ignore_patterns:
   - defaults
