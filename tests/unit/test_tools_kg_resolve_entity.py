@@ -141,9 +141,7 @@ class TestBrainResolveEntity:
         assert body["entity_id"] == canonical_uuid
         assert body["reason"] == "alias_match"
 
-    def test_db_unavailable_returns_structured_error(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_db_unavailable_returns_structured_error(self, mcp: Any, fake_ctx: ToolContext) -> None:
         """When no DB is configured the tool returns a structured error and skips the service."""
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
@@ -157,9 +155,7 @@ class TestBrainResolveEntity:
         assert body["error"] == "db_unavailable"
         svc.resolve_entity.assert_not_called()
 
-    def test_empty_entity_type_returns_bad_request(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_empty_entity_type_returns_bad_request(self, mcp: Any, fake_ctx: ToolContext) -> None:
         """Missing entity_type short-circuits before any DB call."""
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
@@ -191,9 +187,7 @@ class TestBrainResolveEntity:
         assert "canonical_name" in body["detail"]
         svc.resolve_entity.assert_not_called()
 
-    def test_delegates_to_kg_service_resolve_entity(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_delegates_to_kg_service_resolve_entity(self, mcp: Any, fake_ctx: ToolContext) -> None:
         """Tool passes entity_type and canonical_name through to kg_service.resolve_entity."""
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 

@@ -154,9 +154,7 @@ class TestGetNeighborsUuidValidation:
         assert "entity_ids_json[1]" in body["field"]
         svc.get_neighbors.assert_not_called()
 
-    def test_valid_uuids_pass_through_to_service(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_valid_uuids_pass_through_to_service(self, mcp: Any, fake_ctx: ToolContext) -> None:
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
@@ -210,9 +208,7 @@ class TestExplainConnectionUuidValidation:
         assert body["field"] == "object_id"
         svc.explain_connection.assert_not_called()
 
-    def test_valid_uuids_pass_through_to_service(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_valid_uuids_pass_through_to_service(self, mcp: Any, fake_ctx: ToolContext) -> None:
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
@@ -248,9 +244,7 @@ class TestRecordFeedbackEdgeIdValidation:
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_feedback")
-            body = json.loads(
-                tool.fn(feedback_type="edge_helpful", edge_id=BAD_UUID)
-            )
+            body = json.loads(tool.fn(feedback_type="edge_helpful", edge_id=BAD_UUID))
 
         assert body["error"] == "bad_uuid"
         assert body["field"] == "edge_id"
@@ -270,15 +264,11 @@ class TestRecordFeedbackEdgeIdValidation:
             fb.return_value = {}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_feedback")
-            body = json.loads(
-                tool.fn(feedback_type="recall_rated", entry_key="k1")
-            )
+            body = json.loads(tool.fn(feedback_type="recall_rated", entry_key="k1"))
 
         assert body.get("recorded") is True
 
-    def test_valid_uuid_edge_id_proceeds_to_service(
-        self, mcp: Any, fake_ctx: ToolContext
-    ) -> None:
+    def test_valid_uuid_edge_id_proceeds_to_service(self, mcp: Any, fake_ctx: ToolContext) -> None:
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
@@ -287,9 +277,7 @@ class TestRecordFeedbackEdgeIdValidation:
             svc.record_kg_feedback.return_value = {}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_feedback")
-            body = json.loads(
-                tool.fn(feedback_type="edge_helpful", edge_id=VALID_UUID_A)
-            )
+            body = json.loads(tool.fn(feedback_type="edge_helpful", edge_id=VALID_UUID_A))
 
         # Should reach the service and not return a bad_uuid error
         assert body.get("error") != "bad_uuid"
@@ -317,9 +305,7 @@ class TestRecordEventEdgeUuidValidation:
             svc._DEFAULT_BRAIN_ID = "brain"
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_event")
-            body = json.loads(
-                tool.fn(event_type="workflow_completed", edges=[edge])
-            )
+            body = json.loads(tool.fn(event_type="workflow_completed", edges=[edge]))
 
         assert body["error"] == "bad_uuid"
         assert "edges[0].subject_entity_id" in body["field"]
@@ -341,9 +327,7 @@ class TestRecordEventEdgeUuidValidation:
             svc._DEFAULT_BRAIN_ID = "brain"
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_event")
-            body = json.loads(
-                tool.fn(event_type="workflow_completed", edges=[edge])
-            )
+            body = json.loads(tool.fn(event_type="workflow_completed", edges=[edge]))
 
         assert body["error"] == "bad_uuid"
         assert "edges[0].object_entity_id" in body["field"]
@@ -365,9 +349,7 @@ class TestRecordEventEdgeUuidValidation:
             svc.record_event.return_value = {"event_id": "evt-1"}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_event")
-            body = json.loads(
-                tool.fn(event_type="workflow_completed", edges=[edge])
-            )
+            body = json.loads(tool.fn(event_type="workflow_completed", edges=[edge]))
 
         assert "error" not in body
         svc.record_event.assert_called_once()
@@ -419,9 +401,7 @@ class TestRecordEventsBatchUuidValidation:
             }
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_record_events_batch")
-            body = json.loads(
-                tool.fn(events_json=self._make_events_json([bad_event, good_event]))
-            )
+            body = json.loads(tool.fn(events_json=self._make_events_json([bad_event, good_event])))
 
         # The bad event is excluded; only good_event goes to the service.
         assert svc.record_events_batch_per_event_tx.call_count == 1
@@ -466,9 +446,7 @@ class TestRecordEventsBatchUuidValidation:
         events = [
             {
                 "event_type": "tool_called",
-                "edges": [
-                    {"subject_entity_id": VALID_UUID_A, "object_entity_id": VALID_UUID_B}
-                ],
+                "edges": [{"subject_entity_id": VALID_UUID_A, "object_entity_id": VALID_UUID_B}],
             }
         ]
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:

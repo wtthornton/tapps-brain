@@ -109,9 +109,7 @@ def _resolve_hnsw_ef_search() -> int:
             f"TAPPS_BRAIN_HNSW_EF_SEARCH must be a positive integer; got '{raw}'"
         ) from None
     if value < 1:
-        raise ValueError(
-            f"TAPPS_BRAIN_HNSW_EF_SEARCH must be >= 1; got {value}"
-        )
+        raise ValueError(f"TAPPS_BRAIN_HNSW_EF_SEARCH must be >= 1; got {value}")
     return value
 
 
