@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -28,9 +29,14 @@ except ImportError:
 from tapps_brain import __version__
 from tapps_brain.agent_scope import normalize_agent_scope
 
-# Route structlog output to stderr so it doesn't pollute CLI stdout/JSON
+# Route structlog output to stderr so it doesn't pollute CLI stdout/JSON.
+# Without an explicit logger_factory, structlog falls back to its default
+# PrintLoggerFactory(), which writes to stdout — that corrupts ``--json``
+# output (e.g. the ERROR-level postgres.privileged_role_audit_override audit
+# record emitted when TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 in CI/dev).
 structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING),
+    logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
 )
 
 # ---------------------------------------------------------------------------
