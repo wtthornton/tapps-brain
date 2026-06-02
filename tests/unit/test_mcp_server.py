@@ -263,6 +263,8 @@ class TestCoreTools:
             "brain_record_feedback",
             # KG batch (TAP-1973, EPIC-302)
             "brain_record_events_batch",
+            # KG entity resolution (TAP-2725)
+            "brain_resolve_entity",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"

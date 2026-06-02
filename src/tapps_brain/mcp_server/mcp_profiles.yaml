@@ -84,6 +84,8 @@ profiles:
         defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
+      - name: brain_resolve_entity
+        defer_loading: true
       - name: diagnostics_history
         defer_loading: true
       - name: diagnostics_report
@@ -216,6 +218,8 @@ profiles:
       - name: brain_record_events_batch
         defer_loading: true
       - name: brain_record_feedback
+        defer_loading: true
+      - name: brain_resolve_entity
         defer_loading: true
       - name: diagnostics_history
         defer_loading: true
