@@ -3926,7 +3926,7 @@ def main() -> None:
         or os.environ.get("TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
         or os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH") == "1"
     )
-    if args.host == "0.0.0.0" and not _auth_configured:
+    if args.host == "0.0.0.0" and not _auth_configured:  # nosec B104 - intentional opt-in bind
         logger.warning(
             "http_adapter.bind_all_interfaces_unauthenticated",
             host=args.host,

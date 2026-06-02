@@ -36,8 +36,12 @@ def _migration_lock_id(version_table: str) -> int:
 
     Uses the first 16 hex digits of the MD5 digest, masked to a positive signed
     64-bit integer so it is safe to pass to ``pg_advisory_lock(bigint)``.
+
+    MD5 is used purely as a fast, stable name->int hash (advisory lock id), not
+    for any security purpose, so ``usedforsecurity=False`` is set.
     """
-    h = int(hashlib.md5(version_table.encode()).hexdigest()[:16], 16)
+    digest = hashlib.md5(version_table.encode(), usedforsecurity=False).hexdigest()
+    h = int(digest[:16], 16)
     return h & 0x7FFFFFFFFFFFFFFF  # keep within signed int8 range
 
 
