@@ -309,6 +309,88 @@ def record_events_batch(
 _RECORD_EVENTS_BATCH_MAX_EVENTS = 200
 
 
+def _validate_events_batch_input(events: Any, max_events: int) -> dict[str, Any] | None:
+    """Structural guards for the per-event-tx batch (TAP-2758).
+
+    Returns an error envelope when *events* is not a non-empty list within
+    *max_events*, else ``None`` to signal "proceed".
+    """
+    if not isinstance(events, list):
+        return {"error": "bad_request", "detail": "events must be a JSON array."}
+    if not events:
+        return {"error": "bad_request", "detail": "events must contain at least one event."}
+    if len(events) > max_events:
+        return {
+            "error": "too_many_events",
+            "detail": (
+                f"batch contains {len(events)} events; server caps each call at {max_events}."
+            ),
+        }
+    return None
+
+
+def _event_record_kwargs(ev: dict[str, Any]) -> dict[str, Any]:
+    """Map one event dict to :func:`record_event` keyword arguments (TAP-2758).
+
+    Centralises the field coalescing so the per-event processor stays flat.
+    """
+    return {
+        "event_type": str(ev["event_type"]).strip(),
+        "subject_key": ev.get("subject_key") or None,
+        "utility_score": float(ev.get("utility_score", 0.0) or 0.0),
+        "payload": ev.get("payload") or {},
+        "entities": ev.get("entities") or [],
+        "edges": ev.get("edges") or [],
+        "evidence": ev.get("evidence") or [],
+        "memory_key": ev.get("memory_key") or None,
+        "memory_value": ev.get("memory_value") or None,
+        "memory_tier": str(ev.get("memory_tier") or "pattern"),
+        "session_id": ev.get("session_id") or None,
+        "workflow_run_id": ev.get("workflow_run_id") or None,
+    }
+
+
+def _process_one_event(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    agent_id: str,
+    idx: int,
+    ev: Any,
+) -> tuple[bool, dict[str, Any]]:
+    """Validate + record a single event in its own transaction (TAP-2758).
+
+    Returns ``(ok, entry)`` where *entry* is the ``succeeded`` record on success
+    or the ``failed`` record (tagged with *idx*) otherwise — so the caller's
+    loop is a plain dispatch with no branching.
+    """
+    if not isinstance(ev, dict):
+        return False, {
+            "index": idx,
+            "error": "bad_request",
+            "detail": f"events[{idx}] must be a JSON object.",
+        }
+    if not (ev.get("event_type") or "").strip():
+        return False, {
+            "index": idx,
+            "error": "bad_request",
+            "detail": f"events[{idx}].event_type is required.",
+        }
+    # Delegate to record_event (per-event tx).  Any uncaught exception is caught
+    # and tagged with the event index so the caller can correlate failures.
+    try:
+        result = record_event(cm, project_id, brain_id, agent_id, **_event_record_kwargs(ev))
+    except Exception as exc:  # per-event failure isolation
+        return False, {"index": idx, "error": exc.__class__.__name__, "detail": str(exc)}
+    if isinstance(result, dict) and result.get("error"):
+        return False, {
+            "index": idx,
+            "error": str(result.get("error")),
+            "detail": str(result.get("detail", "")),
+        }
+    return True, {"index": idx, "result": result}
+
+
 def record_events_batch_per_event_tx(
     cm: Any,
     project_id: str,
@@ -356,81 +438,15 @@ def record_events_batch_per_event_tx(
 
         {"error": "bad_request" | "too_many_events", "detail": "..."}
     """
-    if not isinstance(events, list):
-        return {"error": "bad_request", "detail": "events must be a JSON array."}
-    if not events:
-        return {"error": "bad_request", "detail": "events must contain at least one event."}
-    if len(events) > max_events:
-        return {
-            "error": "too_many_events",
-            "detail": (
-                f"batch contains {len(events)} events; server caps each call at {max_events}."
-            ),
-        }
+    rejection = _validate_events_batch_input(events, max_events)
+    if rejection is not None:
+        return rejection
 
     succeeded: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
-
     for idx, ev in enumerate(events):
-        if not isinstance(ev, dict):
-            failed.append(
-                {
-                    "index": idx,
-                    "error": "bad_request",
-                    "detail": f"events[{idx}] must be a JSON object.",
-                }
-            )
-            continue
-        if not (ev.get("event_type") or "").strip():
-            failed.append(
-                {
-                    "index": idx,
-                    "error": "bad_request",
-                    "detail": f"events[{idx}].event_type is required.",
-                }
-            )
-            continue
-        # Delegate to record_event (per-event tx).  Any service-layer error
-        # dict bubbles up; any uncaught exception is caught and tagged with
-        # the event index so the caller can correlate failures.
-        try:
-            result = record_event(
-                cm,
-                project_id,
-                brain_id,
-                agent_id,
-                event_type=str(ev["event_type"]).strip(),
-                subject_key=ev.get("subject_key") or None,
-                utility_score=float(ev.get("utility_score", 0.0) or 0.0),
-                payload=ev.get("payload") or {},
-                entities=ev.get("entities") or [],
-                edges=ev.get("edges") or [],
-                evidence=ev.get("evidence") or [],
-                memory_key=ev.get("memory_key") or None,
-                memory_value=ev.get("memory_value") or None,
-                memory_tier=str(ev.get("memory_tier") or "pattern"),
-                session_id=ev.get("session_id") or None,
-                workflow_run_id=ev.get("workflow_run_id") or None,
-            )
-        except Exception as exc:  # per-event failure isolation
-            failed.append(
-                {
-                    "index": idx,
-                    "error": exc.__class__.__name__,
-                    "detail": str(exc),
-                }
-            )
-            continue
-        if isinstance(result, dict) and result.get("error"):
-            failed.append(
-                {
-                    "index": idx,
-                    "error": str(result.get("error")),
-                    "detail": str(result.get("detail", "")),
-                }
-            )
-            continue
-        succeeded.append({"index": idx, "result": result})
+        ok, entry = _process_one_event(cm, project_id, brain_id, agent_id, idx, ev)
+        (succeeded if ok else failed).append(entry)
 
     return {
         "succeeded": succeeded,
