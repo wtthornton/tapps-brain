@@ -96,14 +96,47 @@ jobs:
         run: uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
       - name: Apply schema migrations
         run: uv run python scripts/apply_all_migrations.py
-      # Unit tests only — integration/compat/benchmarks excluded; they have
-      # known pre-existing failures (tenant isolation, openapi snapshot drift,
-      # compat parity) tracked separately. Reintroduce once they're green.
+      # Unit tests — the primary gate.
       # The class of bug v3.20.1 hotfixed (tool catalog ↔ snapshot drift) is
       # covered by the e2e Docker stack in `hive-smoke.yml`; widened triggers
       # there ensure any change to `mcp_server/`, `http/`, or `services/`
       # exercises it.
       - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+      # Mock-based integration tests (TAP-2803). These exercise the HTTP/MCP
+      # adapter, retrieval, and observability surfaces with mocked backends —
+      # no live Postgres required — so they're fast and deterministic. Gating
+      # them here closes the gap that let the TAP-2727 KG status-code drift sit
+      # on `main`: CI previously ran `tests/unit/` only, so the failing
+      # `test_http_adapter_kg.py` cases never blocked a merge.
+      #
+      # The DB-dependent integration files (tenant isolation, RLS, migrations,
+      # postgres backends, etc.) and the compat/openapi-snapshot suites remain
+      # excluded — they have known pre-existing failures tracked in TAP-2803.
+      # Widen this list as those are repaired; keep it explicit so a new
+      # red test can never silently ride in under a directory glob.
+      - name: Integration tests (mock-based, no live Postgres)
+        run: >-
+          uv run pytest -q --tb=short -m "not benchmark"
+          tests/integration/test_client_integration.py
+          tests/integration/test_diagnostics_integration.py
+          tests/integration/test_doc_validation_integration.py
+          tests/integration/test_extraction_integration.py
+          tests/integration/test_feedback_integration.py
+          tests/integration/test_flywheel_integration.py
+          tests/integration/test_graph_integration.py
+          tests/integration/test_http_adapter_kg.py
+          tests/integration/test_http_adapter.py
+          tests/integration/test_markdown_sync_integration.py
+          tests/integration/test_mcp_integration.py
+          tests/integration/test_metrics.py
+          tests/integration/test_observability_integration.py
+          tests/integration/test_openclaw_integration.py
+          tests/integration/test_openclaw_memory_replacement.py
+          tests/integration/test_otel_integration.py
+          tests/integration/test_profile_integration.py
+          tests/integration/test_recall_integration.py
+          tests/integration/test_reinforcement_integration.py
+          tests/integration/test_retrieval_integration.py
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)
