@@ -71,7 +71,12 @@ async def _post(path: str, payload: dict[str, Any]) -> httpx.Response:
         patch.object(_http_mod, "get_settings", return_value=settings),
     ):
         app = create_app(mcp_server=_mcp_dummy)
-        transport = httpx.ASGITransport(app=app)
+        # raise_app_exceptions=False so the test observes the client-facing
+        # response (the sanitized 500 from the app's catch-all handler) rather
+        # than the exception ServerErrorMiddleware re-raises for the ASGI
+        # server to log.  See TestResolveEntityEndpoint
+        # ::test_resolve_entity_no_psycopg_in_error_response (TAP-2727).
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.post(path, json=payload, headers=_HEADERS)
 
