@@ -32,7 +32,7 @@ from tapps_brain.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from datetime import datetime
     from pathlib import Path
 
@@ -328,6 +328,24 @@ class ConsolidationConfig:
             "threshold": self.threshold,
             "min_entries": self.min_entries,
         }
+
+
+@dataclass(frozen=True)
+class _SavePrep:
+    """Validated, pre-persist save state shared by :meth:`MemoryStore.save` and
+    :meth:`MemoryStore.save_many` (TAP-2800).
+
+    Carries the fields that phases 1-5 (scope/tier validation, safety, write
+    policy, dedup, conflict detection) transform, so the build step is identical
+    whether a single entry or a batch is being persisted.
+    """
+
+    value: str
+    agent_scope: str
+    tier: str
+    source_agent: str
+    mg_explicit: str | None | object
+    conflict_valid_at: str | None
 
 
 _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
@@ -1006,6 +1024,102 @@ class MemoryStore:
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
 
+        # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
+        # extracted these into the shared prepare step used by save_many too).
+        prep = self._prepare_save(
+            key=key,
+            value=value,
+            tier=tier,
+            source_agent=source_agent,
+            agent_scope=agent_scope,
+            memory_group=memory_group,
+            dedup=dedup,
+            conflict_check=conflict_check,
+        )
+        if not isinstance(prep, _SavePrep):
+            # Short-circuit: an error dict, or a MemoryEntry from a dedup hit /
+            # write-policy decision — return it unchanged.
+            return prep
+
+        # Phase 6 — build, persist, propagate under span + timer.
+        self._metrics.increment("store.save")
+        with (
+            start_span(
+                SPAN_REMEMBER,
+                {
+                    "memory.tier": prep.tier,
+                    "memory.scope": scope,
+                    "memory.agent_scope": prep.agent_scope,
+                    "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
+                },
+            ),
+            MetricsTimer(self._metrics, "store.save_ms"),
+        ):
+            entry, existing = self._build_and_assign_entry(
+                key=key,
+                value=prep.value,
+                tier=prep.tier,
+                source=source,
+                source_agent=prep.source_agent,
+                scope=scope,
+                tags=tags,
+                branch=branch,
+                confidence=confidence,
+                agent_scope=prep.agent_scope,
+                source_session_id=source_session_id,
+                source_channel=source_channel,
+                source_message_id=source_message_id,
+                triggered_by=triggered_by,
+                memory_group=memory_group,
+                mg_explicit=prep.mg_explicit,
+                temporal_sensitivity=temporal_sensitivity,
+                failed_approaches=failed_approaches,
+                conflict_valid_at=valid_at or prep.conflict_valid_at,
+                status=status,
+                stale_reason=stale_reason,
+                stale_date=stale_date,
+                superseded_by=superseded_by,
+            )
+
+            entry = self._embed_entry(key, prep.value, entry)
+            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
+            self._postprocess_saved_entry(
+                key,
+                entry,
+                existing,
+                value=prep.value,
+                agent_scope=prep.agent_scope,
+                tier=prep.tier,
+                auto_publish=auto_publish,
+                skip_consolidation=skip_consolidation,
+            )
+
+        # Phase 7 — recall-then-store correction detection (outside the span).
+        if session_id is not None:
+            self._emit_correction_feedback(session_id, entry.value)
+
+        return entry
+
+    def _prepare_save(
+        self,
+        *,
+        key: str,
+        value: str,
+        tier: str,
+        source_agent: str,
+        agent_scope: str,
+        memory_group: str | None | object,
+        dedup: bool,
+        conflict_check: bool,
+    ) -> _SavePrep | MemoryEntry | dict[str, Any]:
+        """Run the pre-persist save phases shared by :meth:`save` and
+        :meth:`save_many` (TAP-2800).
+
+        Returns a :class:`_SavePrep` when the caller should proceed to build +
+        persist, or a short-circuit result the caller returns as-is: an error
+        ``dict`` (scope / write-rules / safety failure) or a :class:`MemoryEntry`
+        (dedup hit, or a write-policy NOOP/DELETE decision).
+        """
         # TAP-2675: normalise non-str values (e.g. a JSON object posted to
         # /v1/remember) before the safety scan + text-column persistence, which
         # both assume a str.  See _ensure_str_value.
@@ -1057,85 +1171,217 @@ class MemoryStore:
         # Phase 5 — conflict detection (opt-in) marks superseded entries.
         conflict_valid_at = self._handle_conflicts(key, value, tier, conflict_check)
 
-        # Phase 6 — build, persist, propagate under span + timer.
-        self._metrics.increment("store.save")
+        return _SavePrep(
+            value=value,
+            agent_scope=agent_scope,
+            tier=tier,
+            source_agent=source_agent,
+            mg_explicit=mg_explicit,
+            conflict_valid_at=conflict_valid_at,
+        )
+
+    def _postprocess_saved_entry(
+        self,
+        key: str,
+        entry: MemoryEntry,
+        existing: MemoryEntry | None,
+        *,
+        value: str,
+        agent_scope: str,
+        tier: str,
+        auto_publish: bool,
+        skip_consolidation: bool,
+    ) -> None:
+        """Post-persist fan-out shared by :meth:`save` and :meth:`save_many`.
+
+        Audit log, entity-index refresh, Hive/group/expert propagation, relation
+        persistence, and the optional consolidation pass.  Must run *after* the
+        entry is durably persisted.  Callers invoke this inside the
+        ``SPAN_REMEMBER`` span so the child timers nest correctly.
+        """
+        self._emit_save_audit(key, entry, existing=existing)
+        self._refresh_entity_index(key, entry, existing_present=existing is not None)
+
+        # Hive + group + expert fan-out (best-effort).
+        if self._hive_store is not None:
+            with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
+                self._propagate_to_hive(entry)
+        propagate_group_save(
+            entry=entry,
+            agent_scope=agent_scope,
+            groups=self._groups,
+            hive_store=self._hive_store,
+        )
+        publish_to_experts(
+            entry=entry,
+            tier=tier,
+            agent_scope=agent_scope,
+            expert_domains=self._expert_domains,
+            hive_store=self._hive_store,
+            auto_publish=auto_publish,
+        )
+
+        self._persist_relations(key, value, created_at=entry.created_at)
+
+        if (
+            self._consolidation_config.enabled
+            and not skip_consolidation
+            and not self._consolidation_in_progress
+        ):
+            with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
+                self._maybe_consolidate(entry)
+
+    def save_many(
+        self,
+        items: list[dict[str, Any]],
+    ) -> list[MemoryEntry | dict[str, Any]]:
+        """Persist many entries with a single batched DB round-trip (TAP-2800).
+
+        Each *item* is a kwargs mapping mirroring :meth:`save` (``key`` and
+        ``value`` required; the rest optional).  The per-row pre-persist pipeline
+        (validation, dedup, conflict detection) runs in memory, then ONE batched
+        ``save_many`` persists every valid row, then the per-row post-persist
+        fan-out runs.  This replaces the old N-independent-INSERT loop where each
+        entry issued its own write-through round-trip.
+
+        Returns a list aligned 1:1 with *items*: each element is the saved
+        :class:`MemoryEntry`, or the short-circuit result :meth:`save` would have
+        returned for that row (an error ``dict``, a dedup-hit entry, …).  A row
+        that fails validation does **not** abort the batch.  Falls back to a
+        per-row :meth:`save` persist loop when the backend exposes no
+        ``save_many`` primitive.
+        """
+        from pydantic import ValidationError as _PydanticValidationError
+
+        results: list[MemoryEntry | dict[str, Any] | None] = [None] * len(items)
+        pending: list[tuple[int, MemoryEntry, MemoryEntry | None]] = []
+        backend_save_many = getattr(self._persistence, "save_many", None)
+
+        self._metrics.increment("store.save_many")
         with (
             start_span(
                 SPAN_REMEMBER,
                 {
-                    "memory.tier": tier,
-                    "memory.scope": scope,
-                    "memory.agent_scope": agent_scope,
+                    "memory.batch_size": len(items),
                     "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
                 },
             ),
-            MetricsTimer(self._metrics, "store.save_ms"),
+            MetricsTimer(self._metrics, "store.save_many_ms"),
         ):
-            entry, existing = self._build_and_assign_entry(
-                key=key,
-                value=value,
-                tier=tier,
-                source=source,
-                source_agent=source_agent,
-                scope=scope,
-                tags=tags,
-                branch=branch,
-                confidence=confidence,
-                agent_scope=agent_scope,
-                source_session_id=source_session_id,
-                source_channel=source_channel,
-                source_message_id=source_message_id,
-                triggered_by=triggered_by,
-                memory_group=memory_group,
-                mg_explicit=mg_explicit,
-                temporal_sensitivity=temporal_sensitivity,
-                failed_approaches=failed_approaches,
-                conflict_valid_at=valid_at or conflict_valid_at,
-                status=status,
-                stale_reason=stale_reason,
-                stale_date=stale_date,
-                superseded_by=superseded_by,
-            )
+            for idx, item in enumerate(items):
+                key = item.get("key", "")
+                prep = self._prepare_save(
+                    key=key,
+                    value=item.get("value", ""),
+                    tier=item.get("tier", "pattern"),
+                    source_agent=item.get("source_agent", "unknown"),
+                    agent_scope=item.get("agent_scope", "private"),
+                    memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+                    dedup=item.get("dedup", True),
+                    conflict_check=item.get("conflict_check", True),
+                )
+                if not isinstance(prep, _SavePrep):
+                    results[idx] = prep  # short-circuit (error dict / dedup entry)
+                    continue
+                try:
+                    entry, existing = self._build_and_assign_entry(
+                        key=key,
+                        value=prep.value,
+                        tier=prep.tier,
+                        source=item.get("source", "agent"),
+                        source_agent=prep.source_agent,
+                        scope=item.get("scope", "project"),
+                        tags=item.get("tags"),
+                        branch=item.get("branch"),
+                        confidence=item.get("confidence", -1.0),
+                        agent_scope=prep.agent_scope,
+                        source_session_id=item.get("source_session_id", ""),
+                        source_channel=item.get("source_channel", ""),
+                        source_message_id=item.get("source_message_id", ""),
+                        triggered_by=item.get("triggered_by", ""),
+                        memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+                        mg_explicit=prep.mg_explicit,
+                        temporal_sensitivity=item.get("temporal_sensitivity"),
+                        failed_approaches=item.get("failed_approaches"),
+                        conflict_valid_at=item.get("valid_at") or prep.conflict_valid_at,
+                        status=item.get("status"),
+                        stale_reason=item.get("stale_reason"),
+                        stale_date=item.get("stale_date"),
+                        superseded_by=item.get("superseded_by"),
+                    )
+                    entry = self._embed_entry(key, prep.value, entry)
+                except _PydanticValidationError as exc:
+                    # Mirror memory_save's TAP-747 handling per row so one bad
+                    # row surfaces a structured error without aborting the batch.
+                    errs = exc.errors()
+                    msg = errs[0].get("msg", str(exc)) if errs else str(exc)
+                    results[idx] = {"error": "bad_request", "message": msg}
+                    continue
+                pending.append((idx, entry, existing))
 
-            entry = self._embed_entry(key, value, entry)
-            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
-            self._emit_save_audit(key, entry, existing=existing)
-            self._refresh_entity_index(key, entry, existing_present=existing is not None)
+            # Single batched persist for all valid rows (TAP-2800).
+            if pending:
+                self._persist_many_or_rollback(
+                    [(entry, existing) for _, entry, existing in pending],
+                    backend_save_many=backend_save_many,
+                )
 
-            # Hive + group + expert fan-out (best-effort).
-            if self._hive_store is not None:
-                with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
-                    self._propagate_to_hive(entry)
-            propagate_group_save(
-                entry=entry,
-                agent_scope=agent_scope,
-                groups=self._groups,
-                hive_store=self._hive_store,
-            )
-            publish_to_experts(
-                entry=entry,
-                tier=tier,
-                agent_scope=agent_scope,
-                expert_domains=self._expert_domains,
-                hive_store=self._hive_store,
-                auto_publish=auto_publish,
-            )
+            # Per-row post-persist fan-out + result assembly.
+            for idx, entry, existing in pending:
+                item = items[idx]
+                tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                self._postprocess_saved_entry(
+                    entry.key,
+                    entry,
+                    existing,
+                    value=entry.value,
+                    agent_scope=entry.agent_scope,
+                    tier=tier_str,
+                    auto_publish=item.get("auto_publish", True),
+                    skip_consolidation=item.get("skip_consolidation", False),
+                )
+                results[idx] = entry
+                sid = item.get("session_id")
+                if sid is not None:
+                    self._emit_correction_feedback(sid, entry.value)
 
-            self._persist_relations(key, value, created_at=entry.created_at)
+        return cast("list[MemoryEntry | dict[str, Any]]", results)
 
-            if (
-                self._consolidation_config.enabled
-                and not skip_consolidation
-                and not self._consolidation_in_progress
-            ):
-                with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
-                    self._maybe_consolidate(entry)
+    def _persist_many_or_rollback(
+        self,
+        entries: list[tuple[MemoryEntry, MemoryEntry | None]],
+        *,
+        backend_save_many: Callable[[list[MemoryEntry]], None] | None,
+    ) -> None:
+        """Persist a batch of already-built entries in one round-trip, rolling the
+        in-memory cache back for the whole batch on failure (TAP-2800).
 
-        # Phase 7 — recall-then-store correction detection (outside the span).
-        if session_id is not None:
-            self._emit_correction_feedback(session_id, entry.value)
-
-        return entry
+        *entries* is a list of ``(new_entry, existing_or_None)`` — *existing* is
+        used to restore the prior cache value on rollback.  When the backend has
+        no ``save_many`` primitive, falls back to a per-entry ``save`` loop so the
+        write still completes (just without the batching win).
+        """
+        to_save = [entry for entry, _ in entries]
+        try:
+            with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
+                if backend_save_many is not None:
+                    backend_save_many(to_save)
+                else:
+                    for entry in to_save:
+                        self._persistence.save(entry)
+        except Exception:
+            with self._serialized():
+                for entry, existing in entries:
+                    if existing is not None:
+                        self._entries[entry.key] = existing
+                    else:
+                        self._entries.pop(entry.key, None)
+                # A row may have used dedup → rebuild the bloom filter from the
+                # restored cache; the filter has no item-remove (TAP-644).
+                self._bloom = BloomFilter()
+                for _e in self._entries.values():
+                    self._bloom.add(normalize_for_dedup(_e.value))
+            raise
 
     # ------------------------------------------------------------------
     # save() helpers — see TAP-602 decomposition for design rationale.

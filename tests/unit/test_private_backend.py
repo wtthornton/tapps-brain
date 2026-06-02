@@ -231,6 +231,51 @@ class TestSave:
         assert json.loads(tags_json) == ["foo", "bar"]
 
 
+class TestSaveMany:
+    """TAP-2800 — batched upsert primitive."""
+
+    def test_save_many_issues_single_executemany_not_n_executes(self) -> None:
+        """AC-4: a batch of N entries issues one round-trip (one executemany),
+        not N independent ``execute`` inserts."""
+        from tapps_brain.models import MemoryEntry
+
+        backend, cur = _make_backend()
+        entries = [MemoryEntry(key=f"k{i}", value=f"v{i}") for i in range(5)]
+        backend.save_many(entries)
+
+        # One batched call carrying all 5 param tuples; never per-row execute().
+        assert cur.executemany.call_count == 1
+        assert cur.execute.call_count == 0
+        sql, params_seq = cur.executemany.call_args[0]
+        assert "INSERT INTO private_memories" in sql
+        assert len(params_seq) == 5
+
+    def test_save_many_reuses_save_upsert_sql(self) -> None:
+        """The batch path reuses SAVE_UPSERT_SQL verbatim — no column drift."""
+        from tapps_brain import _postgres_private_sql as _sql
+        from tapps_brain.models import MemoryEntry
+
+        backend, cur = _make_backend()
+        backend.save_many([MemoryEntry(key="k", value="v")])
+        sql = cur.executemany.call_args[0][0]
+        assert sql == _sql.SAVE_UPSERT_SQL
+
+    def test_save_many_empty_is_noop(self) -> None:
+        backend, cur = _make_backend()
+        backend.save_many([])
+        assert cur.executemany.call_count == 0
+        assert cur.execute.call_count == 0
+
+    def test_save_many_passes_project_and_agent_id(self) -> None:
+        from tapps_brain.models import MemoryEntry
+
+        backend, cur = _make_backend()
+        backend.save_many([MemoryEntry(key="k", value="v")])
+        first_params = cur.executemany.call_args[0][1][0]
+        assert first_params[0] == "proj-abc"  # project_id
+        assert first_params[1] == "agent-1"  # agent_id
+
+
 class TestLoadAll:
     def test_load_all_returns_empty_list_when_no_rows(self) -> None:
         backend, _ = _make_backend()

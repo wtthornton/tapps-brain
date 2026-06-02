@@ -360,6 +360,15 @@ class PrivateBackend(Protocol):
 
     def save(self, entry: MemoryEntry) -> None: ...
 
+    def save_many(self, entries: list[MemoryEntry]) -> None:
+        """Batch-upsert multiple entries in one round-trip (TAP-2800).
+
+        Optional: callers detect support via ``getattr`` and fall back to a
+        per-entry :meth:`save` loop when a backend does not implement it, so
+        lightweight test fakes need not provide it.
+        """
+        ...
+
     def load_all(self, *, limit: int | None = None) -> list[MemoryEntry]: ...
 
     def delete(self, key: str) -> bool: ...

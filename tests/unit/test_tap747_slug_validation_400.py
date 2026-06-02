@@ -192,18 +192,29 @@ class TestRememberBatchRoute400OnBadKey:
 
         store = _make_store()
 
-        def _side_effect(**kwargs: Any) -> Any:
-            key = kwargs.get("key", "")
-            if key.startswith("_"):
-                MemoryEntry(key=key, value="x")  # triggers ValidationError
-            return MagicMock(
-                key=key,
-                tier=MagicMock(__str__=lambda s: "pattern"),
-                confidence=0.8,
-                memory_group=None,
-            )
+        # TAP-2800: the batch route now persists via store.save_many, which runs
+        # the per-row pipeline and catches the slug-key ValidationError per row,
+        # returning a bad_request dict for that row without aborting the batch.
+        def _save_many_side_effect(items: list[dict[str, Any]]) -> list[Any]:
+            out: list[Any] = []
+            for item in items:
+                key = item.get("key", "")
+                try:
+                    if key.startswith("_"):
+                        MemoryEntry(key=key, value="x")  # triggers ValidationError
+                    out.append(
+                        MagicMock(
+                            key=key,
+                            tier=MagicMock(__str__=lambda s: "pattern"),
+                            confidence=0.8,
+                            memory_group=None,
+                        )
+                    )
+                except Exception as exc:
+                    out.append({"error": "bad_request", "message": str(exc)})
+            return out
 
-        store.save.side_effect = _side_effect
+        store.save_many.side_effect = _save_many_side_effect
 
         with _patched_client(store) as client:
             resp = client.post(
