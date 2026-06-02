@@ -1151,6 +1151,59 @@
         "summary": " V1 Kg Neighbors"
       }
     },
+    "/v1/kg/resolve_entity": {
+      "post": {
+        "description": "Resolve or create a KG entity by (entity_type, canonical_name).\n\nREST counterpart of the ``brain_resolve_entity`` MCP tool.  Turns a\nhuman-readable ``(entity_type, canonical_name)`` pair into the UUID\nrequired by ``/v1/experience`` edge specs.  Two calls with the same\ninputs always return the same UUID \u2014 safe to call concurrently.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier (informational).\n\nRequest body (JSON):\n  ``{ \"entity_type\": str, \"canonical_name\": str }``\n\nResponse: ``{ \"entity_id\": str, \"entity_type\": str,\n\"canonical_name\": str, \"created\": bool, \"confidence\": float,\n\"reason\": str }``\n\nIntroduced in TAP-2725.",
+        "operationId": "_v1_kg_resolve_entity_v1_kg_resolve_entity_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Resolve Entity"
+      }
+    },
     "/v1/learn_failure": {
       "post": {
         "description": "Record a failed task outcome.\n\nREST counterpart of the ``brain_learn_failure`` MCP tool.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"description\": str, \"task_id\"?: str, \"error\"?: str }``\n\nResponse: ``{ \"learned\": true, \"key\": str }``",
