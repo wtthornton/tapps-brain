@@ -57,7 +57,9 @@ class TestRunHNSWMaintenanceDryRun:
             ("idx_priv_embedding_hnsw", "private_memories"),
             ("idx_hive_embedding_hnsw", "hive_memories"),
         ]
-        result = run_hnsw_maintenance("postgresql://localhost/test", index_table_pairs=pairs, dry_run=True)
+        result = run_hnsw_maintenance(
+            "postgresql://localhost/test", index_table_pairs=pairs, dry_run=True
+        )
 
         assert isinstance(result, HNSWMaintenanceResult)
         assert result.dry_run is True
@@ -73,7 +75,9 @@ class TestRunHNSWMaintenanceDryRun:
             ("idx_one_hnsw", "shared_table"),
             ("idx_two_hnsw", "shared_table"),
         ]
-        result = run_hnsw_maintenance("postgresql://localhost/test", index_table_pairs=pairs, dry_run=True)
+        result = run_hnsw_maintenance(
+            "postgresql://localhost/test", index_table_pairs=pairs, dry_run=True
+        )
 
         assert result.vacuumed_tables == ["shared_table"]
 
@@ -221,9 +225,7 @@ class TestRunHNSWMaintenanceLiveSQL:
 
         result = run_hnsw_maintenance("postgresql://localhost/test", index_table_pairs=pairs)
 
-        vacuum_calls = [
-            c for c in mock_conn.execute.call_args_list if "VACUUM" in str(c.args[0])
-        ]
+        vacuum_calls = [c for c in mock_conn.execute.call_args_list if "VACUUM" in str(c.args[0])]
         assert len(vacuum_calls) == 1
         assert result.vacuumed_tables == ["shared_table"]
 

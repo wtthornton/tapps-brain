@@ -290,9 +290,12 @@ class TestResolveEntityEndpoint:
     async def test_resolve_entity_no_psycopg_in_error_response(self) -> None:
         """Service errors must not leak Postgres implementation details."""
         p_cm, _, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm, patch(
-            "tapps_brain.services.kg_service.resolve_entity",
-            side_effect=RuntimeError("connection lost"),
+        with (
+            p_cm,
+            patch(
+                "tapps_brain.services.kg_service.resolve_entity",
+                side_effect=RuntimeError("connection lost"),
+            ),
         ):
             resp = await _post(
                 "/v1/kg/resolve_entity",

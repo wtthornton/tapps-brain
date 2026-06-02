@@ -403,8 +403,7 @@ def run_hnsw_maintenance(
         import psycopg  # lazy import — Postgres deps only required with a PG DSN
     except ImportError as exc:
         raise ImportError(
-            "psycopg is required for HNSW maintenance.\n"
-            "Install with: pip install 'psycopg[binary]'"
+            "psycopg is required for HNSW maintenance.\nInstall with: pip install 'psycopg[binary]'"
         ) from exc
 
     reindexed: list[str] = []
@@ -414,13 +413,12 @@ def run_hnsw_maintenance(
     try:
         # autocommit=True is required — REINDEX CONCURRENTLY and VACUUM
         # must not run inside an explicit transaction block.
-        with psycopg.connect(dsn, autocommit=True) as conn:  # type: ignore[attr-defined]
+        with psycopg.connect(dsn, autocommit=True) as conn:
             # Discover which HNSW indexes actually exist in pg_class.
             index_names = [idx for idx, _ in pairs]
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT relname FROM pg_class"
-                    " WHERE relkind = 'i' AND relname = ANY(%s)",
+                    "SELECT relname FROM pg_class WHERE relkind = 'i' AND relname = ANY(%s)",
                     (index_names,),
                 )
                 found: set[str] = {row[0] for row in cur.fetchall()}
