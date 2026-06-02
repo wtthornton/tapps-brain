@@ -3047,7 +3047,9 @@ def create_app(
             session_id=body.get("session_id") or None,
             workflow_run_id=body.get("workflow_run_id") or None,
         )
-        return JSONResponse(status_code=201, content=result)
+        # TAP-2727: data-plane writes return 200 (matches /v1/remember,
+        # /v1/learn_*, /v1/reinforce and the documented OpenAPI contract).
+        return JSONResponse(status_code=200, content=result)
 
     @app.post("/v1/experience:batch", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_experience_batch(request: Request) -> JSONResponse:
@@ -3143,7 +3145,9 @@ def create_app(
         )
         if isinstance(result, dict) and result.get("error"):
             raise HTTPException(status_code=400, detail=result)
-        return JSONResponse(status_code=201, content=result)
+        # TAP-2727: data-plane writes return 200 (matches the single-event
+        # /v1/experience endpoint and the documented OpenAPI contract).
+        return JSONResponse(status_code=200, content=result)
 
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
@@ -3791,6 +3795,23 @@ def create_app(
         return JSONResponse(
             status_code=exc.http_status,
             content=exc.http_body(),
+        )
+
+    @app.exception_handler(Exception)
+    async def _unhandled_exc_handler(_request: Request, exc: Exception) -> JSONResponse:
+        """Sanitized 500 for any unhandled service-layer error (TAP-2727).
+
+        Without this, an unhandled error (e.g. a dropped psycopg connection
+        surfacing as a raw exception) would leak Postgres implementation
+        details into the response body.  Return a generic structured envelope
+        instead and log the traceback server-side.  More specific handlers
+        registered above (HTTPException, TaxonomyError, …) still take
+        precedence via exception-type MRO.
+        """
+        logger.exception("http_adapter.unhandled_exception")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "detail": "Internal server error."},
         )
 
     # /mcp mount is installed by the lifespan handler above once the
