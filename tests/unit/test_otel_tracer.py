@@ -343,7 +343,7 @@ class TestStoreSpans:
 
         with (
             patch(
-                "tapps_brain.store.start_span",
+                "tapps_brain._store_query.start_span",
                 wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
             ) as mock_start_span,
             patch("tapps_brain.otel_tracer.get_tracer", return_value=_make_mock_tracer()[0]),
@@ -432,7 +432,7 @@ class TestGenAiDataSourceIdSpanAttribute:
         capturing, captured = self._capture_set_attribute(SPAN_SEARCH)
         store = self._make_store(tmp_path)
 
-        with patch("tapps_brain.store.start_span", capturing):
+        with patch("tapps_brain._store_query.start_span", capturing):
             store.search("test query")
 
         assert captured.get("gen_ai.data_source.id") == GEN_AI_DATA_SOURCE_ID == "tapps-brain"
@@ -1064,7 +1064,7 @@ class TestNonRetrievalSpanStoreIntegration:
         store.save("to-delete", "value", tier="context")
 
         with patch(
-            "tapps_brain.store.start_span",
+            "tapps_brain._store_query.start_span",
             wraps=__import__("tapps_brain.otel_tracer", fromlist=["start_span"]).start_span,
         ) as mock_start_span:
             store.delete("to-delete")
@@ -1089,7 +1089,7 @@ class TestNonRetrievalSpanStoreIntegration:
             mock_span.__exit__ = MagicMock(return_value=False)
             yield mock_span
 
-        with patch("tapps_brain.store.start_span", _capturing_start_span):
+        with patch("tapps_brain._store_query.start_span", _capturing_start_span):
             store.delete("key-for-delete")
 
         assert captured_attrs.get("gen_ai.operation.name") == GEN_AI_OPERATION_EXECUTE_TOOL
