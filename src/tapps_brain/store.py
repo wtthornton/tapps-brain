@@ -32,6 +32,7 @@ from tapps_brain.models import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from datetime import datetime
     from pathlib import Path
 
     from tapps_brain._protocols import HiveBackend, PrivateBackend
@@ -1299,8 +1300,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         per-row :meth:`save` persist loop when the backend exposes no
         ``save_many`` primitive.
         """
-        from pydantic import ValidationError as _PydanticValidationError
-
         results: list[MemoryEntry | dict[str, Any] | None] = [None] * len(items)
         pending: list[tuple[int, MemoryEntry, MemoryEntry | None]] = []
         backend_save_many = getattr(self._persistence, "save_many", None)
@@ -1317,55 +1316,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             MetricsTimer(self._metrics, "store.save_many_ms"),
         ):
             for idx, item in enumerate(items):
-                key = item.get("key", "")
-                prep = self._prepare_save(
-                    key=key,
-                    value=item.get("value", ""),
-                    tier=item.get("tier", "pattern"),
-                    source_agent=item.get("source_agent", "unknown"),
-                    agent_scope=item.get("agent_scope", "private"),
-                    memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
-                    dedup=item.get("dedup", True),
-                    conflict_check=item.get("conflict_check", True),
-                )
-                if not isinstance(prep, _SavePrep):
-                    results[idx] = prep  # short-circuit (error dict / dedup entry)
-                    continue
-                try:
-                    entry, existing = self._build_and_assign_entry(
-                        key=key,
-                        value=prep.value,
-                        tier=prep.tier,
-                        source=item.get("source", "agent"),
-                        source_agent=prep.source_agent,
-                        scope=item.get("scope", "project"),
-                        tags=item.get("tags"),
-                        branch=item.get("branch"),
-                        confidence=item.get("confidence", -1.0),
-                        agent_scope=prep.agent_scope,
-                        source_session_id=item.get("source_session_id", ""),
-                        source_channel=item.get("source_channel", ""),
-                        source_message_id=item.get("source_message_id", ""),
-                        triggered_by=item.get("triggered_by", ""),
-                        memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
-                        mg_explicit=prep.mg_explicit,
-                        temporal_sensitivity=item.get("temporal_sensitivity"),
-                        failed_approaches=item.get("failed_approaches"),
-                        conflict_valid_at=item.get("valid_at") or prep.conflict_valid_at,
-                        status=item.get("status"),
-                        stale_reason=item.get("stale_reason"),
-                        stale_date=item.get("stale_date"),
-                        superseded_by=item.get("superseded_by"),
-                    )
-                    entry = self._embed_entry(key, prep.value, entry)
-                except _PydanticValidationError as exc:
-                    # Mirror memory_save's TAP-747 handling per row so one bad
-                    # row surfaces a structured error without aborting the batch.
-                    errs = exc.errors()
-                    msg = errs[0].get("msg", str(exc)) if errs else str(exc)
-                    results[idx] = {"error": "bad_request", "message": msg}
-                    continue
-                pending.append((idx, entry, existing))
+                built = self._prepare_batch_entry(item)
+                if isinstance(built, tuple):
+                    pending.append((idx, built[0], built[1]))
+                else:
+                    results[idx] = built  # short-circuit (error dict / dedup entry)
 
             # Single batched persist for all valid rows (TAP-2800).
             if pending:
@@ -1394,6 +1349,66 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     self._emit_correction_feedback(sid, entry.value)
 
         return cast("list[MemoryEntry | dict[str, Any]]", results)
+
+    def _prepare_batch_entry(
+        self, item: dict[str, Any]
+    ) -> tuple[MemoryEntry, MemoryEntry | None] | MemoryEntry | dict[str, Any]:
+        """Run the pre-persist pipeline for one ``save_many`` row (TAP-2800).
+
+        Returns ``(entry, existing)`` when the row should be persisted, or a
+        short-circuit result (an error ``dict`` or a dedup-hit / write-policy
+        result) that the caller stores verbatim — mirroring :meth:`save`'s
+        per-row semantics so one bad row never aborts the batch.
+        """
+        from pydantic import ValidationError as _PydanticValidationError
+
+        key = item.get("key", "")
+        prep = self._prepare_save(
+            key=key,
+            value=item.get("value", ""),
+            tier=item.get("tier", "pattern"),
+            source_agent=item.get("source_agent", "unknown"),
+            agent_scope=item.get("agent_scope", "private"),
+            memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+            dedup=item.get("dedup", True),
+            conflict_check=item.get("conflict_check", True),
+        )
+        if not isinstance(prep, _SavePrep):
+            return prep
+        try:
+            entry, existing = self._build_and_assign_entry(
+                key=key,
+                value=prep.value,
+                tier=prep.tier,
+                source=item.get("source", "agent"),
+                source_agent=prep.source_agent,
+                scope=item.get("scope", "project"),
+                tags=item.get("tags"),
+                branch=item.get("branch"),
+                confidence=item.get("confidence", -1.0),
+                agent_scope=prep.agent_scope,
+                source_session_id=item.get("source_session_id", ""),
+                source_channel=item.get("source_channel", ""),
+                source_message_id=item.get("source_message_id", ""),
+                triggered_by=item.get("triggered_by", ""),
+                memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+                mg_explicit=prep.mg_explicit,
+                temporal_sensitivity=item.get("temporal_sensitivity"),
+                failed_approaches=item.get("failed_approaches"),
+                conflict_valid_at=item.get("valid_at") or prep.conflict_valid_at,
+                status=item.get("status"),
+                stale_reason=item.get("stale_reason"),
+                stale_date=item.get("stale_date"),
+                superseded_by=item.get("superseded_by"),
+            )
+            entry = self._embed_entry(key, prep.value, entry)
+        except _PydanticValidationError as exc:
+            # Mirror memory_save's TAP-747 handling per row so one bad row
+            # surfaces a structured error without aborting the batch.
+            errs = exc.errors()
+            msg = errs[0].get("msg", str(exc)) if errs else str(exc)
+            return {"error": "bad_request", "message": msg}
+        return entry, existing
 
     def _persist_many_or_rollback(
         self,
@@ -2136,25 +2151,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     raise KeyError(key)
 
                 updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
-                # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
-                # using pre-reinforce timestamps for retrievability — same flag as record_access.
-                if self._profile is not None:
-                    tier_name = (
-                        entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                    )
-                    layer = self._profile.get_layer(tier_name)
-                    if layer is not None and layer.adaptive_stability:
-                        try:
-                            from tapps_brain.decay import update_stability
-
-                            new_stab, new_diff = update_stability(entry, decay_cfg, True)
-                            updates["stability"] = new_stab
-                            updates["difficulty"] = new_diff
-                        except Exception:
-                            logger.warning(
-                                "reinforce_stability_update_failed", key=key, exc_info=True
-                            )
-
+                updates.update(self._reinforce_stability_updates(entry, decay_cfg))
                 updated = entry.model_copy(update=updates)
                 self._entries[key] = updated
 
@@ -2167,41 +2164,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     self._entries[key] = entry
                 raise
 
-            # EPIC-010: Check promotion after reinforcement
-            final: MemoryEntry = updated
-            if self._profile is not None:
-                try:
-                    from tapps_brain.promotion import PromotionEngine
-
-                    engine = PromotionEngine(decay_cfg)
-                    target_tier = engine.check_promotion(updated, self._profile)
-                    if target_tier is not None:
-                        old_tier = str(updated.tier)
-                        promoted = updated.model_copy(
-                            update={"tier": target_tier, "updated_at": _utc_now_iso()}
-                        )
-                        with self._serialized():
-                            self._entries[key] = promoted
-                        self._persistence.save(promoted)
-                        self._persistence.append_audit(
-                            action="promote",
-                            key=key,
-                            extra={
-                                "from_tier": old_tier,
-                                "to_tier": target_tier,
-                                "access_count": updated.access_count,
-                                "reinforce_count": updated.reinforce_count,
-                            },
-                        )
-                        logger.info(
-                            "memory_promoted",
-                            key=key,
-                            from_tier=old_tier,
-                            to_tier=target_tier,
-                        )
-                        final = promoted
-                except Exception:
-                    logger.warning("promotion_check_failed", key=key, exc_info=True)
+            final = self._maybe_promote_after_reinforce(key, updated, decay_cfg)
 
             # EPIC-029 story 029.3: implicit positive feedback
             if session_id is not None:
@@ -2212,6 +2175,76 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
 
             return final
+
+    def _reinforce_stability_updates(
+        self,
+        entry: MemoryEntry,
+        decay_cfg: Any,  # noqa: ANN401 — DecayConfig
+    ) -> dict[str, Any]:
+        """FSRS-lite stability/difficulty updates for an explicit reinforce (EPIC-042.8).
+
+        Mirrors ``record_access``'s ``was_useful=True`` path using pre-reinforce
+        timestamps for retrievability.  Returns ``{}`` when the active profile's
+        layer does not enable adaptive stability, or on any failure (best-effort).
+        """
+        if self._profile is None:
+            return {}
+        tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        layer = self._profile.get_layer(tier_name)
+        if layer is None or not layer.adaptive_stability:
+            return {}
+        try:
+            from tapps_brain.decay import update_stability
+
+            new_stab, new_diff = update_stability(entry, decay_cfg, True)
+        except Exception:
+            logger.warning("reinforce_stability_update_failed", key=entry.key, exc_info=True)
+            return {}
+        return {"stability": new_stab, "difficulty": new_diff}
+
+    def _maybe_promote_after_reinforce(
+        self,
+        key: str,
+        updated: MemoryEntry,
+        decay_cfg: Any,  # noqa: ANN401 — DecayConfig
+    ) -> MemoryEntry:
+        """Promote *updated* to a higher tier if the profile's rules are met (EPIC-010).
+
+        Persists + audits the promotion and returns the promoted entry; returns
+        *updated* unchanged when no profile is set, no promotion is warranted, or
+        the check fails (best-effort — promotion never breaks a reinforce).
+        """
+        if self._profile is None:
+            return updated
+        try:
+            from tapps_brain.promotion import PromotionEngine
+
+            engine = PromotionEngine(decay_cfg)
+            target_tier = engine.check_promotion(updated, self._profile)
+            if target_tier is None:
+                return updated
+            old_tier = str(updated.tier)
+            promoted = updated.model_copy(
+                update={"tier": target_tier, "updated_at": _utc_now_iso()}
+            )
+            with self._serialized():
+                self._entries[key] = promoted
+            self._persistence.save(promoted)
+            self._persistence.append_audit(
+                action="promote",
+                key=key,
+                extra={
+                    "from_tier": old_tier,
+                    "to_tier": target_tier,
+                    "access_count": updated.access_count,
+                    "reinforce_count": updated.reinforce_count,
+                },
+            )
+            logger.info("memory_promoted", key=key, from_tier=old_tier, to_tier=target_tier)
+        except Exception:
+            logger.warning("promotion_check_failed", key=key, exc_info=True)
+            return updated
+        return promoted
 
     def record_access(self, key: str, was_useful: bool) -> None:
         """Record whether a retrieved memory was useful. Updates Bayesian confidence.
@@ -2799,25 +2832,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         with self._serialized():
             entries = list(self._entries.values())
 
-        tier_counts: dict[str, int] = {}
-        for entry in entries:
-            tier_val = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
-            tier_counts[tier_val] = tier_counts.get(tier_val, 0) + 1
-
-        schema_ver = self._persistence.get_schema_version()
-
-        oldest_age = 0.0
         now = datetime.now(tz=UTC)
-        for entry in entries:
-            try:
-                raw = entry.created_at.replace("Z", "+00:00")
-                created = datetime.fromisoformat(raw)
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=UTC)
-                days = (now - created).total_seconds() / 86400.0
-                oldest_age = max(oldest_age, days)
-            except (ValueError, TypeError, AttributeError):
-                continue
+        tier_counts = self._health_tier_distribution(entries)
+        oldest_age = self._health_oldest_age_days(entries, now)
+        schema_ver = self._persistence.get_schema_version()
 
         gc = MemoryGarbageCollector(
             config=self._get_decay_config(),
@@ -2851,22 +2869,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         except importlib.metadata.PackageNotFoundError:
             pkg_ver = ""
 
-        prof = getattr(self, "_profile", None)
-        prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
-        seed_ver: str | None = None
-        if prof is not None:
-            _seed = getattr(prof, "seeding", None)
-            if _seed is not None:
-                seed_ver = getattr(_seed, "seed_version", None)
-
-        from tapps_brain.safety import resolve_safety_ruleset_version
-
-        _rs_pin: str | None = None
-        if prof is not None:
-            _sfc = getattr(prof, "safety", None)
-            if _sfc is not None:
-                _rs_pin = getattr(_sfc, "ruleset_version", None)
-        eff_ruleset = resolve_safety_ruleset_version(_rs_pin)
+        prof_name, seed_ver, eff_ruleset = self._resolve_health_profile_metadata()
 
         _snap = self._metrics.snapshot()
         save_phases = compact_save_phase_summary(_snap)
@@ -2910,6 +2913,51 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             bloom_saturation=self._bloom.approximate_false_positive_rate(),
             embeddings_enabled=self._embedding_provider is not None,
         )
+
+    @staticmethod
+    def _health_tier_distribution(entries: list[MemoryEntry]) -> dict[str, int]:
+        """Count entries per tier for the health report."""
+        tier_counts: dict[str, int] = {}
+        for entry in entries:
+            tier_val = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+            tier_counts[tier_val] = tier_counts.get(tier_val, 0) + 1
+        return tier_counts
+
+    @staticmethod
+    def _health_oldest_age_days(entries: list[MemoryEntry], now: datetime) -> float:
+        """Age (in days) of the oldest entry, robust to mixed tz representations."""
+        from datetime import UTC
+        from datetime import datetime as _datetime
+
+        oldest_age = 0.0
+        for entry in entries:
+            try:
+                raw = entry.created_at.replace("Z", "+00:00")
+                created = _datetime.fromisoformat(raw)
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                days = (now - created).total_seconds() / 86400.0
+                oldest_age = max(oldest_age, days)
+            except (ValueError, TypeError, AttributeError):
+                continue
+        return oldest_age
+
+    def _resolve_health_profile_metadata(self) -> tuple[str | None, str | None, str]:
+        """Resolve (profile_name, seed_version, effective_safety_ruleset) for health."""
+        from tapps_brain.safety import resolve_safety_ruleset_version
+
+        prof = getattr(self, "_profile", None)
+        prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
+        seed_ver: str | None = None
+        _rs_pin: str | None = None
+        if prof is not None:
+            _seed = getattr(prof, "seeding", None)
+            if _seed is not None:
+                seed_ver = getattr(_seed, "seed_version", None)
+            _sfc = getattr(prof, "safety", None)
+            if _sfc is not None:
+                _rs_pin = getattr(_sfc, "ruleset_version", None)
+        return prof_name, seed_ver, resolve_safety_ruleset_version(_rs_pin)
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
@@ -3166,13 +3214,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         run_remediation: bool = True,
     ) -> Any:  # noqa: ANN401
         """Run quality diagnostics, update circuit breaker, optional history (EPIC-030)."""
-        from tapps_brain.diagnostics import (
-            CircuitState,
-            DiagnosticsConfig,
-            hive_recall_multiplier,
-            maybe_remediate,
-            run_diagnostics,
-        )
+        from tapps_brain.diagnostics import DiagnosticsConfig, run_diagnostics
 
         self._ensure_diagnostics_history()
         hist_rows: list[dict[str, Any]] = []
@@ -3182,6 +3224,32 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if self._profile is not None and getattr(self._profile, "diagnostics", None) is not None:
             dcfg = DiagnosticsConfig.model_validate(self._profile.diagnostics.model_dump())
         report = run_diagnostics(self, config=dcfg, history_for_correlation=hist_rows)
+
+        st, alerts = self._apply_diagnostics_circuit(report, run_remediation=run_remediation)
+        report = report.model_copy(
+            update={"anomalies": alerts, "circuit_state": st.value},
+        )
+        if record_history and self._diagnostics_history_store is not None:
+            self._diagnostics_history_store.record(report, circuit_state=st.value)
+            self._diagnostics_history_store.prune_older_than(dcfg.retention_days)
+        self._audit_diagnostics(report.composite_score, st.value)
+        self._metrics.increment("store.diagnostics")
+        return report
+
+    def _apply_diagnostics_circuit(
+        self,
+        report: Any,  # noqa: ANN401 — diagnostics report model
+        *,
+        run_remediation: bool,
+    ) -> tuple[Any, list[Any]]:
+        """Advance the diagnostics circuit breaker for *report* (EPIC-030).
+
+        Records a half-open probe, transitions on the composite score, runs
+        remediation + half-open cooldown when OPEN, refreshes the Hive recall
+        multiplier, and returns ``(circuit_state, anomaly_alerts)``.
+        """
+        from tapps_brain.diagnostics import CircuitState, hive_recall_multiplier, maybe_remediate
+
         if self._circuit_breaker.state == CircuitState.HALF_OPEN:
             self._circuit_breaker.record_probe(report.composite_score)
         st = self._circuit_breaker.transition(report.composite_score)
@@ -3193,25 +3261,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             st = self._circuit_breaker.state
         alerts = self._anomaly_detector.detect(report)
         self._hive_recall_weight_multiplier = hive_recall_multiplier(st)
-        report = report.model_copy(
-            update={"anomalies": alerts, "circuit_state": st.value},
-        )
-        if record_history and self._diagnostics_history_store is not None:
-            self._diagnostics_history_store.record(report, circuit_state=st.value)
-            self._diagnostics_history_store.prune_older_than(dcfg.retention_days)
+        return st, alerts
+
+    def _audit_diagnostics(self, composite_score: float, circuit_state: str) -> None:
+        """Best-effort audit-log append for a diagnostics run (never raises)."""
         try:
             self._persistence.append_audit(
                 "diagnostics_record",
                 "",
-                {
-                    "composite_score": report.composite_score,
-                    "circuit_state": st.value,
-                },
+                {"composite_score": composite_score, "circuit_state": circuit_state},
             )
         except Exception:
             logger.warning("diagnostics_audit_failed", exc_info=True)
-        self._metrics.increment("store.diagnostics")
-        return report
 
     def diagnostics_history(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Return recent diagnostics snapshots from SQLite (EPIC-030).
