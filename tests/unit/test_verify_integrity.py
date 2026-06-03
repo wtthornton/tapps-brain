@@ -153,3 +153,51 @@ class TestVerifyIntegrity:
         assert detail["key"] == "hash-detail"
         assert detail["stored_hash"] == original_hash
         assert detail["expected_hash"] != original_hash
+
+
+class TestRehashIntegrityV1:
+    """TAP-2857: the v1->v2 rehash shim must upgrade *and persist*."""
+
+    @staticmethod
+    def _make_legacy_v1(store: MemoryStore, key: str, value: str) -> None:
+        """Rewrite an existing entry as a valid legacy ``integrity_hash_v == 1`` row."""
+        from tapps_brain.integrity import compute_integrity_hash_v1
+
+        entry = store._entries[key]
+        tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+        v1_hash = compute_integrity_hash_v1(entry.key, value, tier_str, source_str)
+        legacy = entry.model_copy(update={"integrity_hash": v1_hash, "integrity_hash_v": 1})
+        store._entries[key] = legacy
+        store._persistence.save(legacy)
+
+    def test_rehash_v1_upgrades_in_memory_and_persists_to_backend(self, store: MemoryStore) -> None:
+        """A valid v1 row is upgraded to v2 in memory and the upgrade is written
+        through to the backend (the TAP-2857 bug previously crashed here and
+        never persisted)."""
+        from unittest.mock import patch
+
+        from tapps_brain.integrity import INTEGRITY_HASH_VERSION
+
+        store.save(key="legacy", value="legacy value", tier="pattern", source="agent")
+        self._make_legacy_v1(store, "legacy", "legacy value")
+        backend = store._persistence
+
+        with patch.object(backend, "save", wraps=backend.save) as spy:
+            result = store.rehash_integrity_v1()
+
+        assert result["upgraded"] == 1
+        assert result["tampered"] == 0
+        # In-memory entry is now v2.
+        assert store._entries["legacy"].integrity_hash_v == INTEGRITY_HASH_VERSION
+        # The upgrade was persisted to the backend with the v2 hash version.
+        assert spy.call_count >= 1
+        persisted = spy.call_args_list[-1].args[0]
+        assert persisted.integrity_hash_v == INTEGRITY_HASH_VERSION
+
+    def test_rehash_v1_skips_already_v2(self, store: MemoryStore) -> None:
+        """An already-v2 entry is counted as ``already_v2`` and not re-persisted."""
+        store.save(key="modern", value="modern value", tier="pattern", source="agent")
+        result = store.rehash_integrity_v1()
+        assert result["upgraded"] == 0
+        assert result["already_v2"] == 1
