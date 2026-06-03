@@ -8,7 +8,6 @@ Auto-consolidation triggers on save when enabled (EPIC-058).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import threading
@@ -32,14 +31,14 @@ from tapps_brain.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from datetime import datetime
     from pathlib import Path
 
     from tapps_brain._protocols import HiveBackend, PrivateBackend
     from tapps_brain.auto_consolidation import ConsolidationUndoResult
     from tapps_brain.embeddings import SentenceTransformerProvider
-    from tapps_brain.feedback import FeedbackEvent, FeedbackStore, InMemoryFeedbackStore
+    from tapps_brain.feedback import FeedbackStore, InMemoryFeedbackStore
     from tapps_brain.write_policy import DeterministicWritePolicy, LLMWritePolicy
 
 from tapps_brain._save_conflict import (
@@ -55,6 +54,10 @@ from tapps_brain._save_propagation import (
     propagate_group_save,
     publish_to_experts,
 )
+from tapps_brain._store_feedback import FeedbackMixin
+from tapps_brain._store_integrity import IntegrityMixin
+from tapps_brain._store_query import QueryMixin
+from tapps_brain._store_relations import RelationsMixin
 from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.bm25 import preprocess as _bm25_preprocess
 from tapps_brain.metrics import (
@@ -69,13 +72,10 @@ from tapps_brain.otel_tracer import (
     ATTR_ROWS_RETURNED,
     GEN_AI_DATA_SOURCE_ID,
     GEN_AI_OPERATION_EXECUTE_TOOL,
-    SPAN_DELETE,
     SPAN_HIVE_PROPAGATE,
-    SPAN_HIVE_SEARCH,
     SPAN_RECALL,
     SPAN_REINFORCE,
     SPAN_REMEMBER,
-    SPAN_SEARCH,
     record_retrieval_document_events,
     rm_add_recall_latency_ms,
     rm_increment_recall_total,
@@ -330,10 +330,28 @@ class ConsolidationConfig:
         }
 
 
+@dataclass(frozen=True)
+class _SavePrep:
+    """Validated, pre-persist save state shared by :meth:`MemoryStore.save` and
+    :meth:`MemoryStore.save_many` (TAP-2800).
+
+    Carries the fields that phases 1-5 (scope/tier validation, safety, write
+    policy, dedup, conflict detection) transform, so the build step is identical
+    whether a single entry or a batch is being persisted.
+    """
+
+    value: str
+    agent_scope: str
+    tier: str
+    source_agent: str
+    mg_explicit: str | None | object
+    conflict_valid_at: str | None
+
+
 _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
 
 
-class MemoryStore:
+class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     """In-memory cache with SQLite write-through persistence.
 
     Thread-safe: one ``threading.Lock`` serializes orchestration and cache access.
@@ -378,83 +396,159 @@ class MemoryStore:
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
 
-        # STORY-066.8: Auto-migrate private schema on startup when
-        # TAPPS_BRAIN_AUTO_MIGRATE=1.  Runs before the backend is constructed
-        # so the schema is up-to-date before the first connection.
+        self._maybe_auto_migrate_private_schema()
+
+        # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
+        private_backend = self._resolve_private_backend(project_root, agent_id, private_backend)
+        # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
+        # kept in the signature for API compatibility but ignored on Postgres.
+        _ = (store_dir, encryption_key, _lexical)
+        self._persistence: PrivateBackend = private_backend
+        # STORY-069.7: stash resolved project_id so instance methods can bind it
+        # into structured logs.  Falls back to None for backends (e.g.
+        # InMemoryPrivateBackend) that don't carry a project_id.
+        self._project_id: str | None = getattr(private_backend, "_project_id", None)
+
+        self._lock = threading.Lock()
+        self._lock_timeout_sec = self._resolve_lock_timeout(lock_timeout_seconds)
+        self._consolidation_config = self._resolve_consolidation_config(consolidation_config)
+        self._init_embedding_provider(embedding_provider)
+
+        self._write_rules = write_rules
+        self._lookup_engine = lookup_engine
+        self._consolidation_in_progress = False
+        # Write-path policy (TAP-560/STORY-SC04). Resolve in precedence order:
+        # 1. Explicit constructor argument.
+        # 2. TAPPS_BRAIN_WRITE_POLICY env var.
+        # 3. Profile write_policy.mode.
+        # 4. Default → DeterministicWritePolicy (zero-cost, current behaviour).
+        self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
+            self._resolve_write_policy(write_policy)
+        )
+        from tapps_brain.gc import GCConfig as _GCConfig
+
+        self._gc_config = _GCConfig()
+        self._metrics = MetricsCollector()
+        self._hive_store = hive_store
+        self._hive_agent_id = hive_agent_id
+
+        # Cold-start: load entries + relations and rebuild derived indexes.
+        relation_count = self._load_cold_start_state()
+        # In-memory feedback / session / diagnostics / gap-signal state.
+        self._init_in_memory_tracking_state()
+
+        # Auto-register agent in Hive registry + join declared groups
+        # (STORY-053.3 / STORY-056.1).
+        if auto_register and self._agent_id is not None and self._hive_store is not None:
+            self._auto_register_agent()
+        if self._groups and self._hive_store is not None:
+            self._setup_group_memberships()
+
+        logger.info(
+            "memory_store_initialized",
+            project_root=str(project_root),
+            entry_count=len(self._entries),
+            relation_count=relation_count,
+            auto_consolidation=self._consolidation_config.enabled,
+        )
+
+    @staticmethod
+    def _maybe_auto_migrate_private_schema() -> None:
+        """STORY-066.8: auto-migrate the private schema before the backend opens.
+
+        Runs only when ``TAPPS_BRAIN_DATABASE_URL`` names a Postgres DSN and
+        ``TAPPS_BRAIN_AUTO_MIGRATE=1`` (the latter checked inside
+        ``maybe_auto_migrate_private``), so the schema is current before the
+        first connection.
+        """
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
         if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
             from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
             maybe_auto_migrate_private(_auto_migrate_dsn)
 
-        # ADR-007: Postgres-only persistence plane. A PrivateBackend is required.
-        # When the caller does not pass one, resolve it from
-        # TAPPS_BRAIN_DATABASE_URL via backends.resolve_private_backend_from_env.
-        # If the env var is also missing we hard-fail — there is no SQLite fallback.
-        if private_backend is None:
-            from tapps_brain.backends import (
-                derive_project_id,
-                resolve_private_backend_from_env,
-            )
+    @staticmethod
+    def _resolve_private_backend(
+        project_root: Path,
+        agent_id: str | None,
+        private_backend: PrivateBackend | None,
+    ) -> PrivateBackend:
+        """Return the caller's backend, or resolve one from the environment.
 
-            _resolved_agent_id = agent_id or "default"
-            # EPIC-069: honor TAPPS_BRAIN_PROJECT (human-readable slug) before
-            # falling back to the legacy path-hash.  The env var is how MCP
-            # clients connecting over stdio declare project identity — see
-            # ADR-010 and project_resolver.resolve_project_id.
-            _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
-            if _env_project:
-                from tapps_brain.project_resolver import validate_project_id
+        ADR-007: when no backend is passed, resolve it from
+        ``TAPPS_BRAIN_DATABASE_URL``.  Hard-fails when the env var is also
+        missing — there is no SQLite fallback.
+        """
+        if private_backend is not None:
+            return private_backend
+        from tapps_brain.backends import (
+            derive_project_id,
+            resolve_private_backend_from_env,
+        )
 
-                _project_id = validate_project_id(_env_project)
-            else:
-                _project_id = derive_project_id(project_root)
-            private_backend = resolve_private_backend_from_env(_project_id, _resolved_agent_id)
-            if private_backend is None:
-                msg = (
-                    "MemoryStore requires a Postgres private_backend (ADR-007). "
-                    "Set TAPPS_BRAIN_DATABASE_URL to a postgres:// or postgresql:// "
-                    "DSN, or pass an explicit private_backend constructed via "
-                    "tapps_brain.backends.create_private_backend(dsn, ...). "
-                    "SQLite is no longer supported."
-                )
-                raise ValueError(msg)
-        # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
-        # kept in the signature for API compatibility but ignored on Postgres.
-        _ = (store_dir, encryption_key, _lexical)
-        self._persistence: PrivateBackend = private_backend
-        # STORY-069.7: stash resolved project_id so instance methods can bind
-        # it into structured logs without reaching into the backend each time.
-        # Falls back to None for backends (e.g. InMemoryPrivateBackend) that
-        # don't carry a project_id.
-        self._project_id: str | None = getattr(private_backend, "_project_id", None)
-        self._lock = threading.Lock()
-        if lock_timeout_seconds is not None:
-            self._lock_timeout_sec = (
-                float(lock_timeout_seconds) if lock_timeout_seconds > 0 else None
-            )
+        _resolved_agent_id = agent_id or "default"
+        # EPIC-069: honor TAPPS_BRAIN_PROJECT (human-readable slug) before
+        # falling back to the legacy path-hash.  The env var is how MCP clients
+        # connecting over stdio declare project identity — see ADR-010 and
+        # project_resolver.resolve_project_id.
+        _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
+        if _env_project:
+            from tapps_brain.project_resolver import validate_project_id
+
+            _project_id = validate_project_id(_env_project)
         else:
-            self._lock_timeout_sec = _env_lock_timeout_seconds()
+            _project_id = derive_project_id(project_root)
+        resolved = resolve_private_backend_from_env(_project_id, _resolved_agent_id)
+        if resolved is None:
+            msg = (
+                "MemoryStore requires a Postgres private_backend (ADR-007). "
+                "Set TAPPS_BRAIN_DATABASE_URL to a postgres:// or postgresql:// "
+                "DSN, or pass an explicit private_backend constructed via "
+                "tapps_brain.backends.create_private_backend(dsn, ...). "
+                "SQLite is no longer supported."
+            )
+            raise ValueError(msg)
+        return resolved
+
+    @staticmethod
+    def _resolve_lock_timeout(lock_timeout_seconds: float | None) -> float | None:
+        """Resolve the store-lock timeout: explicit arg (>0) or the env default."""
+        if lock_timeout_seconds is not None:
+            return float(lock_timeout_seconds) if lock_timeout_seconds > 0 else None
+        return _env_lock_timeout_seconds()
+
+    def _resolve_consolidation_config(
+        self,
+        consolidation_config: ConsolidationConfig | None,
+    ) -> ConsolidationConfig:
+        """Resolve consolidation config: explicit arg, then profile, then default."""
         if consolidation_config is not None:
-            self._consolidation_config = consolidation_config
-        elif self._profile is not None and hasattr(self._profile, "consolidation"):
+            return consolidation_config
+        if self._profile is not None and hasattr(self._profile, "consolidation"):
             _pc = self._profile.consolidation
-            self._consolidation_config = ConsolidationConfig(
+            return ConsolidationConfig(
                 enabled=_pc.enabled,
                 threshold=_pc.threshold,
                 min_entries=_pc.min_entries,
             )
-        else:
-            self._consolidation_config = ConsolidationConfig()
+        return ConsolidationConfig()
+
+    def _init_embedding_provider(
+        self,
+        embedding_provider: SentenceTransformerProvider | None,
+    ) -> None:
+        """Resolve + validate the embedding provider (TAP-2672 fail-loud).
+
+        When ``TAPPS_BRAIN_EMBEDDING_REQUIRED=1`` and no provider could be
+        loaded, raise rather than silently degrading semantic recall to
+        BM25-only while health still reports ``db_ok=true``.
+        """
         if embedding_provider is _UNSET_EMBEDDING:
             from tapps_brain.embeddings import get_embedding_provider
 
             self._embedding_provider = get_embedding_provider()
         else:
             self._embedding_provider = embedding_provider
-        # TAP-2672: fail loud when an embedding provider is expected but absent.
-        # Without this, semantic recall silently degrades to BM25-only while
-        # health still reports db_ok=true — exactly the drift the audit found.
         if (
             os.environ.get("TAPPS_BRAIN_EMBEDDING_REQUIRED", "0") == "1"
             and self._embedding_provider is None
@@ -474,28 +568,15 @@ class MemoryStore:
                 "embedding_provider_loaded",
                 **embedding_startup_status(self._embedding_provider),
             )
-        self._write_rules = write_rules
-        self._lookup_engine = lookup_engine
-        self._consolidation_in_progress = False
-        # Write-path policy (TAP-560/STORY-SC04). Resolve in precedence order:
-        # 1. Explicit constructor argument.
-        # 2. TAPPS_BRAIN_WRITE_POLICY env var.
-        # 3. Profile write_policy.mode.
-        # 4. Default → DeterministicWritePolicy (zero-cost, current behaviour).
-        self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
-            self._resolve_write_policy(write_policy)
-        )
-        from tapps_brain.gc import GCConfig as _GCConfig
 
-        self._gc_config = _GCConfig()
-        self._metrics = MetricsCollector()
-        self._hive_store = hive_store
-        self._hive_agent_id = hive_agent_id
+    def _load_cold_start_state(self) -> int:
+        """Cold-start: load entries + relations, rebuild bloom + entity indexes.
 
-        # Cold-start: load all entries into memory.
-        # Pass the effective max-entries cap so backends that support early-cutoff
-        # (e.g. PostgresPrivateBackend with ORDER BY updated_at DESC) can stop
-        # streaming once we have the most-recent entries up to the limit.
+        Returns the number of relations loaded (for the init log line).  Passes
+        the effective max-entries cap so backends that support early-cutoff
+        (e.g. PostgresPrivateBackend ``ORDER BY updated_at DESC``) can stop
+        streaming once the most-recent entries up to the limit are collected.
+        """
         self._entries: dict[str, MemoryEntry] = {}
         for entry in self._persistence.load_all(limit=self._max_entries):
             self._entries[entry.key] = entry
@@ -505,47 +586,50 @@ class MemoryStore:
         if callable(_verify):
             _verify()
 
-        # Bloom filter for write-path deduplication (GitHub #31)
+        # Bloom filter for write-path deduplication (GitHub #31).
         self._bloom = BloomFilter()
         for _entry in self._entries.values():
             self._bloom.add(normalize_for_dedup(_entry.value))
 
-        # Entity index for graph centrality scoring (TAP-734).
-        # Maps BM25 token → set of entry keys that contain it.
-        # Derived state only — never persisted; rebuilt from _entries at startup.
+        # Entity index for graph centrality scoring (TAP-734).  Maps BM25 token
+        # → set of entry keys; derived state only, rebuilt from _entries here.
         self._entity_index: dict[str, set[str]] = {}
         for _entry in self._entries.values():
             self._index_entry_entities(_entry.key, _entry.value)
 
-        # Cold-start: load all relations into memory, indexed by entry key
+        # Cold-start: load all relations into memory, indexed by entry key.
         self._relations: dict[str, list[dict[str, Any]]] = {}
         all_relations = self._persistence.list_relations()
         for rel in all_relations:
             for src_key in rel["source_entry_keys"]:
                 self._relations.setdefault(src_key, []).append(rel)
+        return len(all_relations)
 
+    def _init_in_memory_tracking_state(self) -> None:
+        """Initialise the lazy feedback store + in-memory session / diagnostics /
+        gap-signal state (EPIC-029 / 030 / 031).
+
+        All session dicts must be accessed under ``_serialized()``.
+        """
         # EPIC-029: Lazy-initialized feedback store.
         self._feedback_store_instance: FeedbackStore | InMemoryFeedbackStore | None = None
 
-        # EPIC-029 story 029.3: In-memory session tracking for implicit feedback.
-        # Maps session_id → list of (entry_key, monotonic_time) for recalled entries.
-        # Maps session_id → set of entry_keys that were reinforced in the session.
-        # All access must run under ``_serialized()`` (same underlying lock).
+        # EPIC-029 story 029.3: in-memory session tracking for implicit feedback.
+        # session_id → list of (entry_key, monotonic_time) recalled; and
+        # session_id → set of entry_keys reinforced in the session.
         self._session_recall_log: dict[str, list[tuple[str, float]]] = {}
         self._session_reinforced: dict[str, set[str]] = {}
 
-        # EPIC-029 story 029-4b: In-memory tracking for reformulation + correction.
-        # _session_query_log: session_id → list of (query_text, recalled_keys, mono_time)
-        #   Used to detect when a new query is a reformulation of a recent one.
-        # _session_recalled_values: session_id → list of (entry_key, entry_value, mono_time)
-        #   Used to detect when a save() corrects a recently recalled entry.
+        # EPIC-029 story 029-4b: in-memory tracking for reformulation + correction.
+        # _session_query_log: session_id → list of (query_text, recalled_keys, mono_time).
+        # _session_recalled_values: session_id → list of (entry_key, entry_value, mono_time).
         self._session_query_log: dict[str, list[tuple[str, list[str], float]]] = {}
         self._session_recalled_values: dict[str, list[tuple[str, str, float]]] = {}
 
-        # EPIC-029 story 029-7: session → hive memory key → namespace for feedback propagation.
+        # EPIC-029 story 029-7: session → hive memory key → namespace for feedback.
         self._hive_feedback_key_index: dict[str, dict[str, str]] = {}
 
-        # EPIC-030: diagnostics circuit breaker + history (lazy SQLite).
+        # EPIC-030: diagnostics circuit breaker + history (lazy).
         from tapps_brain.diagnostics import AnomalyDetector, CircuitBreaker
 
         self._circuit_breaker = CircuitBreaker()
@@ -557,27 +641,10 @@ class MemoryStore:
         self._zero_result_queries: deque[tuple[str, str]] = deque(maxlen=2000)
         self._latest_quality_report: dict[str, Any] | None = None
 
-        # STORY-032.6: Last-known candidate counts for tapps_brain.* gauges.
-        # Updated when health() or gc() is called; stale between runs — that is fine
-        # because computing them requires a full-entry scan.
+        # STORY-032.6: last-known candidate counts for tapps_brain.* gauges.
+        # Updated when health() or gc() is called; stale between runs is fine.
         self._last_consolidation_candidates: int = 0
         self._last_gc_candidates: int = 0
-
-        # Auto-register agent in Hive registry (STORY-053.3)
-        if auto_register and self._agent_id is not None and self._hive_store is not None:
-            self._auto_register_agent()
-
-        # Auto-join declared groups (STORY-056.1)
-        if self._groups and self._hive_store is not None:
-            self._setup_group_memberships()
-
-        logger.info(
-            "memory_store_initialized",
-            project_root=str(project_root),
-            entry_count=len(self._entries),
-            relation_count=len(all_relations),
-            auto_consolidation=self._consolidation_config.enabled,
-        )
 
     def _auto_register_agent(self) -> None:
         """Register this agent in the Hive registry if not already present."""
@@ -1006,6 +1073,102 @@ class MemoryStore:
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
 
+        # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
+        # extracted these into the shared prepare step used by save_many too).
+        prep = self._prepare_save(
+            key=key,
+            value=value,
+            tier=tier,
+            source_agent=source_agent,
+            agent_scope=agent_scope,
+            memory_group=memory_group,
+            dedup=dedup,
+            conflict_check=conflict_check,
+        )
+        if not isinstance(prep, _SavePrep):
+            # Short-circuit: an error dict, or a MemoryEntry from a dedup hit /
+            # write-policy decision — return it unchanged.
+            return prep
+
+        # Phase 6 — build, persist, propagate under span + timer.
+        self._metrics.increment("store.save")
+        with (
+            start_span(
+                SPAN_REMEMBER,
+                {
+                    "memory.tier": prep.tier,
+                    "memory.scope": scope,
+                    "memory.agent_scope": prep.agent_scope,
+                    "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
+                },
+            ),
+            MetricsTimer(self._metrics, "store.save_ms"),
+        ):
+            entry, existing = self._build_and_assign_entry(
+                key=key,
+                value=prep.value,
+                tier=prep.tier,
+                source=source,
+                source_agent=prep.source_agent,
+                scope=scope,
+                tags=tags,
+                branch=branch,
+                confidence=confidence,
+                agent_scope=prep.agent_scope,
+                source_session_id=source_session_id,
+                source_channel=source_channel,
+                source_message_id=source_message_id,
+                triggered_by=triggered_by,
+                memory_group=memory_group,
+                mg_explicit=prep.mg_explicit,
+                temporal_sensitivity=temporal_sensitivity,
+                failed_approaches=failed_approaches,
+                conflict_valid_at=valid_at or prep.conflict_valid_at,
+                status=status,
+                stale_reason=stale_reason,
+                stale_date=stale_date,
+                superseded_by=superseded_by,
+            )
+
+            entry = self._embed_entry(key, prep.value, entry)
+            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
+            self._postprocess_saved_entry(
+                key,
+                entry,
+                existing,
+                value=prep.value,
+                agent_scope=prep.agent_scope,
+                tier=prep.tier,
+                auto_publish=auto_publish,
+                skip_consolidation=skip_consolidation,
+            )
+
+        # Phase 7 — recall-then-store correction detection (outside the span).
+        if session_id is not None:
+            self._emit_correction_feedback(session_id, entry.value)
+
+        return entry
+
+    def _prepare_save(
+        self,
+        *,
+        key: str,
+        value: str,
+        tier: str,
+        source_agent: str,
+        agent_scope: str,
+        memory_group: str | None | object,
+        dedup: bool,
+        conflict_check: bool,
+    ) -> _SavePrep | MemoryEntry | dict[str, Any]:
+        """Run the pre-persist save phases shared by :meth:`save` and
+        :meth:`save_many` (TAP-2800).
+
+        Returns a :class:`_SavePrep` when the caller should proceed to build +
+        persist, or a short-circuit result the caller returns as-is: an error
+        ``dict`` (scope / write-rules / safety failure) or a :class:`MemoryEntry`
+        (dedup hit, or a write-policy NOOP/DELETE decision).
+        """
         # TAP-2675: normalise non-str values (e.g. a JSON object posted to
         # /v1/remember) before the safety scan + text-column persistence, which
         # both assume a str.  See _ensure_str_value.
@@ -1057,85 +1220,231 @@ class MemoryStore:
         # Phase 5 — conflict detection (opt-in) marks superseded entries.
         conflict_valid_at = self._handle_conflicts(key, value, tier, conflict_check)
 
-        # Phase 6 — build, persist, propagate under span + timer.
-        self._metrics.increment("store.save")
+        return _SavePrep(
+            value=value,
+            agent_scope=agent_scope,
+            tier=tier,
+            source_agent=source_agent,
+            mg_explicit=mg_explicit,
+            conflict_valid_at=conflict_valid_at,
+        )
+
+    def _postprocess_saved_entry(
+        self,
+        key: str,
+        entry: MemoryEntry,
+        existing: MemoryEntry | None,
+        *,
+        value: str,
+        agent_scope: str,
+        tier: str,
+        auto_publish: bool,
+        skip_consolidation: bool,
+    ) -> None:
+        """Post-persist fan-out shared by :meth:`save` and :meth:`save_many`.
+
+        Audit log, entity-index refresh, Hive/group/expert propagation, relation
+        persistence, and the optional consolidation pass.  Must run *after* the
+        entry is durably persisted.  Callers invoke this inside the
+        ``SPAN_REMEMBER`` span so the child timers nest correctly.
+        """
+        self._emit_save_audit(key, entry, existing=existing)
+        self._refresh_entity_index(key, entry, existing_present=existing is not None)
+
+        # Hive + group + expert fan-out (best-effort).
+        if self._hive_store is not None:
+            with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
+                self._propagate_to_hive(entry)
+        propagate_group_save(
+            entry=entry,
+            agent_scope=agent_scope,
+            groups=self._groups,
+            hive_store=self._hive_store,
+        )
+        publish_to_experts(
+            entry=entry,
+            tier=tier,
+            agent_scope=agent_scope,
+            expert_domains=self._expert_domains,
+            hive_store=self._hive_store,
+            auto_publish=auto_publish,
+        )
+
+        self._persist_relations(key, value, created_at=entry.created_at)
+
+        if (
+            self._consolidation_config.enabled
+            and not skip_consolidation
+            and not self._consolidation_in_progress
+        ):
+            with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
+                self._maybe_consolidate(entry)
+
+    def save_many(
+        self,
+        items: list[dict[str, Any]],
+    ) -> list[MemoryEntry | dict[str, Any]]:
+        """Persist many entries with a single batched DB round-trip (TAP-2800).
+
+        Each *item* is a kwargs mapping mirroring :meth:`save` (``key`` and
+        ``value`` required; the rest optional).  The per-row pre-persist pipeline
+        (validation, dedup, conflict detection) runs in memory, then ONE batched
+        ``save_many`` persists every valid row, then the per-row post-persist
+        fan-out runs.  This replaces the old N-independent-INSERT loop where each
+        entry issued its own write-through round-trip.
+
+        Returns a list aligned 1:1 with *items*: each element is the saved
+        :class:`MemoryEntry`, or the short-circuit result :meth:`save` would have
+        returned for that row (an error ``dict``, a dedup-hit entry, …).  A row
+        that fails validation does **not** abort the batch.  Falls back to a
+        per-row :meth:`save` persist loop when the backend exposes no
+        ``save_many`` primitive.
+        """
+        results: list[MemoryEntry | dict[str, Any] | None] = [None] * len(items)
+        pending: list[tuple[int, MemoryEntry, MemoryEntry | None]] = []
+        backend_save_many = getattr(self._persistence, "save_many", None)
+
+        self._metrics.increment("store.save_many")
         with (
             start_span(
                 SPAN_REMEMBER,
                 {
-                    "memory.tier": tier,
-                    "memory.scope": scope,
-                    "memory.agent_scope": agent_scope,
+                    "memory.batch_size": len(items),
                     "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
                 },
             ),
-            MetricsTimer(self._metrics, "store.save_ms"),
+            MetricsTimer(self._metrics, "store.save_many_ms"),
         ):
+            for idx, item in enumerate(items):
+                built = self._prepare_batch_entry(item)
+                if isinstance(built, tuple):
+                    pending.append((idx, built[0], built[1]))
+                else:
+                    results[idx] = built  # short-circuit (error dict / dedup entry)
+
+            # Single batched persist for all valid rows (TAP-2800).
+            if pending:
+                self._persist_many_or_rollback(
+                    [(entry, existing) for _, entry, existing in pending],
+                    backend_save_many=backend_save_many,
+                )
+
+            # Per-row post-persist fan-out + result assembly.
+            for idx, entry, existing in pending:
+                item = items[idx]
+                tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+                self._postprocess_saved_entry(
+                    entry.key,
+                    entry,
+                    existing,
+                    value=entry.value,
+                    agent_scope=entry.agent_scope,
+                    tier=tier_str,
+                    auto_publish=item.get("auto_publish", True),
+                    skip_consolidation=item.get("skip_consolidation", False),
+                )
+                results[idx] = entry
+                sid = item.get("session_id")
+                if sid is not None:
+                    self._emit_correction_feedback(sid, entry.value)
+
+        return cast("list[MemoryEntry | dict[str, Any]]", results)
+
+    def _prepare_batch_entry(
+        self, item: dict[str, Any]
+    ) -> tuple[MemoryEntry, MemoryEntry | None] | MemoryEntry | dict[str, Any]:
+        """Run the pre-persist pipeline for one ``save_many`` row (TAP-2800).
+
+        Returns ``(entry, existing)`` when the row should be persisted, or a
+        short-circuit result (an error ``dict`` or a dedup-hit / write-policy
+        result) that the caller stores verbatim — mirroring :meth:`save`'s
+        per-row semantics so one bad row never aborts the batch.
+        """
+        from pydantic import ValidationError as _PydanticValidationError
+
+        key = item.get("key", "")
+        prep = self._prepare_save(
+            key=key,
+            value=item.get("value", ""),
+            tier=item.get("tier", "pattern"),
+            source_agent=item.get("source_agent", "unknown"),
+            agent_scope=item.get("agent_scope", "private"),
+            memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+            dedup=item.get("dedup", True),
+            conflict_check=item.get("conflict_check", True),
+        )
+        if not isinstance(prep, _SavePrep):
+            return prep
+        try:
             entry, existing = self._build_and_assign_entry(
                 key=key,
-                value=value,
-                tier=tier,
-                source=source,
-                source_agent=source_agent,
-                scope=scope,
-                tags=tags,
-                branch=branch,
-                confidence=confidence,
-                agent_scope=agent_scope,
-                source_session_id=source_session_id,
-                source_channel=source_channel,
-                source_message_id=source_message_id,
-                triggered_by=triggered_by,
-                memory_group=memory_group,
-                mg_explicit=mg_explicit,
-                temporal_sensitivity=temporal_sensitivity,
-                failed_approaches=failed_approaches,
-                conflict_valid_at=valid_at or conflict_valid_at,
-                status=status,
-                stale_reason=stale_reason,
-                stale_date=stale_date,
-                superseded_by=superseded_by,
+                value=prep.value,
+                tier=prep.tier,
+                source=item.get("source", "agent"),
+                source_agent=prep.source_agent,
+                scope=item.get("scope", "project"),
+                tags=item.get("tags"),
+                branch=item.get("branch"),
+                confidence=item.get("confidence", -1.0),
+                agent_scope=prep.agent_scope,
+                source_session_id=item.get("source_session_id", ""),
+                source_channel=item.get("source_channel", ""),
+                source_message_id=item.get("source_message_id", ""),
+                triggered_by=item.get("triggered_by", ""),
+                memory_group=item.get("memory_group", MEMORY_GROUP_UNSET),
+                mg_explicit=prep.mg_explicit,
+                temporal_sensitivity=item.get("temporal_sensitivity"),
+                failed_approaches=item.get("failed_approaches"),
+                conflict_valid_at=item.get("valid_at") or prep.conflict_valid_at,
+                status=item.get("status"),
+                stale_reason=item.get("stale_reason"),
+                stale_date=item.get("stale_date"),
+                superseded_by=item.get("superseded_by"),
             )
+            entry = self._embed_entry(key, prep.value, entry)
+        except _PydanticValidationError as exc:
+            # Mirror memory_save's TAP-747 handling per row so one bad row
+            # surfaces a structured error without aborting the batch.
+            errs = exc.errors()
+            msg = errs[0].get("msg", str(exc)) if errs else str(exc)
+            return {"error": "bad_request", "message": msg}
+        return entry, existing
 
-            entry = self._embed_entry(key, value, entry)
-            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
-            self._emit_save_audit(key, entry, existing=existing)
-            self._refresh_entity_index(key, entry, existing_present=existing is not None)
+    def _persist_many_or_rollback(
+        self,
+        entries: list[tuple[MemoryEntry, MemoryEntry | None]],
+        *,
+        backend_save_many: Callable[[list[MemoryEntry]], None] | None,
+    ) -> None:
+        """Persist a batch of already-built entries in one round-trip, rolling the
+        in-memory cache back for the whole batch on failure (TAP-2800).
 
-            # Hive + group + expert fan-out (best-effort).
-            if self._hive_store is not None:
-                with MetricsTimer(self._metrics, "store.save.phase.hive_ms"):
-                    self._propagate_to_hive(entry)
-            propagate_group_save(
-                entry=entry,
-                agent_scope=agent_scope,
-                groups=self._groups,
-                hive_store=self._hive_store,
-            )
-            publish_to_experts(
-                entry=entry,
-                tier=tier,
-                agent_scope=agent_scope,
-                expert_domains=self._expert_domains,
-                hive_store=self._hive_store,
-                auto_publish=auto_publish,
-            )
-
-            self._persist_relations(key, value, created_at=entry.created_at)
-
-            if (
-                self._consolidation_config.enabled
-                and not skip_consolidation
-                and not self._consolidation_in_progress
-            ):
-                with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
-                    self._maybe_consolidate(entry)
-
-        # Phase 7 — recall-then-store correction detection (outside the span).
-        if session_id is not None:
-            self._emit_correction_feedback(session_id, entry.value)
-
-        return entry
+        *entries* is a list of ``(new_entry, existing_or_None)`` — *existing* is
+        used to restore the prior cache value on rollback.  When the backend has
+        no ``save_many`` primitive, falls back to a per-entry ``save`` loop so the
+        write still completes (just without the batching win).
+        """
+        to_save = [entry for entry, _ in entries]
+        try:
+            with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
+                if backend_save_many is not None:
+                    backend_save_many(to_save)
+                else:
+                    for entry in to_save:
+                        self._persistence.save(entry)
+        except Exception:
+            with self._serialized():
+                for entry, existing in entries:
+                    if existing is not None:
+                        self._entries[entry.key] = existing
+                    else:
+                        self._entries.pop(entry.key, None)
+                # A row may have used dedup → rebuild the bloom filter from the
+                # restored cache; the filter has no item-remove (TAP-644).
+                self._bloom = BloomFilter()
+                for _e in self._entries.values():
+                    self._bloom.add(normalize_for_dedup(_e.value))
+            raise
 
     # ------------------------------------------------------------------
     # save() helpers — see TAP-602 decomposition for design rationale.
@@ -1734,326 +2043,6 @@ class MemoryStore:
         except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
 
-    def get(
-        self,
-        key: str,
-        scope: str | None = None,
-        branch: str | None = None,
-    ) -> MemoryEntry | None:
-        """Retrieve a memory entry by key.
-
-        When *scope* and *branch* are provided, applies scope resolution:
-        session > branch > project (most specific wins).
-
-        Updates ``last_accessed`` and ``access_count`` on read.
-        """
-        self._metrics.increment("store.get")
-        with MetricsTimer(self._metrics, "store.get_ms"):
-            with self._serialized():
-                if scope is not None and branch is not None:
-                    entry = self._resolve_scope(key, scope, branch)
-                else:
-                    entry = self._entries.get(key)
-
-                if entry is None:
-                    self._metrics.increment("store.get.miss")
-                    return None
-
-                # Update access metadata
-                now = _utc_now_iso()
-                updated = entry.model_copy(
-                    update={
-                        "last_accessed": now,
-                        "access_count": entry.access_count + 1,
-                    }
-                )
-                self._entries[updated.key] = updated
-
-            self._metrics.increment("store.get.hit")
-            # Persist access metadata — rollback on failure.
-            try:
-                self._persistence.save(updated)
-            except Exception:
-                with self._serialized():
-                    self._entries[updated.key] = entry
-                raise
-            return updated
-
-    def list_all(
-        self,
-        tier: str | None = None,
-        scope: str | None = None,
-        tags: list[str] | None = None,
-        memory_group: str | None = None,
-        include_superseded: bool = True,
-    ) -> list[MemoryEntry]:
-        """List entries with optional filters.
-
-        Args:
-            tier: Filter by tier.
-            scope: Filter by scope.
-            tags: Filter by tags.
-            memory_group: When set, only entries in this project-local group
-                (``None`` on entry means ungrouped; omit this arg to list all).
-            include_superseded: When ``False``, exclude temporally invalid
-                (superseded/expired) entries. Default ``True`` for backward
-                compatibility.
-        """
-        with self._serialized():
-            entries = list(self._entries.values())
-
-        if tier is not None:
-            entries = [e for e in entries if e.tier == tier]
-        if scope is not None:
-            entries = [e for e in entries if e.scope == scope]
-        if memory_group is not None:
-            entries = [e for e in entries if e.memory_group == memory_group]
-        if tags:
-            tag_set = set(tags)
-            entries = [e for e in entries if tag_set.intersection(e.tags)]
-        if not include_superseded:
-            entries = [e for e in entries if e.is_temporally_valid()]
-
-        return entries
-
-    def list_memory_groups(self) -> list[str]:
-        """Return sorted distinct project-local ``memory_group`` values (GitHub #49)."""
-        with self._serialized():
-            names = {e.memory_group for e in self._entries.values() if e.memory_group}
-        return sorted(names)
-
-    def delete(self, key: str) -> bool:
-        """Delete a memory entry by key. Returns True if deleted."""
-        with start_span(SPAN_DELETE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}):
-            with self._serialized():
-                if key not in self._entries:
-                    return False
-                removed = self._entries.pop(key)
-
-            # Persist deletion — rollback in-memory cache on failure to
-            # maintain write-through consistency.
-            try:
-                self._persistence.delete(key)
-            except Exception:
-                with self._serialized():
-                    self._entries[key] = removed
-                raise
-
-            # Remove from entity index (TAP-734).
-            self._remove_entry_entities(key)
-
-            # Audit (best-effort).
-            self._persistence.append_audit(
-                action="delete",
-                key=key,
-                extra={"tier": str(removed.tier)},
-            )
-            return True
-
-    @staticmethod
-    def _parse_relative_time(value: str) -> str:
-        """Expand a relative time shorthand to an ISO-8601 UTC string.
-
-        Accepts shorthands of the form ``Nd`` (days), ``Nw`` (weeks), or
-        ``Nm`` (months, approximated as 30 days each).  Any other string is
-        returned unchanged so that callers can pass ISO-8601 strings through
-        transparently.
-
-        Examples::
-
-            "7d"  -> ISO string 7 days ago
-            "2w"  -> ISO string 14 days ago
-            "1m"  -> ISO string 30 days ago
-            "2026-01-01T00:00:00Z" -> "2026-01-01T00:00:00Z" (passthrough)
-        """
-        import re
-        from datetime import UTC, datetime, timedelta
-
-        m = re.fullmatch(r"(\d+)([dwm])", value.strip())
-        if m is None:
-            return value
-        n, unit = int(m.group(1)), m.group(2)
-        days = n if unit == "d" else n * 7 if unit == "w" else n * 30
-        return (datetime.now(UTC) - timedelta(days=days)).isoformat()
-
-    def _apply_search_filters(
-        self,
-        results: list[MemoryEntry],
-        *,
-        tags: list[str] | None,
-        tier: str | None,
-        scope: str | None,
-        memory_group: str | None,
-        include_historical: bool,
-        as_of: str | None,
-    ) -> list[MemoryEntry]:
-        """Apply post-FTS attribute filters and temporal filtering.
-
-        Extracted from ``search()`` to reduce its cyclomatic complexity.
-        All filters are optional; unset parameters are skipped.
-        """
-        if tier is not None:
-            results = [r for r in results if r.tier == tier]
-        if scope is not None:
-            results = [r for r in results if r.scope == scope]
-        if memory_group is not None:
-            results = [r for r in results if r.memory_group == memory_group]
-        if tags:
-            tag_set = set(tags)
-            results = [r for r in results if tag_set.intersection(r.tags)]
-        # Temporal filtering (EPIC-004 + GitHub #29)
-        if not include_historical:
-            results = [r for r in results if r.is_temporally_valid(as_of)]
-        return results
-
-    def _append_group_memories(
-        self,
-        results: list[MemoryEntry],
-        query: str,
-        max_group_results: int,
-    ) -> None:
-        """Extend *results* in-place with Hive group-namespace matches (STORY-056.5).
-
-        Extracted from ``search()`` to reduce its cyclomatic complexity and nesting.
-        No-ops when ``self._groups`` is empty or ``self._hive_store`` is None.
-        """
-        if not self._groups or self._hive_store is None:
-            return
-        seen_keys = {r.key for r in results}
-        for group_name in self._groups:
-            try:
-                with start_span(
-                    SPAN_HIVE_SEARCH,
-                    {"hive.group": group_name, "hive.namespace": f"group:{group_name}"},
-                ):
-                    group_results = self._hive_store.search(
-                        query,
-                        namespaces=[f"group:{group_name}"],
-                        limit=max_group_results,
-                    )
-                for gr in group_results:
-                    gk = gr.get("key", "")
-                    if not gk or gk in seen_keys:
-                        continue
-                    seen_keys.add(gk)
-                    # Convert hive dict to MemoryEntry for uniform return
-                    try:
-                        results.append(
-                            MemoryEntry(
-                                key=gk,
-                                value=gr.get("value", ""),
-                                tier=gr.get("tier", "pattern"),
-                                confidence=gr.get("confidence", 0.5),
-                                source=gr.get("source", "agent"),
-                                source_agent=gr.get("source_agent", "unknown"),
-                                tags=gr.get("tags", []) if isinstance(gr.get("tags"), list) else [],
-                                agent_scope=f"group:{group_name}",
-                            )
-                        )
-                    except Exception:
-                        logger.warning(
-                            "group_search_entry_convert_failed",
-                            group=group_name,
-                            key=gk,
-                            exc_info=True,
-                        )
-            except Exception:
-                logger.warning(
-                    "group_search_failed",
-                    group=group_name,
-                    exc_info=True,
-                )
-
-    def search(
-        self,
-        query: str,
-        tags: list[str] | None = None,
-        tier: str | None = None,
-        scope: str | None = None,
-        memory_group: str | None = None,
-        as_of: str | None = None,
-        include_historical: bool = False,
-        since: str | None = None,
-        until: str | None = None,
-        time_field: str = "created_at",
-        include_group_memories: bool = False,
-        max_group_results: int = 20,
-        memory_class: str | None = None,
-    ) -> list[MemoryEntry]:
-        """Search via FTS5, with optional post-filters.
-
-        Args:
-            query: Search query string.
-            tags: Filter by tags.
-            tier: Filter by tier.
-            scope: Filter by scope.
-            memory_group: When set, restrict to this project-local group (GitHub #49).
-            as_of: ISO-8601 timestamp for point-in-time temporal filtering.
-                When set, only entries valid at that time are returned.
-                When ``None`` (default), temporally invalid entries are excluded
-                using the current time.
-            include_historical: When True, include expired/superseded entries
-                (GitHub #29, task 040.3). When False (default), entries whose
-                ``invalid_at`` or ``valid_until`` is in the past are excluded.
-            since: ISO-8601 UTC lower bound (inclusive) on *time_field* (Issue #70).
-            until: ISO-8601 UTC upper bound (exclusive) on *time_field* (Issue #70).
-            time_field: Column to filter on — ``created_at``, ``updated_at``,
-                or ``last_accessed``. Defaults to ``created_at``.
-            include_group_memories: When True and the store has declared groups,
-                also search group namespaces in the Hive (STORY-056.5).
-            max_group_results: Maximum results per group namespace (STORY-056.5).
-            memory_class: TAP-733 — when set, restrict to entries with this semantic
-                class (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
-                Pushed into the SQL WHERE clause for DB-level pre-filtering.
-        """
-        self._metrics.increment("store.search")
-        rm_increment_recall_total()
-        _search_t0 = time.monotonic()
-        with (
-            start_span(SPAN_SEARCH) as _search_span,
-            MetricsTimer(self._metrics, "store.search_ms"),
-        ):
-            # Expand relative shorthands ("7d", "2w", "1m") to ISO-8601 strings.
-            if since is not None:
-                since = self._parse_relative_time(since)
-            if until is not None:
-                until = self._parse_relative_time(until)
-            results = self._persistence.search(
-                query,
-                memory_group=memory_group,
-                since=since,
-                until=until,
-                time_field=time_field,
-                as_of=as_of,
-                memory_class=memory_class,
-            )
-
-            results = self._apply_search_filters(
-                results,
-                tags=tags,
-                tier=tier,
-                scope=scope,
-                memory_group=memory_group,
-                include_historical=include_historical,
-                as_of=as_of,
-            )
-
-            # STORY-056.5: Group-aware recall — search group namespaces in Hive
-            if include_group_memories:
-                self._append_group_memories(results, query, max_group_results)
-
-            self._metrics.increment("store.search.results", len(results))
-            _search_elapsed_ms = (time.monotonic() - _search_t0) * 1000.0
-            if _search_span is not None:
-                _search_span.set_attribute("search.result_count", len(results))
-                # STORY-070.12: standardised per-operation attributes
-                _search_span.set_attribute(ATTR_ROWS_RETURNED, len(results))
-                _search_span.set_attribute(ATTR_LATENCY_MS, _search_elapsed_ms)
-                # TAP-2170: GenAI semconv v1.40.0 data source identity
-                _search_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
-            rm_add_recall_latency_ms(_search_elapsed_ms)
-            return results
-
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
         """Partial update of specific fields on an existing entry.
 
@@ -2162,25 +2151,7 @@ class MemoryStore:
                     raise KeyError(key)
 
                 updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
-                # EPIC-042.8: FSRS-lite stability on explicit reinforce (was_useful=True),
-                # using pre-reinforce timestamps for retrievability — same flag as record_access.
-                if self._profile is not None:
-                    tier_name = (
-                        entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-                    )
-                    layer = self._profile.get_layer(tier_name)
-                    if layer is not None and layer.adaptive_stability:
-                        try:
-                            from tapps_brain.decay import update_stability
-
-                            new_stab, new_diff = update_stability(entry, decay_cfg, True)
-                            updates["stability"] = new_stab
-                            updates["difficulty"] = new_diff
-                        except Exception:
-                            logger.warning(
-                                "reinforce_stability_update_failed", key=key, exc_info=True
-                            )
-
+                updates.update(self._reinforce_stability_updates(entry, decay_cfg))
                 updated = entry.model_copy(update=updates)
                 self._entries[key] = updated
 
@@ -2193,41 +2164,7 @@ class MemoryStore:
                     self._entries[key] = entry
                 raise
 
-            # EPIC-010: Check promotion after reinforcement
-            final: MemoryEntry = updated
-            if self._profile is not None:
-                try:
-                    from tapps_brain.promotion import PromotionEngine
-
-                    engine = PromotionEngine(decay_cfg)
-                    target_tier = engine.check_promotion(updated, self._profile)
-                    if target_tier is not None:
-                        old_tier = str(updated.tier)
-                        promoted = updated.model_copy(
-                            update={"tier": target_tier, "updated_at": _utc_now_iso()}
-                        )
-                        with self._serialized():
-                            self._entries[key] = promoted
-                        self._persistence.save(promoted)
-                        self._persistence.append_audit(
-                            action="promote",
-                            key=key,
-                            extra={
-                                "from_tier": old_tier,
-                                "to_tier": target_tier,
-                                "access_count": updated.access_count,
-                                "reinforce_count": updated.reinforce_count,
-                            },
-                        )
-                        logger.info(
-                            "memory_promoted",
-                            key=key,
-                            from_tier=old_tier,
-                            to_tier=target_tier,
-                        )
-                        final = promoted
-                except Exception:
-                    logger.warning("promotion_check_failed", key=key, exc_info=True)
+            final = self._maybe_promote_after_reinforce(key, updated, decay_cfg)
 
             # EPIC-029 story 029.3: implicit positive feedback
             if session_id is not None:
@@ -2238,6 +2175,76 @@ class MemoryStore:
                     self._emit_implicit_feedback("implicit_positive", key, session_id, 1.0)
 
             return final
+
+    def _reinforce_stability_updates(
+        self,
+        entry: MemoryEntry,
+        decay_cfg: Any,  # noqa: ANN401 — DecayConfig
+    ) -> dict[str, Any]:
+        """FSRS-lite stability/difficulty updates for an explicit reinforce (EPIC-042.8).
+
+        Mirrors ``record_access``'s ``was_useful=True`` path using pre-reinforce
+        timestamps for retrievability.  Returns ``{}`` when the active profile's
+        layer does not enable adaptive stability, or on any failure (best-effort).
+        """
+        if self._profile is None:
+            return {}
+        tier_name = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+        layer = self._profile.get_layer(tier_name)
+        if layer is None or not layer.adaptive_stability:
+            return {}
+        try:
+            from tapps_brain.decay import update_stability
+
+            new_stab, new_diff = update_stability(entry, decay_cfg, True)
+        except Exception:
+            logger.warning("reinforce_stability_update_failed", key=entry.key, exc_info=True)
+            return {}
+        return {"stability": new_stab, "difficulty": new_diff}
+
+    def _maybe_promote_after_reinforce(
+        self,
+        key: str,
+        updated: MemoryEntry,
+        decay_cfg: Any,  # noqa: ANN401 — DecayConfig
+    ) -> MemoryEntry:
+        """Promote *updated* to a higher tier if the profile's rules are met (EPIC-010).
+
+        Persists + audits the promotion and returns the promoted entry; returns
+        *updated* unchanged when no profile is set, no promotion is warranted, or
+        the check fails (best-effort — promotion never breaks a reinforce).
+        """
+        if self._profile is None:
+            return updated
+        try:
+            from tapps_brain.promotion import PromotionEngine
+
+            engine = PromotionEngine(decay_cfg)
+            target_tier = engine.check_promotion(updated, self._profile)
+            if target_tier is None:
+                return updated
+            old_tier = str(updated.tier)
+            promoted = updated.model_copy(
+                update={"tier": target_tier, "updated_at": _utc_now_iso()}
+            )
+            with self._serialized():
+                self._entries[key] = promoted
+            self._persistence.save(promoted)
+            self._persistence.append_audit(
+                action="promote",
+                key=key,
+                extra={
+                    "from_tier": old_tier,
+                    "to_tier": target_tier,
+                    "access_count": updated.access_count,
+                    "reinforce_count": updated.reinforce_count,
+                },
+            )
+            logger.info("memory_promoted", key=key, from_tier=old_tier, to_tier=target_tier)
+        except Exception:
+            logger.warning("promotion_check_failed", key=key, exc_info=True)
+            return updated
+        return promoted
 
     def record_access(self, key: str, was_useful: bool) -> None:
         """Record whether a retrieved memory was useful. Updates Bayesian confidence.
@@ -2653,8 +2660,6 @@ class MemoryStore:
             ``RecallResult`` with formatted memory section, metadata,
             and timing information.
         """
-        from tapps_brain.recall import RecallOrchestrator
-
         log = logger.bind(project_id=self._project_id, op="recall")
         log.debug("store.recall.begin")
         # EPIC-029 story 029.3: extract session_id before forwarding kwargs.
@@ -2663,10 +2668,42 @@ class MemoryStore:
 
         self._metrics.increment("store.recall")
         rm_increment_recall_total()
+        orchestrator = self._recall_get_orchestrator()
+
         _recall_t0 = time.monotonic()
+        with (
+            start_span(SPAN_RECALL) as _recall_span,
+            MetricsTimer(self._metrics, "store.recall_ms"),
+        ):
+            result = orchestrator.recall(message, **kwargs)
+            if _recall_span is not None:
+                self._annotate_recall_span(_recall_span, result, _recall_t0)
+
+        # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking.
+        if session_id is not None:
+            self._track_recall_feedback(session_id, message, result)
+
+        qw = self._recall_quality_warning()
+        if qw is not None:
+            result = result.model_copy(update={"quality_warning": qw})
+
+        if not getattr(result, "memory_count", 0) and message.strip():
+            with self._serialized():
+                self._zero_result_queries.append((message.strip(), _utc_now_iso()))
+
+        rm_add_recall_latency_ms((time.monotonic() - _recall_t0) * 1000.0)
+        return result
+
+    def _recall_get_orchestrator(self) -> Any:  # noqa: ANN401 — RecallOrchestrator
+        """Lazily create + cache the :class:`RecallOrchestrator` (EPIC-011).
+
+        Wires the Hive store and profile so the orchestrator can do hive-aware
+        recall.  Created once under the store lock and reused thereafter.
+        """
+        from tapps_brain.recall import RecallOrchestrator
+
         with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
-                # Wire Hive store and profile for hive-aware recall (EPIC-011)
                 hive_weight = 0.8
                 agent_profile = "repo-brain"
                 if self._profile is not None:
@@ -2682,115 +2719,108 @@ class MemoryStore:
                     hive_agent_profile=agent_profile,
                     hive_agent_id=self._hive_agent_id,
                 )
+        return self._recall_orchestrator
 
-        _recall_t0 = time.monotonic()
-        with (
-            start_span(SPAN_RECALL) as _recall_span,
-            MetricsTimer(self._metrics, "store.recall_ms"),
-        ):
-            result = self._recall_orchestrator.recall(message, **kwargs)
-            if _recall_span is not None:
-                _recall_span.set_attribute(
-                    "recall.hive_count", getattr(result, "hive_memory_count", 0)
-                )
-                # STORY-032.3: add one structured event per retrieved document
-                record_retrieval_document_events(_recall_span, getattr(result, "memories", []))
-                # STORY-070.12: standardised per-operation attributes
-                _recall_memories = getattr(result, "memories", [])
-                _recall_span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))
-                _recall_span.set_attribute(
-                    ATTR_LATENCY_MS, (time.monotonic() - _recall_t0) * 1000.0
-                )
-                # TAP-2170: GenAI semconv v1.40.0 data source identity
-                _recall_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
+    def _annotate_recall_span(self, span: Any, result: Any, t0: float) -> None:  # noqa: ANN401
+        """Set OTel recall-span attributes + per-document retrieval events."""
+        span.set_attribute("recall.hive_count", getattr(result, "hive_memory_count", 0))
+        # STORY-032.3: add one structured event per retrieved document.
+        record_retrieval_document_events(span, getattr(result, "memories", []))
+        # STORY-070.12: standardised per-operation attributes.
+        _recall_memories = getattr(result, "memories", [])
+        span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))
+        span.set_attribute(ATTR_LATENCY_MS, (time.monotonic() - t0) * 1000.0)
+        # TAP-2170: GenAI semconv v1.40.0 data source identity.
+        span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
 
-        # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking
-        if session_id is not None:
-            # Flush entries whose window has expired (lazy negative detection)
-            _expired: list[str] = []
-            with self._serialized():
-                _expired = self._consume_expired_recalls(session_id)
-            for _k in _expired:
-                self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
+    def _track_recall_feedback(self, session_id: str, message: str, result: Any) -> None:  # noqa: ANN401
+        """EPIC-029: implicit-feedback bookkeeping for a recall in *session_id*.
 
-            # Build list of recalled entry keys from this result
-            _memories: list[Any] = getattr(result, "memories", [])
-            _recalled_keys: list[str] = [
-                str(m.get("key", "")) for m in _memories if isinstance(m, dict) and m.get("key")
-            ]
+        Flushes expired recall windows (lazy negatives), records which keys came
+        from Hive, runs reformulation detection, and updates the per-session
+        query / recall / value logs.
+        """
+        # Flush entries whose window has expired (lazy negative detection).
+        with self._serialized():
+            _expired = self._consume_expired_recalls(session_id)
+        for _k in _expired:
+            self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
 
-            # EPIC-029 story 029-7: remember which keys came from Hive (per session).
-            with self._serialized():
-                _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
-                for _m in _memories:
-                    if not isinstance(_m, dict):
-                        continue
-                    if str(_m.get("source", "")) != "hive":
-                        continue
+        _memories: list[Any] = getattr(result, "memories", [])
+        _recalled_keys: list[str] = [
+            str(m.get("key", "")) for m in _memories if isinstance(m, dict) and m.get("key")
+        ]
+
+        # EPIC-029 story 029-7: remember which keys came from Hive (per session).
+        with self._serialized():
+            _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
+            for _m in _memories:
+                if isinstance(_m, dict) and str(_m.get("source", "")) == "hive":
                     _hk = str(_m.get("key", ""))
-                    if not _hk:
-                        continue
-                    _hive_idx[_hk] = str(_m.get("namespace", "universal"))
+                    if _hk:
+                        _hive_idx[_hk] = str(_m.get("namespace", "universal"))
 
-            # EPIC-029 story 029-4b: reformulation detection.
-            # Compare the current query against recent queries in the session log.
-            # If Jaccard similarity > 0.5 within 60s, emit implicit_correction for
-            # the entry keys recalled by the similar past query.
-            _reform_targets: list[tuple[str, float]] = []
-            _now_track = time.monotonic()
-            with self._serialized():
-                _reform_targets = self._detect_reformulation(session_id, message, _now_track)
-                # Update query log with current query + recalled keys (after detection
-                # so we don't match the current query against itself)
-                _q_log = self._session_query_log.setdefault(session_id, [])
-                _q_log.append((message, list(_recalled_keys), _now_track))
-                # TAP-645: cap per-session query log to prevent unbounded growth in
-                # long-lived sessions.  Keep the most-recent entries (trim oldest).
-                if len(_q_log) > _SESSION_LOG_PER_SESSION_CAP:
-                    del _q_log[:-_SESSION_LOG_PER_SESSION_CAP]
-                # Record recalled keys + values for positive/negative/correction tracking
-                if _recalled_keys:
-                    _r_log = self._session_recall_log.setdefault(session_id, [])
-                    _val_log = self._session_recalled_values.setdefault(session_id, [])
-                    for _k in _recalled_keys:
-                        _r_log.append((_k, _now_track))
-                        _entry_val = self._entries.get(_k)
-                        if _entry_val is not None:
-                            _val_log.append((_k, _entry_val.value, _now_track))
-                    # TAP-645: cap recall log and values log per-session.
-                    if len(_r_log) > _SESSION_LOG_PER_SESSION_CAP:
-                        del _r_log[:-_SESSION_LOG_PER_SESSION_CAP]
-                    if len(_val_log) > _SESSION_LOG_PER_SESSION_CAP:
-                        del _val_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        # EPIC-029 story 029-4b: reformulation detection.  If the current query
+        # is Jaccard-similar (>0.5 within 60s) to a recent one, emit
+        # implicit_correction for the keys that earlier query recalled.
+        _now_track = time.monotonic()
+        with self._serialized():
+            _reform_targets = self._detect_reformulation(session_id, message, _now_track)
+            self._update_session_recall_logs(session_id, message, _recalled_keys, _now_track)
 
-            for _k, _sim in _reform_targets:
-                self._emit_implicit_feedback(
-                    "implicit_correction",
-                    _k,
-                    session_id,
-                    -0.5,
-                    details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
-                )
+        for _k, _sim in _reform_targets:
+            self._emit_implicit_feedback(
+                "implicit_correction",
+                _k,
+                session_id,
+                -0.5,
+                details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
+            )
 
+    def _update_session_recall_logs(
+        self,
+        session_id: str,
+        message: str,
+        recalled_keys: list[str],
+        now_track: float,
+    ) -> None:
+        """Append to the per-session query / recall / value logs (caller holds lock).
+
+        TAP-645: each log is capped at ``_SESSION_LOG_PER_SESSION_CAP`` entries
+        (oldest trimmed) to bound memory in long-lived sessions.
+        """
+        # Update query log AFTER reformulation detection so the current query is
+        # not matched against itself.
+        _q_log = self._session_query_log.setdefault(session_id, [])
+        _q_log.append((message, list(recalled_keys), now_track))
+        if len(_q_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _q_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        if not recalled_keys:
+            return
+        _r_log = self._session_recall_log.setdefault(session_id, [])
+        _val_log = self._session_recalled_values.setdefault(session_id, [])
+        for _k in recalled_keys:
+            _r_log.append((_k, now_track))
+            _entry_val = self._entries.get(_k)
+            if _entry_val is not None:
+                _val_log.append((_k, _entry_val.value, now_track))
+        if len(_r_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _r_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        if len(_val_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _val_log[:-_SESSION_LOG_PER_SESSION_CAP]
+
+    def _recall_quality_warning(self) -> str | None:
+        """Map the diagnostics circuit-breaker state to a recall quality warning."""
         from tapps_brain.diagnostics import CircuitState
 
-        qw: str | None = None
         st = self._circuit_breaker.state
         if st == CircuitState.DEGRADED:
-            qw = "Memory quality degraded — results may be reduced in quality."
-        elif st == CircuitState.OPEN:
-            qw = "Memory quality critical — Hive recall limited until recovery."
-        elif st == CircuitState.HALF_OPEN:
-            qw = "Memory quality recovering — diagnostic probes in progress."
-        if qw is not None:
-            result = result.model_copy(update={"quality_warning": qw})
-
-        if not getattr(result, "memory_count", 0) and message.strip():
-            with self._serialized():
-                self._zero_result_queries.append((message.strip(), _utc_now_iso()))
-
-        rm_add_recall_latency_ms((time.monotonic() - _recall_t0) * 1000.0)
-        return result
+            return "Memory quality degraded — results may be reduced in quality."
+        if st == CircuitState.OPEN:
+            return "Memory quality critical — Hive recall limited until recovery."
+        if st == CircuitState.HALF_OPEN:
+            return "Memory quality recovering — diagnostic probes in progress."
+        return None
 
     def health(self) -> StoreHealthReport:
         """Return a structured health report for this store."""
@@ -2802,25 +2832,10 @@ class MemoryStore:
         with self._serialized():
             entries = list(self._entries.values())
 
-        tier_counts: dict[str, int] = {}
-        for entry in entries:
-            tier_val = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
-            tier_counts[tier_val] = tier_counts.get(tier_val, 0) + 1
-
-        schema_ver = self._persistence.get_schema_version()
-
-        oldest_age = 0.0
         now = datetime.now(tz=UTC)
-        for entry in entries:
-            try:
-                raw = entry.created_at.replace("Z", "+00:00")
-                created = datetime.fromisoformat(raw)
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=UTC)
-                days = (now - created).total_seconds() / 86400.0
-                oldest_age = max(oldest_age, days)
-            except (ValueError, TypeError, AttributeError):
-                continue
+        tier_counts = self._health_tier_distribution(entries)
+        oldest_age = self._health_oldest_age_days(entries, now)
+        schema_ver = self._persistence.get_schema_version()
 
         gc = MemoryGarbageCollector(
             config=self._get_decay_config(),
@@ -2854,22 +2869,7 @@ class MemoryStore:
         except importlib.metadata.PackageNotFoundError:
             pkg_ver = ""
 
-        prof = getattr(self, "_profile", None)
-        prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
-        seed_ver: str | None = None
-        if prof is not None:
-            _seed = getattr(prof, "seeding", None)
-            if _seed is not None:
-                seed_ver = getattr(_seed, "seed_version", None)
-
-        from tapps_brain.safety import resolve_safety_ruleset_version
-
-        _rs_pin: str | None = None
-        if prof is not None:
-            _sfc = getattr(prof, "safety", None)
-            if _sfc is not None:
-                _rs_pin = getattr(_sfc, "ruleset_version", None)
-        eff_ruleset = resolve_safety_ruleset_version(_rs_pin)
+        prof_name, seed_ver, eff_ruleset = self._resolve_health_profile_metadata()
 
         _snap = self._metrics.snapshot()
         save_phases = compact_save_phase_summary(_snap)
@@ -2913,6 +2913,51 @@ class MemoryStore:
             bloom_saturation=self._bloom.approximate_false_positive_rate(),
             embeddings_enabled=self._embedding_provider is not None,
         )
+
+    @staticmethod
+    def _health_tier_distribution(entries: list[MemoryEntry]) -> dict[str, int]:
+        """Count entries per tier for the health report."""
+        tier_counts: dict[str, int] = {}
+        for entry in entries:
+            tier_val = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+            tier_counts[tier_val] = tier_counts.get(tier_val, 0) + 1
+        return tier_counts
+
+    @staticmethod
+    def _health_oldest_age_days(entries: list[MemoryEntry], now: datetime) -> float:
+        """Age (in days) of the oldest entry, robust to mixed tz representations."""
+        from datetime import UTC
+        from datetime import datetime as _datetime
+
+        oldest_age = 0.0
+        for entry in entries:
+            try:
+                raw = entry.created_at.replace("Z", "+00:00")
+                created = _datetime.fromisoformat(raw)
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                days = (now - created).total_seconds() / 86400.0
+                oldest_age = max(oldest_age, days)
+            except (ValueError, TypeError, AttributeError):
+                continue
+        return oldest_age
+
+    def _resolve_health_profile_metadata(self) -> tuple[str | None, str | None, str]:
+        """Resolve (profile_name, seed_version, effective_safety_ruleset) for health."""
+        from tapps_brain.safety import resolve_safety_ruleset_version
+
+        prof = getattr(self, "_profile", None)
+        prof_name: str | None = getattr(prof, "name", None) if prof is not None else None
+        seed_ver: str | None = None
+        _rs_pin: str | None = None
+        if prof is not None:
+            _seed = getattr(prof, "seeding", None)
+            if _seed is not None:
+                seed_ver = getattr(_seed, "seed_version", None)
+            _sfc = getattr(prof, "safety", None)
+            if _sfc is not None:
+                _rs_pin = getattr(_sfc, "ruleset_version", None)
+        return prof_name, seed_ver, resolve_safety_ruleset_version(_rs_pin)
 
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
@@ -3169,13 +3214,7 @@ class MemoryStore:
         run_remediation: bool = True,
     ) -> Any:  # noqa: ANN401
         """Run quality diagnostics, update circuit breaker, optional history (EPIC-030)."""
-        from tapps_brain.diagnostics import (
-            CircuitState,
-            DiagnosticsConfig,
-            hive_recall_multiplier,
-            maybe_remediate,
-            run_diagnostics,
-        )
+        from tapps_brain.diagnostics import DiagnosticsConfig, run_diagnostics
 
         self._ensure_diagnostics_history()
         hist_rows: list[dict[str, Any]] = []
@@ -3185,6 +3224,32 @@ class MemoryStore:
         if self._profile is not None and getattr(self._profile, "diagnostics", None) is not None:
             dcfg = DiagnosticsConfig.model_validate(self._profile.diagnostics.model_dump())
         report = run_diagnostics(self, config=dcfg, history_for_correlation=hist_rows)
+
+        st, alerts = self._apply_diagnostics_circuit(report, run_remediation=run_remediation)
+        report = report.model_copy(
+            update={"anomalies": alerts, "circuit_state": st.value},
+        )
+        if record_history and self._diagnostics_history_store is not None:
+            self._diagnostics_history_store.record(report, circuit_state=st.value)
+            self._diagnostics_history_store.prune_older_than(dcfg.retention_days)
+        self._audit_diagnostics(report.composite_score, st.value)
+        self._metrics.increment("store.diagnostics")
+        return report
+
+    def _apply_diagnostics_circuit(
+        self,
+        report: Any,  # noqa: ANN401 — diagnostics report model
+        *,
+        run_remediation: bool,
+    ) -> tuple[Any, list[Any]]:
+        """Advance the diagnostics circuit breaker for *report* (EPIC-030).
+
+        Records a half-open probe, transitions on the composite score, runs
+        remediation + half-open cooldown when OPEN, refreshes the Hive recall
+        multiplier, and returns ``(circuit_state, anomaly_alerts)``.
+        """
+        from tapps_brain.diagnostics import CircuitState, hive_recall_multiplier, maybe_remediate
+
         if self._circuit_breaker.state == CircuitState.HALF_OPEN:
             self._circuit_breaker.record_probe(report.composite_score)
         st = self._circuit_breaker.transition(report.composite_score)
@@ -3196,25 +3261,18 @@ class MemoryStore:
             st = self._circuit_breaker.state
         alerts = self._anomaly_detector.detect(report)
         self._hive_recall_weight_multiplier = hive_recall_multiplier(st)
-        report = report.model_copy(
-            update={"anomalies": alerts, "circuit_state": st.value},
-        )
-        if record_history and self._diagnostics_history_store is not None:
-            self._diagnostics_history_store.record(report, circuit_state=st.value)
-            self._diagnostics_history_store.prune_older_than(dcfg.retention_days)
+        return st, alerts
+
+    def _audit_diagnostics(self, composite_score: float, circuit_state: str) -> None:
+        """Best-effort audit-log append for a diagnostics run (never raises)."""
         try:
             self._persistence.append_audit(
                 "diagnostics_record",
                 "",
-                {
-                    "composite_score": report.composite_score,
-                    "circuit_state": st.value,
-                },
+                {"composite_score": composite_score, "circuit_state": circuit_state},
             )
         except Exception:
             logger.warning("diagnostics_audit_failed", exc_info=True)
-        self._metrics.increment("store.diagnostics")
-        return report
 
     def diagnostics_history(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Return recent diagnostics snapshots from SQLite (EPIC-030).
@@ -3233,248 +3291,6 @@ class MemoryStore:
         for row in rows:
             row.setdefault("project_id", self._project_id)
         return rows
-
-    # ------------------------------------------------------------------
-    # Relations (EPIC-006)
-    # ------------------------------------------------------------------
-
-    def count_relations(self) -> int:
-        """Return the total number of stored relation triples."""
-        return self._persistence.count_relations()
-
-    def save_relations(self, key: str, relations: list[RelationEntry]) -> None:
-        """Persist *relations* for *key* and refresh the in-memory cache.
-
-        Public wrapper for ``_persistence.save_relations`` (TAP-510) so
-        callers (auto-consolidation, future graph rebuilders) don't have
-        to reach into ``_persistence`` / ``_lock`` / ``_relations``
-        directly.
-
-        Accepts a list of :class:`~tapps_brain.relations.RelationEntry`
-        — the same type produced by extraction and merging.  The
-        in-memory cache is rebuilt from the persistence layer under
-        ``_lock`` so concurrent readers see the old or new set, never a
-        partial write.
-        """
-        self._persistence.save_relations(key, relations)
-        with self._lock:
-            self._relations[key] = self._persistence.load_relations(key)
-
-    def load_relations(self, key: str) -> list[dict[str, Any]]:
-        """Reload relations for *key* from persistence and refresh the cache.
-
-        Public wrapper for ``_persistence.load_relations`` (TAP-510).
-        Use after an external writer has mutated the underlying store and
-        the in-memory cache may be stale.  Returns the freshly loaded
-        list of relation dicts (same shape as :meth:`get_relations`).
-        """
-        loaded = self._persistence.load_relations(key)
-        with self._lock:
-            self._relations[key] = list(loaded)
-        return list(loaded)
-
-    def get_relations(self, key: str) -> list[dict[str, Any]]:
-        """Return all relations associated with a memory entry key.
-
-        Args:
-            key: The memory entry key.
-
-        Returns:
-            List of relation dicts with subject, predicate, object_entity,
-            source_entry_keys, confidence, and created_at.
-        """
-        return list(self._relations.get(key, []))
-
-    def get_relations_batch(self, keys: list[str]) -> dict[str, list[dict[str, Any]]]:
-        """Return relations for multiple keys in one call (STORY-048.2).
-
-        Args:
-            keys: Memory entry keys to look up.
-
-        Returns:
-            Dict mapping each requested key to its list of relation dicts.
-            Keys with no relations map to an empty list.
-        """
-        return {key: list(self._relations.get(key, [])) for key in keys}
-
-    # ------------------------------------------------------------------
-    # Health-check helpers (TAP-722)
-    # ------------------------------------------------------------------
-
-    def iter_active_entries(self) -> Iterator[MemoryEntry]:
-        """Yield a thread-safe snapshot of every current entry (TAP-722).
-
-        Acquires the internal lock for the minimum time needed to copy the
-        entry dict, then yields from the snapshot so callers never hold a
-        reference to mutable internal state.
-
-        This is the preferred public alternative to accessing ``_entries``
-        directly from outside the store.
-        """
-        with self._serialized():
-            entries = list(self._entries.values())
-        yield from entries
-
-    def count_orphaned_relations(self) -> int:
-        """Count relation records that reference keys no longer in the store.
-
-        Uses the in-memory ``_relations`` cache (kept in sync with the
-        persistence layer by :meth:`save_relations` / :meth:`load_relations`)
-        to avoid a Postgres round-trip and to eliminate the TOCTOU window
-        that would arise from fetching relations outside ``_lock`` and then
-        snapshotting entry keys inside it (TAP-722).
-
-        Returns:
-            Number of ``source_entry_keys`` references in any cached relation
-            that have no corresponding entry in the in-memory store.  Relations
-            are indexed by ``source_entry_key`` in the cache, so a relation
-            with two missing source keys contributes 2 to the count — matching
-            the semantics of the original per-reference count.
-        """
-        with self._serialized():
-            entry_keys = set(self._entries.keys())
-            return sum(
-                len(rels) for src_key, rels in self._relations.items() if src_key not in entry_keys
-            )
-
-    def count_expired_entries(self, now: datetime | None = None) -> int:
-        """Count entries whose ``valid_at`` timestamp lies in the past.
-
-        Uses a proper :class:`~datetime.datetime` comparison instead of
-        ISO string lexicographic ordering, so the count is correct even
-        for timestamps with varying timezone representations (TAP-722).
-
-        Args:
-            now: Reference timestamp (UTC).  Defaults to
-                ``datetime.now(UTC)`` when *None*.
-
-        Returns:
-            Number of entries whose ``valid_at`` field is non-*None* and
-            falls before *now*.
-        """
-        from datetime import UTC
-        from datetime import datetime as _datetime
-
-        _now = now if now is not None else _datetime.now(tz=UTC)
-
-        with self._serialized():
-            entries = list(self._entries.values())
-
-        expired = 0
-        for entry in entries:
-            valid_at_str: str | None = getattr(entry, "valid_at", None)
-            if valid_at_str is None:
-                continue
-            try:
-                valid_at_dt = _datetime.fromisoformat(valid_at_str)
-                if valid_at_dt.tzinfo is None:
-                    valid_at_dt = valid_at_dt.replace(tzinfo=UTC)
-            except (ValueError, TypeError):
-                continue
-            if valid_at_dt < _now:
-                expired += 1
-        return expired
-
-    def find_related(
-        self,
-        key: str,
-        *,
-        max_hops: int = 2,
-    ) -> list[tuple[str, int]]:
-        """Find entries related to *key* via BFS traversal of the relation graph.
-
-        Two entries are considered connected when they share an entity
-        (subject or object_entity) in their extracted relations.
-
-        Args:
-            key: Starting entry key.
-            max_hops: Maximum traversal depth (default 2).
-
-        Returns:
-            List of ``(entry_key, hop_distance)`` tuples, ordered by hop
-            distance (ascending) then key name.  The starting key is
-            **not** included in the results.
-
-        Raises:
-            KeyError: If *key* does not exist in the store.
-        """
-        with self._serialized():
-            if key not in self._entries:
-                raise KeyError(key)
-
-            # Build entity -> set[entry_key] index from all relations
-            entity_to_keys: dict[str, set[str]] = {}
-            for entry_key, rels in self._relations.items():
-                for rel in rels:
-                    for entity in (rel["subject"].lower(), rel["object_entity"].lower()):
-                        entity_to_keys.setdefault(entity, set()).add(entry_key)
-
-            # BFS
-            visited: set[str] = {key}
-            result: list[tuple[str, int]] = []
-            frontier: set[str] = {key}
-
-            for hop in range(1, max_hops + 1):
-                next_frontier: set[str] = set()
-                for current_key in frontier:
-                    # Collect entities from current_key's relations
-                    for rel in self._relations.get(current_key, []):
-                        for entity in (rel["subject"].lower(), rel["object_entity"].lower()):
-                            for neighbor_key in entity_to_keys.get(entity, set()):
-                                if neighbor_key not in visited:
-                                    visited.add(neighbor_key)
-                                    result.append((neighbor_key, hop))
-                                    next_frontier.add(neighbor_key)
-                frontier = next_frontier
-
-        # Sort by hop distance, then key name for determinism
-        result.sort(key=lambda t: (t[1], t[0]))
-        return result
-
-    def query_relations(
-        self,
-        *,
-        subject: str | None = None,
-        predicate: str | None = None,
-        object_entity: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Filter relations by subject, predicate, and/or object_entity.
-
-        All filters use case-insensitive matching.  When multiple filters are
-        provided they are combined with AND logic.  Passing no filters returns
-        all relations.
-
-        Args:
-            subject: Filter by subject entity.
-            predicate: Filter by predicate/relationship type.
-            object_entity: Filter by object entity.
-
-        Returns:
-            List of matching relation dicts.
-        """
-        with self._serialized():
-            matches: list[dict[str, Any]] = []
-            for rels in self._relations.values():
-                for rel in rels:
-                    if subject is not None and rel["subject"].lower() != subject.lower():
-                        continue
-                    if predicate is not None and rel["predicate"].lower() != predicate.lower():
-                        continue
-                    if (
-                        object_entity is not None
-                        and rel["object_entity"].lower() != object_entity.lower()
-                    ):
-                        continue
-                    matches.append(dict(rel))
-            # Deduplicate by (subject, predicate, object_entity) triple
-            seen: set[tuple[str, str, str]] = set()
-            deduped: list[dict[str, Any]] = []
-            for m in matches:
-                triple = (m["subject"].lower(), m["predicate"].lower(), m["object_entity"].lower())
-                if triple not in seen:
-                    seen.add(triple)
-                    deduped.append(m)
-        return deduped
 
     # ------------------------------------------------------------------
     # Tag management (EPIC-015)
@@ -3561,538 +3377,6 @@ class MemoryStore:
             List of matching ``MemoryEntry`` objects.
         """
         return self.list_all(tags=[tag], tier=tier)
-
-    # ------------------------------------------------------------------
-    # Integrity verification (H4b)
-    # ------------------------------------------------------------------
-
-    def verify_integrity(self) -> dict[str, Any]:
-        """Scan all entries and verify their HMAC integrity hashes.
-
-        For each entry that has a stored ``integrity_hash``, recomputes the
-        HMAC-SHA256 and checks for a match. Entries without a stored hash
-        (pre-v8 or NULL) are reported separately.
-
-        Returns:
-            Dict with ``total``, ``verified``, ``tampered``, ``no_hash``,
-            ``tampered_keys``, ``missing_hash_keys``, ``tampered_details``.
-        """
-        from tapps_brain.integrity import (
-            compute_integrity_hash,
-            compute_integrity_hash_v1,
-            verify_integrity_hash,
-        )
-
-        self._metrics.increment("store.verify_integrity")
-
-        with self._serialized():
-            entries = list(self._entries.values())
-
-        total = len(entries)
-        verified = 0
-        tampered: list[str] = []
-        tampered_details: list[dict[str, str]] = []
-        missing_hash_keys: list[str] = []
-
-        for entry in entries:
-            stored_hash = getattr(entry, "integrity_hash", None)
-            if not stored_hash:
-                missing_hash_keys.append(entry.key)
-                continue
-
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-            hash_version = getattr(entry, "integrity_hash_v", 1)
-
-            # Use the version-appropriate verifier so legacy v1 rows don't
-            # spuriously show as tampered when the process uses the v2 scheme.
-            if hash_version == 1:
-                # v1: legacy pipe-joined canonical form
-                v1_expected = compute_integrity_hash_v1(
-                    entry.key, entry.value, tier_str, source_str
-                )
-                import hmac as _hmac
-
-                if _hmac.compare_digest(v1_expected, stored_hash):
-                    verified += 1
-                    continue
-            elif verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
-                verified += 1
-                continue
-
-            tampered.append(entry.key)
-            expected = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
-            tampered_details.append(
-                {
-                    "key": entry.key,
-                    "stored_hash": stored_hash,
-                    "expected_hash": expected,
-                    "hash_version": str(hash_version),
-                }
-            )
-            logger.warning(
-                "integrity_verification_failed",
-                key=entry.key,
-                tier=tier_str,
-                hash_version=hash_version,
-            )
-
-        return {
-            "total": total,
-            "verified": verified,
-            "tampered": len(tampered),
-            "no_hash": len(missing_hash_keys),
-            "tampered_keys": tampered,
-            "missing_hash_keys": missing_hash_keys,
-            "tampered_details": tampered_details,
-        }
-
-    def rehash_integrity_v1(self) -> dict[str, int]:
-        """Recompute integrity hashes for legacy v1 (pipe-joined) entries.
-
-        Scans all in-memory entries whose ``integrity_hash_v == 1`` (written
-        before TAP-710 was fixed), verifies each against the old v1 canonical
-        form, and — if the stored hash is still valid — replaces it with a
-        fresh v2 (JSON) hash.  Entries whose v1 hash no longer matches (i.e.
-        already tampered) are left unchanged and counted in ``tampered``.
-        Entries with no hash are skipped and counted in ``skipped_no_hash``.
-
-        This method is the application-layer migration shim for upgrading from
-        ``integrity_hash_v = 1`` to ``integrity_hash_v = 2``.  After running
-        it, :meth:`verify_integrity` will validate all entries under the v2
-        scheme.  The shim is safe to run multiple times — v2 entries are a
-        no-op.
-
-        Returns:
-            Dict with ``upgraded``, ``tampered``, ``skipped_no_hash``,
-            ``already_v2`` counts.
-        """
-        import hmac as _hmac
-
-        from tapps_brain.integrity import (
-            INTEGRITY_HASH_VERSION as _HASH_V,
-        )
-        from tapps_brain.integrity import (
-            compute_integrity_hash,
-            compute_integrity_hash_v1,
-        )
-
-        upgraded = 0
-        tampered = 0
-        skipped_no_hash = 0
-        already_v2 = 0
-
-        with self._serialized():
-            keys = list(self._entries.keys())
-
-        for key in keys:
-            with self._serialized():
-                entry = self._entries.get(key)
-            if entry is None:
-                continue
-
-            stored_hash = getattr(entry, "integrity_hash", None)
-            if not stored_hash:
-                skipped_no_hash += 1
-                continue
-
-            hash_version = getattr(entry, "integrity_hash_v", 1)
-            if hash_version >= 2:
-                already_v2 += 1
-                continue
-
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
-
-            # Verify that the stored v1 hash is still intact before upgrading.
-            v1_expected = compute_integrity_hash_v1(entry.key, entry.value, tier_str, source_str)
-            if not _hmac.compare_digest(v1_expected, stored_hash):
-                tampered += 1
-                logger.warning(
-                    "rehash_integrity_v1.tampered_skipped",
-                    key=key,
-                    hint="v1 hash mismatch — entry may be tampered; not upgraded",
-                )
-                continue
-
-            # v1 hash is intact — upgrade to v2.
-            new_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
-            upgraded_entry = entry.model_copy(
-                update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
-            )
-            with self._lock:
-                self._entries[key] = upgraded_entry
-
-            if self._hive_store is not None:
-                with contextlib.suppress(Exception):
-                    self._hive_store.save(upgraded_entry)  # type: ignore[call-arg,arg-type,misc]
-
-            if self._backend is not None:  # type: ignore[attr-defined]
-                with contextlib.suppress(Exception):
-                    self._backend.save(upgraded_entry)  # type: ignore[attr-defined]
-
-            upgraded += 1
-            logger.debug("rehash_integrity_v1.upgraded", key=key)
-
-        logger.info(
-            "rehash_integrity_v1.complete",
-            upgraded=upgraded,
-            tampered=tampered,
-            skipped_no_hash=skipped_no_hash,
-            already_v2=already_v2,
-        )
-        return {
-            "upgraded": upgraded,
-            "tampered": tampered,
-            "skipped_no_hash": skipped_no_hash,
-            "already_v2": already_v2,
-        }
-
-    # ------------------------------------------------------------------
-    # Flywheel (EPIC-031)
-    # ------------------------------------------------------------------
-
-    def zero_result_gap_signals(self) -> list[tuple[str, str]]:
-        """Return (query, timestamp) pairs for recalls that returned no memories."""
-        with self._serialized():
-            return list(self._zero_result_queries)
-
-    def process_feedback(
-        self,
-        *,
-        since: str | None = None,
-        config: Any = None,  # noqa: ANN401
-    ) -> dict[str, Any]:
-        """Apply queued feedback events to entry confidence (Bayesian update)."""
-        from tapps_brain.flywheel import FeedbackProcessor, FlywheelConfig
-
-        cfg = config if config is not None else FlywheelConfig()
-        return FeedbackProcessor(cfg).process_feedback(self, since=since)
-
-    def knowledge_gaps(
-        self,
-        limit: int = 10,
-        *,
-        semantic: bool = False,
-    ) -> list[Any]:
-        """Ranked knowledge gaps (explicit reports + zero-result recall)."""
-        from tapps_brain.flywheel import GapTracker
-
-        gaps = GapTracker().analyze_gaps(self, use_semantic_clustering=semantic)
-        return gaps[:limit]
-
-    def generate_report(self, **kwargs: Any) -> Any:  # noqa: ANN401
-        """Build markdown + structured quality report (flywheel)."""
-        from tapps_brain.flywheel import generate_report as flywheel_generate_report
-
-        qr = flywheel_generate_report(self, **kwargs)
-        with self._serialized():
-            self._latest_quality_report = qr.model_dump(mode="json")
-        return qr
-
-    def latest_quality_report(self) -> dict[str, Any] | None:
-        """Last report from ``generate_report`` (None if never run)."""
-        with self._serialized():
-            return self._latest_quality_report
-
-    # ------------------------------------------------------------------
-    # Feedback API (EPIC-029)
-    # ------------------------------------------------------------------
-
-    def _get_feedback_store(self) -> FeedbackStore | InMemoryFeedbackStore:
-        """Return the lazily-initialized feedback store.
-
-        Returns a :class:`~tapps_brain.feedback.FeedbackStore` when the active
-        backend is a :class:`~tapps_brain.postgres_private.PostgresPrivateBackend`
-        with a connection manager.  Falls back to an
-        :class:`~tapps_brain.feedback.InMemoryFeedbackStore` when the backend
-        has no Postgres connection (e.g. the unit-test ``InMemoryPrivateBackend``).
-        The in-memory store persists events for the lifetime of the
-        :class:`MemoryStore` instance only — it is not durable.
-        """
-        if self._feedback_store_instance is None:
-            from tapps_brain.feedback import FeedbackConfig, FeedbackStore, InMemoryFeedbackStore
-
-            cm = getattr(self._persistence, "_cm", None)
-            project_id = getattr(self._persistence, "_project_id", None)
-            agent_id = getattr(self._persistence, "_agent_id", None)
-
-            if cm is None or project_id is None or agent_id is None:
-                # No Postgres connection — fall back to in-memory store.
-                # Use backend._feedback_events if available so all MemoryStore
-                # instances sharing the same InMemoryPrivateBackend (same
-                # project_root in tests) see the same feedback data.
-                config: FeedbackConfig | None = None
-                if self._profile is not None:
-                    config = getattr(self._profile, "feedback", None)
-                shared = getattr(self._persistence, "_feedback_events", None)
-                self._feedback_store_instance = InMemoryFeedbackStore(
-                    config=config, shared_events=shared
-                )
-            else:
-                config = None
-                if self._profile is not None:
-                    config = getattr(self._profile, "feedback", None)
-                self._feedback_store_instance = FeedbackStore(
-                    cm,
-                    project_id=project_id,
-                    agent_id=agent_id,
-                    config=config,
-                )
-        return self._feedback_store_instance
-
-    def _propagate_feedback_to_hive(self, event: FeedbackEvent, session_id: str | None) -> None:
-        """Mirror feedback to the Hive when the entry was Hive-sourced (STORY-029.7).
-
-        Resolves namespace from the per-session hive recall index, or from
-        ``event.details[\"hive_namespace\"]`` when set explicitly.
-
-        Failure-tolerant: Hive write errors are logged and do not affect local
-        feedback persistence.
-        """
-        if self._hive_store is None:
-            return
-        ek = event.entry_key
-        if not ek:
-            return
-        ns: str | None = None
-        if session_id:
-            with self._serialized():
-                ns = self._hive_feedback_key_index.get(session_id, {}).get(ek)
-        if ns is None:
-            d = event.details if isinstance(event.details, dict) else {}
-            hn = d.get("hive_namespace")
-            if isinstance(hn, str) and hn.strip():
-                ns = hn.strip()
-        if ns is None:
-            return
-        try:
-            details_out: dict[str, Any] = (
-                dict(event.details) if isinstance(event.details, dict) else {}
-            )
-            self._hive_store.record_feedback_event(
-                event_id=event.id,
-                namespace=ns,
-                entry_key=ek,
-                event_type=event.event_type,
-                session_id=event.session_id,
-                utility_score=event.utility_score,
-                details=details_out,
-                timestamp=event.timestamp,
-                source_project=str(self._project_root.resolve()),
-            )
-        except Exception:
-            logger.warning(
-                "hive_feedback_propagate_failed",
-                entry_key=ek,
-                namespace=ns,
-                exc_info=True,
-            )
-
-    def rate_recall(
-        self,
-        entry_key: str,
-        *,
-        rating: str = "helpful",
-        session_id: str | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> FeedbackEvent:
-        """Record a user rating for a recalled memory entry.
-
-        Convenience wrapper that creates a ``recall_rated`` feedback event.
-
-        Args:
-            entry_key: The memory entry key that was recalled.
-            rating: Quality rating — ``"helpful"`` (1.0), ``"partial"`` (0.5),
-                ``"irrelevant"`` (0.0), or ``"outdated"`` (0.0).
-            session_id: Optional calling session identifier.
-            details: Optional additional metadata.
-
-        Returns:
-            The persisted ``FeedbackEvent``.
-
-        Raises:
-            ValueError: If *rating* is not a recognised value.
-        """
-        from tapps_brain.feedback import FeedbackEvent
-
-        _RATING_SCORES: dict[str, float] = {
-            "helpful": 1.0,
-            "partial": 0.5,
-            "irrelevant": 0.0,
-            "outdated": 0.0,
-        }
-        if rating not in _RATING_SCORES:
-            raise ValueError(f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}")
-
-        log = logger.bind(project_id=self._project_id, op="feedback", event_type="recall_rated")
-        log.debug("store.feedback.recall_rated")
-        event = FeedbackEvent(
-            event_type="recall_rated",
-            entry_key=entry_key,
-            session_id=session_id,
-            utility_score=_RATING_SCORES[rating],
-            details={"rating": rating, **(details or {})},
-            project_id=self._project_id,
-        )
-        self._get_feedback_store().record(event)
-        self._metrics.increment("store.feedback.recall_rated")
-        self._propagate_feedback_to_hive(event, session_id)
-        return event
-
-    def report_gap(
-        self,
-        query: str,
-        *,
-        session_id: str | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> FeedbackEvent:
-        """Report a knowledge gap — a query that returned insufficient results.
-
-        Creates a ``gap_reported`` feedback event.  The *query* string is
-        stored in ``details["query"]`` for later clustering and analysis.
-
-        Args:
-            query: The query or topic that was not well served.
-            session_id: Optional calling session identifier.
-            details: Optional additional metadata.
-
-        Returns:
-            The persisted ``FeedbackEvent``.
-        """
-        from tapps_brain.feedback import FeedbackEvent
-
-        log = logger.bind(project_id=self._project_id, op="feedback", event_type="gap_reported")
-        log.debug("store.feedback.gap_reported")
-        event = FeedbackEvent(
-            event_type="gap_reported",
-            session_id=session_id,
-            details={"query": query, **(details or {})},
-            project_id=self._project_id,
-        )
-        self._get_feedback_store().record(event)
-        self._metrics.increment("store.feedback.gap_reported")
-        return event
-
-    def report_issue(
-        self,
-        entry_key: str,
-        issue: str,
-        *,
-        session_id: str | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> FeedbackEvent:
-        """Flag a quality issue with a specific memory entry.
-
-        Creates an ``issue_flagged`` feedback event.  The *issue* description
-        is stored in ``details["issue"]``.
-
-        Args:
-            entry_key: The memory entry key that has the quality issue.
-            issue: Human-readable description of the issue.
-            session_id: Optional calling session identifier.
-            details: Optional additional metadata.
-
-        Returns:
-            The persisted ``FeedbackEvent``.
-        """
-        from tapps_brain.feedback import FeedbackEvent
-
-        log = logger.bind(project_id=self._project_id, op="feedback", event_type="issue_flagged")
-        log.debug("store.feedback.issue_flagged")
-        event = FeedbackEvent(
-            event_type="issue_flagged",
-            entry_key=entry_key,
-            session_id=session_id,
-            details={"issue": issue, **(details or {})},
-            project_id=self._project_id,
-        )
-        self._get_feedback_store().record(event)
-        self._metrics.increment("store.feedback.issue_flagged")
-        self._propagate_feedback_to_hive(event, session_id)
-        return event
-
-    def record_feedback(
-        self,
-        event_type: str,
-        *,
-        entry_key: str | None = None,
-        session_id: str | None = None,
-        utility_score: float | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> FeedbackEvent:
-        """Record a generic feedback event (built-in or custom event type).
-
-        This is the low-level API that accepts any valid Object-Action
-        snake_case ``event_type``.  Use the typed convenience methods
-        (``rate_recall``, ``report_gap``, ``report_issue``) for standard
-        events, and this method for custom event types registered via
-        ``FeedbackConfig.custom_event_types``.
-
-        Args:
-            event_type: Object-Action snake_case event name (open enum).
-            entry_key: Optional memory entry key this event relates to.
-            session_id: Optional calling session identifier.
-            utility_score: Numeric utility signal in [-1.0, 1.0].
-            details: Optional additional metadata.
-
-        Returns:
-            The persisted ``FeedbackEvent``.
-
-        Raises:
-            ValueError: If *event_type* fails pattern validation, or if
-                strict event types are enabled and the type is unknown.
-        """
-        from tapps_brain.feedback import FeedbackEvent
-
-        log = logger.bind(project_id=self._project_id, op="feedback", event_type=event_type)
-        log.debug("store.feedback.recorded")
-        event = FeedbackEvent(
-            event_type=event_type,
-            entry_key=entry_key,
-            session_id=session_id,
-            utility_score=utility_score,
-            details=details or {},
-            project_id=self._project_id,
-        )
-        self._get_feedback_store().record(event)
-        self._metrics.increment("store.feedback.recorded")
-        self._propagate_feedback_to_hive(event, session_id)
-        return event
-
-    def query_feedback(
-        self,
-        *,
-        event_type: str | None = None,
-        entry_key: str | None = None,
-        session_id: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        limit: int = 100,
-    ) -> list[FeedbackEvent]:
-        """Query recorded feedback events with optional filters.
-
-        Convenience wrapper around ``FeedbackStore.query()``.
-
-        Args:
-            event_type: Filter by exact event type (or None for all).
-            entry_key: Filter by related memory entry key.
-            session_id: Filter by session identifier.
-            since: ISO-8601 lower bound (inclusive) on timestamp.
-            until: ISO-8601 upper bound (inclusive) on timestamp.
-            limit: Maximum number of results (default 100).
-
-        Returns:
-            Matching ``FeedbackEvent`` objects ordered by timestamp ascending.
-        """
-        return self._get_feedback_store().query(
-            event_type=event_type,
-            entry_key=entry_key,
-            session_id=session_id,
-            since=since,
-            until=until,
-            limit=limit,
-        )
 
     def close(self) -> None:
         """Close the underlying persistence layer."""

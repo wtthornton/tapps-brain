@@ -73,6 +73,13 @@ class _CapturePersistenceBackend:
         with self._lock:
             self._saved.append(entry)
 
+    def save_many(self, entries: list[MemoryEntry]) -> None:
+        # TAP-2800: capture a batched persist the same way as single saves so
+        # MemoryStore.save_many works under async-native capture; the entries are
+        # flushed via the async backend after the to_thread call returns.
+        with self._lock:
+            self._saved.extend(entries)
+
     def delete(self, key: str) -> bool:
         with self._lock:
             self._saved = [e for e in self._saved if e.key != key]

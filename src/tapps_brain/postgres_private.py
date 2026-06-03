@@ -226,6 +226,37 @@ class PostgresPrivateBackend:
             key=entry.key,
         )
 
+    def save_many(self, entries: list[MemoryEntry]) -> None:
+        """Batch-upsert multiple entries in a single pipelined round-trip (TAP-2800).
+
+        Reuses :data:`SAVE_UPSERT_SQL` and :func:`build_save_params` verbatim so
+        the column list cannot drift from :meth:`save`.  psycopg 3 routes
+        ``executemany`` through pipeline mode internally (since 3.1), coalescing
+        the N upserts into far fewer client/server round-trips than calling
+        :meth:`save` N times.  All rows run inside one transaction, so a failure
+        rolls the whole batch back — callers pre-validate per row, so only valid
+        entries reach this method.
+        """
+        if not entries:
+            return
+        params_seq = [
+            _sql.build_save_params(
+                entry=entry,
+                project_id=self._project_id,
+                agent_id=self._agent_id,
+            )
+            for entry in entries
+        ]
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.executemany(_sql.SAVE_UPSERT_SQL, params_seq)
+
+        logger.debug(
+            "postgres_private.saved_many",
+            project_id=self._project_id,
+            agent_id=self._agent_id,
+            count=len(entries),
+        )
+
     def load_all(self, *, limit: int | None = None) -> list[MemoryEntry]:
         """Load entries for this ``(project_id, agent_id)`` scope.
 

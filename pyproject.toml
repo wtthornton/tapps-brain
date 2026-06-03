@@ -207,6 +207,9 @@ ignore = [
 "src/tapps_brain/evaluation.py" = ["RUF002", "TC003", "N818", "PLR2004", "E501"]
 "src/tapps_brain/flywheel.py" = ["TC001", "N815", "N814", "ANN401", "SIM108", "SIM102", "PLR2004"]
 "src/tapps_brain/store.py" = ["PLR0915", "PLR2004", "N806"]
+# TAP-2833: store.py mixin modules carry code extracted from store.py and
+# inherit its exemptions (magic-value comparisons, uppercase local consts).
+"src/tapps_brain/_store_*.py" = ["PLR0915", "PLR2004", "N806"]
 # Service layer uses Any extensively for generic JSON/dict dispatch — intentional
 "src/tapps_brain/services/*.py" = ["ANN401"]
 "src/tapps_brain/mcp_server/__init__.py" = [

@@ -9,6 +9,7 @@ Story: STORY-002.6 from EPIC-002
 from __future__ import annotations
 
 import random
+import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -55,6 +56,82 @@ class TestStoreSaveBenchmark:
                     )
 
             benchmark(do_saves)
+        finally:
+            store.close()
+
+
+class TestSaveManyBatchingBenchmark:
+    """TAP-2800 before/after: per-row save loop vs one batched save_many.
+
+    The win is the elimination of N-1 DB round-trips, so a small per-round-trip
+    latency is injected to model real Postgres write-through cost.  Run both and
+    compare the means::
+
+        pytest tests/benchmarks/test_benchmarks.py -k SaveManyBatching \\
+            --benchmark-only --benchmark-sort=name
+
+    ``test_before_per_row_save_loop`` issues ``_ROWS`` round-trips;
+    ``test_after_batched_save_many`` issues exactly one.  The mean of the
+    "after" case should be roughly ``_ROWS``x lower, demonstrating the fix.
+    """
+
+    _ROWS = 100
+    _LATENCY_S = 0.005  # simulated per-round-trip DB latency (~remote Postgres)
+
+    def _store_with_latency(self, tmp_path: Path) -> MemoryStore:
+        # embedding_provider=None isolates the DB round-trip cost — embedding is
+        # per-row CPU that is identical in both paths and would otherwise mask
+        # the round-trip win this benchmark is meant to demonstrate.
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        backend = store._persistence  # type: ignore[attr-defined]
+        orig_save = backend.save
+        orig_save_many = backend.save_many
+        latency = self._LATENCY_S
+
+        def slow_save(entry: object) -> None:
+            time.sleep(latency)  # one round-trip per entry
+            orig_save(entry)
+
+        def slow_save_many(entries: list) -> None:
+            time.sleep(latency)  # one round-trip for the whole batch
+            orig_save_many(entries)
+
+        backend.save = slow_save  # type: ignore[assignment]
+        backend.save_many = slow_save_many  # type: ignore[assignment]
+        return store
+
+    def _items(self) -> list[dict[str, object]]:
+        # Disable dedup / conflict-check / consolidation so the ONLY backend
+        # writes are the main per-entry persists — isolating the round-trip win.
+        return [
+            {
+                "key": f"k{i}",
+                "value": f"batch value {i} with content",
+                "skip_consolidation": True,
+                "dedup": False,
+                "conflict_check": False,
+            }
+            for i in range(self._ROWS)
+        ]
+
+    def test_before_per_row_save_loop(self, benchmark, tmp_path: Path) -> None:
+        store = self._store_with_latency(tmp_path)
+        items = self._items()
+        try:
+
+            def do_loop() -> None:
+                for item in items:
+                    store.save(**item)  # type: ignore[arg-type]
+
+            benchmark(do_loop)
+        finally:
+            store.close()
+
+    def test_after_batched_save_many(self, benchmark, tmp_path: Path) -> None:
+        store = self._store_with_latency(tmp_path)
+        items = self._items()
+        try:
+            benchmark(lambda: store.save_many(items))
         finally:
             store.close()
 

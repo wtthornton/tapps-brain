@@ -147,6 +147,33 @@ class AsyncPostgresPrivateBackend:
             key=entry.key,
         )
 
+    async def save_many(self, entries: list[MemoryEntry]) -> None:
+        """Batch-upsert multiple entries in a single pipelined round-trip (TAP-2800).
+
+        Async sibling of :meth:`PostgresPrivateBackend.save_many`.  Reuses
+        :data:`SAVE_UPSERT_SQL` + :func:`build_save_params` verbatim and relies on
+        psycopg 3's pipelined ``executemany`` to coalesce the N upserts.
+        """
+        if not entries:
+            return
+        params_seq = [
+            _sql.build_save_params(
+                entry=entry,
+                project_id=self._project_id,
+                agent_id=self._agent_id,
+            )
+            for entry in entries
+        ]
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.executemany(_sql.SAVE_UPSERT_SQL, params_seq)
+
+        logger.debug(
+            "async_postgres_private.saved_many",
+            project_id=self._project_id,
+            agent_id=self._agent_id,
+            count=len(entries),
+        )
+
     async def load_all(self, *, limit: int | None = None) -> list[MemoryEntry]:
         """Load entries for this ``(project_id, agent_id)`` scope.
 

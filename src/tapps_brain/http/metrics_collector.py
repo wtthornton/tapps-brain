@@ -107,188 +107,201 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _collect_metrics(  # noqa: PLR0915
-    dsn: str | None,
-    store: Any = None,  # noqa: ANN401
-    *,
-    redact_tenant_labels: bool = False,
-    process_start_time: float | None = None,
-) -> str:
-    """Render Prometheus exposition text.
+def _emit_gauge(lines: list[str], name: str, value: float, help_text: str = "") -> None:
+    """Append a single Prometheus gauge (HELP/TYPE/value) to *lines*."""
+    if help_text:
+        lines.append(f"# HELP {name} {help_text}")
+    lines.append(f"# TYPE {name} gauge")
+    lines.append(f"{name} {value}")
 
-    ``redact_tenant_labels`` (TAP-547): when ``True`` the per-tenant labels
-    ``project_id`` and ``agent_id`` are dropped from
-    ``tapps_brain_mcp_requests_total`` and ``tapps_brain_tool_calls_total``
-    and the counters are aggregated across those dimensions.  This is the
-    shape served to anonymous (or unauthenticated) scrapers so reachable-
-    but-unprivileged callers cannot enumerate tenant/agent activity.
 
-    ``process_start_time``: Unix timestamp of process start.  Callers should
-    pass their module-level ``_PROCESS_START_TIME`` constant.  When omitted,
-    ``time.time()`` is used (slightly off from the real start but harmless for
-    tests that don't check the exact value).
-    """
-    _start = process_start_time if process_start_time is not None else time.time()
-    lines: list[str] = []
-
-    def gauge(name: str, value: float, help_text: str = "") -> None:
-        if help_text:
-            lines.append(f"# HELP {name} {help_text}")
-        lines.append(f"# TYPE {name} gauge")
-        lines.append(f"{name} {value}")
-
-    gauge(
+def _emit_process_gauges(lines: list[str], start: float) -> None:
+    """Process start-time, uptime, and Python-version gauges."""
+    _emit_gauge(
+        lines,
         "tapps_brain_process_start_time_seconds",
-        _start,
+        start,
         "Unix timestamp when tapps-brain HTTP adapter was started.",
     )
-    gauge(
+    _emit_gauge(
+        lines,
         "tapps_brain_process_uptime_seconds",
-        time.time() - _start,
+        time.time() - start,
         "Seconds since tapps-brain HTTP adapter started.",
     )
-    gauge(
+    _emit_gauge(
+        lines,
         "tapps_brain_python_info",
         1.0,
         f"Python version info (version={sys.version_info.major}.{sys.version_info.minor}).",
     )
 
+
+def _emit_db_gauges(lines: list[str], dsn: str | None) -> None:
+    """Database readiness + applied-migration-version gauges."""
     is_ready, migration_version, _ = _probe_db(dsn)
-    gauge(
+    _emit_gauge(
+        lines,
         "tapps_brain_db_ready",
         1.0 if is_ready else 0.0,
         "1 if the configured Postgres database responded to a probe, 0 otherwise.",
     )
     if migration_version is not None:
-        gauge(
+        _emit_gauge(
+            lines,
             "tapps_brain_db_migration_version",
             float(migration_version),
             "Highest applied Hive schema migration version.",
         )
 
-    # STORY-070.12: per-(project_id, agent_id) request counters.
-    # TAP-547: drop labels entirely when redacting — we still emit the
-    # counter so scrapers have a total-volume signal, just not per-tenant.
+
+def _emit_request_counters(lines: list[str], *, redact: bool) -> None:
+    """STORY-070.12: per-(project_id, agent_id) MCP request counters.
+
+    TAP-547: drop labels entirely when *redact* — still emit the counter so
+    scrapers have a total-volume signal, just not per-tenant.
+    """
     with _LABELED_REQUEST_COUNTS_LOCK:
         snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
-    if snapshot_counts:
+    if not snapshot_counts:
+        return
+    lines.append(
+        "# HELP tapps_brain_mcp_requests_total "
+        "Total MCP requests, labelled by project_id and agent_id."
+    )
+    lines.append("# TYPE tapps_brain_mcp_requests_total counter")
+    if redact:
+        lines.append(f"tapps_brain_mcp_requests_total {sum(snapshot_counts.values())}")
+        return
+    for (pid, aid), count in sorted(snapshot_counts.items()):
+        safe_pid = pid.replace('"', '\\"')
+        safe_aid = aid.replace('"', '\\"')
         lines.append(
-            "# HELP tapps_brain_mcp_requests_total "
-            "Total MCP requests, labelled by project_id and agent_id."
+            f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
+            f'agent_id="{safe_aid}"}} {count}'
         )
-        lines.append("# TYPE tapps_brain_mcp_requests_total counter")
-        if redact_tenant_labels:
-            total = sum(snapshot_counts.values())
-            lines.append(f"tapps_brain_mcp_requests_total {total}")
-        else:
-            for (pid, aid), count in sorted(snapshot_counts.items()):
-                safe_pid = pid.replace('"', '\\"')
-                safe_aid = aid.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
-                    f'agent_id="{safe_aid}"}} {count}'
-                )
 
-    # STORY-070.12: per-(project_id, agent_id, tool, status) tool call counters.
-    # TAP-547: when redacting, aggregate over (project_id, agent_id) but
-    # keep (tool, status) — those are not tenant-identifying and remain
-    # useful for ops / alerting on anonymous scrapes.
+
+def _emit_tool_call_counters(lines: list[str], *, redact: bool) -> None:
+    """STORY-070.12: per-(project_id, agent_id, tool, status) tool-call counters.
+
+    TAP-547: when *redact*, aggregate over (project_id, agent_id) but keep
+    (tool, status) — those are not tenant-identifying and remain useful for ops.
+    """
     # suppress(Exception): any import or runtime error must not crash /metrics.
     with suppress(Exception):  # pragma: no cover
         from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
 
         tool_counts = get_tool_call_counts_snapshot()
-        if tool_counts:
-            lines.append(
-                "# HELP tapps_brain_tool_calls_total "
-                "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
-            )
-            lines.append("# TYPE tapps_brain_tool_calls_total counter")
-            if redact_tenant_labels:
-                aggregated: dict[tuple[str, str], int] = {}
-                for (_pid, _aid, tool, status), count in tool_counts.items():
-                    key = (tool, status)
-                    aggregated[key] = aggregated.get(key, 0) + count
-                for (tool, status), count in sorted(aggregated.items()):
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
-            else:
-                for (pid, aid, tool, status), count in sorted(tool_counts.items()):
-                    safe_pid = pid.replace('"', '\\"')
-                    safe_aid = aid.replace('"', '\\"')
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
-                        f'agent_id="{safe_aid}",tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
+        if not tool_counts:
+            return
+        lines.append(
+            "# HELP tapps_brain_tool_calls_total "
+            "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
+        )
+        lines.append("# TYPE tapps_brain_tool_calls_total counter")
+        if redact:
+            aggregated: dict[tuple[str, str], int] = {}
+            for (_pid, _aid, tool, status), count in tool_counts.items():
+                key = (tool, status)
+                aggregated[key] = aggregated.get(key, 0) + count
+            for (tool, status), count in sorted(aggregated.items()):
+                safe_tool = tool.replace('"', '\\"')
+                safe_status = status.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_tool_calls_total{{tool="{safe_tool}",'
+                    f'status="{safe_status}"}} {count}'
+                )
+        else:
+            for (pid, aid, tool, status), count in sorted(tool_counts.items()):
+                safe_pid = pid.replace('"', '\\"')
+                safe_aid = aid.replace('"', '\\"')
+                safe_tool = tool.replace('"', '\\"')
+                safe_status = status.replace('"', '\\"')
+                lines.append(
+                    f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
+                    f'agent_id="{safe_aid}",tool="{safe_tool}",'
+                    f'status="{safe_status}"}} {count}'
+                )
 
-    # TAP-549: in-memory session-state cardinality gauge.  Alertable
-    # signal for the "client rotates session_id every call" failure mode
-    # — the gauge should stay well below _SESSION_STATE_HARD_CAP (10_000)
-    # on a healthy adapter; sustained growth means the sweep / eviction
-    # isn't keeping up.  Always emit (even when None/0) so dashboards
-    # have a stable series.
+
+def _emit_session_gauge(lines: list[str], store: Any) -> None:  # noqa: ANN401
+    """TAP-549: in-memory session-state cardinality gauge.
+
+    Alertable signal for the "client rotates session_id every call" failure
+    mode — should stay well below _SESSION_STATE_HARD_CAP (10_000) on a healthy
+    adapter.  Always emit (even when None/0) so dashboards have a stable series.
+    """
     if store is not None and hasattr(store, "active_session_count"):
         with suppress(Exception):
             # Best-effort gauge — a broken store must never crash /metrics.
-            gauge(
+            _emit_gauge(
+                lines,
                 "tapps_brain_store_active_sessions",
                 float(store.active_session_count()),
                 "Distinct session_ids tracked in MemoryStore in-memory "
                 "implicit-feedback helper dicts.",
             )
 
-    # STORY-066.7: live pool stats from the hive connection manager.
-    _pool_stats = _get_hive_pool_stats(store)
-    if _pool_stats:
-        gauge(
-            "tapps_brain_pool_size",
-            float(_pool_stats.get("pool_size", 0)),
-            "Current number of open connections in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_available",
-            float(_pool_stats.get("pool_available", 0)),
-            "Number of idle connections available in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_saturation",
-            float(_pool_stats.get("pool_saturation", 0.0)),
-            "Fraction of Hive pool max_size currently in use (0.0-1.0).",
-        )
 
-    # TAP-655: per-project counter for missing HNSW indexes detected at startup.
-    # Non-zero means migration 002 was not applied on that project's DB.
-    # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
+def _emit_pool_gauges(lines: list[str], store: Any) -> None:  # noqa: ANN401
+    """STORY-066.7: live pool stats from the hive connection manager."""
+    _pool_stats = _get_hive_pool_stats(store)
+    if not _pool_stats:
+        return
+    _emit_gauge(
+        lines,
+        "tapps_brain_pool_size",
+        float(_pool_stats.get("pool_size", 0)),
+        "Current number of open connections in the Hive pool.",
+    )
+    _emit_gauge(
+        lines,
+        "tapps_brain_pool_available",
+        float(_pool_stats.get("pool_available", 0)),
+        "Number of idle connections available in the Hive pool.",
+    )
+    _emit_gauge(
+        lines,
+        "tapps_brain_pool_saturation",
+        float(_pool_stats.get("pool_saturation", 0.0)),
+        "Fraction of Hive pool max_size currently in use (0.0-1.0).",
+    )
+
+
+def _emit_missing_index_counters(lines: list[str], *, redact: bool) -> None:
+    """TAP-655: per-project counter for missing HNSW indexes detected at startup.
+
+    Non-zero means migration 002 was not applied on that project's DB.
+    TAP-547: drop project_id label when *redact* to prevent tenant enumeration.
+    """
     # suppress(Exception): any import or runtime error must not crash /metrics.
     with suppress(Exception):  # pragma: no cover
         from tapps_brain.postgres_private import get_missing_index_counts_snapshot
 
         missing_idx_counts = get_missing_index_counts_snapshot()
-        if missing_idx_counts:
+        if not missing_idx_counts:
+            return
+        lines.append(
+            "# HELP tapps_brain_private_missing_indexes_total "
+            "Number of startup checks that found idx_priv_embedding_hnsw absent "
+            "(migration 002 not applied). Non-zero means vector recall falls back "
+            "to a sequential scan."
+        )
+        lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
+        if redact:
             lines.append(
-                "# HELP tapps_brain_private_missing_indexes_total "
-                "Number of startup checks that found idx_priv_embedding_hnsw absent "
-                "(migration 002 not applied). Non-zero means vector recall falls back "
-                "to a sequential scan."
+                f"tapps_brain_private_missing_indexes_total {sum(missing_idx_counts.values())}"
             )
-            lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
-            if redact_tenant_labels:
-                total = sum(missing_idx_counts.values())
-                lines.append(f"tapps_brain_private_missing_indexes_total {total}")
-            else:
-                for project_id, count in sorted(missing_idx_counts.items()):
-                    safe_pid = project_id.replace('"', '\\"')
-                    _name = "tapps_brain_private_missing_indexes_total"
-                    lines.append(f'{_name}{{project_id="{safe_pid}"}} {count}')
+            return
+        for project_id, count in sorted(missing_idx_counts.items()):
+            safe_pid = project_id.replace('"', '\\"')
+            _name = "tapps_brain_private_missing_indexes_total"
+            lines.append(f'{_name}{{project_id="{safe_pid}"}} {count}')
 
-    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count x tool count).
+
+def _emit_profile_filter_metrics(lines: list[str]) -> None:
+    """STORY-073.4: profile-filter metrics (bounded by profile count x tool count)."""
     # suppress(Exception): any import or runtime error must not crash /metrics.
     with suppress(Exception):  # pragma: no cover
         from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
@@ -335,45 +348,52 @@ def _collect_metrics(  # noqa: PLR0915
                     f'tool="{_st}",outcome="{_so}"}} {_count}'
                 )
 
-    # STORY-073.4: profile resolver resolution-source + cache metrics.
+
+def _emit_profile_resolver_metrics(lines: list[str]) -> None:
+    """STORY-073.4: profile resolver resolution-source + cache metrics."""
     # suppress(Exception): any runtime error must not crash /metrics.
     with suppress(Exception):  # pragma: no cover
         # Import lazily to avoid circular dependency with profile_resolver module.
         from tapps_brain.http.profile_resolver import _PROFILE_RESOLVER
 
         _resolver = _PROFILE_RESOLVER
-        if _resolver is not None:
-            _res_stats = _resolver.resolution_stats()
-            if _res_stats:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_resolution_source_total "
-                    "Profile resolution source per MCP request."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
-                for _src, _count in sorted(_res_stats.items()):
-                    _ss = _src.replace('"', '\\"')
-                    _rn = "tapps_brain_mcp_profile_resolution_source_total"
-                    lines.append(f'{_rn}{{source="{_ss}"}} {_count}')
+        if _resolver is None:
+            return
+        _res_stats = _resolver.resolution_stats()
+        if _res_stats:
+            lines.append(
+                "# HELP tapps_brain_mcp_profile_resolution_source_total "
+                "Profile resolution source per MCP request."
+            )
+            lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
+            for _src, _count in sorted(_res_stats.items()):
+                _ss = _src.replace('"', '\\"')
+                _rn = "tapps_brain_mcp_profile_resolution_source_total"
+                lines.append(f'{_rn}{{source="{_ss}"}} {_count}')
 
-            _cache = _resolver.cache_stats()
-            # Only emit if at least one cache event has occurred.
-            if _cache.get("hits", 0) + _cache.get("misses", 0) + _cache.get("invalidated", 0) > 0:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_cache_events_total "
-                    "Profile resolver cache events (hit/miss/invalidated)."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
-                # Map result label → cache_stats() key; extend here when new event types land.
-                _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
-                for _result, _key in _result_to_key.items():
-                    _count = _cache.get(_key, 0)
-                    if _count:
-                        _cn = "tapps_brain_mcp_profile_cache_events_total"
-                        lines.append(f'{_cn}{{result="{_result}"}} {_count}')
+        _cache = _resolver.cache_stats()
+        # Only emit if at least one cache event has occurred.
+        if _cache.get("hits", 0) + _cache.get("misses", 0) + _cache.get("invalidated", 0) > 0:
+            lines.append(
+                "# HELP tapps_brain_mcp_profile_cache_events_total "
+                "Profile resolver cache events (hit/miss/invalidated)."
+            )
+            lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
+            # Map result label → cache_stats() key; extend here when new event types land.
+            _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
+            for _result, _key in _result_to_key.items():
+                _count = _cache.get(_key, 0)
+                if _count:
+                    _cn = "tapps_brain_mcp_profile_cache_events_total"
+                    lines.append(f'{_cn}{{result="{_result}"}} {_count}')
 
-    # TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram.
-    # Tracks tools/list latency split by cache_hit label so operators can
-    # distinguish warm (cache-hit) from cold (cache-miss) probe durations.
+
+def _emit_probe_histogram(lines: list[str]) -> None:
+    """TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram.
+
+    Tracks tools/list latency split by cache_hit label so operators can
+    distinguish warm (cache-hit) from cold (cache-miss) probe durations.
+    """
     # suppress(Exception): crash guard — a broken import must not crash /metrics.
     # No pragma: no cover here; this block is exercised by test_metrics.py.
     with suppress(Exception):
@@ -384,29 +404,69 @@ def _collect_metrics(  # noqa: PLR0915
         # ``snapshot["count"]`` is an int (see _ProbeHistogram.snapshot) but
         # the broader ``dict[str, object]`` shape erases that — cast for >.
         _has_probe_data = any(int(cast("int", s.get("count", 0))) > 0 for s in _probe_snap.values())
-        if _has_probe_data:
-            _metric_name = "tapps_brain_mcp_probe_duration_seconds"
-            lines.append(
-                f"# HELP {_metric_name} Duration in seconds of MCP tools/list probe calls,"
-                " labelled by cache_hit (true=warm, false=cold)."
-            )
-            lines.append(f"# TYPE {_metric_name} histogram")
-            # Emit in consistent order: false (cold) then true (warm).
-            for _cache_hit_label in ("false", "true"):
-                _snap = _probe_snap.get(_cache_hit_label, {})
-                _buckets: tuple[float, ...] = _snap.get("buckets", ())  # type: ignore[assignment]
-                _bucket_counts: list[int] = _snap.get("bucket_counts", [])  # type: ignore[assignment]
-                _total_count: int = _snap.get("count", 0)  # type: ignore[assignment]
-                _total_sum: float = _snap.get("sum", 0.0)  # type: ignore[assignment]
-                _lbl = f'cache_hit="{_cache_hit_label}"'
-                for _bound, _bcount in zip(_buckets, _bucket_counts, strict=True):
-                    # Format bucket boundary: strip trailing zeros for readability.
-                    _le = f"{_bound:g}"
-                    lines.append(f'{_metric_name}_bucket{{{_lbl},le="{_le}"}} {_bcount}')
-                # +Inf bucket = total count
-                lines.append(f'{_metric_name}_bucket{{{_lbl},le="+Inf"}} {_total_count}')
-                lines.append(f"{_metric_name}_sum{{{_lbl}}} {_total_sum}")
-                lines.append(f"{_metric_name}_count{{{_lbl}}} {_total_count}")
+        if not _has_probe_data:
+            return
+        _metric_name = "tapps_brain_mcp_probe_duration_seconds"
+        lines.append(
+            f"# HELP {_metric_name} Duration in seconds of MCP tools/list probe calls,"
+            " labelled by cache_hit (true=warm, false=cold)."
+        )
+        lines.append(f"# TYPE {_metric_name} histogram")
+        # Emit in consistent order: false (cold) then true (warm).
+        for _cache_hit_label in ("false", "true"):
+            _snap = _probe_snap.get(_cache_hit_label, {})
+            _buckets: tuple[float, ...] = _snap.get("buckets", ())  # type: ignore[assignment]
+            _bucket_counts: list[int] = _snap.get("bucket_counts", [])  # type: ignore[assignment]
+            _total_count: int = _snap.get("count", 0)  # type: ignore[assignment]
+            _total_sum: float = _snap.get("sum", 0.0)  # type: ignore[assignment]
+            _lbl = f'cache_hit="{_cache_hit_label}"'
+            for _bound, _bcount in zip(_buckets, _bucket_counts, strict=True):
+                # Format bucket boundary: strip trailing zeros for readability.
+                _le = f"{_bound:g}"
+                lines.append(f'{_metric_name}_bucket{{{_lbl},le="{_le}"}} {_bcount}')
+            # +Inf bucket = total count
+            lines.append(f'{_metric_name}_bucket{{{_lbl},le="+Inf"}} {_total_count}')
+            lines.append(f"{_metric_name}_sum{{{_lbl}}} {_total_sum}")
+            lines.append(f"{_metric_name}_count{{{_lbl}}} {_total_count}")
+
+
+def _collect_metrics(
+    dsn: str | None,
+    store: Any = None,  # noqa: ANN401
+    *,
+    redact_tenant_labels: bool = False,
+    process_start_time: float | None = None,
+) -> str:
+    """Render Prometheus exposition text.
+
+    ``redact_tenant_labels`` (TAP-547): when ``True`` the per-tenant labels
+    ``project_id`` and ``agent_id`` are dropped from
+    ``tapps_brain_mcp_requests_total`` and ``tapps_brain_tool_calls_total``
+    and the counters are aggregated across those dimensions.  This is the
+    shape served to anonymous (or unauthenticated) scrapers so reachable-
+    but-unprivileged callers cannot enumerate tenant/agent activity.
+
+    ``process_start_time``: Unix timestamp of process start.  Callers should
+    pass their module-level ``_PROCESS_START_TIME`` constant.  When omitted,
+    ``time.time()`` is used (slightly off from the real start but harmless for
+    tests that don't check the exact value).
+
+    The body is a flat sequence of ``_emit_*`` block helpers (TAP-2758) so each
+    metric group stays independently readable and low-complexity.
+    """
+    _start = process_start_time if process_start_time is not None else time.time()
+    lines: list[str] = []
+
+    _emit_process_gauges(lines, _start)
+    _emit_db_gauges(lines, dsn)
+    _emit_request_counters(lines, redact=redact_tenant_labels)
+    _emit_tool_call_counters(lines, redact=redact_tenant_labels)
+    _emit_session_gauge(lines, store)
+    _emit_pool_gauges(lines, store)
+    _emit_missing_index_counters(lines, redact=redact_tenant_labels)
+    _emit_profile_filter_metrics(lines)
+    _emit_profile_resolver_metrics(lines)
+    _emit_probe_histogram(lines)
 
     lines.append("")
     return "\n".join(lines)

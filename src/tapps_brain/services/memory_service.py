@@ -740,29 +740,28 @@ def brain_export(
 # ---------------------------------------------------------------------------
 
 
-def memory_save(
+def _validate_and_normalize_save(
     store: Any,
-    project_id: str,
     agent_id: str,
     *,
     key: str,
     value: str,
-    tier: str = "pattern",
-    source: str = "agent",
-    tags: list[str] | None = None,
-    scope: str = "project",
-    confidence: float = -1.0,
-    agent_scope: str = "private",
-    source_agent: str = "",
-    group: str | None = None,
+    tier: str,
+    source: str,
+    tags: list[str] | None,
+    scope: str,
+    confidence: float,
+    agent_scope: str,
+    source_agent: str,
+    group: str | None,
 ) -> dict[str, Any]:
-    """Save a memory entry with full structured validation.
+    """Validate + normalize save inputs, shared by :func:`memory_save` and
+    :func:`memory_save_many` (TAP-2800).
 
-    Validates ``agent_scope`` / ``tier`` / ``source`` against the active
-    profile and returns a structured error envelope on bad input. Returns
-    ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
-    on success, or ``{"error": "bad_request", "message": ...}`` when the
-    underlying pydantic model rejects the payload (TAP-747).
+    Returns either an error envelope (``{"error": ...}``) or the normalized
+    keyword arguments for :meth:`MemoryStore.save` / one item of
+    :meth:`MemoryStore.save_many`.  Centralising this keeps the single-save and
+    batch-save validation byte-identical.
     """
     from tapps_brain.agent_scope import (
         agent_scope_valid_values_for_errors,
@@ -805,21 +804,65 @@ def memory_save(
     resolved_agent = source_agent if source_agent else agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
 
+    return {
+        "key": key,
+        "value": value,
+        "tier": tier,
+        "source": source,
+        "tags": tags,
+        "scope": scope,
+        "confidence": confidence,
+        "agent_scope": agent_scope,
+        "source_agent": resolved_agent,
+        "memory_group": memory_group_arg,
+    }
+
+
+def memory_save(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    key: str,
+    value: str,
+    tier: str = "pattern",
+    source: str = "agent",
+    tags: list[str] | None = None,
+    scope: str = "project",
+    confidence: float = -1.0,
+    agent_scope: str = "private",
+    source_agent: str = "",
+    group: str | None = None,
+) -> dict[str, Any]:
+    """Save a memory entry with full structured validation.
+
+    Validates ``agent_scope`` / ``tier`` / ``source`` against the active
+    profile and returns a structured error envelope on bad input. Returns
+    ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
+    on success, or ``{"error": "bad_request", "message": ...}`` when the
+    underlying pydantic model rejects the payload (TAP-747).
+    """
+    validated = _validate_and_normalize_save(
+        store,
+        agent_id,
+        key=key,
+        value=value,
+        tier=tier,
+        source=source,
+        tags=tags,
+        scope=scope,
+        confidence=confidence,
+        agent_scope=agent_scope,
+        source_agent=source_agent,
+        group=group,
+    )
+    if "error" in validated:
+        return validated
+
     from pydantic import ValidationError as _PydanticValidationError
 
     try:
-        result = store.save(
-            key=key,
-            value=value,
-            tier=tier,
-            source=source,
-            tags=tags,
-            scope=scope,
-            confidence=confidence,
-            agent_scope=agent_scope,
-            source_agent=resolved_agent,
-            memory_group=memory_group_arg,
-        )
+        result = store.save(**validated)
     except _PydanticValidationError as exc:
         # TAP-747: pydantic slug-key validation raised from MemoryEntry.__init__
         # inside store.save() was escaping to the handler and producing HTTP 500.
@@ -830,6 +873,17 @@ def memory_save(
         msg = errors[0].get("msg", str(exc)) if errors else str(exc)
         return {"error": "bad_request", "message": msg}
 
+    return _save_result_envelope(result)
+
+
+def _save_result_envelope(result: Any) -> dict[str, Any]:
+    """Convert a :meth:`MemoryStore.save` result into the MCP response envelope.
+
+    A ``dict`` result (write-policy decision, dedup short-circuit error, …) is
+    returned unchanged; a saved :class:`MemoryEntry` becomes the
+    ``{"status": "saved", ...}`` envelope.  Shared by :func:`memory_save` and
+    :func:`memory_save_many` (TAP-2800).
+    """
     if isinstance(result, dict):
         return result
     return {
@@ -1077,9 +1131,12 @@ def memory_save_many(
             "limit": limit,
         }
 
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = [{} for _ in entries]
     saved = 0
     errors = 0
+    # (original index, normalized save kwargs) for rows that pass validation and
+    # therefore need a real persist — these go to the single batched save_many.
+    to_persist: list[tuple[int, dict[str, Any]]] = []
 
     with start_mcp_tool_span(
         "memory_save_many",
@@ -1091,42 +1148,54 @@ def memory_save_many(
                 extra_attributes={"memory.batch_index": i},
             ):
                 if not isinstance(raw_entry, dict):
-                    item: dict[str, Any] = {
+                    results[i] = {
                         "error": "bad_entry",
                         "message": "Entry must be a JSON object.",
                         "index": i,
                     }
                     errors += 1
-                else:
-                    key = (raw_entry.get("key") or "").strip()
-                    value = raw_entry.get("value") or ""
-                    if not key or not value:
-                        item = {
-                            "error": "bad_entry",
-                            "message": "key and value are required.",
-                            "index": i,
-                        }
-                        errors += 1
-                    else:
-                        item = memory_save(
-                            store,
-                            project_id,
-                            agent_id,
-                            key=key,
-                            value=value,
-                            tier=raw_entry.get("tier", "pattern"),
-                            source=raw_entry.get("source", "agent"),
-                            tags=raw_entry.get("tags"),
-                            scope=raw_entry.get("scope", "project"),
-                            confidence=float(raw_entry.get("confidence", -1.0)),
-                            agent_scope=raw_entry.get("agent_scope", "private"),
-                            group=raw_entry.get("group"),
-                        )
-                        if "error" in item:
-                            errors += 1
-                        else:
-                            saved += 1
-                results.append(item)
+                    continue
+                key = (raw_entry.get("key") or "").strip()
+                value = raw_entry.get("value") or ""
+                if not key or not value:
+                    results[i] = {
+                        "error": "bad_entry",
+                        "message": "key and value are required.",
+                        "index": i,
+                    }
+                    errors += 1
+                    continue
+                validated = _validate_and_normalize_save(
+                    store,
+                    agent_id,
+                    key=key,
+                    value=value,
+                    tier=raw_entry.get("tier", "pattern"),
+                    source=raw_entry.get("source", "agent"),
+                    tags=raw_entry.get("tags"),
+                    scope=raw_entry.get("scope", "project"),
+                    confidence=float(raw_entry.get("confidence", -1.0)),
+                    agent_scope=raw_entry.get("agent_scope", "private"),
+                    source_agent="",
+                    group=raw_entry.get("group"),
+                )
+                if "error" in validated:
+                    results[i] = validated
+                    errors += 1
+                    continue
+                to_persist.append((i, validated))
+
+        # TAP-2800: persist every valid row in ONE batched DB round-trip rather
+        # than N independent write-throughs.  Results align 1:1 with the input.
+        store_results = store.save_many([kwargs for _, kwargs in to_persist])
+
+        for (i, _kwargs), res in zip(to_persist, store_results, strict=True):
+            envelope = _save_result_envelope(res)
+            results[i] = envelope
+            if "error" in envelope:
+                errors += 1
+            else:
+                saved += 1
 
     return {
         "results": results,

@@ -91,7 +91,8 @@ class TestMemorySaveMany:
             confidence=0.8,
             memory_group=None,
         )
-        store.save.return_value = mock_entry
+        # TAP-2800: the batch is persisted via a single store.save_many call.
+        store.save_many.side_effect = lambda items: [mock_entry for _ in items]
 
         entries = [
             {"key": "k1", "value": "v1"},
@@ -102,7 +103,10 @@ class TestMemorySaveMany:
         assert result["saved_count"] == 2
         assert result["error_count"] == 0
         assert len(result["results"]) == 2
-        assert store.save.call_count == 2
+        # One batched DB round-trip, not N per-row saves (AC-4).
+        assert store.save.call_count == 0
+        assert store.save_many.call_count == 1
+        assert len(store.save_many.call_args.args[0]) == 2
 
     def test_ac2_max_100_default_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-2: max 100 entries by default."""
@@ -139,7 +143,8 @@ class TestMemorySaveMany:
             confidence=0.8,
             memory_group=None,
         )
-        store.save.return_value = good_entry
+        # TAP-2800: only the valid rows reach the single batched save_many.
+        store.save_many.side_effect = lambda items: [good_entry for _ in items]
 
         entries = [
             {"key": "k1", "value": "v1"},
@@ -150,6 +155,9 @@ class TestMemorySaveMany:
 
         assert result["saved_count"] == 2
         assert result["error_count"] == 1
+        # The bad row is filtered out before the batch persist (2 valid rows).
+        assert store.save_many.call_count == 1
+        assert len(store.save_many.call_args.args[0]) == 2
         assert result["results"][1]["error"] == "bad_entry"
         assert result["results"][0]["status"] == "saved"
         assert result["results"][2]["status"] == "saved"
@@ -318,12 +326,14 @@ class TestV1RememberBatch:
 
     def _setup(self) -> tuple[TestClient, MagicMock]:
         store = _make_store()
-        store.save.return_value = MagicMock(
+        # TAP-2800: batch persists go through store.save_many in one round-trip.
+        _entry = MagicMock(
             key="k1",
             tier=MagicMock(__str__=lambda s: "pattern"),
             confidence=0.8,
             memory_group=None,
         )
+        store.save_many.side_effect = lambda items: [_entry for _ in items]
         settings = _make_settings(store=store)
         return _client_with_store(settings), store
 

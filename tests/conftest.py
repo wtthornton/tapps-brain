@@ -155,6 +155,12 @@ class InMemoryPrivateBackend:
         with self._lock:
             self._entries[entry.key] = entry
 
+    def save_many(self, entries: list[Any]) -> None:
+        """Batch-persist sibling of :meth:`save` (TAP-2800)."""
+        with self._lock:
+            for entry in entries:
+                self._entries[entry.key] = entry
+
     def load_all(self, *, limit: int | None = None) -> list[Any]:
         with self._lock:
             entries = list(self._entries.values())
