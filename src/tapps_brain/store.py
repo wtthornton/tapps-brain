@@ -2948,8 +2948,6 @@ class MemoryStore:
             ``RecallResult`` with formatted memory section, metadata,
             and timing information.
         """
-        from tapps_brain.recall import RecallOrchestrator
-
         log = logger.bind(project_id=self._project_id, op="recall")
         log.debug("store.recall.begin")
         # EPIC-029 story 029.3: extract session_id before forwarding kwargs.
@@ -2958,10 +2956,42 @@ class MemoryStore:
 
         self._metrics.increment("store.recall")
         rm_increment_recall_total()
+        orchestrator = self._recall_get_orchestrator()
+
         _recall_t0 = time.monotonic()
+        with (
+            start_span(SPAN_RECALL) as _recall_span,
+            MetricsTimer(self._metrics, "store.recall_ms"),
+        ):
+            result = orchestrator.recall(message, **kwargs)
+            if _recall_span is not None:
+                self._annotate_recall_span(_recall_span, result, _recall_t0)
+
+        # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking.
+        if session_id is not None:
+            self._track_recall_feedback(session_id, message, result)
+
+        qw = self._recall_quality_warning()
+        if qw is not None:
+            result = result.model_copy(update={"quality_warning": qw})
+
+        if not getattr(result, "memory_count", 0) and message.strip():
+            with self._serialized():
+                self._zero_result_queries.append((message.strip(), _utc_now_iso()))
+
+        rm_add_recall_latency_ms((time.monotonic() - _recall_t0) * 1000.0)
+        return result
+
+    def _recall_get_orchestrator(self) -> Any:  # noqa: ANN401 — RecallOrchestrator
+        """Lazily create + cache the :class:`RecallOrchestrator` (EPIC-011).
+
+        Wires the Hive store and profile so the orchestrator can do hive-aware
+        recall.  Created once under the store lock and reused thereafter.
+        """
+        from tapps_brain.recall import RecallOrchestrator
+
         with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
-                # Wire Hive store and profile for hive-aware recall (EPIC-011)
                 hive_weight = 0.8
                 agent_profile = "repo-brain"
                 if self._profile is not None:
@@ -2977,115 +3007,108 @@ class MemoryStore:
                     hive_agent_profile=agent_profile,
                     hive_agent_id=self._hive_agent_id,
                 )
+        return self._recall_orchestrator
 
-        _recall_t0 = time.monotonic()
-        with (
-            start_span(SPAN_RECALL) as _recall_span,
-            MetricsTimer(self._metrics, "store.recall_ms"),
-        ):
-            result = self._recall_orchestrator.recall(message, **kwargs)
-            if _recall_span is not None:
-                _recall_span.set_attribute(
-                    "recall.hive_count", getattr(result, "hive_memory_count", 0)
-                )
-                # STORY-032.3: add one structured event per retrieved document
-                record_retrieval_document_events(_recall_span, getattr(result, "memories", []))
-                # STORY-070.12: standardised per-operation attributes
-                _recall_memories = getattr(result, "memories", [])
-                _recall_span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))
-                _recall_span.set_attribute(
-                    ATTR_LATENCY_MS, (time.monotonic() - _recall_t0) * 1000.0
-                )
-                # TAP-2170: GenAI semconv v1.40.0 data source identity
-                _recall_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
+    def _annotate_recall_span(self, span: Any, result: Any, t0: float) -> None:  # noqa: ANN401
+        """Set OTel recall-span attributes + per-document retrieval events."""
+        span.set_attribute("recall.hive_count", getattr(result, "hive_memory_count", 0))
+        # STORY-032.3: add one structured event per retrieved document.
+        record_retrieval_document_events(span, getattr(result, "memories", []))
+        # STORY-070.12: standardised per-operation attributes.
+        _recall_memories = getattr(result, "memories", [])
+        span.set_attribute(ATTR_ROWS_RETURNED, len(_recall_memories))
+        span.set_attribute(ATTR_LATENCY_MS, (time.monotonic() - t0) * 1000.0)
+        # TAP-2170: GenAI semconv v1.40.0 data source identity.
+        span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
 
-        # EPIC-029 story 029.3 + 029-4b: implicit feedback tracking
-        if session_id is not None:
-            # Flush entries whose window has expired (lazy negative detection)
-            _expired: list[str] = []
-            with self._serialized():
-                _expired = self._consume_expired_recalls(session_id)
-            for _k in _expired:
-                self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
+    def _track_recall_feedback(self, session_id: str, message: str, result: Any) -> None:  # noqa: ANN401
+        """EPIC-029: implicit-feedback bookkeeping for a recall in *session_id*.
 
-            # Build list of recalled entry keys from this result
-            _memories: list[Any] = getattr(result, "memories", [])
-            _recalled_keys: list[str] = [
-                str(m.get("key", "")) for m in _memories if isinstance(m, dict) and m.get("key")
-            ]
+        Flushes expired recall windows (lazy negatives), records which keys came
+        from Hive, runs reformulation detection, and updates the per-session
+        query / recall / value logs.
+        """
+        # Flush entries whose window has expired (lazy negative detection).
+        with self._serialized():
+            _expired = self._consume_expired_recalls(session_id)
+        for _k in _expired:
+            self._emit_implicit_feedback("implicit_negative", _k, session_id, -0.1)
 
-            # EPIC-029 story 029-7: remember which keys came from Hive (per session).
-            with self._serialized():
-                _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
-                for _m in _memories:
-                    if not isinstance(_m, dict):
-                        continue
-                    if str(_m.get("source", "")) != "hive":
-                        continue
+        _memories: list[Any] = getattr(result, "memories", [])
+        _recalled_keys: list[str] = [
+            str(m.get("key", "")) for m in _memories if isinstance(m, dict) and m.get("key")
+        ]
+
+        # EPIC-029 story 029-7: remember which keys came from Hive (per session).
+        with self._serialized():
+            _hive_idx = self._hive_feedback_key_index.setdefault(session_id, {})
+            for _m in _memories:
+                if isinstance(_m, dict) and str(_m.get("source", "")) == "hive":
                     _hk = str(_m.get("key", ""))
-                    if not _hk:
-                        continue
-                    _hive_idx[_hk] = str(_m.get("namespace", "universal"))
+                    if _hk:
+                        _hive_idx[_hk] = str(_m.get("namespace", "universal"))
 
-            # EPIC-029 story 029-4b: reformulation detection.
-            # Compare the current query against recent queries in the session log.
-            # If Jaccard similarity > 0.5 within 60s, emit implicit_correction for
-            # the entry keys recalled by the similar past query.
-            _reform_targets: list[tuple[str, float]] = []
-            _now_track = time.monotonic()
-            with self._serialized():
-                _reform_targets = self._detect_reformulation(session_id, message, _now_track)
-                # Update query log with current query + recalled keys (after detection
-                # so we don't match the current query against itself)
-                _q_log = self._session_query_log.setdefault(session_id, [])
-                _q_log.append((message, list(_recalled_keys), _now_track))
-                # TAP-645: cap per-session query log to prevent unbounded growth in
-                # long-lived sessions.  Keep the most-recent entries (trim oldest).
-                if len(_q_log) > _SESSION_LOG_PER_SESSION_CAP:
-                    del _q_log[:-_SESSION_LOG_PER_SESSION_CAP]
-                # Record recalled keys + values for positive/negative/correction tracking
-                if _recalled_keys:
-                    _r_log = self._session_recall_log.setdefault(session_id, [])
-                    _val_log = self._session_recalled_values.setdefault(session_id, [])
-                    for _k in _recalled_keys:
-                        _r_log.append((_k, _now_track))
-                        _entry_val = self._entries.get(_k)
-                        if _entry_val is not None:
-                            _val_log.append((_k, _entry_val.value, _now_track))
-                    # TAP-645: cap recall log and values log per-session.
-                    if len(_r_log) > _SESSION_LOG_PER_SESSION_CAP:
-                        del _r_log[:-_SESSION_LOG_PER_SESSION_CAP]
-                    if len(_val_log) > _SESSION_LOG_PER_SESSION_CAP:
-                        del _val_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        # EPIC-029 story 029-4b: reformulation detection.  If the current query
+        # is Jaccard-similar (>0.5 within 60s) to a recent one, emit
+        # implicit_correction for the keys that earlier query recalled.
+        _now_track = time.monotonic()
+        with self._serialized():
+            _reform_targets = self._detect_reformulation(session_id, message, _now_track)
+            self._update_session_recall_logs(session_id, message, _recalled_keys, _now_track)
 
-            for _k, _sim in _reform_targets:
-                self._emit_implicit_feedback(
-                    "implicit_correction",
-                    _k,
-                    session_id,
-                    -0.5,
-                    details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
-                )
+        for _k, _sim in _reform_targets:
+            self._emit_implicit_feedback(
+                "implicit_correction",
+                _k,
+                session_id,
+                -0.5,
+                details={"type": "reformulation", "jaccard_similarity": round(_sim, 4)},
+            )
 
+    def _update_session_recall_logs(
+        self,
+        session_id: str,
+        message: str,
+        recalled_keys: list[str],
+        now_track: float,
+    ) -> None:
+        """Append to the per-session query / recall / value logs (caller holds lock).
+
+        TAP-645: each log is capped at ``_SESSION_LOG_PER_SESSION_CAP`` entries
+        (oldest trimmed) to bound memory in long-lived sessions.
+        """
+        # Update query log AFTER reformulation detection so the current query is
+        # not matched against itself.
+        _q_log = self._session_query_log.setdefault(session_id, [])
+        _q_log.append((message, list(recalled_keys), now_track))
+        if len(_q_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _q_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        if not recalled_keys:
+            return
+        _r_log = self._session_recall_log.setdefault(session_id, [])
+        _val_log = self._session_recalled_values.setdefault(session_id, [])
+        for _k in recalled_keys:
+            _r_log.append((_k, now_track))
+            _entry_val = self._entries.get(_k)
+            if _entry_val is not None:
+                _val_log.append((_k, _entry_val.value, now_track))
+        if len(_r_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _r_log[:-_SESSION_LOG_PER_SESSION_CAP]
+        if len(_val_log) > _SESSION_LOG_PER_SESSION_CAP:
+            del _val_log[:-_SESSION_LOG_PER_SESSION_CAP]
+
+    def _recall_quality_warning(self) -> str | None:
+        """Map the diagnostics circuit-breaker state to a recall quality warning."""
         from tapps_brain.diagnostics import CircuitState
 
-        qw: str | None = None
         st = self._circuit_breaker.state
         if st == CircuitState.DEGRADED:
-            qw = "Memory quality degraded — results may be reduced in quality."
-        elif st == CircuitState.OPEN:
-            qw = "Memory quality critical — Hive recall limited until recovery."
-        elif st == CircuitState.HALF_OPEN:
-            qw = "Memory quality recovering — diagnostic probes in progress."
-        if qw is not None:
-            result = result.model_copy(update={"quality_warning": qw})
-
-        if not getattr(result, "memory_count", 0) and message.strip():
-            with self._serialized():
-                self._zero_result_queries.append((message.strip(), _utc_now_iso()))
-
-        rm_add_recall_latency_ms((time.monotonic() - _recall_t0) * 1000.0)
-        return result
+            return "Memory quality degraded — results may be reduced in quality."
+        if st == CircuitState.OPEN:
+            return "Memory quality critical — Hive recall limited until recovery."
+        if st == CircuitState.HALF_OPEN:
+            return "Memory quality recovering — diagnostic probes in progress."
+        return None
 
     def health(self) -> StoreHealthReport:
         """Return a structured health report for this store."""
