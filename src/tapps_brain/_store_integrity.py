@@ -1,15 +1,11 @@
 """Integrity-hash verification for :class:`~tapps_brain.store.MemoryStore` (TAP-2833).
 
 Extracted from ``store.py`` as a mixin.  Covers HMAC integrity verification
-(H4b) and the v1->v2 rehash migration shim (TAP-710).  Behaviour is identical to
-the original in-class definitions.
+(H4b) and the v1->v2 rehash migration shim (TAP-710).
 
-NOTE (pre-existing bug, preserved verbatim during the TAP-2833 move): the upgrade
-branch of :meth:`rehash_integrity_v1` references ``self._backend``, which is not
-an attribute of ``MemoryStore`` (the persistence handle is ``self._persistence``).
-Reaching that branch raises ``AttributeError`` and rehashed v2 hashes are never
-written to Postgres.  Left unchanged here to keep the refactor behaviour-neutral;
-tracked separately for a real fix.
+TAP-2857: the upgrade branch of :meth:`rehash_integrity_v1` previously referenced
+a non-existent ``self._backend`` attribute (raising ``AttributeError`` and never
+persisting the rehash); it now persists via ``self._persistence``.
 """
 
 from __future__ import annotations
@@ -188,9 +184,11 @@ class IntegrityMixin(_MemoryStoreBase):
                 with contextlib.suppress(Exception):
                     self._hive_store.save(upgraded_entry)  # type: ignore[call-arg,arg-type,misc]
 
-            if self._backend is not None:  # type: ignore[attr-defined]
-                with contextlib.suppress(Exception):
-                    self._backend.save(upgraded_entry)  # type: ignore[attr-defined]
+            # TAP-2857: persist the rehash to the private backend so the v2 hash
+            # survives restarts.  Best-effort (suppressed) — a single failed
+            # write must not abort the rest of the migration.
+            with contextlib.suppress(Exception):
+                self._persistence.save(upgraded_entry)
 
             upgraded += 1
             logger.debug("rehash_integrity_v1.upgraded", key=key)
