@@ -134,8 +134,6 @@ class InMemoryPrivateBackend:
         # backend (same project_root) see the same feedback data, matching how
         # a real Postgres FeedbackStore scopes events to (project_id, agent_id).
         self._feedback_events: list[Any] = []
-        # TAP-2800: count batched persists so tests can assert one round-trip.
-        self.save_many_calls: int = 0
 
     @property
     def store_dir(self) -> Path:
@@ -158,12 +156,7 @@ class InMemoryPrivateBackend:
             self._entries[entry.key] = entry
 
     def save_many(self, entries: list[Any]) -> None:
-        """Batch-persist sibling of :meth:`save` (TAP-2800).
-
-        Records the call count so tests can assert the store issues a single
-        batched persist rather than N per-entry saves.
-        """
-        self.save_many_calls += 1
+        """Batch-persist sibling of :meth:`save` (TAP-2800)."""
         with self._lock:
             for entry in entries:
                 self._entries[entry.key] = entry

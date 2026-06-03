@@ -13,6 +13,7 @@ All DB interaction is via the in-memory fake backend injected by conftest.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -44,19 +45,20 @@ class TestSaveManyHappyPath:
         than N per-row persists."""
         store = MemoryStore(tmp_path)
         backend = store._persistence  # type: ignore[attr-defined]
-        assert backend.save_many_calls == 0
-
-        store.save_many(_items(5))
-
+        # Backend-agnostic spy (works against both the in-memory fake and the
+        # real PostgresPrivateBackend in CI): wrap save_many and count calls.
+        with patch.object(backend, "save_many", wraps=backend.save_many) as spy:
+            store.save_many(_items(5))
         # Exactly one batched round-trip carried all five rows.
-        assert backend.save_many_calls == 1
+        assert spy.call_count == 1
 
     def test_empty_batch_returns_empty_list(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
         backend = store._persistence  # type: ignore[attr-defined]
-        assert store.save_many([]) == []
+        with patch.object(backend, "save_many", wraps=backend.save_many) as spy:
+            assert store.save_many([]) == []
         # No rows -> no batched persist.
-        assert backend.save_many_calls == 0
+        assert spy.call_count == 0
 
 
 class TestSaveManyPartialFailure:
@@ -101,9 +103,10 @@ class TestSaveManyPartialFailure:
             {"key": "ok", "value": "valid value"},
             {"key": "nope", "value": "v", "agent_scope": "bogus"},
         ]
-        store.save_many(items)
+        with patch.object(backend, "save_many", wraps=backend.save_many) as spy:
+            store.save_many(items)
         # Still exactly one batched call — for the single valid row.
-        assert backend.save_many_calls == 1
+        assert spy.call_count == 1
 
 
 class TestSaveManyShortCircuits:
