@@ -412,3 +412,79 @@ class TestKgPopulateThenRetrieve:
             first = neighbors[0]
             assert first["edge_id"] == _EDGE_UUID
             assert first["neighbor_id"] == _ENTITY_UUID
+
+
+# ---------------------------------------------------------------------------
+# Malformed-spec de-masking (TAP-2865)
+# ---------------------------------------------------------------------------
+#
+# Regression for the production incident where every POST /v1/experience from
+# agent ``nlt-ideas-scout-market-signal`` returned HTTP 500 ``internal_error``
+# (brain 3.22.0).  The agent posted ``edges`` entries missing the required
+# ``subject_entity_id`` / ``object_entity_id`` UUIDs; ``record_event`` coerced
+# them via ``EdgeSpec(**item)`` which raised ``pydantic.ValidationError``, and
+# that propagated to the catch-all ``Exception`` handler (TAP-2727) and was
+# masked as a generic 500.  These tests pin the new behaviour: a malformed
+# spec is a typed **422** that names the offending fields, never a 500.
+#
+# ``_get_or_create_cm`` is patched so ``_get_kg_cm_or_503`` resolves, but
+# ``record_event`` itself runs for real — the ValidationError fires during
+# spec coercion before any DB access, so a MagicMock connection manager is
+# never touched.
+
+
+class TestExperienceMalformedSpec:
+    """`/v1/experience` — malformed KG side-effect specs → 422, not 500."""
+
+    # The exact production shape: predicate + metadata, no entity UUIDs.
+    _BAD_EDGE_BODY = {
+        "event_type": "approach_failed",
+        "edges": [
+            {
+                "predicate": "agent_solved_problem",
+                "confidence": 0.5,
+                "metadata": {"retry_count": 0},
+            }
+        ],
+    }
+
+    @pytest.mark.asyncio
+    async def test_edge_missing_entity_ids_returns_422_not_500(self) -> None:
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm:
+            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_edge_missing_entity_ids_does_not_mask_as_internal_error(self) -> None:
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm:
+            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
+        body = resp.json()
+        assert body.get("error") == "validation_error"
+        assert "internal_error" not in resp.text
+        # Both missing fields surface so the caller can fix the payload.
+        fields = {err["field"] for err in body.get("errors", [])}
+        assert "subject_entity_id" in fields
+        assert "object_entity_id" in fields
+
+    @pytest.mark.asyncio
+    async def test_response_does_not_echo_caller_payload(self) -> None:
+        """include_input=False — the 422 must not reflect the posted payload."""
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm:
+            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
+        assert "agent_solved_problem" not in resp.text
+        assert "retry_count" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_batch_edge_missing_entity_ids_returns_422_not_500(self) -> None:
+        """`/v1/experience:batch` shares the same spec coercion path."""
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm:
+            resp = await _post(
+                "/v1/experience:batch",
+                {"events": [self._BAD_EDGE_BODY]},
+            )
+        assert resp.status_code == 422, resp.text
+        assert "internal_error" not in resp.text

@@ -12,6 +12,14 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.22.1] — 2026-06-04
+
+Patch release fixing a production incident where `POST /v1/experience` returned HTTP 500 `internal_error` for every call from a consumer (AgentForge) that posted malformed KG side-effect specs. Strict superset of 3.22.0.
+
+### Fixed
+
+- **Malformed request payloads on the data plane return a typed 422 instead of a masked 500** ([TAP-2865](https://linear.app/tappscodingagents/issue/TAP-2865)). `POST /v1/experience` (and `/v1/experience:batch`) 500'd consistently for a consumer posting `edges` entries missing the required `subject_entity_id` / `object_entity_id` UUIDs: `record_event` coerces each edge via `EdgeSpec(**item)`, which raised `pydantic.ValidationError`; that error is not an `HTTPException`, so it fell through to the catch-all `Exception` handler added in 3.22.0 ([TAP-2727](https://linear.app/tappscodingagents/issue/TAP-2727)) and was masked as `{"error": "internal_error"}` 500 — hiding the real cause from clients and operators. The failure was at deserialization (before any DB I/O), explaining the fast 500 while `/health` stayed fully green. A new `@app.exception_handler(ValidationError)` now returns a structured **422** mirroring the `_validate_uuid_field` envelope (`error` / `field` / `detail` + a full `errors` list), with `include_input` / `include_url` disabled so the response never echoes the caller payload or external doc URLs. The catch-all still sanitizes genuine server faults. Same failure class as [TAP-2675](https://linear.app/tappscodingagents/issue/TAP-2675) (which fixed it for `EntitySpec` only). Regression tests cover the single-event and batch endpoints.
+
 ## [3.22.0] — 2026-06-01
 
 Stabilisation release on top of the 3.21.0 KG/experience activation. Aligns the KG REST data-plane status codes to the documented contract, hardens the unhandled-error envelope, completes the `brain_resolve_entity` profile wiring, and closes the CI gap that let integration-test failures land on `main`. Strict superset of 3.21.0.

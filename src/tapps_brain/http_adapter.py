@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from pydantic import ValidationError
 
 try:
     from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -3795,6 +3796,46 @@ def create_app(
         return JSONResponse(
             status_code=exc.http_status,
             content=exc.http_body(),
+        )
+
+    @app.exception_handler(ValidationError)
+    async def _validation_exc_handler(_request: Request, exc: ValidationError) -> JSONResponse:
+        """TAP-2865: client request-payload validation failures return a typed
+        422 instead of being masked as a generic 500 by the catch-all below.
+
+        A ``pydantic.ValidationError`` raised while deserialising a request
+        body on these data-plane endpoints (e.g. ``record_event`` coercing an
+        ``edges`` entry that is missing the required ``subject_entity_id`` /
+        ``object_entity_id`` UUIDs) is a *client* error, not a server fault.
+        Before this handler it propagated to the ``Exception`` catch-all
+        (TAP-2727) and returned ``{"error":"internal_error"}`` with HTTP 500,
+        hiding the real cause from the caller and forcing operators to read
+        container logs.
+
+        Mirrors the envelope of :func:`_validate_uuid_field` (TAP-2140) so all
+        request-validation 422s share one shape: ``error`` / ``field`` /
+        ``detail`` plus a full ``errors`` list.  ``include_input`` and
+        ``include_url`` are disabled so the response never echoes the caller's
+        payload or external pydantic doc URLs.
+        """
+        raw = exc.errors(include_url=False, include_input=False)
+        errors = [
+            {
+                "field": ".".join(str(part) for part in err.get("loc", ())),
+                "msg": err.get("msg", ""),
+                "type": err.get("type", ""),
+            }
+            for err in raw
+        ]
+        logger.warning("http_adapter.request_validation_error", errors=errors)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation_error",
+                "field": errors[0]["field"] if errors else None,
+                "detail": "Request payload failed validation.",
+                "errors": errors,
+            },
         )
 
     @app.exception_handler(Exception)
