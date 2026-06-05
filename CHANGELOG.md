@@ -12,6 +12,19 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.22.2] — 2026-06-04
+
+Follow-up to 3.22.1: makes the experience write path resilient to malformed KG side-effects (so a consumer's event stream is never dropped over one bad enrichment) and closes the observability gap that let the 3.22.1 incident read green on `/health`. Strict superset of 3.22.1.
+
+### Changed
+
+- **Malformed KG side-effect specs are now non-fatal on `POST /v1/experience` (+ `:batch`)** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). 3.22.1 turned the masked 500 into an honest 422, but a single malformed `edges` / `entities` / `evidence` entry still rejected the whole request — so a consumer (e.g. AgentForge) posting edges without resolved entity UUIDs lost the core experience event too. `record_event` / `record_events_batch` now skip an invalid spec, record it under a `warnings` array on the 200 response (`{"kind","index","errors":[{field,msg,type}]}`, payload-free), and still write the `experience_events` row plus every spec that validates. Generalises TAP-2675's `EntitySpec` coercion to all side-effect specs and makes it non-fatal. A malformed **core** request (e.g. a non-dict `payload`) still returns the typed 422 from [TAP-2865](https://linear.app/tappscodingagents/issue/TAP-2865).
+
+### Added
+
+- **Deep readiness probe for the experience write path** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). `GET /healthz?deep=1` additionally verifies the partitioned `experience_events` table exists and has partitions, returning `experience_writable` / `experience_detail` and flipping to 503 when the migration is missing. Default `/healthz` is unchanged (cheap `SELECT 1`) so the 10 s Docker healthcheck stays fast. Exposed to Prometheus as the `tapps_brain_experience_writable` gauge.
+- **Per-endpoint HTTP error counter** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). `tapps_brain_http_errors_total{path,status}` increments on every 422 (de-masked validation) and 500 (catch-all), so a data-plane endpoint that is failing is observable via `/metrics` even while `/health` reads green — the exact gap that hid the 3.22.1 incident for ~5 minutes. Alert with `tapps_brain_http_errors_total{status=~"5.."} > 0`.
+
 ## [3.22.1] — 2026-06-04
 
 Patch release fixing a production incident where `POST /v1/experience` returned HTTP 500 `internal_error` for every call from a consumer (AgentForge) that posted malformed KG side-effect specs. Strict superset of 3.22.0.

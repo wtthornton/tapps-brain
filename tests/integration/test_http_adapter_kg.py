@@ -26,6 +26,7 @@ pytest.importorskip("fastapi")
 
 import httpx
 
+import tapps_brain.embeddings as _embeddings_mod
 import tapps_brain.http_adapter as _http_mod
 from tapps_brain.http_adapter import _service_version, _Settings, create_app
 
@@ -415,7 +416,7 @@ class TestKgPopulateThenRetrieve:
 
 
 # ---------------------------------------------------------------------------
-# Malformed-spec de-masking (TAP-2865)
+# Malformed-spec resilience (TAP-2865 de-masking + TAP-2866 resilient writes)
 # ---------------------------------------------------------------------------
 #
 # Regression for the production incident where every POST /v1/experience from
@@ -424,67 +425,116 @@ class TestKgPopulateThenRetrieve:
 # ``subject_entity_id`` / ``object_entity_id`` UUIDs; ``record_event`` coerced
 # them via ``EdgeSpec(**item)`` which raised ``pydantic.ValidationError``, and
 # that propagated to the catch-all ``Exception`` handler (TAP-2727) and was
-# masked as a generic 500.  These tests pin the new behaviour: a malformed
-# spec is a typed **422** that names the offending fields, never a 500.
+# masked as a generic 500.
 #
-# ``_get_or_create_cm`` is patched so ``_get_kg_cm_or_503`` resolves, but
-# ``record_event`` itself runs for real — the ValidationError fires during
-# spec coercion before any DB access, so a MagicMock connection manager is
-# never touched.
+# TAP-2866 makes the brain *resilient* (no consumer change needed): a malformed
+# KG side-effect spec is skipped and reported under ``warnings`` while the core
+# experience event still records and returns 200.  A genuinely malformed *core*
+# request (e.g. a non-dict ``payload``) still surfaces the de-masked typed 422
+# from TAP-2865.
+#
+# ``_get_or_create_cm`` is patched so ``_get_kg_cm_or_503`` resolves and
+# ``record_event`` runs for real against a MagicMock connection manager;
+# ``get_embedding_provider`` is patched to None so no embedding model loads.
+
+# The exact production shape: predicate + metadata, no entity UUIDs.
+_BAD_EDGE_BODY = {
+    "event_type": "approach_failed",
+    "edges": [
+        {
+            "predicate": "agent_solved_problem",
+            "confidence": 0.5,
+            "metadata": {"retry_count": 0},
+        }
+    ],
+}
+
+
+def _no_embedding() -> Any:
+    """Patch get_embedding_provider → None so the real recorder loads no model."""
+    return patch.object(_embeddings_mod, "get_embedding_provider", return_value=None)
 
 
 class TestExperienceMalformedSpec:
-    """`/v1/experience` — malformed KG side-effect specs → 422, not 500."""
-
-    # The exact production shape: predicate + metadata, no entity UUIDs.
-    _BAD_EDGE_BODY = {
-        "event_type": "approach_failed",
-        "edges": [
-            {
-                "predicate": "agent_solved_problem",
-                "confidence": 0.5,
-                "metadata": {"retry_count": 0},
-            }
-        ],
-    }
+    """`/v1/experience` — malformed side-effects are non-fatal (TAP-2866)."""
 
     @pytest.mark.asyncio
-    async def test_edge_missing_entity_ids_returns_422_not_500(self) -> None:
+    async def test_edge_missing_entity_ids_records_event_with_warning(self) -> None:
         p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm:
-            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
-        assert resp.status_code == 422, resp.text
-
-    @pytest.mark.asyncio
-    async def test_edge_missing_entity_ids_does_not_mask_as_internal_error(self) -> None:
-        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm:
-            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
+        with p_cm, _no_embedding():
+            resp = await _post("/v1/experience", _BAD_EDGE_BODY)
+        assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body.get("error") == "validation_error"
-        assert "internal_error" not in resp.text
-        # Both missing fields surface so the caller can fix the payload.
-        fields = {err["field"] for err in body.get("errors", [])}
+        # Core event still recorded.
+        assert body.get("event_id")
+        # The malformed edge is reported, not silently dropped.
+        warnings = body.get("warnings", [])
+        assert len(warnings) == 1
+        assert warnings[0]["kind"] == "edge"
+        fields = {err["field"] for err in warnings[0]["errors"]}
         assert "subject_entity_id" in fields
         assert "object_entity_id" in fields
 
     @pytest.mark.asyncio
-    async def test_response_does_not_echo_caller_payload(self) -> None:
-        """include_input=False — the 422 must not reflect the posted payload."""
+    async def test_edge_missing_entity_ids_is_not_500_or_422(self) -> None:
         p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm:
-            resp = await _post("/v1/experience", self._BAD_EDGE_BODY)
+        with p_cm, _no_embedding():
+            resp = await _post("/v1/experience", _BAD_EDGE_BODY)
+        assert resp.status_code == 200
+        assert "internal_error" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_warning_does_not_echo_caller_payload(self) -> None:
+        """include_input=False — warnings must not reflect the posted payload."""
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, _no_embedding():
+            resp = await _post("/v1/experience", _BAD_EDGE_BODY)
         assert "agent_solved_problem" not in resp.text
         assert "retry_count" not in resp.text
 
     @pytest.mark.asyncio
-    async def test_batch_edge_missing_entity_ids_returns_422_not_500(self) -> None:
-        """`/v1/experience:batch` shares the same spec coercion path."""
+    async def test_batch_malformed_edge_records_event_with_warning(self) -> None:
+        """`/v1/experience:batch` shares the resilient coercion path."""
         p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
-        with p_cm:
+        with p_cm, _no_embedding():
+            resp = await _post("/v1/experience:batch", {"events": [_BAD_EDGE_BODY]})
+        assert resp.status_code == 200, resp.text
+        results = resp.json().get("results", [])
+        assert len(results) == 1
+        assert results[0].get("event_id")
+        assert results[0].get("warnings", [])[0]["kind"] == "edge"
+
+
+class TestExperienceCoreValidation:
+    """`/v1/experience` — a malformed *core* request still returns typed 422."""
+
+    @pytest.mark.asyncio
+    async def test_non_dict_payload_returns_422_not_500(self) -> None:
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, _no_embedding():
             resp = await _post(
-                "/v1/experience:batch",
-                {"events": [self._BAD_EDGE_BODY]},
+                "/v1/experience",
+                {"event_type": "tool_called", "payload": "not-a-dict"},
             )
         assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert body.get("error") == "validation_error"
         assert "internal_error" not in resp.text
+
+
+class TestObservability:
+    """TAP-2866 — error counter + deep readiness probe surface broken paths."""
+
+    def test_http_error_counter_appears_in_metrics(self) -> None:
+        _http_mod._record_http_error("/v1/experience", 500)
+        text = _http_mod._collect_metrics(None)
+        assert 'tapps_brain_http_errors_total{path="/v1/experience",status="500"}' in text
+
+    def test_metrics_includes_experience_writable_gauge(self) -> None:
+        text = _http_mod._collect_metrics(None)
+        assert "tapps_brain_experience_writable" in text
+
+    def test_probe_experience_schema_no_dsn(self) -> None:
+        ok, detail = _http_mod._probe_experience_schema(None)
+        assert ok is False
+        assert "no DSN" in detail
