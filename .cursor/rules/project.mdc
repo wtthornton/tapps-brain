@@ -20,9 +20,8 @@ uv sync --group dev
 # Run all tests (CI-style: exclude benchmarks)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
 
-# Production release gate (packaging, version tests, pytest, ruff, mypy, openclaw-plugin)
+# Production release gate (packaging, version tests, pytest, ruff, mypy)
 # Linux / macOS / WSL or Git Bash: bash scripts/release-ready.sh
-# OpenClaw doc drift only: python scripts/check_openclaw_docs_consistency.py
 
 # Run a single test file
 pytest tests/unit/test_memory_store.py -v
@@ -77,7 +76,7 @@ mypy --strict src/tapps_brain/
 
 ## Cursor (IDE)
 
-- **Quick pointers:** `AGENTS.md` — setup, tests, doc links. **VS Code/Cursor:** `.vscode/settings.json` (Python/Ruff/mypy, 100-char ruler), `.vscode/extensions.json` (recommended extensions), `.vscode/tasks.json` (pytest, ruff, mypy, `release-ready.sh`). **Indexing:** `.cursorignore` excludes `.venv/`, caches, and `openclaw-plugin/node_modules/`.
+- **Quick pointers:** `AGENTS.md` — setup, tests, doc links. **VS Code/Cursor:** `.vscode/settings.json` (Python/Ruff/mypy, 100-char ruler), `.vscode/extensions.json` (recommended extensions), `.vscode/tasks.json` (pytest, ruff, mypy, `release-ready.sh`). **Indexing:** `.cursorignore` excludes `.venv/` and caches.
 - **Project MCP config:** `.cursor/mcp.json` wires the same MCP servers as Claude Code where possible:
   - **tapps-mcp** — `tapps-mcp serve --transport` stdio (matches `uv tool install` / `~/.local/bin/tapps-mcp` on PATH).
   - **docs-mcp** — `uv run --directory …/tapps-mcp/packages/docs-mcp docsmcp serve` (same as `claude mcp list`). Uses `${workspaceFolder}/../tapps-mcp/...` so it works when this repo and [tapps-mcp](https://github.com/tapps-mcp/tapps-mcp) are sibling clones (e.g. `~/code/tapps-brain` + `~/code/tapps-mcp`). If your layout differs, edit the `--directory` path to your local `packages/docs-mcp` checkout.
@@ -85,10 +84,8 @@ mypy --strict src/tapps_brain/
 - Ensure **PATH** includes `~/.local/bin` (uv tools) and Node/`npx` if you use Playwright via `npx`.
 - Optional: add **tapps-brain** memory MCP for dogfooding this repo — see `docs/guides/mcp.md` (`tapps-brain-mcp` + `--project-dir` `${workspaceFolder}`).
 
-## OpenClaw (operators)
+## Pre-publish
 
-- Canonical install/upgrade: `docs/guides/openclaw-runbook.md`
-- Full integration guide: `docs/guides/openclaw.md`
 - Pre-publish checklist: `scripts/publish-checklist.md` (uses `bash scripts/release-ready.sh`)
 
 ## Planning
@@ -99,7 +96,7 @@ Epics and stories live in `docs/planning/epics/` with YAML frontmatter. See `doc
 
 ## Ralph (Autonomous Dev Loop)
 
-This project is configured for Ralph — an autonomous development loop that drives Claude Code CLI through tasks iteratively. **`.ralph/` is not packaged** with tapps-brain (PyPI / OpenClaw).
+This project is configured for Ralph — an autonomous development loop that drives Claude Code CLI through tasks iteratively. **`.ralph/` is not packaged** with tapps-brain (PyPI).
 
 ### Ralph Rules
 

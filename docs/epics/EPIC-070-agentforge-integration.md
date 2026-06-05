@@ -13,7 +13,7 @@
 <!-- docsmcp:start:purpose-intent -->
 ## Purpose & Intent
 
-We are doing this so that tapps-brain can be deployed once as a dockerized shared service and consumed by many AgentForge workers, Claude Code sessions, OpenClaw agents, and third-party AGENT.md-driven agents over the network — without every consumer reimplementing its own transport, resilience, tenancy, and client adapter. Today the only viable integration path is the embedded Python library; the MCP server is stdio-only (one subprocess per client) and the HTTP adapter has no memory CRUD. This epic closes those gaps so tapps-brain becomes a first-class multi-agent framework instead of a library that happens to ship an MCP stub.
+We are doing this so that tapps-brain can be deployed once as a dockerized shared service and consumed by many AgentForge workers, Claude Code sessions, and third-party AGENT.md-driven agents over the network — without every consumer reimplementing its own transport, resilience, tenancy, and client adapter. Today the only viable integration path is the embedded Python library; the MCP server is stdio-only (one subprocess per client) and the HTTP adapter has no memory CRUD. This epic closes those gaps so tapps-brain becomes a first-class multi-agent framework instead of a library that happens to ship an MCP stub.
 
 <!-- docsmcp:end:purpose-intent -->
 
@@ -328,7 +328,6 @@ Unify tapps-brain serve so a single container can expose HTTP + MCP-streamable-H
 |------|--------|----------------|
 | tapps-brain maintainers | - | - |
 | AgentForge team (primary consumer) | - | - |
-| OpenClaw agent authors | - | - |
 | Claude Code / Cursor MCP users | - | - |
 | Future third-party AGENT.md adopters | - | - |
 

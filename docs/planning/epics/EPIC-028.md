@@ -245,19 +245,19 @@ The current plugin catches all exceptions with empty `catch {}` blocks (lines 22
 **Status:** done
 **Effort:** M
 **Depends on:** STORY-028.3, STORY-028.4, STORY-028.5, STORY-028.6
-**Context refs:** `docs/guides/openclaw.md`, `openclaw-skill/SKILL.md`
+**Context refs:** the OpenClaw guide, `openclaw-skill/SKILL.md`
 **Verification:** documentation review
 
 #### Why
 
-`docs/guides/openclaw.md` was written during EPIC-012 for the initial ContextEngine
+The OpenClaw guide was written during EPIC-012 for the initial ContextEngine
 integration. It doesn't cover: memory slot replacement (EPIC-026), full tool surface
 (EPIC-027), reconnection behavior, citation config, session memory, version compat,
 or the mcp-adapter approach.
 
 #### Acceptance Criteria
 
-- [x] `docs/guides/openclaw.md` restructured into sections:
+- [x] the OpenClaw guide restructured into sections:
   1. Quick Start (one-command install via ClawHub)
   2. Integration Modes (ContextEngine, memory slot, MCP sidecar, mcp-adapter)
   3. Configuration Reference (all plugin config options)

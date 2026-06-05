@@ -41,7 +41,6 @@ uv sync --all-packages
   - hive  # ``hive`` and ``agent`` sub-apps — Hive status, search, watch, push, and
   - maintenance  # ``maintenance`` sub-app commands.
   - memory  # ``memory`` sub-app commands: save, show, history, relations, related, search,
-  - openclaw  # ``openclaw`` sub-app commands: init and upgrade workspace scaffolding.
   - serve  # ``serve`` top-level command plus ``project`` sub-app (EPIC-067, EPIC-069).
   - session  # ``session`` and ``relay`` sub-app commands (Issue #17, GitHub #19).
   - store  # ``store`` sub-app commands: stats, list, groups, search, metrics.
@@ -80,7 +79,7 @@ uv sync --all-packages
 - kg_query_analysis  # Deterministic entity-mention extraction and KG resolver wiring.
 - lexical  # Lexical tokenization for BM25 and FTS5 query building (EPIC-042 STORY-042.1).
 - markdown_import  # Markdown import for migrating MEMORY.md files into tapps-brain.
-- markdown_sync  # Bidirectional MEMORY.md sync for OpenClaw workspace integration.
+- markdown_sync  # Bidirectional MEMORY.md sync for workspace integration.
 + mcp_server/  # MCP server exposing tapps-brain via Model Context Protocol.
   - context  # Per-request context, store cache, and tool-context dataclass for MCP server.
   - operator  # Operator MCP server — always exposes maintenance/destructive tools.

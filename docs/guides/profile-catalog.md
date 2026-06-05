@@ -77,7 +77,7 @@ Relevance-heavy — keyword match is the strongest signal. Good for searching te
 
 ## personal-assistant
 
-Memory for personal AI assistants, general-purpose agents, and OpenClaw.
+Memory for personal AI assistants and general-purpose agents.
 
 ### Layers
 

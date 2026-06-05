@@ -524,7 +524,6 @@ Postgres tooling (`pg_dump`, `psql`).
 - [PostgreSQL DSN & Connection Pool Reference](postgres-dsn.md) — full env-var table, pool sizing, health JSON
 - [Hive guide](hive.md) — cross-agent memory sharing
 - [MCP server](mcp.md) — setup and transport
-- [OpenClaw](openclaw.md) — plugin and hooks
 - [Getting started](getting-started.md)
 - [Profile catalog](profile-catalog.md)
 - [Memory scopes](memory-scopes.md)

@@ -129,26 +129,6 @@ Add to `.vscode/mcp.json`:
 }
 ```
 
-### OpenClaw
-
-Add to `~/.openclaw/openclaw.json` (top-level `mcp` key):
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "tapps-brain": {
-        "command": "tapps-brain-mcp",
-        "env": { "TAPPS_BRAIN_PROJECT": "your-project-id" },
-        "transport": "stdio"
-      }
-    }
-  }
-}
-```
-
-Restart the gateway after saving. See the [OpenClaw Guide](openclaw.md) for per-agent config, virtual environment tips, and troubleshooting.
-
 ### Generic MCP Client
 
 The server uses stdio transport. Start it with:
@@ -547,9 +527,8 @@ The MCP server inherits the store-level sliding-window rate limiter (`SlidingWin
 
 ## Maintainers: release gate and doc consistency
 
-Before a release, the repo runs an automated gate that includes this MCP surface (counts in `docs/generated/mcp-tools-manifest.json`) end-to-end with Python packaging and the OpenClaw plugin:
+Before a release, the repo runs an automated gate that includes this MCP surface (counts in `docs/generated/mcp-tools-manifest.json`) end-to-end with Python packaging:
 
 - **Full gate:** `bash scripts/release-ready.sh` (see `scripts/publish-checklist.md`)
-- **OpenClaw-facing docs only:** `python scripts/check_openclaw_docs_consistency.py`
 
-If you add or rename MCP tools/resources, update `openclaw-skill/SKILL.md` frontmatter and run `python scripts/generate_mcp_tool_manifest.py` so the consistency script reads the updated counts.
+If you add or rename MCP tools/resources, run `python scripts/generate_mcp_tool_manifest.py` so the manifest reflects the updated counts.

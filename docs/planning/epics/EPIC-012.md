@@ -12,7 +12,7 @@ tags: [openclaw, contextengine, clawhub, mcp, integration]
 
 ## Context
 
-tapps-brain can already serve OpenClaw as an MCP server (documented in `docs/guides/openclaw.md`). But this is a sidecar integration — the agent has to explicitly call memory tools. OpenClaw's ContextEngine plugin system (v2026.3.7) allows tapps-brain to *replace* the built-in memory entirely, injecting recalled memories before each turn and capturing facts after each response automatically.
+tapps-brain can already serve OpenClaw as an MCP server (documented in the OpenClaw guide). But this is a sidecar integration — the agent has to explicitly call memory tools. OpenClaw's ContextEngine plugin system (v2026.3.7) allows tapps-brain to *replace* the built-in memory entirely, injecting recalled memories before each turn and capturing facts after each response automatically.
 
 This epic has two tracks:
 1. **ContextEngine plugin** — deep integration that makes tapps-brain the default brain for an OpenClaw agent
@@ -64,7 +64,7 @@ OpenClaw users have existing `MEMORY.md` and `memory/*.md` files containing accu
 **Status:** done
 **Effort:** M
 **Depends on:** STORY-012.1
-**Context refs:** `src/tapps_brain/mcp_server.py`, `docs/guides/openclaw.md`
+**Context refs:** `src/tapps_brain/mcp_server.py`, the OpenClaw guide
 **Verification:** manual test with OpenClaw (plugin loads and registers)
 
 #### Why
@@ -160,7 +160,7 @@ OpenClaw's killer feature is the pre-compaction memory flush — before the cont
 **Status:** done
 **Effort:** M
 **Depends on:** STORY-012.2
-**Context refs:** `pyproject.toml`, `docs/planning/DEPLOY-OPENCLAW.md`
+**Context refs:** `pyproject.toml`, the OpenClaw deploy doc
 **Verification:** `pip install tapps-brain[mcp]` from PyPI; `openclaw skill install tapps-brain-memory` from ClawHub
 
 #### Why
@@ -186,7 +186,7 @@ Distribution is what turns a working integration into adoption. PyPI publish mak
 **Status:** done
 **Effort:** S
 **Depends on:** STORY-012.3, STORY-012.4, STORY-012.5
-**Context refs:** `docs/guides/openclaw.md`, `tests/integration/`
+**Context refs:** the OpenClaw guide, `tests/integration/`
 **Verification:** `pytest tests/integration/test_openclaw_integration.py -v`
 
 #### Why
@@ -198,7 +198,7 @@ The OpenClaw integration involves multiple hooks, external process communication
 - [x] Integration test: Markdown import — create a mock MEMORY.md with headings and content, import into store, verify entries with correct tiers
 - [x] Integration test: Markdown import idempotency — import twice, verify no duplicates
 - [x] Integration test: recall + capture round-trip — save a memory, recall it via orchestrator, capture a response containing new facts, verify new entries created
-- [x] `docs/guides/openclaw.md` updated with ContextEngine plugin instructions alongside MCP sidecar instructions
+- [x] the OpenClaw guide updated with ContextEngine plugin instructions alongside MCP sidecar instructions
 - [x] Documentation covers: install, bootstrap, auto-recall, auto-capture, pre-compaction, profile switching, Hive integration
 - [x] Overall coverage stays at 95%+
 

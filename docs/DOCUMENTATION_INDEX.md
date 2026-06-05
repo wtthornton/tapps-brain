@@ -53,7 +53,6 @@
 - [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-05-11)*
 - [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-05-11)*
 - [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-05-17)*
-- [Install and upgrade tapps-brain for OpenClaw from GitHub (no PyPI)](guides/openclaw-install-from-git.md) — Use this guide when you want the **Python** package and **`tapps-brain-mcp`** installed or upgraded from the Git repo... *(updated 2026-05-11)*
 - [Ralph setup guide](guides/ralph-setup.md) — This guide covers the end-to-end setup for running Ralph against the *(updated 2026-05-16)*
 ## Guides
 
@@ -65,7 +64,6 @@
 - [Auto-Recall: Pre-Prompt Memory Injection](guides/auto-recall.md) — Auto-recall automatically searches the memory store for relevant context before an agent processes a user message, an... *(updated 2026-05-11)*
 - [brain_export — Managed Agents-layout snapshot exporter](guides/brain-export.md) — **Status:** added 2026-05-18 ([TAP-2099](https://linear.app/tappscodingagents/issue/TAP-2099)). Recommended in §6 of ... *(updated 2026-05-18)*
 - [Claude Code hooks for tapps-brain](guides/claude-code-hooks.md) — **Audience:** a human developer wiring Claude Code in a repo that talks to *(updated 2026-05-11)*
-- [ClawHub Submission Guide](guides/clawhub-submission.md) — How to submit `tapps-brain-memory` to the ClawHub skill directory. *(updated 2026-05-11)*
 - [TappsBrainClient — official Python client](guides/client.md) — `TappsBrainClient` (sync) and `AsyncTappsBrainClient` (async) let you consume a *(updated 2026-05-18)*
 - [Memory decay: power-law vs exponential](guides/decay.md) — This guide explains the two decay models tapps-brain supports, how to choose between them, and the calibration math b... *(updated 2026-05-11)*
 - [tapps-brain Deployment Guide](guides/deployment.md) — This guide covers deploying tapps-brain as a **shared networked service** — *(updated 2026-05-11)*
@@ -94,15 +92,13 @@
 - [Migration 3.6 → 3.7](guides/migration-3.6-to-3.7.md) — Upgrading an existing v3.6.x deployment to v3.7.x (including v3.7.2). Three concrete changes; the rest is backwards c... *(updated 2026-05-11)*
 - [Migration Rollback Guide](guides/migrations-rollback.md) — Every SQL migration under `src/tapps_brain/migrations/{private,hive,federation}/` has a paired `*.down.sql` sibling t... *(updated 2026-05-16)*
 - [Observability](guides/observability.md) — tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics**, and **feedback** surfaces through... *(updated 2026-05-18)*
-- [OpenClaw Install and Upgrade Runbook (Canonical)](guides/openclaw-runbook.md) — This is the source-of-truth runbook for installing and upgrading tapps-brain in OpenClaw. *(updated 2026-05-11)*
-- [tapps-brain for OpenClaw](guides/openclaw.md) — Persistent cross-session memory for your OpenClaw agents. MCP tool and resource *(updated 2026-05-11)*
 - [Postgres Backup and Restore — tapps-brain](guides/postgres-backup.md) — tapps-brain stores **all durable state** in PostgreSQL (ADR-007): private memories, *(updated 2026-05-11)*
 - [Environment Variable Reference](guides/postgres-dsn.md) — This is the **canonical environment variable contract** for tapps-brain v3. *(updated 2026-05-11)*
 - [pg_tde Operator Runbook](guides/postgres-tde.md) — **Applies to:** Percona Distribution for PostgreSQL 17 + pg_tde 2.1.2 (released 2026-03-02) *(updated 2026-05-11)*
 - [Profile Catalog](guides/profile-catalog.md) — tapps-brain ships with 6 built-in profiles covering common AI agent use cases. Each profile can be used directly, ext... *(updated 2026-05-11)*
 - [Profile Limits: Research and Rationale](guides/profile-limits-rationale.md) — This document explains the evidence behind tapps-brain's built-in profile defaults. *(updated 2026-05-11)*
 - [Memory Profiles: Designing Custom Memory for Any AI Agent](guides/profiles.md) — tapps-brain ships with a configurable profile system that lets you define custom memory layers, decay models, scoring... *(updated 2026-05-17)*
-- [Remote MCP integration (Streamable HTTP)](guides/remote-mcp-integration.md) — This guide describes how remote agents (AgentForge, OpenClaw, etc.) connect to *(updated 2026-05-11)*
+- [Remote MCP integration (Streamable HTTP)](guides/remote-mcp-integration.md) — This guide describes how remote agents (AgentForge, etc.) connect to *(updated 2026-05-11)*
 - [Save conflicts: offline review and NLI backlog](guides/save-conflict-nli-offline.md) — Save-time conflict detection uses deterministic text similarity (`detect_save_conflicts` in `contradictions.py`) when... *(updated 2026-05-11)*
 - [Scope Audit: agent_scope / Group / Hive — Allowed Namespaces and Operations](guides/scope-audit.md) *(updated 2026-05-11)*
 - [Token rotation & secret recovery](guides/token-rotation.md) — How to rotate the bearer/admin tokens that gate the tapps-brain HTTP adapter, and how to recover them from a running ... *(updated 2026-05-11)*
@@ -115,7 +111,6 @@
 - [DB Roles Runbook — tapps-brain](operations/db-roles-runbook.md) — **Covers EPIC-063 STORY-063.1 + STORY-063.2: least-privilege Postgres roles.** *(updated 2026-05-11)*
 - [Operator Runbook — tapps-brain Observability](operations/observability-runbook.md) — See [`k8s-probes.md`](k8s-probes.md) for full probe spec. *(updated 2026-05-11)*
 - [Postgres Backup Runbook — tapps-brain (Ops On-Call)](operations/postgres-backup-runbook.md) — **Audience:** On-call engineers and SREs. *(updated 2026-05-11)*
-- [Deploying tapps-brain to OpenClaw](planning/DEPLOY-OPENCLAW.md) — There are **two complementary deployment paths** for getting tapps-brain into OpenClaw: *(updated 2026-05-11)*
 - [Agent memory systems — comparative scorecard (2026-04-17)](research/memory-systems-scorecard.md) *(updated 2026-05-11)*
 - [Story 70.15 -- Docker + docs — one binary, both transports](stories/STORY-070.15-docker-unified.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 ## Other
@@ -157,9 +152,9 @@
 - [EPIC-009: Multi-Interface Distribution — Library, CLI, and MCP Packaging](planning/epics/EPIC-009.md) — tapps-brain is becoming a three-interface project: a Python library (`import tapps_brain`), a CLI (`tapps-brain`), an... *(updated 2026-05-11)*
 - [EPIC-010: Configurable Memory Profiles — Pluggable Layers and Scoring](planning/epics/EPIC-010.md) — tapps-brain's memory tiers (architectural/pattern/procedural/context), half-lives (180/60/30/14 days), and scoring we... *(updated 2026-05-11)*
 - [EPIC-011: Hive — Multi-Agent Shared Brain with Domain Namespaces](planning/epics/EPIC-011.md) — tapps-brain currently serves one agent per project. But AI agent setups increasingly involve multiple specialized age... *(updated 2026-05-11)*
-- [EPIC-012: OpenClaw Integration — ContextEngine Plugin and ClawHub Skill](planning/epics/EPIC-012.md) — tapps-brain can already serve OpenClaw as an MCP server (documented in `docs/guides/openclaw.md`). But this is a side... *(updated 2026-05-11)*
-- [EPIC-013: Hive-Aware MCP Surface — Agent Identity, Scope Propagation, and OpenClaw Multi-Agent Wiring](planning/epics/EPIC-013.md) — EPIC-011 built the Hive core (HiveStore, AgentRegistry, PropagationEngine, conflict resolution, namespace isolation) ... *(updated 2026-05-11)*
-- [EPIC-014: Hardening — Input Validation, Interface Parity, Resilience, and Onboarding Docs](planning/epics/EPIC-014.md) — EPICs 001–013 built a complete memory system with profiles, Hive multi-agent sharing, MCP server, OpenClaw integratio... *(updated 2026-05-11)*
+- [EPIC-012: Plugin Integration — ContextEngine Plugin and Skill](planning/epics/EPIC-012.md) — Plugin integration epic (archived). *(updated 2026-05-11)*
+- [EPIC-013: Hive-Aware MCP Surface — Agent Identity, Scope Propagation, and Multi-Agent Wiring](planning/epics/EPIC-013.md) — EPIC-011 built the Hive core (HiveStore, AgentRegistry, PropagationEngine, conflict resolution, namespace isolation) ... *(updated 2026-05-11)*
+- [EPIC-014: Hardening — Input Validation, Interface Parity, Resilience, and Onboarding Docs](planning/epics/EPIC-014.md) — EPICs 001–013 built a complete memory system with profiles, Hive multi-agent sharing, and the MCP server... *(updated 2026-05-11)*
 - [EPIC-015: Analytics & Operational Surface](planning/epics/EPIC-015.md) — The tapps-brain library layer has ~36 public methods on `MemoryStore`, but 7 are not exposed via MCP or CLI. The know... *(updated 2026-05-11)*
 - [EPIC-016: Test Suite Hardening](planning/epics/EPIC-016.md) — A coverage and quality audit of the 1641-test suite (95.54% coverage) revealed four categories of gaps: *(updated 2026-05-11)*
 - [EPIC-017: Code Review — Storage & Data Model](planning/epics/EPIC-017.md) — With all 16 feature epics complete and BUG-001/BUG-002 fixes queued, the codebase is ready for systematic code review... *(updated 2026-05-11)*
@@ -171,20 +166,20 @@
 - [EPIC-023: Code Review — Config, Profiles & Observability](planning/epics/EPIC-023.md) — Full code review of configuration, profiles, metrics, and observability. *(updated 2026-05-11)*
 - [EPIC-024: Code Review — Unit Tests (Part 1)](planning/epics/EPIC-024.md) — Review all unit test files for: test quality, missing edge cases, flaky test patterns, proper isolation, assertion co... *(updated 2026-05-11)*
 - [EPIC-025: Code Review — Integration Tests, Benchmarks & TypeScript](planning/epics/EPIC-025.md) — Review all integration tests, benchmarks, test infrastructure, TypeScript plugin code, and configuration files. Final... *(updated 2026-05-11)*
-- [EPIC-026: OpenClaw Memory Replacement — Replace memory-core with tapps-brain](planning/epics/EPIC-026.md) — EPIC-012 delivered a ContextEngine plugin that adds auto-recall and auto-capture hooks. *(updated 2026-05-11)*
-- [EPIC-027: OpenClaw Full Feature Surface — Expose All 41 MCP Tools as Native Tools](planning/epics/EPIC-027.md) — **Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.1. Cou... *(updated 2026-05-11)*
-- [EPIC-028: OpenClaw Plugin Hardening — Stability, Tests, and Compatibility](planning/epics/EPIC-028.md) — The ContextEngine plugin (EPIC-012) and memory replacement (EPIC-026) provide the *(updated 2026-05-11)*
+- [EPIC-026: Memory Replacement — Replace memory-core with tapps-brain](planning/epics/EPIC-026.md) — EPIC-012 delivered a ContextEngine plugin that adds auto-recall and auto-capture hooks. *(updated 2026-05-11)*
+- [EPIC-027: Full Feature Surface — Expose All 41 MCP Tools as Native Tools](planning/epics/EPIC-027.md) — **Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.1. Cou... *(updated 2026-05-11)*
+- [EPIC-028: Plugin Hardening — Stability, Tests, and Compatibility](planning/epics/EPIC-028.md) — The ContextEngine plugin (EPIC-012) and memory replacement (EPIC-026) provide the *(updated 2026-05-11)*
 - [EPIC-029: Feedback Collection — LLM and Project Quality Signals](planning/epics/EPIC-029.md) — tapps-brain has strong observability (EPIC-007: metrics, audit trail, health checks) but no mechanism for consumers —... *(updated 2026-05-11)*
 - [EPIC-030: Diagnostics & Self-Monitoring — Quality Scorecard and Anomaly Detection](planning/epics/EPIC-030.md) — EPIC-007 gave tapps-brain operational observability: metrics (counters, histograms), audit trail, and health checks. ... *(updated 2026-05-11)*
 - [EPIC-031: Continuous Improvement Flywheel — Feedback-Driven Quality Loop](planning/epics/EPIC-031.md) — EPIC-029 collects feedback signals. EPIC-030 assesses quality and detects anomalies. This epic closes the loop: it tu... *(updated 2026-05-11)*
 - [EPIC-032: OTel GenAI Semantic Conventions — Standardized Telemetry Export](planning/epics/EPIC-032.md) — Upgrade tapps-brain's optional OpenTelemetry exporter to comply with the OpenTelemetry GenAI and MCP semantic convent... *(updated 2026-05-19)*
-- [EPIC-033: OpenClaw Plugin SDK Alignment — Fix API Type Drift and Runtime Bugs](planning/epics/EPIC-033.md) — The OpenClaw plugin (`openclaw-plugin/src/index.ts`) defines a custom `OpenClawPluginApi` interface (lines 184-202) i... *(updated 2026-05-11)*
+- [EPIC-033: Plugin SDK Alignment — Fix API Type Drift and Runtime Bugs](planning/epics/EPIC-033.md) — Plugin SDK alignment epic (archived). *(updated 2026-05-11)*
 - [EPIC-034: Production Readiness QA Remediation - Lint, Format, Typing, Test Stability](planning/epics/EPIC-034.md) — The production-readiness review found hard blockers: failing Ruff checks, formatting drift, and unstable plugin test ... *(updated 2026-05-11)*
-- [EPIC-035: OpenClaw Install and Upgrade UX Consistency](planning/epics/EPIC-035.md) — The readiness review found documentation and command inconsistencies that can cause failed installs, failed upgrades,... *(updated 2026-05-11)*
-- [EPIC-036: Release Gate Hardening for Production-Ready OpenClaw Distribution](planning/epics/EPIC-036.md) — Readiness is currently assessed manually and can regress between releases. To keep production readiness durable, the ... *(updated 2026-05-11)*
-- [EPIC-037: OpenClaw Plugin SDK Realignment — Fix API Contract to Match Real SDK](planning/epics/EPIC-037.md) — The OpenClaw plugin ships a hand-written `openclaw-sdk.d.ts` (ambient type declarations) that diverges from the real ... *(updated 2026-05-11)*
-- [EPIC-038: OpenClaw Plugin Simplification — Remove Dead Compat Layers and Streamline](planning/epics/EPIC-038.md) — After EPIC-037 aligns the plugin with the real OpenClaw SDK, a significant amount of dead weight remains in the codeb... *(updated 2026-05-11)*
-- [EPIC-039: Replace Custom MCP Client with Official @modelcontextprotocol/sdk](planning/epics/EPIC-039.md) — The OpenClaw plugin's `mcp_client.ts` is a hand-rolled JSON-RPC 2.0 client (~466 lines) that implements Content-Lengt... *(updated 2026-05-11)*
+- [EPIC-035: Install and Upgrade UX Consistency](planning/epics/EPIC-035.md) — The readiness review found documentation and command inconsistencies that can cause failed installs, failed upgrades,... *(updated 2026-05-11)*
+- [EPIC-036: Release Gate Hardening for Production-Ready Distribution](planning/epics/EPIC-036.md) — Readiness is currently assessed manually and can regress between releases. To keep production readiness durable, the ... *(updated 2026-05-11)*
+- [EPIC-037: Plugin SDK Realignment — Fix API Contract to Match Real SDK](planning/epics/EPIC-037.md) — Plugin SDK realignment epic (archived). *(updated 2026-05-11)*
+- [EPIC-038: Plugin Simplification — Remove Dead Compat Layers and Streamline](planning/epics/EPIC-038.md) — Plugin simplification epic (archived). *(updated 2026-05-11)*
+- [EPIC-039: Replace Custom MCP Client with Official @modelcontextprotocol/sdk](planning/epics/EPIC-039.md) — The plugin's `mcp_client.ts` is a hand-rolled JSON-RPC 2.0 client (~466 lines) that implements Content-Lengt... *(updated 2026-05-11)*
 - [EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades](planning/epics/EPIC-040.md) — Per-story checkboxes, phases, and GitHub issue mapping (**#24–#44**) live in **`.ralph/fix_plan.md`** under `## EPIC-... *(updated 2026-05-11)*
 - [EPIC-041: Federation hub + Hive groups + operator docs](planning/epics/EPIC-041.md) — Post–**#49** (v1 project-local `memory_group`) work queued on GitHub and in [`open-issues-roadmap.md`](../open-issues... *(updated 2026-05-11)*
 - [Improvement program: `features-and-technologies.md` (index)](planning/epics/EPIC-042-feature-tech-index.md) — **Source map:** [`docs/engineering/features-and-technologies.md`](../../engineering/features-and-technologies.md) *(updated 2026-05-11)*
@@ -237,7 +232,7 @@
 - [Story 66.2 -- Bi-temporal as_of filter on PostgresPrivateBackend.search](planning/epics/stories/STORY-066.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.3 -- GC archive Postgres table (migration 006)](planning/epics/stories/STORY-066.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.4 -- MCP tool registration audit and fix](planning/epics/stories/STORY-066.4.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 66.5 -- Version consistency unblock for openclaw-skill](planning/epics/stories/STORY-066.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
+- [Story 66.5 -- Version consistency unblock for skill](planning/epics/stories/STORY-066.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.6 -- CI workflow with ephemeral Postgres service container](planning/epics/stories/STORY-066.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.7 -- Connection pool tuning and health JSON pool fields](planning/epics/stories/STORY-066.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.8 -- Auto-migrate on startup gate](planning/epics/stories/STORY-066.8.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*

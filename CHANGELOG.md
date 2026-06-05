@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Release policy
 
-tapps-brain targets a **biweekly minor release** cadence (approximately every 14 days). Patch releases ship as needed for security fixes and critical bugs. Every release must pass `bash scripts/release-ready.sh` (packaging, tests ≥95% coverage, ruff, mypy, OpenClaw plugin build) before tagging. The CHANGELOG entry for each version is the release notes — no separate release-notes doc.
+tapps-brain targets a **biweekly minor release** cadence (approximately every 14 days). Patch releases ship as needed for security fixes and critical bugs. Every release must pass `bash scripts/release-ready.sh` (packaging, tests ≥95% coverage, ruff, mypy) before tagging. The CHANGELOG entry for each version is the release notes — no separate release-notes doc.
 
 ---
 
 ## [Unreleased]
+
+### Removed
+
+- **OpenClaw plugin, skill, CLI, and tooling removed** ([TAP-2921](https://linear.app/tappscodingagents/issue/TAP-2921)). OpenClaw was a distribution channel that is no longer pursued; carrying its npm packages, CLI scaffolding, tests, docs, and release-gate steps added maintenance cost for a dead target. Removed the `openclaw-plugin/` and `openclaw-skill/` npm packages and their CI/release/version-consistency steps ([TAP-2925](https://linear.app/tappscodingagents/issue/TAP-2925)); the `openclaw` CLI sub-app (`init` / `upgrade`) and the OpenClaw integration tests ([TAP-2926](https://linear.app/tappscodingagents/issue/TAP-2926)); and all OpenClaw guide docs plus stray references across README, CLAUDE, cursor rules, and ignore files — including the stale `openclaw_migrate` MCP-tool doc rows that never existed in code ([TAP-2927](https://linear.app/tappscodingagents/issue/TAP-2927)). Historical epic/story/ADR design records that mention OpenClaw are kept as shipped-history.
 
 ## [3.22.4] — 2026-06-05
 

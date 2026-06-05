@@ -237,7 +237,7 @@ for this.
 **Status:** done
 **Effort:** S
 **Depends on:** STORY-027.1 through STORY-027.8
-**Context refs:** `openclaw-skill/SKILL.md`, `docs/guides/openclaw.md`
+**Context refs:** `openclaw-skill/SKILL.md`, the OpenClaw guide
 **Verification:** `openclaw skill info tapps-brain-memory` reflects the published tool list
 
 #### Why
@@ -250,7 +250,7 @@ integration modes: ContextEngine, memory slot, MCP sidecar, and mcp-adapter.
 
 - [x] SKILL.md declares tools with descriptions (keep in sync with MCP server)
 - [x] SKILL.md declares all 4 resources and 3 prompts
-- [x] `docs/guides/openclaw.md` updated with four integration modes:
+- [x] the OpenClaw guide updated with four integration modes:
   1. **ContextEngine only** (auto-recall/capture, minimal config)
   2. **ContextEngine + memory slot** (replaces memory-core, EPIC-026)
   3. **MCP sidecar** (full 41-tool access via mcpServers config)

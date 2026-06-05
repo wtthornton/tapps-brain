@@ -50,7 +50,7 @@ A single executable gate reduces human error and makes go/no-go decisions object
 **Status:** done
 **Effort:** S
 **Depends on:** EPIC-035
-**Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/UPGRADING.md`, `README.md`
+**Context refs:** the OpenClaw guide, the OpenClaw install-from-git guide, `openclaw-plugin/UPGRADING.md`, `README.md`
 **Verification:** `python scripts/check_openclaw_docs_consistency.py`
 
 #### Why

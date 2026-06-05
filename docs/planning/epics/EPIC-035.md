@@ -29,7 +29,7 @@ The readiness review found documentation and command inconsistencies that can ca
 **Status:** done
 **Effort:** S
 **Depends on:** none
-**Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/README.md`, `openclaw-plugin/UPGRADING.md`, `openclaw-skill/SKILL.md`
+**Context refs:** the OpenClaw guide, the OpenClaw install-from-git guide, `openclaw-plugin/README.md`, `openclaw-plugin/UPGRADING.md`, `openclaw-skill/SKILL.md`
 **Verification:** `rg "openclaw plugin install|openclaw plugins install" docs openclaw-plugin openclaw-skill`
 
 #### Why
@@ -49,7 +49,7 @@ Install command drift is a direct production risk: users copy/paste docs and fai
 **Status:** done
 **Effort:** M
 **Depends on:** none
-**Context refs:** `docs/guides/openclaw.md`, `README.md`, `openclaw-skill/SKILL.md`, `openclaw-plugin/src/index.ts`, `docs/planning/epics/EPIC-026.md`, `docs/planning/epics/EPIC-027.md`
+**Context refs:** the OpenClaw guide, `README.md`, `openclaw-skill/SKILL.md`, `openclaw-plugin/src/index.ts`, `docs/planning/epics/EPIC-026.md`, `docs/planning/epics/EPIC-027.md`
 **Verification:** `rg "planned|Status: Planned|41 MCP tools|54 tools|7 resources" docs README.md openclaw-skill openclaw-plugin`
 
 #### Why
@@ -70,7 +70,7 @@ Conflicting status text erodes trust and causes incorrect operational assumption
 **Status:** done
 **Effort:** S
 **Depends on:** STORY-035.1, STORY-035.2
-**Context refs:** `docs/guides/openclaw.md`, `docs/guides/openclaw-install-from-git.md`, `openclaw-plugin/UPGRADING.md`
+**Context refs:** the OpenClaw guide, the OpenClaw install-from-git guide, `openclaw-plugin/UPGRADING.md`
 **Verification:** `rg "runbook|upgrade|install|restart" docs/guides/openclaw*.md openclaw-plugin/UPGRADING.md`
 
 #### Why

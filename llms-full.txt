@@ -105,7 +105,5 @@ examples/
 fix_plan.md
 llms-full.txt
 llms.txt
-openclaw-plugin/
-openclaw-skill/
 ... and 12 more
 ```

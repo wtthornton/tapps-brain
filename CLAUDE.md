@@ -54,10 +54,9 @@ pytest tests/benchmarks/ -v --benchmark-only
 # Build package
 uv build
 
-# Production release gate (packaging, version tests, pytest, ruff, mypy, plugin tests)
+# Production release gate (packaging, version tests, pytest, ruff, mypy)
 # Linux / macOS / WSL: bash scripts/release-ready.sh
 # CI uses SKIP_FULL_PYTEST=1 when the test matrix already ran pytest.
-# OpenClaw doc drift only: python scripts/check_openclaw_docs_consistency.py
 ```
 
 ## Architecture
@@ -187,12 +186,10 @@ Summary: a dedicated Linear user *Claude Agent* (`tapp.thornton+claude@gmail.com
 
 ## Pre-release and publishing
 
-Before tagging or publishing PyPI / OpenClaw artifacts:
+Before tagging or publishing PyPI artifacts:
 
-- **Full gate (recommended):** `bash scripts/release-ready.sh` — packaging build, wheel smoke import, version consistency tests, pytest (skip in CI with `SKIP_FULL_PYTEST=1` when the matrix already ran tests), ruff, mypy, `openclaw-plugin` `npm ci` / build / test.
-- **OpenClaw docs only:** `python scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
+- **Full gate (recommended):** `bash scripts/release-ready.sh` — packaging build, wheel smoke import, version consistency tests, pytest (skip in CI with `SKIP_FULL_PYTEST=1` when the matrix already ran tests), ruff, mypy.
 - **Checklist:** `scripts/publish-checklist.md`
-- **OpenClaw operators:** `docs/guides/openclaw-runbook.md` (PyPI + Git paths), `docs/guides/openclaw.md`
 
 On **Windows**, run the shell gate from **WSL** or **Git Bash** (see `docs/planning/STATUS.md`).
 

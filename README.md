@@ -182,14 +182,14 @@ pip install tapps-brain[all]            # everything above (except visual and ot
 
 **Observability note:** [docs/guides/observability.md](docs/guides/observability.md) describes metrics/diagnostics and the OTel module status (EP032).
 
-> **Pre-release / CI parity:** `bash scripts/release-ready.sh` (Linux, macOS, WSL, or Git Bash on Windows) runs packaging, tests, lint, types, and the OpenClaw plugin build. OpenClaw-facing doc drift: `python scripts/check_openclaw_docs_consistency.py`. Details: [`scripts/publish-checklist.md`](scripts/publish-checklist.md), [`docs/planning/STATUS.md`](docs/planning/STATUS.md).
+> **Pre-release / CI parity:** `bash scripts/release-ready.sh` (Linux, macOS, WSL, or Git Bash on Windows) runs packaging, tests, lint, and types. Details: [`scripts/publish-checklist.md`](scripts/publish-checklist.md), [`docs/planning/STATUS.md`](docs/planning/STATUS.md).
 
 > **Distribution (TAP-992):** Releases are published as GitHub Release artifacts on every `vX.Y.Z` tag push via `.github/workflows/release.yml`. Consumers that previously used `vendor/*.whl` should switch to:
 > ```toml
 > # pyproject.toml (uv-compatible)
 > tapps-brain = { url = "https://github.com/wtthornton/tapps-brain/releases/download/vX.Y.Z/tapps_brain-X.Y.Z-py3-none-any.whl" }
 > ```
-> See [`scripts/publish-checklist.md`](scripts/publish-checklist.md) and [`docs/guides/openclaw-runbook.md`](docs/guides/openclaw-runbook.md) (Path B).
+> See [`scripts/publish-checklist.md`](scripts/publish-checklist.md).
 
 ---
 
@@ -227,7 +227,7 @@ tapps-brain visual capture --json brain-visual.json \   # headless PNG poster [v
 tapps-brain export --format json --output backup.json
 ```
 
-Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `openclaw`, `visual`, …). Many commands support `--json` output.
+Typer CLI with multiple sub-apps (`store`, `memory`, `federation`, `maintenance`, `profile`, `hive`, `agent`, `feedback`, `diagnostics`, `flywheel`, `visual`, …). Many commands support `--json` output.
 
 ### MCP server
 
@@ -347,7 +347,6 @@ Tool and resource counts are recorded in [`docs/generated/mcp-tools-manifest.jso
 | **Session / relay** | `tapps_brain_session_end` | End-of-session episodic summary |
 | | `tapps_brain_relay_export` | Build sub-agent relay JSON for import (items may set `memory_group` / `group`; see [memory-relay](docs/guides/memory-relay.md)) |
 | **Memory (CLI)** | *(Typer)* `memory save` | Same semantics as MCP `memory_save` — see [Agent integration](docs/guides/agent-integration.md) |
-| **OpenClaw** | `openclaw_migrate` | Migrate legacy OpenClaw / plugin data |
 
 **Resources:** `memory://stats` · `memory://health` · `memory://entries/{key}` · `memory://metrics` · `memory://feedback` · `memory://diagnostics` · `memory://report`
 
@@ -643,7 +642,6 @@ tests/
 | Types | strict | mypy |
 | Line endings | LF | .gitattributes |
 | Release gate | green before publish | `scripts/release-ready.sh` |
-| OpenClaw docs | no install/count drift | `scripts/check_openclaw_docs_consistency.py` |
 
 ---
 
@@ -663,8 +661,6 @@ tests/
 | [**Fleet Topology**](docs/guides/fleet-topology.md) | **Deploying at scale** — N FastAPI containers + 1 brain sidecar, wire contract, deployment checklist, token lifecycle |
 | [Hive Guide](docs/guides/hive.md) | Cross-agent memory sharing: namespaces, propagation, conflict resolution |
 | [MCP Server Guide](docs/guides/mcp.md) | Client setup for Claude Code, Cursor, VS Code Copilot; full tool reference |
-| [OpenClaw Guide](docs/guides/openclaw.md) | Install, configure, and test with OpenClaw |
-| [OpenClaw runbook](docs/guides/openclaw-runbook.md) | Canonical PyPI + Git install, upgrade, verify, restart |
 | [Auto-Recall Guide](docs/guides/auto-recall.md) | Recall orchestrator usage and integration patterns |
 | [Publish checklist](scripts/publish-checklist.md) | PyPI pre-flight (includes release gate command) |
 | [Federation Guide](docs/guides/federation.md) | Cross-project memory sharing setup |
@@ -684,8 +680,7 @@ tests/
 | [EPIC-030](docs/planning/epics/EPIC-030.md) | Diagnostics & self-monitoring | Done |
 | [EPIC-031](docs/planning/epics/EPIC-031.md) | Continuous improvement flywheel | Done |
 | [EPIC-032](docs/planning/epics/EPIC-032.md) | OTel GenAI conventions | Planned |
-| [EPIC-033](docs/planning/epics/EPIC-033.md) | OpenClaw plugin SDK alignment | Done |
-| [EPIC-034](docs/planning/epics/EPIC-034.md)–[036](docs/planning/epics/EPIC-036.md) | Production QA, OpenClaw doc consistency, release gate | Done |
+| [EPIC-034](docs/planning/epics/EPIC-034.md) | Production QA | Done |
 
 See [`docs/planning/STATUS.md`](docs/planning/STATUS.md) and [`docs/planning/epics/`](docs/planning/epics/) for the full list (including code-review epics 017–025).
 

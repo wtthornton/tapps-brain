@@ -11,7 +11,7 @@ Feature intake and triage policy for agent-created `feat` work lives in:
 
 **Plan (what to follow when):**
 
-| Context | Source of truth for *what* to do next | Packaged in PyPI / OpenClaw? |
+| Context | Source of truth for *what* to do next | Packaged in PyPI? |
 |--------|----------------------------------------|-------------------------------|
 | Human or Cursor agent implementing shipped features | [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (priority + status); `epics/` for design | N/A — delivery is tracked in Linear |
 | Ralph autonomous loop (Claude Code CLI) | `.ralph/fix_plan.md` for *that loop’s* next unchecked task | **No** — `.ralph/` is dev automation only, not part of the installable package |
@@ -68,7 +68,7 @@ docs/planning/
     ├── EPIC-009.md      ← Multi-interface distribution (done)
     ├── EPIC-010.md      ← Configurable memory profiles — pluggable layers and scoring (done)
     ├── EPIC-011.md      ← Hive — multi-agent shared brain with domain namespaces (done)
-    ├── EPIC-012.md      ← OpenClaw integration — ContextEngine plugin and ClawHub skill (done)
+    ├── EPIC-012.md      ← Plugin integration — ContextEngine plugin and skill (done)
     ├── EPIC-013.md      ← Hive-aware MCP surface (done)
     ├── EPIC-014.md      ← Hardening — validation, parity, resilience, docs (done)
     ├── EPIC-015.md      ← Analytics & operational surface (done)
@@ -82,19 +82,19 @@ docs/planning/
     ├── EPIC-023.md      ← Code review — Config, Profiles & Observability (done)
     ├── EPIC-024.md      ← Code review — Unit Tests Part 1 (done)
     ├── EPIC-025.md      ← Code review — Integration Tests, Benchmarks & TypeScript (done)
-    ├── EPIC-026.md      ← OpenClaw Memory Replacement (done)
-    ├── EPIC-027.md      ← OpenClaw Full Feature Surface — MCP tools (done; surface now 54 tools)
-    ├── EPIC-028.md      ← OpenClaw Plugin Hardening (done)
+    ├── EPIC-026.md      ← Memory Replacement (done)
+    ├── EPIC-027.md      ← Full Feature Surface — MCP tools (done; surface now 54 tools)
+    ├── EPIC-028.md      ← Plugin Hardening (done)
     ├── EPIC-029.md      ← Feedback Collection (done)
     ├── EPIC-030.md      ← Diagnostics & Self-Monitoring (done)
     ├── EPIC-031.md      ← Continuous Improvement Flywheel (done)
     ├── EPIC-032.md      ← OTel GenAI Semantic Conventions — standardized telemetry export (planned)
-    ├── EPIC-033.md      ← OpenClaw Plugin SDK Alignment (done)
+    ├── EPIC-033.md      ← Plugin SDK Alignment (done)
     ├── EPIC-034.md      ← Production readiness QA remediation (done)
-    ├── EPIC-035.md      ← OpenClaw install and upgrade UX consistency (done)
+    ├── EPIC-035.md      ← Install and upgrade UX consistency (done)
     ├── EPIC-036.md      ← Release gate hardening (done; scripts/release-ready.sh, CI)
-    ├── EPIC-037.md      ← OpenClaw plugin SDK realignment — fix API contract to match real SDK (done)
-    ├── EPIC-038.md      ← OpenClaw plugin simplification — remove dead compat layers (done)
+    ├── EPIC-037.md      ← Plugin SDK realignment — fix API contract to match real SDK (done)
+    ├── EPIC-038.md      ← Plugin simplification — remove dead compat layers (done)
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
     ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
     ├── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)

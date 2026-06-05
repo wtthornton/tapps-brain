@@ -109,7 +109,7 @@
 **Acceptance criteria:**
 
 - [ ] Single canonical sentence: “Counts as of build X: see `docs/generated/mcp-tools-manifest.json`” (or script output).
-- [ ] Grep-driven cleanup: `docs/guides/mcp.md`, `docs/guides/openclaw.md`, `docs/planning/STATUS.md` — no contradictory counts unless dated as historical.
+- [ ] Grep-driven cleanup: `docs/guides/mcp.md`, the OpenClaw guide, `docs/planning/STATUS.md` — no contradictory counts unless dated as historical.
 
 **Refs:** `docs/generated/mcp-tools-manifest.json`, `scripts/check_openclaw_docs_consistency.py` (if applicable).
 

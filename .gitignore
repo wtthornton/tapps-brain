@@ -80,7 +80,6 @@ coverage.json
 .ralph/forensic-*/
 .ralph/.brief_cache/
 .ralph/.coordinator_timings.jsonl
-openclaw-plugin/node_modules/
 node_modules/
 
 # LOCK-1: Instance lock file (auto-released by flock)

@@ -23,7 +23,6 @@ Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](
 | Lint / format | clean | `ruff check`, `ruff format --check` |
 | Types | strict | `mypy --strict src/tapps_brain/` |
 | Release gate | green before publish | `bash scripts/release-ready.sh` (WSL/Git Bash on Windows); CI job `release-ready` |
-| OpenClaw docs | no install/count drift | `python scripts/check_openclaw_docs_consistency.py` |
 
 ## Storage / schema
 
@@ -76,7 +75,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-009 | Multi-Interface Distribution | done | 2026-03-21 |
 | EPIC-010 | Configurable Memory Profiles | done | 2026-03-21 |
 | EPIC-011 | Hive — Multi-Agent Shared Brain | done | 2026-03-21 |
-| EPIC-012 | OpenClaw Integration | done | 2026-03-21 |
+| EPIC-012 | Plugin Integration | done | 2026-03-21 |
 | EPIC-013 | Hive-Aware MCP Surface | done | 2026-03-21 |
 | EPIC-014 | Hardening — Validation, Parity, Resilience, Docs | done | 2026-03-22 |
 | EPIC-015 | Analytics & Operational Surface | done | 2026-03-22 |
@@ -90,19 +89,19 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-023 | Code Review — Config, Profiles & Observability | done | 2026-03-23 |
 | EPIC-024 | Code Review — Unit Tests Part 1 | done | 2026-03-23 |
 | EPIC-025 | Code Review — Integration Tests, Benchmarks & TypeScript | done | 2026-03-23 |
-| EPIC-026 | OpenClaw Memory Replacement | done | 2026-03-23 |
-| EPIC-027 | OpenClaw Full Feature Surface — MCP tools (64 as of 2026-03-29) | done | 2026-03-23 |
-| EPIC-028 | OpenClaw Plugin Hardening | done | 2026-03-23 |
+| EPIC-026 | Memory Replacement | done | 2026-03-23 |
+| EPIC-027 | Full Feature Surface — MCP tools (64 as of 2026-03-29) | done | 2026-03-23 |
+| EPIC-028 | Plugin Hardening | done | 2026-03-23 |
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
 | EPIC-031 | Continuous Improvement Flywheel | done | 2026-03-23 |
 | EPIC-032 | OTel GenAI semantic conventions | planned | — |
-| EPIC-033 | OpenClaw Plugin SDK Alignment | done | 2026-03-23 |
+| EPIC-033 | Plugin SDK Alignment | done | 2026-03-23 |
 | EPIC-034 | Production readiness QA remediation | done | 2026-03-24 |
-| EPIC-035 | OpenClaw install and upgrade UX consistency | done | 2026-03-24 |
-| EPIC-036 | Release gate hardening for OpenClaw distribution | done | 2026-03-24 |
-| EPIC-037 | OpenClaw plugin SDK realignment — fix API contract | done | 2026-03-23 |
-| EPIC-038 | OpenClaw plugin simplification — remove dead compat layers | done | 2026-03-23 |
+| EPIC-035 | Install and upgrade UX consistency | done | 2026-03-24 |
+| EPIC-036 | Release gate hardening for distribution | done | 2026-03-24 |
+| EPIC-037 | Plugin SDK realignment — fix API contract | done | 2026-03-23 |
+| EPIC-038 | Plugin simplification — remove dead compat layers | done | 2026-03-23 |
 | EPIC-039 | Replace custom MCP client with official @modelcontextprotocol/sdk | done | 2026-03-24 |
 | EPIC-040 | tapps-brain v2.0 — research-driven upgrades | done | 2026-04-09 — all v2.0 phases shipped |
 | EPIC-041 | Federation hub `memory_group`, Hive `group:<name>`, health/guides | done | 2026-04-02 — **#52** checklist closed on GitHub; **#51**/**#63**/**#64** closed |
@@ -165,25 +164,15 @@ The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a p
 
 ## READY-036 release gate (2026-03-24)
 
-- **Script:** `scripts/release-ready.sh` — fail-fast packaging, version tests, pytest (optional skip via `SKIP_FULL_PYTEST=1`), ruff, mypy, `openclaw-plugin` npm ci/build/test.
-- **Docs checker:** `scripts/check_openclaw_docs_consistency.py` — canonical `openclaw plugin install`, SKILL tool/resource counts vs baseline, runbook presence.
-- **CI:** `.github/workflows/ci.yml` — `lint` runs docs checker; `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
-- **Remediation on failure:** `scripts/publish-checklist.md`, `docs/guides/openclaw-runbook.md`, `docs/planning/epics/EPIC-036.md`.
+- **Script:** `scripts/release-ready.sh` — fail-fast packaging, version tests, pytest (optional skip via `SKIP_FULL_PYTEST=1`), ruff, mypy.
+- **CI:** `.github/workflows/ci.yml` — `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
+- **Remediation on failure:** `scripts/publish-checklist.md`, `docs/planning/epics/EPIC-036.md`.
 - **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.3+).
 
 ## READY-035 docs consistency evidence (2026-03-24)
 
-- Canonical runbook added: `docs/guides/openclaw-runbook.md` (PyPI + Git-only paths).
-- OpenClaw command usage normalized to `openclaw plugin install` across:
-  - `docs/guides/openclaw.md`
-  - `docs/guides/openclaw-install-from-git.md`
-  - `openclaw-plugin/README.md`
-  - `openclaw-plugin/UPGRADING.md`
-  - `openclaw-skill/SKILL.md` (cross-link to canonical runbook)
 - Capability/status claims reconciled:
-  - stale `41 MCP tools` references removed from OpenClaw guide
   - resource URIs: canonical list in `docs/generated/mcp-tools-manifest.json` (**8** resources, including `memory://agent-contract`; older copy said 7 before that URI shipped)
-  - stale planned wording removed for shipped OpenClaw migration/tooling references
 
 ## READY-034 QA evidence (2026-03-24)
 
@@ -191,13 +180,11 @@ The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a p
 - `ruff check src/ tests/` -> pass.
 - `ruff format --check src/ tests/` -> pass.
 - `mypy --strict src/tapps_brain/` -> pass.
-- `cd openclaw-plugin && npm test` -> pass; timeout-path unhandled rejection eliminated.
 - Full release-candidate runbook executed in one command:
   - `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
   - `ruff check src/ tests/`
   - `ruff format --check src/ tests/`
   - `mypy --strict src/tapps_brain/`
-  - `cd openclaw-plugin && npm test`
 - Outcome: pass (`2341 passed, 3 skipped, 7 deselected`, coverage `95.16%`).
 
 ## WSL / Windows

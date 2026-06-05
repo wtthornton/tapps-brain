@@ -6,7 +6,7 @@ tapps-brain ships three first-class interfaces to the same memory engine. Choose
 |-----------|----------|----------|
 | **Python Library** | Custom agents, scripts, framework integrations | `pip install tapps-brain` |
 | **CLI** | Manual memory management, shell scripts, quick inspection | same package — `tapps-brain` entry point |
-| **MCP Server** | Claude Code, Cursor, VS Code Copilot, OpenClaw — zero-code AI editor integration | `pip install tapps-brain[mcp]` |
+| **MCP Server** | Claude Code, Cursor, VS Code Copilot — zero-code AI editor integration | `pip install tapps-brain[mcp]` |
 
 ---
 
@@ -61,7 +61,7 @@ Add it to your editor's MCP config (e.g. `.mcp.json` for Claude Code):
 }
 ```
 
-The AI assistant gets the full MCP tool surface — core memory, sessions, Hive, federation, graph, tags, feedback, diagnostics, flywheel, OpenClaw migrate, and more — with no custom integration code required. Canonical names/counts: [mcp-tools-manifest.json](../generated/mcp-tools-manifest.json). See [MCP Server](mcp.md) for setup.
+The AI assistant gets the full MCP tool surface — core memory, sessions, Hive, federation, graph, tags, feedback, diagnostics, flywheel, and more — with no custom integration code required. Canonical names/counts: [mcp-tools-manifest.json](../generated/mcp-tools-manifest.json). See [MCP Server](mcp.md) for setup.
 
 ---
 
@@ -157,7 +157,5 @@ When `reranker_enabled=True` and flashrank is installed, reranking is automatic.
 
 - **Hive (multi-agent):** Share memories across agents → [Hive Guide](hive.md)
 - **MCP setup:** Full client configuration → [MCP Server Guide](mcp.md)
-- **OpenClaw plugin:** ContextEngine integration → [OpenClaw Guide](openclaw.md)
-- **OpenClaw install/upgrade (operators):** Canonical steps → [OpenClaw runbook](openclaw-runbook.md)
 - **Auto-recall:** Prompt injection and capture → [Auto-Recall Guide](auto-recall.md)
 - **Federation:** Cross-project memory → [Federation Guide](federation.md)

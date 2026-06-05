@@ -24,7 +24,7 @@ Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-a
 ### STORY-046.1: MCP server (`mcp` SDK)
 
 **Status:** done | **Effort:** L | **Depends on:** none  
-**Context refs:** `src/tapps_brain/mcp_server.py`, `docs/generated/mcp-tools-manifest.json`, `docs/guides/openclaw.md`, `tests/unit/test_mcp_server.py`  
+**Context refs:** `src/tapps_brain/mcp_server.py`, `docs/generated/mcp-tools-manifest.json`, the OpenClaw guide, `tests/unit/test_mcp_server.py`  
 **Verification:** `pytest tests/unit/test_mcp_server.py -v --tb=short -m "not benchmark"`
 
 #### Research notes (2026-forward)

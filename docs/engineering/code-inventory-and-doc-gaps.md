@@ -83,7 +83,7 @@ All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers
 - `onboarding.py` — profile-driven onboarding text for agents
 
 ### Interfaces & clients
-- `cli.py` — Typer-based CLI (`tapps-brain`); sub-apps: store, memory, maintenance, profile, hive, agent, openclaw, feedback, diagnostics, flywheel, visual
+- `cli.py` — Typer-based CLI (`tapps-brain`); sub-apps: store, memory, maintenance, profile, hive, agent, feedback, diagnostics, flywheel, visual
 - `http_adapter.py` — FastAPI HTTP adapter; routes: `/v1/health`, `/v1/remember`, `/v1/recall`, `/v1/search`, `/v1/list`, `/v1/delete`, `/mcp/`; binds `127.0.0.1` by default (TAP-622)
 - `mcp_server/` — FastMCP package (split into 7 submodules in TAP-605): `server.py`, `context.py`, `tools_brain.py`, `tools_memory.py`, `tools_feedback.py`, `tools_hive.py`, `tools_maintenance.py`, `tools_agents.py`, `tools_resources.py`
 - `client.py` — `TappsBrainClient` (sync), `AsyncTappsBrainClient` (async); retry backoff capped at 30s (TAP-647); MCP session-initialize handshake (TAP-744)
@@ -134,7 +134,7 @@ Summary (Phase 2 implementation status, 2026-03-31):
 - [x] **#57 / ED-P1-01** — Engineering baseline linked from README, CLAUDE.md, `project.mdc`.
 - [x] **#58 / ED-P1-02** — `docs/guides/observability.md`; README `[otel]` footnote; EPIC-032 pointer.
 - [x] **#59 / ED-P1-03** — `docs/guides/visual-snapshot.md`; README nav link.
-- [x] **#60 / ED-P1-04** — Manifest includes resources; docs + OpenClaw check read counts from manifest.
+- [x] **#60 / ED-P1-04** — Manifest includes resources; docs read counts from manifest.
 - [x] **#61 / ED-P2-01** — Documented then **removed** `mem0-review/` from the repo (no longer vendored).
 - [x] **#62 / ED-P2-02** — Import/static check: `otel_exporter` has no CLI/MCP/store wiring (documented); no new orphan modules filed beyond explicit test-only helpers. Re-run when adding entry points.
 

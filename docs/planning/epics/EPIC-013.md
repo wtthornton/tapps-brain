@@ -122,7 +122,7 @@ Add `agentId` and `hiveEnabled` fields to the OpenClaw plugin's `plugin.json` co
 **Effort:** S
 **Depends on:** STORY-013.6
 
-Update `docs/guides/openclaw.md` with a "Multi-Agent Hive" section documenting:
+Update the OpenClaw guide with a "Multi-Agent Hive" section documenting:
 - How an orchestrator creates child agents with unique profiles sharing a Hive
 - Profile inheritance pattern (base profile + per-agent extends)
 - Agent scope usage: when to use private/domain/hive
