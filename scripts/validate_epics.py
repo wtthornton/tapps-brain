@@ -4,7 +4,7 @@
 Usage:
     python scripts/validate_epics.py [PATH ...]
 
-    # Validate all v3 epics (059–063):
+    # Validate all v3 epics (059-063):
     python scripts/validate_epics.py docs/planning/epics/EPIC-059.md \
         docs/planning/epics/EPIC-060.md docs/planning/epics/EPIC-061.md \
         docs/planning/epics/EPIC-062.md docs/planning/epics/EPIC-063.md
@@ -58,6 +58,7 @@ _EPIC_ID_RE = re.compile(r"^EPIC-\d{3,}$")
 
 # ─── frontmatter parser ───────────────────────────────────────────────────────
 
+
 def _parse_frontmatter(text: str) -> dict[str, object] | None:
     """Extract YAML frontmatter between the first pair of ``---`` fences.
 
@@ -94,7 +95,9 @@ def _parse_frontmatter(text: str) -> dict[str, object] | None:
             if not inner:
                 result[key] = []
             else:
-                result[key] = [v.strip().strip('"').strip("'") for v in inner.split(",") if v.strip()]
+                result[key] = [
+                    v.strip().strip('"').strip("'") for v in inner.split(",") if v.strip()
+                ]
         else:
             # Bare string — strip optional quotes
             result[key] = raw_value.strip('"').strip("'")
@@ -104,10 +107,49 @@ def _parse_frontmatter(text: str) -> dict[str, object] | None:
 
 # ─── validation ───────────────────────────────────────────────────────────────
 
+
+def _check_required_fields(fm: dict[str, object]) -> list[str]:
+    return [f"missing required field: '{name}'" for name in REQUIRED_FIELDS if name not in fm]
+
+
+def _check_id(fm: dict[str, object], path: Path) -> list[str]:
+    if "id" not in fm:
+        return []
+    id_val = str(fm["id"])
+    if not _EPIC_ID_RE.match(id_val):
+        return [f"'id' must match EPIC-NNN format, got: {id_val!r}"]
+    # id should match stem of filename (e.g. EPIC-062)
+    if id_val != path.stem:
+        return [f"'id' value {id_val!r} does not match filename stem {path.stem!r}"]
+    return []
+
+
+def _check_title(fm: dict[str, object]) -> list[str]:
+    if "title" in fm and not str(fm["title"]).strip():
+        return ["'title' must not be empty"]
+    return []
+
+
+def _check_enum(fm: dict[str, object], key: str, valid: set[str]) -> list[str]:
+    if key not in fm:
+        return []
+    val = str(fm[key]).lower()
+    if val not in valid:
+        return [f"'{key}' must be one of {sorted(valid)}, got: {val!r}"]
+    return []
+
+
+def _check_created(fm: dict[str, object]) -> list[str]:
+    if "created" not in fm:
+        return []
+    created_val = str(fm["created"])
+    if not _DATE_RE.match(created_val):
+        return [f"'created' must be YYYY-MM-DD, got: {created_val!r}"]
+    return []
+
+
 def validate_file(path: Path) -> list[str]:
     """Return a list of error messages for *path* (empty = valid)."""
-    errors: list[str] = []
-
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -117,54 +159,18 @@ def validate_file(path: Path) -> list[str]:
     if fm is None:
         return ["no YAML frontmatter found (expected --- block at top of file)"]
 
-    # Required fields present
-    for field in REQUIRED_FIELDS:
-        if field not in fm:
-            errors.append(f"missing required field: '{field}'")
-
-    # id format
-    if "id" in fm:
-        id_val = str(fm["id"])
-        if not _EPIC_ID_RE.match(id_val):
-            errors.append(f"'id' must match EPIC-NNN format, got: {id_val!r}")
-        else:
-            # id should match stem of filename (e.g. EPIC-062)
-            expected_stem = path.stem  # "EPIC-062"
-            if id_val != expected_stem:
-                errors.append(
-                    f"'id' value {id_val!r} does not match filename stem {expected_stem!r}"
-                )
-
-    # title non-empty
-    if "title" in fm and not str(fm["title"]).strip():
-        errors.append("'title' must not be empty")
-
-    # status
-    if "status" in fm:
-        status_val = str(fm["status"]).lower()
-        if status_val not in VALID_STATUSES:
-            errors.append(
-                f"'status' must be one of {sorted(VALID_STATUSES)}, got: {status_val!r}"
-            )
-
-    # priority
-    if "priority" in fm:
-        priority_val = str(fm["priority"]).lower()
-        if priority_val not in VALID_PRIORITIES:
-            errors.append(
-                f"'priority' must be one of {sorted(VALID_PRIORITIES)}, got: {priority_val!r}"
-            )
-
-    # created date
-    if "created" in fm:
-        created_val = str(fm["created"])
-        if not _DATE_RE.match(created_val):
-            errors.append(f"'created' must be YYYY-MM-DD, got: {created_val!r}")
-
+    errors: list[str] = []
+    errors += _check_required_fields(fm)
+    errors += _check_id(fm, path)
+    errors += _check_title(fm)
+    errors += _check_enum(fm, "status", VALID_STATUSES)
+    errors += _check_enum(fm, "priority", VALID_PRIORITIES)
+    errors += _check_created(fm)
     return errors
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────
+
 
 def _collect_paths(args: list[str]) -> list[Path]:
     paths: list[Path] = []
@@ -182,7 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         # Default: validate all v3 epics
         default_dir = Path(__file__).resolve().parent.parent / "docs" / "planning" / "epics"
-        paths = sorted(default_dir.glob("EPIC-05[9].md")) + sorted(default_dir.glob("EPIC-06[0-4].md"))
+        paths = sorted(default_dir.glob("EPIC-05[9].md")) + sorted(
+            default_dir.glob("EPIC-06[0-4].md")
+        )
         if not paths:
             print("validate_epics: no epic files found in default location", file=sys.stderr)
             return 2

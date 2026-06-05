@@ -35,14 +35,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 import threading
 import time
 import traceback
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # Latency recording
@@ -100,7 +103,7 @@ class LatencyBucket:
 # ---------------------------------------------------------------------------
 
 
-def _timed(bucket: LatencyBucket, fn: Callable[[], None]) -> None:
+def _timed(bucket: LatencyBucket, fn: Callable[..., object]) -> None:
     t0 = time.perf_counter()
     try:
         fn()
@@ -144,8 +147,7 @@ def run_agent_workload(
             except Exception as exc:
                 errors.append(f"[{agent_id}] backend init failed: {exc}")
 
-        tmp_dir = Path(f"/tmp/tapps_smoke_{agent_id}")
-        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_dir = Path(tempfile.mkdtemp(prefix=f"tapps_smoke_{agent_id}_"))
         store = MemoryStore(tmp_dir, agent_id=agent_id, **store_kwargs)
 
         # Wait for all threads to be ready before starting
@@ -182,9 +184,12 @@ def run_agent_workload(
 
 def _print_summary(buckets: list[LatencyBucket], n_agents: int, ops: int) -> None:
     print(f"\n{'─' * 72}")
-    print(f"  tapps-brain v3 load smoke  |  {n_agents} agents × {ops} ops  (pre-SLO / informational)")
+    print(f"  tapps-brain v3 load smoke | {n_agents} agents x {ops} ops (pre-SLO / informational)")
     print(f"{'─' * 72}")
-    header = f"{'Operation':<18} {'count':>6} {'errors':>6} {'p50 ms':>8} {'p90 ms':>8} {'p95 ms':>8} {'p99 ms':>8} {'max ms':>8}"
+    header = (
+        f"{'Operation':<18} {'count':>6} {'errors':>6} {'p50 ms':>8} "
+        f"{'p90 ms':>8} {'p95 ms':>8} {'p99 ms':>8} {'max ms':>8}"
+    )
     print(header)
     print("─" * 72)
     for b in buckets:
@@ -196,9 +201,7 @@ def _print_summary(buckets: list[LatencyBucket], n_agents: int, ops: int) -> Non
         p95 = f"{s['p95_ms']:.1f}" if s["p95_ms"] is not None else "—"
         p99 = f"{s['p99_ms']:.1f}" if s["p99_ms"] is not None else "—"
         mx = f"{s['max_ms']:.1f}" if s["max_ms"] is not None else "—"
-        print(
-            f"{s['name']:<18} {count:>6} {errs:>6} {p50:>8} {p90:>8} {p95:>8} {p99:>8} {mx:>8}"
-        )
+        print(f"{s['name']:<18} {count:>6} {errs:>6} {p50:>8} {p90:>8} {p95:>8} {p99:>8} {mx:>8}")
     print(f"{'─' * 72}")
     print("NOTE: Results are informational only. No SLO budget is enforced in v3.0.")
     print()
@@ -250,24 +253,24 @@ def main(argv: list[str] | None = None) -> int:
     barrier = threading.Barrier(args.agents)
     threads = []
 
-    print(f"Starting {args.agents} agents × {args.ops} ops (project_id={project_id}) …")
+    print(f"Starting {args.agents} agents x {args.ops} ops (project_id={project_id}) …")
     t_total = time.perf_counter()
 
     for idx in range(args.agents):
         agent_id = f"agent-{idx:03d}"
         t = threading.Thread(
             target=run_agent_workload,
-            kwargs=dict(
-                agent_id=agent_id,
-                project_id=project_id,
-                ops=args.ops,
-                dsn=dsn,
-                save_bucket=save_bucket,
-                recall_bucket=recall_bucket,
-                wall_bucket=wall_bucket,
-                errors=errors,
-                barrier=barrier,
-            ),
+            kwargs={
+                "agent_id": agent_id,
+                "project_id": project_id,
+                "ops": args.ops,
+                "dsn": dsn,
+                "save_bucket": save_bucket,
+                "recall_bucket": recall_bucket,
+                "wall_bucket": wall_bucket,
+                "errors": errors,
+                "barrier": barrier,
+            },
             daemon=True,
             name=agent_id,
         )
