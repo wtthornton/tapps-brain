@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.20.1
+- Version: 3.22.4
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -33,23 +33,22 @@
 - `docker-compose.yml`
 - `.env.example`
 - `.docsmcp.yaml`
+- `.tapps-mcp.yaml`
 
 ## Documentation Map
 
 - `AGENTS.md`
 - `CHANGELOG.md`
 - `CLAUDE.md`
-- `CLEANUP-PLAN.md`
 - `CONTRIBUTING.md`
 - `README.md`
 - `SECURITY.md`
 - `TECH_STACK.md`
-- `fix_plan.md`
 - `llms-full.txt`
 - `llms.txt`
-- `ralph-feedback-report.md`
 - `docs/DOCUMENTATION_INDEX.md`
 - `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/ONBOARDING.md`
 - `docs/RALPH_SETUP_GUIDE.md`
 - `docs/api-reference.md`
 - `docs/benchmarks/README.md`
@@ -63,16 +62,18 @@
 - `docs/engineering/call-flows.md`
 - `docs/engineering/code-inventory-and-doc-gaps.md`
 - `docs/engineering/data-stores-and-schema.md`
+- `docs/engineering/diagrams.md`
 - `docs/engineering/experience-events.md`
 - `docs/engineering/features-and-technologies.md`
 - `docs/engineering/optional-features-matrix.md`
-- ... and 231 more
+- `docs/engineering/partition-retention.md`
+- ... and 228 more
 
 ## API Summary
 
 - Packages: 11
-- Modules: 116
-- Public API symbols: 697
+- Modules: 115
+- Public API symbols: 699
 
 ## Project Structure
 
@@ -87,10 +88,10 @@
 .gitignore
 .mcp.json
 .ralphrc
+.tapps-mcp.yaml
 AGENTS.md
 CHANGELOG.md
 CLAUDE.md
-CLEANUP-PLAN.md
 CONTRIBUTING.md
 LICENSE
 Makefile
@@ -102,8 +103,10 @@ docker/
 docker-compose.yml
 docs/
 examples/
-fix_plan.md
 llms-full.txt
 llms.txt
-... and 12 more
+package-lock.json
+package.json
+packages/
+... and 8 more
 ```
