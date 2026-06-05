@@ -1,7 +1,7 @@
 ---
 name: tapps-brain
 description: Persistent cross-session memory + knowledge graph for AI coding agents. Use when you need to recall prior decisions before making a non-trivial choice, save the rationale behind a decision so it survives the session, share findings across agents in a project (Hive), or record an experience event / KG triple. Talk to the deployed brain at http://127.0.0.1:8080/mcp/ via MCP tools — never via raw psycopg.
-version: "3.19.0"
+version: "3.22.4"
 origin: tapps-brain
 ---
 
@@ -16,17 +16,19 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 - A debug session reveals a subtle invariant worth saving for future sessions.
 - The user asks "what did we decide about X" / "why is Y the way it is" / "have we seen this before."
 - Multiple agents in the same project need to coordinate — Hive (shared memory).
-- Adding an experience event or KG triple (`brain_record_event`, `brain_record_feedback`).
+- A task succeeded or failed in a way worth teaching future sessions (`brain_learn_success` / `brain_learn_failure`).
+- Adding an experience event or KG triple (`brain_record_event` / `brain_record_events_batch`, `brain_record_feedback`).
 
-## Three core operations
+## Core operations
 
 | You want to | Tool | Notes |
 |---|---|---|
-| Recall prior context | `brain_recall(query=...)` | BM25 + pgvector hybrid. Returns ranked memories with `quality_warning` when diagnostics circuit is non-CLOSED. |
+| Recall prior context | `brain_recall(query=...)` | BM25 + pgvector hybrid. Returns ranked memories with `quality_warning` when the diagnostics circuit is non-CLOSED. |
 | Save a decision + rationale | `brain_remember(fact=..., tier=...)` | The rationale is the memory-worthy part, not the decision itself. Pick a tier (see below). |
-| Share across agents | `brain_remember(..., share=True)` or `share_with="hive"` | Hive is a feature of the brain, not a separate service. |
+| Share across agents | `brain_remember(..., agent_scope="hive")` | Modern primary param. `agent_scope` accepts `private` (default) / `domain` / `hive` / `group:<name>`. The legacy `share=True` / `share_with="hive"` flags still work but `agent_scope` supersedes them. Hive is a feature of the brain, not a separate service. |
+| Teach from an outcome | `brain_learn_success(...)` / `brain_learn_failure(...)` | AgentBrain facade — records what worked / what to avoid so future recalls surface it. Pass `failed_approaches=[...]` on `brain_remember` for inline anti-patterns. |
 
-The eager `tools/list` catalog returns 8 daily-driver tools (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools are still callable via `tools/call` and reachable via Anthropic Tool Search BETA (`advanced-tool-use-2025-11-20` header) — TAP-1985.
+The eager `tools/list` catalog returns 8 daily-driver tools (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools (`brain_learn_success`/`brain_learn_failure`, `brain_record_event`/`brain_record_events_batch`, `brain_resolve_entity`, `brain_export`, `recall_quality_metrics`, `brain_audit_consumers`, the `memory_*`/`feedback_*` family) are deferred-loaded — still callable via `tools/call` and reachable via Anthropic Tool Search BETA (`advanced-tool-use-2025-11-20` header) — TAP-1985.
 
 ## Pick a tier
 
@@ -60,8 +62,10 @@ Does this duplicate a CHANGELOG / CLAUDE.md entry?  → NO
 
 ## Error shapes to know
 
-- **`bad_json`** (TAP-1967/1968/1969, v3.19.0+) — malformed `*_json` argument on `brain_record_event` / `brain_get_neighbors` / `brain_record_feedback`. Permanent (non-retryable) caller bug. Surface `data.field` + `data.detail`.
+- **`bad_json`** (TAP-1967/1968/1969, v3.19.0+) — malformed `*_json` argument on `brain_record_event` / `brain_record_events_batch` / `brain_get_neighbors` / `brain_record_feedback`. Permanent (non-retryable) caller bug. Surface `data.field` + `data.detail`.
+- **`bad_uuid`** (TAP-2726, v3.21.0+) — KG tools (`brain_get_neighbors`, `brain_explain_connection`, `brain_resolve_entity`) reject non-UUID entity ids. Permanent caller bug; check the id you passed.
 - **`out_of_profile`** denial (TAP-1972, v3.19.0+) — error data includes `suggested_profile` when non-null; retry with `X-Brain-Profile: <suggested_profile>` to self-route.
+- **HTTP 422** (TAP-2865, v3.22.1+) — malformed REST request payloads now return a typed `422` envelope instead of a masked `500`. Fix the request body, don't retry verbatim.
 
 ## Wire setup for a new repo
 
@@ -73,4 +77,4 @@ See [`docs/guides/mcp-client-repo-setup.md`](https://github.com/wtthornton/tapps
 - **AgentForge integrators**: [`docs/guides/agentforge-integration.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/agentforge-integration.md) — Python `AgentBrain` SDK + HTTP `BrainBridge` paths.
 - **Error taxonomy**: [`docs/guides/errors.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/errors.md) — HTTP + JSON-RPC envelopes, retry policy.
 - **HTTP surface**: [`docs/guides/http-adapter.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/http-adapter.md) — `/healthz` phased body, `/v1/tools/list` ETag headers.
-- **What's new in v3.19.0**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3190--2026-05-17).
+- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3224--2026-06-05) — current at v3.22.4.

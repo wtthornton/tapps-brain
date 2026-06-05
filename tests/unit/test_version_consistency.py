@@ -31,14 +31,33 @@ def _read_server_json_version() -> str:
     return version
 
 
+def _read_skill_version() -> str:
+    """Read the ``version:`` field from the tapps-brain SKILL.md frontmatter.
+
+    Pinning the skill's version to the package version forces the SKILL.md
+    content to be reviewed and re-pinned on every release, so the agent-facing
+    skill never drifts behind the deployed brain (the doc surface it describes).
+    """
+    skill = PROJECT_ROOT / ".claude/skills/tapps-brain/SKILL.md"
+    match = re.search(
+        r'^version:\s*"?([^"\n]+?)"?\s*$',
+        skill.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, "SKILL.md frontmatter is missing a 'version:' field"
+    return match.group(1)
+
+
 def test_all_versions_match() -> None:
     """All distribution files must declare the same version string."""
     pyproject_ver = _read_pyproject_version()
     server_json_ver = _read_server_json_version()
+    skill_ver = _read_skill_version()
 
     versions = {
         "pyproject.toml": pyproject_ver,
         "server.json": server_json_ver,
+        ".claude/skills/tapps-brain/SKILL.md": skill_ver,
     }
 
     # All must be non-empty

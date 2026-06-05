@@ -59,6 +59,9 @@ That script runs, in order: `uv build`, wheel smoke import, version consistency 
 - [ ] Version strings consistent across:
   - `pyproject.toml`
   - `server.json` (`"version":`)
+  - `.claude/skills/tapps-brain/SKILL.md` (`version:` frontmatter) — while bumping
+    it, review the skill body (tool surface, error shapes, tier table) against this
+    release's CHANGELOG section and update any drift, not just the number
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
 - [ ] CHANGELOG.md updated with release notes — heading must be `## X.Y.Z`
       so `release.yml` can extract the section
