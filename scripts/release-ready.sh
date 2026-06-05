@@ -60,6 +60,9 @@ if [[ -x .venv-release-smoke/bin/python ]]; then
 else
   fail "expected .venv-release-smoke/bin/python (use WSL/Git Bash on Windows)"
 fi
+# Clean up the throwaway smoke venv — it is ~5 GB (torch + CUDA libs) and was
+# previously left on disk after every run, accumulating across releases.
+rm -rf .venv-release-smoke
 
 echo "==> [4/6] Version consistency tests"
 uv run pytest tests/unit/test_version_consistency.py -v --tb=short || fail "version consistency"
