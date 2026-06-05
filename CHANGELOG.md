@@ -12,6 +12,14 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.22.3] — 2026-06-05
+
+Fixes a second, latent write-path bug surfaced by the 3.22.2 error metric immediately after deploy: evidence attaches with no `utility_score` 500'd against a NOT NULL column. Strict superset of 3.22.2.
+
+### Fixed
+
+- **Evidence attach no longer 500s when `utility_score` is unset** ([TAP-2867](https://linear.app/tappscodingagents/issue/TAP-2867)). `kg_evidence.utility_score` is `REAL NOT NULL DEFAULT 0.0`, but `EvidenceSpec` and `PostgresKnowledgeGraphStore.attach_evidence` default `utility_score` to `None`. Binding an explicit `NULL` overrides the column `DEFAULT`, so `psycopg.errors.NotNullViolation` fired on every evidence attach without an explicit score — a real `internal_error` 500. It stayed hidden behind the TAP-2865 edge-validation failure until TAP-2866 made side-effects resilient and let requests reach the DB write; the new `tapps_brain_http_errors_total{path="/v1/experience",status="500"}` counter then exposed it within seconds of deploy. `ATTACH_EVIDENCE_SQL` now wraps the bound value in `COALESCE(%s, 0.0)`, fixing all three call sites (`record`, `record_many`, `attach_evidence`) centrally. The `EvidenceSpec.utility_score` field stays nullable — the DB write, not the model, supplies the default.
+
 ## [3.22.2] — 2026-06-04
 
 Follow-up to 3.22.1: makes the experience write path resilient to malformed KG side-effects (so a consumer's event stream is never dropped over one bad enrichment) and closes the observability gap that let the 3.22.1 incident read green on `/health`. Strict superset of 3.22.1.
