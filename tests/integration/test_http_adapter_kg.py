@@ -504,6 +504,25 @@ class TestExperienceMalformedSpec:
         assert results[0].get("event_id")
         assert results[0].get("warnings", [])[0]["kind"] == "edge"
 
+    @pytest.mark.asyncio
+    async def test_evidence_without_attachment_records_event_with_warning(self) -> None:
+        """TAP-2868: the AgentForge payload — evidence with neither edge_id nor
+        entity_id — was a DB CheckViolation 500; now skipped + warned (200)."""
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        with p_cm, _no_embedding():
+            resp = await _post(
+                "/v1/experience",
+                {
+                    "event_type": "approach_failed",
+                    "evidence": [{"source_type": "agent", "quote": "no attachment"}],
+                },
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("event_id")
+        assert body.get("warnings", [])[0]["kind"] == "evidence"
+        assert "internal_error" not in resp.text
+
 
 class TestExperienceCoreValidation:
     """`/v1/experience` — a malformed *core* request still returns typed 422."""

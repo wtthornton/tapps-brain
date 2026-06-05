@@ -12,6 +12,14 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.22.4] — 2026-06-05
+
+Closes the last masked-500 path in the experience-event incident: AgentForge posts evidence with no attachment, which the 3.22.3 error metric showed still 500ing (13 real calls in minutes). Strict superset of 3.22.3.
+
+### Fixed
+
+- **Evidence with no (or both) attachment no longer 500s `POST /v1/experience`** ([TAP-2868](https://linear.app/tappscodingagents/issue/TAP-2868)). `EvidenceSpec` documented "exactly one of `edge_id` / `entity_id`" but never enforced it, so AgentForge's payload (evidence with neither) passed Pydantic and raised `psycopg.errors.CheckViolation` on `chk_evidence_xor_attachment` at the DB insert, sinking the whole event with a masked 500. The `tapps_brain_http_errors_total` counter from 3.22.2 surfaced it as live traffic immediately after the 3.22.3 deploy. `EvidenceSpec` now enforces the XOR via a `model_validator`, so malformed evidence is caught at the model layer and skipped-with-warning by `record_event`'s resilient coercion (TAP-2866) — the core event records and returns 200 with a `warnings` entry of `kind: "evidence"`. The field stays the documented contract; bare `EvidenceSpec()` now raises, matching the schema's NOT-NULL XOR.
+
 ## [3.22.3] — 2026-06-05
 
 Fixes a second, latent write-path bug surfaced by the 3.22.2 error metric immediately after deploy: evidence attaches with no `utility_score` 500'd against a NOT NULL column. Strict superset of 3.22.2.
