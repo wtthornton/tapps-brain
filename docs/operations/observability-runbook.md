@@ -16,6 +16,13 @@
 | Pool saturation | `tapps_brain.pool.connections_in_use` gauge | — | > 80 % of max → warn |
 | Migration lag | `tapps_brain.migration.version` gauge | — | < expected → page |
 | Hive round-trip | `tapps_brain.operation.duration` histogram | `operation.type="hive_propagate"` | p99 > 1 s → warn |
+| HTTP data-plane errors | `tapps_brain_http_errors_total` counter † | `path`, `status` | `status=~"5.."` > 0 → page |
+| Experience write path | `tapps_brain_experience_writable` gauge † | — | `== 0` → page (core write path broken) |
+
+† Prometheus-native metrics scraped from `GET /metrics` directly (not OTel
+instruments). Added in v3.22.4 (TAP-2866): the error counter surfaces a
+data-plane endpoint failing silently (e.g. `/v1/experience` 500ing) while
+`/healthz` reads green; the gauge mirrors `/healthz?deep=1`'s `experience_writable`.
 
 Export endpoint: set `OTEL_EXPORTER_OTLP_ENDPOINT` (OTLP gRPC).  
 Service identity: `OTEL_SERVICE_NAME` (default `tapps-brain`), `OTEL_SERVICE_VERSION`.
@@ -28,8 +35,10 @@ See [`k8s-probes.md`](k8s-probes.md) for full probe spec.
 Quick summary:
 
 ```
-GET /health   → 200 (liveness — no DB call; safe to poll every 5 s)
-GET /ready    → 200 ready | 503 degraded (readiness — Postgres ping + migration check)
+GET /health         → 200 (liveness — no DB call; safe to poll every 5 s)
+GET /ready          → 200 ready | 503 degraded (readiness — Postgres ping + migration check)
+GET /healthz        → 200/503 phased readiness body {ok, db_ok, mcp_ok, queue_depth, circuit_state, brain_version}
+GET /healthz?deep=1 → also probes the experience write path; adds experience_writable + experience_detail (v3.22.4+)
 ```
 
 `/ready` JSON on degraded:

@@ -9,6 +9,22 @@ connects to tapps-brain's Postgres-backed memory.
 
 ---
 
+## What's new in v3.22.4 for AgentForge
+
+The 2026-06-05 release closes the `POST /v1/experience` masked-500 incident
+end-to-end. Existing 2xx clients are unaffected; failing payloads now get a
+typed error or a 200-with-warning instead of an opaque 500. Per-ticket detail in
+[`CHANGELOG.md`](../../CHANGELOG.md).
+
+| Surface | Change | Why AgentForge cares |
+|---|---|---|
+| `POST /v1/experience` (+ `:batch`) | **Resilient writes** (TAP-2866/2867/2868): a malformed `edges` / `evidence` spec (missing edge UUIDs, evidence with neither/both of `edge_id` / `entity_id`, null `utility_score`) is skipped — the core event still commits and the response is **`200` with a `warnings` array** (`{kind, index, errors}`). | `record_event` no longer fails closed on one bad side-effect. Inspect `warnings` to fix the offending spec; the event is already saved. |
+| `POST /v1/experience` malformed body | Returns a typed **422** (`{error, field, detail, errors}`), never a masked 500 (TAP-2865). | Distinguish a client payload bug (4xx) from a brain outage (5xx) without parsing an opaque error. |
+| `GET /healthz?deep=1` | New deep probe (TAP-2866): adds `experience_writable` + `experience_detail`, ANDed into `ok`. | A broken core write path can no longer read green. Use `?deep=1` in deployment smoke tests. |
+| `/metrics` | New `tapps_brain_http_errors_total{path,status}` counter + `tapps_brain_experience_writable` gauge (TAP-2866). | Alert on `tapps_brain_http_errors_total{status=~"5.."} > 0` to catch a silently-failing data-plane endpoint. |
+
+---
+
 ## What's new in v3.19.0 for AgentForge
 
 The 2026-05-17 release lands seven AgentForge-facing contract enrichments. Every

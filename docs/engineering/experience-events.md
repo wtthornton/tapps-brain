@@ -50,8 +50,14 @@ Well-known types used by the tapps-brain toolchain:
 
 All side-effects of one logical event are written in a **single psycopg
 transaction**: the `experience_events` row plus optional private memory, KG
-entity upserts, KG edge upserts, and evidence inserts.  Any failure on any
-component rolls back the entire transaction — including the event row itself.
+entity upserts, KG edge upserts, and evidence inserts.  A genuine write failure
+(e.g. a DB error) on any component rolls back the entire transaction —
+including the event row itself.
+
+> `ExperienceEventRecorder.record()` is the low-level, all-or-nothing API.  The
+> HTTP `POST /v1/experience` endpoint and the `brain_record_event` MCP tool call
+> it through the resilient `record_event` service wrapper, which tolerates
+> *malformed* side-effect specs — see [Resilient writes](#resilient-writes-via-record_event-http--mcp) below.
 
 ```python
 from tapps_brain.experience import (
@@ -95,6 +101,32 @@ result.entity_ids     # list[str] — UUIDs in input order
 result.edge_ids       # list[str] — UUIDs in input order
 result.evidence_ids   # list[str] — UUIDs in input order
 ```
+
+### Resilient writes via `record_event` (HTTP / MCP)
+
+Since **3.22.4**, the `record_event` service wrapper (used by `POST /v1/experience`,
+`POST /v1/experience:batch`, and the `brain_record_event` MCP tool) coerces each
+`entities` / `edges` / `evidence` item into its spec **before** the atomic write.
+A spec that fails Pydantic validation — e.g. an `EdgeSpec` missing its
+`subject_entity_id` / `object_entity_id`, or an `EvidenceSpec` with neither (or
+both) of `edge_id` / `entity_id` — is **skipped, not fatal**: the core event and
+all *valid* side-effects still commit atomically, and the response is **HTTP 200**
+with a `warnings` array. Each warning is payload-free:
+
+```jsonc
+{
+  "event_id": "…",
+  "entity_ids": ["…"], "edge_ids": [], "evidence_ids": [],
+  "warnings": [
+    {"kind": "edge", "index": 0,
+     "errors": [{"field": "subject_entity_id", "msg": "Field required", "type": "missing"}]}
+  ]
+}
+```
+
+Malformed *top-level* request bodies (bad JSON, missing `event_type`) still return
+a typed **4xx** (400 / 422), never a masked 500. The `:batch` endpoint applies the
+same per-event coercion and returns warnings per event.
 
 ---
 
