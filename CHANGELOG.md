@@ -12,9 +12,21 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.23.0] — 2026-06-05
+
+Removes the dead OpenClaw distribution channel and closes the release-artifact drift class surfaced after 3.22.4 (a missing OpenAPI snapshot and an `llms.txt` stuck two versions behind). No runtime behaviour changes — the deployed write path is identical to 3.22.4.
+
 ### Removed
 
 - **OpenClaw plugin, skill, CLI, and tooling removed** ([TAP-2921](https://linear.app/tappscodingagents/issue/TAP-2921)). OpenClaw was a distribution channel that is no longer pursued; carrying its npm packages, CLI scaffolding, tests, docs, and release-gate steps added maintenance cost for a dead target. Removed the `openclaw-plugin/` and `openclaw-skill/` npm packages and their CI/release/version-consistency steps ([TAP-2925](https://linear.app/tappscodingagents/issue/TAP-2925)); the `openclaw` CLI sub-app (`init` / `upgrade`) and the OpenClaw integration tests ([TAP-2926](https://linear.app/tappscodingagents/issue/TAP-2926)); and all OpenClaw guide docs plus stray references across README, CLAUDE, cursor rules, and ignore files — including the stale `openclaw_migrate` MCP-tool doc rows that never existed in code ([TAP-2927](https://linear.app/tappscodingagents/issue/TAP-2927)). Historical epic/story/ADR design records that mention OpenClaw are kept as shipped-history.
+
+### Added
+
+- **Release-artifact freshness gate.** `tests/unit/test_release_artifacts.py` asserts, against the current `pyproject` version, that the per-version OpenAPI snapshot (`docs/contracts/openapi-<version>.json`) exists and that `llms.txt` / `llms-full.txt` advertise the current version — both shipped stale with 3.22.4. `tests/unit/test_version_consistency.py` additionally pins the `.claude/skills/tapps-brain/SKILL.md` frontmatter version to the package version. CI-enforced on every PR and run by `release-ready.sh`, so the gate fails until the artifacts are regenerated.
+
+### Changed
+
+- Refreshed the agent-facing `SKILL.md` (tool surface, `agent_scope` sharing param, `bad_uuid` / HTTP 422 error shapes, deferred-tool catalog) and removed three stale root working-artifacts (`CLEANUP-PLAN.md`, `fix_plan.md`, `ralph-feedback-report.md`) that polluted the generated LLM doc map.
 
 ## [3.22.4] — 2026-06-05
 
