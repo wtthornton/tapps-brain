@@ -151,6 +151,23 @@ class EvidenceSpec(BaseModel):
         default=None, ge=0.0, le=1.0, description="Measured utility signal."
     )
 
+    @model_validator(mode="after")
+    def _require_exactly_one_attachment(self) -> EvidenceSpec:
+        """TAP-2868: enforce the documented XOR — exactly one of ``edge_id`` /
+        ``entity_id`` must be set.
+
+        Mirrors the ``kg_evidence`` ``chk_evidence_xor_attachment`` CHECK.
+        Without it, evidence with neither attachment (or both) passed Pydantic
+        and raised ``CheckViolation`` at the DB insert, sinking the whole
+        experience event with a masked 500 — the production shape AgentForge
+        was posting.  Enforcing it at the model layer turns malformed evidence
+        into a skipped-with-warning side-effect via ``record_event``'s
+        resilient coercion (TAP-2866) instead of a 500.
+        """
+        if (self.edge_id is not None) == (self.entity_id is not None):
+            raise ValueError("evidence requires exactly one of edge_id or entity_id")
+        return self
+
 
 class MemorySpec(BaseModel):
     """Spec for a private memory entry to write atomically with the event.

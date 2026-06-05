@@ -12,6 +12,43 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.22.4] — 2026-06-05
+
+Closes the last masked-500 path in the experience-event incident: AgentForge posts evidence with no attachment, which the 3.22.3 error metric showed still 500ing (13 real calls in minutes). Strict superset of 3.22.3.
+
+### Fixed
+
+- **Evidence with no (or both) attachment no longer 500s `POST /v1/experience`** ([TAP-2868](https://linear.app/tappscodingagents/issue/TAP-2868)). `EvidenceSpec` documented "exactly one of `edge_id` / `entity_id`" but never enforced it, so AgentForge's payload (evidence with neither) passed Pydantic and raised `psycopg.errors.CheckViolation` on `chk_evidence_xor_attachment` at the DB insert, sinking the whole event with a masked 500. The `tapps_brain_http_errors_total` counter from 3.22.2 surfaced it as live traffic immediately after the 3.22.3 deploy. `EvidenceSpec` now enforces the XOR via a `model_validator`, so malformed evidence is caught at the model layer and skipped-with-warning by `record_event`'s resilient coercion (TAP-2866) — the core event records and returns 200 with a `warnings` entry of `kind: "evidence"`. The field stays the documented contract; bare `EvidenceSpec()` now raises, matching the schema's NOT-NULL XOR.
+
+## [3.22.3] — 2026-06-05
+
+Fixes a second, latent write-path bug surfaced by the 3.22.2 error metric immediately after deploy: evidence attaches with no `utility_score` 500'd against a NOT NULL column. Strict superset of 3.22.2.
+
+### Fixed
+
+- **Evidence attach no longer 500s when `utility_score` is unset** ([TAP-2867](https://linear.app/tappscodingagents/issue/TAP-2867)). `kg_evidence.utility_score` is `REAL NOT NULL DEFAULT 0.0`, but `EvidenceSpec` and `PostgresKnowledgeGraphStore.attach_evidence` default `utility_score` to `None`. Binding an explicit `NULL` overrides the column `DEFAULT`, so `psycopg.errors.NotNullViolation` fired on every evidence attach without an explicit score — a real `internal_error` 500. It stayed hidden behind the TAP-2865 edge-validation failure until TAP-2866 made side-effects resilient and let requests reach the DB write; the new `tapps_brain_http_errors_total{path="/v1/experience",status="500"}` counter then exposed it within seconds of deploy. `ATTACH_EVIDENCE_SQL` now wraps the bound value in `COALESCE(%s, 0.0)`, fixing all three call sites (`record`, `record_many`, `attach_evidence`) centrally. The `EvidenceSpec.utility_score` field stays nullable — the DB write, not the model, supplies the default.
+
+## [3.22.2] — 2026-06-04
+
+Follow-up to 3.22.1: makes the experience write path resilient to malformed KG side-effects (so a consumer's event stream is never dropped over one bad enrichment) and closes the observability gap that let the 3.22.1 incident read green on `/health`. Strict superset of 3.22.1.
+
+### Changed
+
+- **Malformed KG side-effect specs are now non-fatal on `POST /v1/experience` (+ `:batch`)** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). 3.22.1 turned the masked 500 into an honest 422, but a single malformed `edges` / `entities` / `evidence` entry still rejected the whole request — so a consumer (e.g. AgentForge) posting edges without resolved entity UUIDs lost the core experience event too. `record_event` / `record_events_batch` now skip an invalid spec, record it under a `warnings` array on the 200 response (`{"kind","index","errors":[{field,msg,type}]}`, payload-free), and still write the `experience_events` row plus every spec that validates. Generalises TAP-2675's `EntitySpec` coercion to all side-effect specs and makes it non-fatal. A malformed **core** request (e.g. a non-dict `payload`) still returns the typed 422 from [TAP-2865](https://linear.app/tappscodingagents/issue/TAP-2865).
+
+### Added
+
+- **Deep readiness probe for the experience write path** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). `GET /healthz?deep=1` additionally verifies the partitioned `experience_events` table exists and has partitions, returning `experience_writable` / `experience_detail` and flipping to 503 when the migration is missing. Default `/healthz` is unchanged (cheap `SELECT 1`) so the 10 s Docker healthcheck stays fast. Exposed to Prometheus as the `tapps_brain_experience_writable` gauge.
+- **Per-endpoint HTTP error counter** ([TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866)). `tapps_brain_http_errors_total{path,status}` increments on every 422 (de-masked validation) and 500 (catch-all), so a data-plane endpoint that is failing is observable via `/metrics` even while `/health` reads green — the exact gap that hid the 3.22.1 incident for ~5 minutes. Alert with `tapps_brain_http_errors_total{status=~"5.."} > 0`.
+
+## [3.22.1] — 2026-06-04
+
+Patch release fixing a production incident where `POST /v1/experience` returned HTTP 500 `internal_error` for every call from a consumer (AgentForge) that posted malformed KG side-effect specs. Strict superset of 3.22.0.
+
+### Fixed
+
+- **Malformed request payloads on the data plane return a typed 422 instead of a masked 500** ([TAP-2865](https://linear.app/tappscodingagents/issue/TAP-2865)). `POST /v1/experience` (and `/v1/experience:batch`) 500'd consistently for a consumer posting `edges` entries missing the required `subject_entity_id` / `object_entity_id` UUIDs: `record_event` coerces each edge via `EdgeSpec(**item)`, which raised `pydantic.ValidationError`; that error is not an `HTTPException`, so it fell through to the catch-all `Exception` handler added in 3.22.0 ([TAP-2727](https://linear.app/tappscodingagents/issue/TAP-2727)) and was masked as `{"error": "internal_error"}` 500 — hiding the real cause from clients and operators. The failure was at deserialization (before any DB I/O), explaining the fast 500 while `/health` stayed fully green. A new `@app.exception_handler(ValidationError)` now returns a structured **422** mirroring the `_validate_uuid_field` envelope (`error` / `field` / `detail` + a full `errors` list), with `include_input` / `include_url` disabled so the response never echoes the caller payload or external doc URLs. The catch-all still sanitizes genuine server faults. Same failure class as [TAP-2675](https://linear.app/tappscodingagents/issue/TAP-2675) (which fixed it for `EntitySpec` only). Regression tests cover the single-event and batch endpoints.
+
 ## [3.22.0] — 2026-06-01
 
 Stabilisation release on top of the 3.21.0 KG/experience activation. Aligns the KG REST data-plane status codes to the documented contract, hardens the unhandled-error envelope, completes the `brain_resolve_entity` profile wiring, and closes the CI gap that let integration-test failures land on `main`. Strict superset of 3.21.0.

@@ -19,6 +19,7 @@ from collections import deque
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -73,6 +74,58 @@ def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:
         brain_id=brain_id,
         evidence_required=False,  # recorder path; callers attach evidence explicitly
     )
+
+
+# ---------------------------------------------------------------------------
+# Resilient spec coercion (TAP-2866)
+# ---------------------------------------------------------------------------
+
+
+def _validation_warning(kind: str, index: int, exc: ValidationError) -> dict[str, Any]:
+    """Build a structured, payload-free warning from a spec ``ValidationError``.
+
+    ``include_input`` / ``include_url`` are disabled so the warning never
+    echoes the caller's payload or external pydantic doc URLs.
+    """
+    return {
+        "kind": kind,
+        "index": index,
+        "errors": [
+            {
+                "field": ".".join(str(part) for part in err.get("loc", ())),
+                "msg": err.get("msg", ""),
+                "type": err.get("type", ""),
+            }
+            for err in exc.errors(include_url=False, include_input=False)
+        ],
+    }
+
+
+def _coerce_specs(
+    items: list[dict[str, Any]],
+    cls: type,
+    kind: str,
+    warnings: list[dict[str, Any]],
+) -> list[Any]:
+    """Coerce *items* into *cls* instances, skipping (not raising on) the bad ones.
+
+    TAP-2866: a malformed KG side-effect spec — e.g. an ``edges`` entry missing
+    the required ``subject_entity_id`` / ``object_entity_id`` UUIDs — is dropped
+    and recorded in *warnings* rather than aborting the whole event.  The core
+    ``experience_events`` row (and every spec that *does* validate) still writes,
+    so a consumer's event stream is never lost because one optional enrichment
+    was malformed.  The prior behaviour raised ``ValidationError``, which the
+    HTTP adapter masked as a 500 (the TAP-2865 incident).  Same intent as
+    TAP-2675's ``EntitySpec`` coercion, generalised to all side-effect specs and
+    made non-fatal.
+    """
+    specs: list[Any] = []
+    for index, item in enumerate(items):
+        try:
+            specs.append(cls(**item))
+        except ValidationError as exc:
+            warnings.append(_validation_warning(kind, index, exc))
+    return specs
 
 
 # ---------------------------------------------------------------------------
@@ -144,27 +197,26 @@ def record_event(
         MemorySpec,
     )
 
-    def _coerce(
-        native: list[dict[str, Any]] | None,
-        legacy_json: str,
-        cls: type,
-    ) -> list[Any]:
-        """Build spec instances from native list (preferred) or legacy JSON string."""
-        items: list[dict[str, Any]] = []
+    def _items(native: list[dict[str, Any]] | None, legacy_json: str) -> list[dict[str, Any]]:
+        """Select dict items from the native list (preferred) or legacy JSON string."""
         if isinstance(native, list):
-            items = [it for it in native if isinstance(it, dict)]
-        elif legacy_json and legacy_json.strip() not in ("", "[]"):
+            return [it for it in native if isinstance(it, dict)]
+        if legacy_json and legacy_json.strip() not in ("", "[]"):
             try:
                 parsed = json.loads(legacy_json)
             except json.JSONDecodeError:
                 parsed = []
             if isinstance(parsed, list):
-                items = [it for it in parsed if isinstance(it, dict)]
-        return [cls(**item) for item in items]
+                return [it for it in parsed if isinstance(it, dict)]
+        return []
 
-    entity_specs = _coerce(entities, entities_json, EntitySpec)
-    edge_specs = _coerce(edges, edges_json, EdgeSpec)
-    evidence_specs = _coerce(evidence, evidence_json, EvidenceSpec)
+    # TAP-2866: malformed side-effect specs are skipped + reported, never fatal.
+    warnings: list[dict[str, Any]] = []
+    entity_specs = _coerce_specs(_items(entities, entities_json), EntitySpec, "entity", warnings)
+    edge_specs = _coerce_specs(_items(edges, edges_json), EdgeSpec, "edge", warnings)
+    evidence_specs = _coerce_specs(
+        _items(evidence, evidence_json), EvidenceSpec, "evidence", warnings
+    )
 
     mem_spec: MemorySpec | None = None
     if memory_key and memory_value:
@@ -187,7 +239,10 @@ def record_event(
         cm, project_id=project_id, brain_id=brain_id, agent_id=agent_id
     )
     result = recorder.record(event)
-    return result.model_dump()
+    result_dict = result.model_dump()
+    if warnings:
+        result_dict["warnings"] = warnings
+    return result_dict
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +313,15 @@ def record_events_batch(
                 "detail": f"events[{idx}].event_type is required.",
             }
 
-    def _spec_list(raw: Any, cls: type) -> list[Any]:
+    def _spec_list(raw: Any, cls: type, kind: str, warnings: list[dict[str, Any]]) -> list[Any]:
         if not isinstance(raw, list):
             return []
-        return [cls(**item) for item in raw if isinstance(item, dict)]
+        return _coerce_specs([it for it in raw if isinstance(it, dict)], cls, kind, warnings)
 
     event_objs: list[ExperienceEvent] = []
+    # TAP-2866: one warning bucket per event; malformed side-effect specs are
+    # skipped + reported rather than failing the batch.
+    per_event_warnings: list[list[dict[str, Any]]] = []
     for ev in events:
         mem: MemorySpec | None = None
         if ev.get("memory_key") and ev.get("memory_value"):
@@ -276,6 +334,7 @@ def record_events_batch(
             us = float(ev.get("utility_score", 0.0))
         except (TypeError, ValueError):
             us = 0.0
+        ev_warnings: list[dict[str, Any]] = []
         event_objs.append(
             ExperienceEvent(
                 event_type=str(ev["event_type"]).strip(),
@@ -285,11 +344,12 @@ def record_events_batch(
                 session_id=ev.get("session_id") or None,
                 workflow_run_id=ev.get("workflow_run_id") or None,
                 memory=mem,
-                entities=_spec_list(ev.get("entities"), EntitySpec),
-                edges=_spec_list(ev.get("edges"), EdgeSpec),
-                evidence=_spec_list(ev.get("evidence"), EvidenceSpec),
+                entities=_spec_list(ev.get("entities"), EntitySpec, "entity", ev_warnings),
+                edges=_spec_list(ev.get("edges"), EdgeSpec, "edge", ev_warnings),
+                evidence=_spec_list(ev.get("evidence"), EvidenceSpec, "evidence", ev_warnings),
             )
         )
+        per_event_warnings.append(ev_warnings)
 
     recorder = ExperienceEventRecorder(
         cm, project_id=project_id, brain_id=brain_id, agent_id=agent_id
@@ -297,9 +357,15 @@ def record_events_batch(
     # TAP-1934: record_many() writes the whole batch in one transaction —
     # any failure rolls back every event (no partial commits).
     batch_results = recorder.record_many(event_objs)
+    results: list[dict[str, Any]] = []
+    for record_result, warns in zip(batch_results, per_event_warnings, strict=False):
+        result_dict = record_result.model_dump()
+        if warns:
+            result_dict["warnings"] = warns
+        results.append(result_dict)
     return {
-        "results": [r.model_dump() for r in batch_results],
-        "count": len(batch_results),
+        "results": results,
+        "count": len(results),
     }
 
 

@@ -164,6 +164,11 @@ RETURNING id
 #:         source_type, source_id, source_key, source_uri, source_hash,
 #:         source_span, quote, metadata::jsonb, source_agent,
 #:         confidence, utility_score.
+#: TAP-2867: kg_evidence.utility_score is NOT NULL DEFAULT 0.0, but
+#: EvidenceSpec / attach_evidence default utility_score to None.  A bound
+#: explicit NULL overrides the column DEFAULT and raises NotNullViolation, so
+#: COALESCE it to 0.0 here — one fix covers every call site (record,
+#: record_many, attach_evidence).
 ATTACH_EVIDENCE_SQL = """
 INSERT INTO kg_evidence (
     tenant_id, brain_id, project_id,
@@ -178,7 +183,7 @@ INSERT INTO kg_evidence (
     %s, %s, %s,
     %s, %s, %s, %s,
     %s::jsonb, %s,
-    %s, %s
+    %s, COALESCE(%s, 0.0)
 )
 RETURNING id
 """

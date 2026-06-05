@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from pydantic import ValidationError
 
 try:
     from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -200,6 +201,21 @@ _DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}  # type: ignore[no-redef]
 _PROJECT_LRU: OrderedDict[str, None] = OrderedDict()
 # TAP-600: cumulative count of project evictions since process start.
 _TENANT_LABELS_EVICTED_TOTAL: int = 0
+
+# TAP-2866: per-(path, status) HTTP error counter.  Exported to Prometheus as
+# tapps_brain_http_errors_total so a data-plane endpoint that is failing (e.g.
+# /v1/experience 500ing) is observable even while /health reads green — the
+# exact gap that hid the TAP-2865 incident for a 5-minute window.
+_HTTP_ERROR_COUNTS: dict[tuple[str, str], int] = {}
+_HTTP_ERROR_COUNTS_LOCK = threading.Lock()
+
+
+def _record_http_error(path: str, status: int) -> None:
+    """Increment the per-(path, status) HTTP error counter (TAP-2866)."""
+    key = (path, str(status))
+    with _HTTP_ERROR_COUNTS_LOCK:
+        _HTTP_ERROR_COUNTS[key] = _HTTP_ERROR_COUNTS.get(key, 0) + 1
+
 
 # STORY-073.2: process-wide ProfileResolver singleton.  Built once on first
 # /mcp request; guarded by _PROFILE_RESOLVER_LOCK.
@@ -372,6 +388,9 @@ def _validate_uuid_field(value: Any, field_name: str) -> str:
 _PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}  # type: ignore[no-redef]  # noqa: F811
 _PROBE_CACHE_TTL: float = 2.0  # type: ignore[no-redef]  # noqa: F811
 
+# TAP-2866: deep-probe cache for the experience write path (table + partitions).
+_EXPERIENCE_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
+
 
 def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:  # type: ignore[no-redef]  # noqa: F811
     if not dsn:
@@ -412,6 +431,53 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:  # type: ignore[
             err_str = "database unreachable"
         result = (False, None, f"db_error: {err_str}")
     _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    return result
+
+
+def _probe_experience_schema(dsn: str | None) -> tuple[bool, str]:
+    """TAP-2866: deep readiness probe for the experience-event write path.
+
+    ``/health`` and the default ``/healthz`` only check generic DB reachability
+    (``SELECT 1`` + migration version), so a missing ``experience_events``
+    migration — the core ``POST /v1/experience`` write path — would read green
+    while every write failed.  This probe confirms the partitioned
+    ``experience_events`` table exists and has at least one partition (so inserts
+    land somewhere), making a broken / un-migrated write path observable via
+    ``/healthz?deep=1`` and the ``tapps_brain_experience_writable`` gauge.
+
+    Result is cached for ``_PROBE_CACHE_TTL`` seconds (same as :func:`_probe_db`)
+    so a Prometheus scrape + load-balancer probe don't each open a connection.
+    Returns ``(writable, detail)``; never raises.
+    """
+    if not dsn:
+        return False, "no DSN configured"
+    now = time.monotonic()
+    cached = _EXPERIENCE_PROBE_CACHE.get(dsn)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    result: tuple[bool, str]
+    try:
+        import psycopg
+
+        with psycopg.connect(dsn, connect_timeout=5) as conn, conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.experience_events')")
+            row = cur.fetchone()
+            if not row or row[0] is None:
+                result = (False, "experience_events table missing (migration not applied)")
+            else:
+                cur.execute(
+                    "SELECT count(*) FROM pg_catalog.pg_inherits "
+                    "WHERE inhparent = 'public.experience_events'::regclass"
+                )
+                prow = cur.fetchone()
+                partitions = int(prow[0]) if prow and prow[0] is not None else 0
+                if partitions == 0:
+                    result = (False, "experience_events has no partitions")
+                else:
+                    result = (True, f"ready ({partitions} partitions)")
+    except Exception:
+        result = (False, "experience_events probe failed")
+    _EXPERIENCE_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
     return result
 
 
@@ -482,6 +548,32 @@ def _collect_metrics(  # type: ignore[no-redef]  # noqa: F811
             "tapps_brain_db_migration_version",
             float(migration_version),
             "Highest applied Hive schema migration version.",
+        )
+
+    # TAP-2866: deep write-path readiness — 1 when the experience_events table
+    # and its partitions exist, 0 when the migration is missing.  Lets operators
+    # alert on a broken POST /v1/experience path that tapps_brain_db_ready (a
+    # generic SELECT 1) cannot see.
+    experience_writable, _ = _probe_experience_schema(dsn)
+    gauge(
+        "tapps_brain_experience_writable",
+        1.0 if experience_writable else 0.0,
+        "1 if the experience_events write path (table + partitions) is present, 0 otherwise.",
+    )
+
+    # TAP-2866: per-(path, status) HTTP error counter.  No tenant labels, so it
+    # is emitted in full regardless of redaction.  Only present series are
+    # written; alert with `tapps_brain_http_errors_total{status=~"5.."} > 0`.
+    with _HTTP_ERROR_COUNTS_LOCK:
+        error_snapshot = dict(_HTTP_ERROR_COUNTS)
+    lines.append(
+        "# HELP tapps_brain_http_errors_total HTTP 4xx/5xx responses by path and status (TAP-2866)."
+    )
+    lines.append("# TYPE tapps_brain_http_errors_total counter")
+    for (err_path, err_status), err_count in sorted(error_snapshot.items()):
+        safe_path = err_path.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(
+            f'tapps_brain_http_errors_total{{path="{safe_path}",status="{err_status}"}} {err_count}'
         )
 
     # TAP-600: snapshot both the eviction counter and the request counts inside
@@ -1633,7 +1725,7 @@ def create_app(
         )
 
     @app.get("/healthz")
-    async def _healthz() -> JSONResponse:
+    async def _healthz(request: Request) -> JSONResponse:
         """Phased readiness probe used by the Docker healthcheck (TAP-1970).
 
         Returns a JSON body exposing each phase of readiness so consumers can
@@ -1680,18 +1772,25 @@ def create_app(
             except (AttributeError, TypeError):
                 circuit_state = "closed"
 
-        ok = db_ok and mcp_ok
-        return JSONResponse(
-            status_code=200 if ok else 503,
-            content={
-                "ok": ok,
-                "db_ok": db_ok,
-                "mcp_ok": mcp_ok,
-                "queue_depth": queue_depth,
-                "circuit_state": circuit_state,
-                "brain_version": cfg.version,
-            },
-        )
+        # TAP-2866: opt-in deep probe of the experience write path.  Off by
+        # default so the 10 s Docker healthcheck stays a cheap SELECT 1; pass
+        # ?deep=1 (or true/yes) to additionally verify experience_events is
+        # present + partitioned, so a broken core write path can't read green.
+        deep = request.query_params.get("deep", "").strip().lower() in ("1", "true", "yes")
+        content: dict[str, Any] = {
+            "ok": db_ok and mcp_ok,
+            "db_ok": db_ok,
+            "mcp_ok": mcp_ok,
+            "queue_depth": queue_depth,
+            "circuit_state": circuit_state,
+            "brain_version": cfg.version,
+        }
+        if deep:
+            experience_ok, experience_detail = _probe_experience_schema(cfg.dsn)
+            content["experience_writable"] = experience_ok
+            content["experience_detail"] = experience_detail
+            content["ok"] = content["ok"] and experience_ok
+        return JSONResponse(status_code=200 if content["ok"] else 503, content=content)
 
     @app.get("/ready")
     async def _ready() -> JSONResponse:
@@ -3797,6 +3896,47 @@ def create_app(
             content=exc.http_body(),
         )
 
+    @app.exception_handler(ValidationError)
+    async def _validation_exc_handler(_request: Request, exc: ValidationError) -> JSONResponse:
+        """TAP-2865: client request-payload validation failures return a typed
+        422 instead of being masked as a generic 500 by the catch-all below.
+
+        A ``pydantic.ValidationError`` raised while deserialising a request
+        body on these data-plane endpoints (e.g. ``record_event`` coercing an
+        ``edges`` entry that is missing the required ``subject_entity_id`` /
+        ``object_entity_id`` UUIDs) is a *client* error, not a server fault.
+        Before this handler it propagated to the ``Exception`` catch-all
+        (TAP-2727) and returned ``{"error":"internal_error"}`` with HTTP 500,
+        hiding the real cause from the caller and forcing operators to read
+        container logs.
+
+        Mirrors the envelope of :func:`_validate_uuid_field` (TAP-2140) so all
+        request-validation 422s share one shape: ``error`` / ``field`` /
+        ``detail`` plus a full ``errors`` list.  ``include_input`` and
+        ``include_url`` are disabled so the response never echoes the caller's
+        payload or external pydantic doc URLs.
+        """
+        raw = exc.errors(include_url=False, include_input=False)
+        errors = [
+            {
+                "field": ".".join(str(part) for part in err.get("loc", ())),
+                "msg": err.get("msg", ""),
+                "type": err.get("type", ""),
+            }
+            for err in raw
+        ]
+        logger.warning("http_adapter.request_validation_error", errors=errors)
+        _record_http_error(_request.url.path, 422)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation_error",
+                "field": errors[0]["field"] if errors else None,
+                "detail": "Request payload failed validation.",
+                "errors": errors,
+            },
+        )
+
     @app.exception_handler(Exception)
     async def _unhandled_exc_handler(_request: Request, exc: Exception) -> JSONResponse:
         """Sanitized 500 for any unhandled service-layer error (TAP-2727).
@@ -3809,6 +3949,7 @@ def create_app(
         precedence via exception-type MRO.
         """
         logger.exception("http_adapter.unhandled_exception")
+        _record_http_error(_request.url.path, 500)
         return JSONResponse(
             status_code=500,
             content={"error": "internal_error", "detail": "Internal server error."},

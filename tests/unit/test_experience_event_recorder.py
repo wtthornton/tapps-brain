@@ -154,8 +154,9 @@ class TestEvidenceSpecModel:
     """EvidenceSpec defaults and validation."""
 
     def test_defaults(self) -> None:
-        spec = EvidenceSpec()
-        assert spec.edge_id is None
+        # TAP-2868: EvidenceSpec requires exactly one attachment, so defaults
+        # are asserted with an edge_id set (bare EvidenceSpec() now raises).
+        spec = EvidenceSpec(edge_id="uuid-edge")
         assert spec.entity_id is None
         assert spec.source_type == "agent"
         assert spec.confidence == pytest.approx(1.0)
@@ -168,7 +169,15 @@ class TestEvidenceSpecModel:
 
     def test_confidence_bounds(self) -> None:
         with pytest.raises(Exception):
-            EvidenceSpec(confidence=1.5)
+            EvidenceSpec(confidence=1.5, edge_id="uuid-edge")
+
+    def test_requires_exactly_one_attachment(self) -> None:
+        # TAP-2868: neither attachment (the AgentForge payload that 500'd) and
+        # both attachments are rejected at the model layer.
+        with pytest.raises(Exception):
+            EvidenceSpec(source_type="agent")
+        with pytest.raises(Exception):
+            EvidenceSpec(edge_id="uuid-edge", entity_id="uuid-entity")
 
 
 # ---------------------------------------------------------------------------
