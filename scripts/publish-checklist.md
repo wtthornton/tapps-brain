@@ -48,31 +48,18 @@ bash scripts/release-ready.sh
 
 On Windows, run the script from **WSL** or **Git Bash** (see `docs/planning/STATUS.md`).
 
-That script runs, in order: OpenClaw docs consistency (`scripts/check_openclaw_docs_consistency.py`), `uv build`, wheel smoke import, version consistency tests, full pytest (unless `SKIP_FULL_PYTEST=1`), ruff + format + mypy, and `openclaw-plugin` `npm ci` / build / test.
+That script runs, in order: `uv build`, wheel smoke import, version consistency tests, full pytest (unless `SKIP_FULL_PYTEST=1`), and ruff + format + mypy.
 
 - [ ] Every new migration has a paired `*.down.sql` file: `pytest tests/unit/test_migration_down_files.py -v`
 - [ ] Release gate green: `bash scripts/release-ready.sh` (or equivalent stages below if you must run piecemeal)
 - [ ] All tests pass: `pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
 - [ ] Lint clean: `ruff check src/ tests/ && ruff format --check src/ tests/`
 - [ ] Type check clean: `mypy --strict src/tapps_brain/`
-- [ ] OpenClaw docs consistency: `python scripts/check_openclaw_docs_consistency.py` (also inside release gate)
 - [ ] Version bump in `pyproject.toml` (`version = "X.Y.Z"`)
 - [ ] Version strings consistent across:
   - `pyproject.toml`
   - `server.json` (`"version":`)
-  - `openclaw-skill/SKILL.md` (YAML frontmatter `version:`)
-  - `openclaw-plugin/package.json` (`"version":`) and `package-lock.json` (root)
-    — bump both atomically with `(cd openclaw-plugin && npm version --no-git-tag-version X.Y.Z)`;
-    hand-editing `package.json` alone leaves the lock's root `version` behind (TAP-1691)
-  - `openclaw-plugin/openclaw.plugin.json` and `openclaw-skill/openclaw.plugin.json`
-    (including `install.pip` lower bound `>=X.Y.Z` in the skill manifest)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
-    (TAP-1691 added `package-lock.json` to this gate; `release-ready.sh` step [5/8] now
-    blocks the release if the lockfile's root `version` drifts from `pyproject.toml`)
-  - **Not a sync target:** `openclaw-plugin/src/index.ts` `ContextEngineInfo.version` is
-    the OpenClaw plugin's own semver (the identity exposed to the OpenClaw runtime), not
-    a tapps-brain mirror. Decoupled at v2.0.4; bump it only when the plugin's own surface
-    changes, not on every tapps-brain release.
 - [ ] CHANGELOG.md updated with release notes — heading must be `## X.Y.Z`
       so `release.yml` can extract the section
 - [ ] All changes committed and pushed to `main`

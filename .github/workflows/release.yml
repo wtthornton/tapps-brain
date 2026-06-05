@@ -64,8 +64,8 @@ jobs:
 
       # Skip the full pytest run inside release-ready.sh — the CI matrix
       # already ran tests against this commit on its way to main.  We still
-      # run the OpenClaw doc gate, version-consistency tests, ruff, mypy,
-      # uv build, and the wheel smoke import.
+      # run the version-consistency tests, ruff, mypy, uv build, and the
+      # wheel smoke import.
       - name: Pre-publish gate
         env:
           SKIP_FULL_PYTEST: "1"
