@@ -18,7 +18,12 @@ PYTEST        := uv run pytest
 RUFF          := uv run ruff
 MYPY          := uv run mypy
 
+# Export so `$(HIVE_COMPOSE)` (build/up) sees the pyproject-derived version in
+# its environment, which overrides any stale BRAIN_VERSION in docker/.env. Without
+# this, plain `make hive-deploy` tags/runs images at the .env value, not the real
+# release version (e.g. 3.22.0 instead of 3.23.0).
 BRAIN_VERSION ?= $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+export BRAIN_VERSION
 BRAIN_IMAGE   ?= docker-tapps-brain-http
 
 # DSN used by brain-test and brain-psql (dev-only Postgres from docker-compose.yml)
