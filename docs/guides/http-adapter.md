@@ -22,7 +22,7 @@ X-Idempotency-Key: <UUID>             # optional; replays previous response with
 | Route | Method | Purpose |
 |---|---|---|
 | `/health` | GET | Liveness — always 200 if the process is up. |
-| `/healthz` | GET | Phased readiness probe — 200/503 with detailed JSON body (v3.19.0+). |
+| `/healthz` | GET | Phased readiness probe — 200/503 with detailed JSON body (v3.19.0+). Add `?deep=1` for a write-path probe (v3.22.4+). |
 | `/ready` | GET | Readiness — 200 when the DB is reachable, 503 when degraded. |
 | `/metrics` | GET | Prometheus-format scrape (use `TAPPS_BRAIN_METRICS_TOKEN` to gate). |
 | `/openapi.json` | GET | Auto-generated OpenAPI spec for every public route. |
@@ -49,6 +49,29 @@ envelope — Docker healthchecks (`curl -f /healthz`) still flip correctly.
 Consumers (notably `BrainBridge`, `tapps doctor`) can distinguish "DB
 unreachable" from "MCP cold-starting" from "drain queue flooded" without
 scraping `/metrics`. DSN strings are never echoed in the body.
+
+#### `?deep=1` — write-path probe (TAP-2866, v3.22.4+)
+
+The shallow `/healthz` only verifies the DB is reachable + migrated, so a broken
+core write path (e.g. a missing `experience_events` partition) could still read
+green. `GET /healthz?deep=1` additionally probes the `POST /v1/experience` write
+path and adds two fields; `ok` is ANDed with `experience_writable`:
+
+```jsonc
+{
+  "ok":                  true,
+  "db_ok":               true,
+  "mcp_ok":              true,
+  "queue_depth":         0,
+  "circuit_state":       "closed",
+  "brain_version":       "3.22.4",
+  "experience_writable": true,                  // experience_events table + partitions present
+  "experience_detail":   "ready (13 partitions)"
+}
+```
+
+The same signal is exported as the `tapps_brain_experience_writable` gauge
+(1 = writable, 0 = broken) for alerting without the query param.
 
 ### `/v1/tools/list` — static catalog with HTTP cache headers (TAP-1843, TAP-1971, v3.19.0+)
 

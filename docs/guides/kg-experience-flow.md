@@ -101,8 +101,14 @@ Content-Type: application/json
 }
 ```
 
-All writes (event row + optional memory + entities + edges + evidence) happen in
-**one Postgres transaction**.  Any failure rolls back everything.
+The event row plus all *valid* side-effects (optional memory, entities, edges,
+evidence) are written in **one Postgres transaction** — a genuine write failure
+(e.g. a DB error) rolls back the whole event.  Since 3.22.4, a *malformed*
+side-effect spec (an edge missing its UUIDs, or evidence with neither/both of
+`edge_id` / `entity_id`) is **skipped, not fatal**: the core event and the valid
+side-effects still commit, and the response is `200` with a `warnings` array
+(`kind`, `index`, `errors`). A malformed top-level request still returns a typed
+`4xx`, never a masked `500`.
 
 ## Step 3 — Read back the neighbourhood
 
