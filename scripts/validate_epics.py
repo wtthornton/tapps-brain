@@ -20,7 +20,7 @@ Exit codes:
 Required frontmatter fields:
     id, title, status, priority, created, tags, depends_on, blocks
 
-Valid status values:  planned, in-progress, complete
+Valid status values:  planned, in-progress, complete, done
 Valid priority values: critical, high, medium, low
 
 This script is intentionally dependency-free (stdlib only) so it runs in any
@@ -46,7 +46,7 @@ REQUIRED_FIELDS: list[str] = [
     "blocks",
 ]
 
-VALID_STATUSES: set[str] = {"planned", "in-progress", "complete"}
+VALID_STATUSES: set[str] = {"planned", "in-progress", "complete", "done"}
 VALID_PRIORITIES: set[str] = {"critical", "high", "medium", "low"}
 
 # Matches a date like 2026-04-10
