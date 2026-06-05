@@ -73,7 +73,6 @@ class TestVersionHelp:
             "profile",
             "hive",
             "agent",
-            "openclaw",
             "feedback",
             "diagnostics",
             "visual",
@@ -2438,25 +2437,6 @@ class TestDiagnosticsCommands:
         assert isinstance(hist, list)
         assert len(hist) >= 1
         assert "composite_score" in hist[0]
-
-
-class TestOpenClawCommands:
-    def test_openclaw_init_creates_layout(self, tmp_path: Path):
-        import os
-
-        prev = os.getcwd()
-        try:
-            os.chdir(tmp_path)
-            r = runner.invoke(app, ["openclaw", "init"])
-        finally:
-            os.chdir(prev)
-        assert r.exit_code == 0
-        assert (tmp_path / ".tapps-brain" / "memory").is_dir()
-
-    def test_openclaw_upgrade_writes_memory_md(self, project_dir):
-        r = runner.invoke(app, ["openclaw", "upgrade", "--project-dir", project_dir])
-        assert r.exit_code == 0
-        assert (Path(project_dir) / "MEMORY.md").exists()
 
 
 # ===================================================================

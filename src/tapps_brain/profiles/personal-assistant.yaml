@@ -1,7 +1,7 @@
 profile:
   name: "personal-assistant"
   version: "1.0"
-  description: "Memory for personal AI assistants (OpenClaw, general agents)"
+  description: "Memory for personal AI assistants (general agents)"
 
   layers:
     - name: "identity"

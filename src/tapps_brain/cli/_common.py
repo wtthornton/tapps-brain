@@ -63,7 +63,7 @@ app = typer.Typer(
     help=(
         "Persistent cross-session memory for AI assistants — BM25, decay, "
         "Hive. Sub-apps: store, memory, feedback, diagnostics, flywheel, "
-        "hive, openclaw, …"
+        "hive, …"
     ),
     no_args_is_help=True,
 )
@@ -78,7 +78,6 @@ profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
 hive_app = typer.Typer(help="Manage the Hive shared brain.", no_args_is_help=True)
 agent_app = typer.Typer(help="Manage Hive agent registrations.", no_args_is_help=True)
 
-openclaw_app = typer.Typer(help="OpenClaw integration tools.", no_args_is_help=True)
 feedback_app = typer.Typer(help="Record and query feedback events.", no_args_is_help=True)
 diagnostics_app = typer.Typer(
     help="Quality diagnostics scorecard (EPIC-030).",
@@ -102,7 +101,6 @@ app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(profile_app, name="profile")
 app.add_typer(hive_app, name="hive")
 app.add_typer(agent_app, name="agent")
-app.add_typer(openclaw_app, name="openclaw")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(diagnostics_app, name="diagnostics")
 app.add_typer(flywheel_app, name="flywheel")
@@ -308,7 +306,6 @@ __all__ = [
     "maintenance_app",
     "memory_app",
     "normalize_agent_scope",
-    "openclaw_app",
     "profile_app",
     "project_app",
     "relay_app",
