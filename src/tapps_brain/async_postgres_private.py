@@ -272,20 +272,16 @@ class AsyncPostgresPrivateBackend:
         if not query_embedding:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                # TAP-2728: HNSW GUCs for filtered recall correctness.
-                await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
-                await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
-                await cur.execute(
-                    _sql.KNN_SEARCH_SQL,
-                    (vec_str, self._project_id, self._agent_id, k),
-                )
-                rows = await cur.fetchall()
-            return [(str(r[0]), float(r[1])) for r in rows]
-        except Exception:
-            logger.warning("async_postgres_private.knn_search_failed", exc_info=True)
-            return []
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            # TAP-2728: HNSW GUCs for filtered recall correctness.
+            await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+            await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
+            await cur.execute(
+                _sql.KNN_SEARCH_SQL,
+                (vec_str, self._project_id, self._agent_id, k),
+            )
+            rows = await cur.fetchall()
+        return [(str(r[0]), float(r[1])) for r in rows]
 
     async def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
@@ -300,16 +296,9 @@ class AsyncPostgresPrivateBackend:
 
     async def verify_expected_indexes(self) -> list[str]:
         """Async parity for :meth:`PostgresPrivateBackend.verify_expected_indexes`."""
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
-                present = {str(row[0]) for row in await cur.fetchall()}
-        except Exception:
-            logger.warning(
-                "async_postgres_private.verify_expected_indexes.db_error",
-                exc_info=True,
-            )
-            return []
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
+            present = {str(row[0]) for row in await cur.fetchall()}
 
         missing = sorted(_sql.EXPECTED_PRIVATE_INDEXES - present)
         if missing:
@@ -507,13 +496,9 @@ class AsyncPostgresPrivateBackend:
             until=until,
         )
         params: list[Any] = [self._project_id, self._agent_id, *extra_params, limit]
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(stmt, params)
-                rows = await cur.fetchall()
-        except Exception:
-            logger.warning("async_postgres_private.audit_query_failed", exc_info=True)
-            return []
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(stmt, params)
+            rows = await cur.fetchall()
 
         results: list[dict[str, Any]] = []
         for r in rows:
@@ -544,22 +529,14 @@ class AsyncPostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     async def flywheel_meta_get(self, key: str) -> str | None:
-        """Best-effort flywheel meta lookup; failures log and return None."""
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _sql.FLYWHEEL_META_GET_SQL,
-                    (self._project_id, self._agent_id, key),
-                )
-                row = await cur.fetchone()
-                return str(row[0]) if row else None
-        except Exception:
-            logger.warning(
-                "async_postgres_private.flywheel_meta_get_failed",
-                key=key,
-                exc_info=True,
+        """Flywheel meta lookup for this ``(project_id, agent_id)`` scope."""
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(
+                _sql.FLYWHEEL_META_GET_SQL,
+                (self._project_id, self._agent_id, key),
             )
-            return None
+            row = await cur.fetchone()
+        return str(row[0]) if row else None
 
     async def flywheel_meta_set(self, key: str, value: str) -> None:
         """Best-effort flywheel meta upsert; failures log and swallow."""
@@ -612,16 +589,12 @@ class AsyncPostgresPrivateBackend:
 
     async def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Return the most recent *limit* rows from ``gc_archive``."""
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _sql.LIST_ARCHIVE_SQL,
-                    (self._project_id, self._agent_id, limit),
-                )
-                rows = await cur.fetchall()
-        except Exception:
-            logger.warning("async_postgres_private.gc_archive_list_failed", exc_info=True)
-            return []
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(
+                _sql.LIST_ARCHIVE_SQL,
+                (self._project_id, self._agent_id, limit),
+            )
+            rows = await cur.fetchall()
 
         results: list[dict[str, Any]] = []
         for row in rows:
@@ -641,20 +614,13 @@ class AsyncPostgresPrivateBackend:
 
     async def total_archive_bytes(self) -> int:
         """Return ``SUM(byte_count)`` from ``gc_archive`` for this agent scope."""
-        try:
-            async with self._scoped_conn() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _sql.TOTAL_ARCHIVE_BYTES_SQL,
-                    (self._project_id, self._agent_id),
-                )
-                row = await cur.fetchone()
-            return int(row[0]) if row else 0
-        except Exception:
-            logger.warning(
-                "async_postgres_private.gc_archive_total_bytes_failed",
-                exc_info=True,
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(
+                _sql.TOTAL_ARCHIVE_BYTES_SQL,
+                (self._project_id, self._agent_id),
             )
-            return 0
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # Lifecycle

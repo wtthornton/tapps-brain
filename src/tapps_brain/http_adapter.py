@@ -940,222 +940,6 @@ def get_settings() -> _Settings:  # type: ignore[no-redef]  # noqa: F811
 
 
 # ---------------------------------------------------------------------------
-# Auth dependencies
-# ---------------------------------------------------------------------------
-
-
-def _extract_bearer(request: Request) -> str | None:  # type: ignore[no-redef]  # noqa: F811
-    header = request.headers.get("authorization") or ""
-    if not header:
-        return None
-    if not header.lower().startswith(_BEARER_PREFIX):
-        return ""
-    return header[len(_BEARER_PREFIX) :].strip()
-
-
-def _per_tenant_auth_enabled() -> bool:  # type: ignore[no-redef]  # noqa: F811
-    """Return ``True`` when ``TAPPS_BRAIN_PER_TENANT_AUTH=1`` is set."""
-    return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
-
-
-def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:  # type: ignore[no-redef]  # noqa: F811
-    """Check *token* against the project's stored argon2id hash.
-
-    Returns:
-        ``True``  — token verified against per-tenant hash.
-        ``False`` — project has a token but *token* doesn't match.
-        ``None``  — project has no per-tenant token; caller falls back to
-                    the global ``TAPPS_BRAIN_AUTH_TOKEN`` check.
-    """
-    from tapps_brain.postgres_connection import PostgresConnectionManager
-    from tapps_brain.project_registry import ProjectRegistry
-
-    cm = PostgresConnectionManager(dsn)
-    try:
-        return ProjectRegistry(cm).verify_token(project_id, token)
-    finally:
-        cm.close()
-
-
-def require_data_plane_auth(request: Request) -> None:  # type: ignore[no-redef]  # noqa: F811
-    """Dependency: data-plane bearer-token check.
-
-    When ``TAPPS_BRAIN_PER_TENANT_AUTH=1``:
-      * ``X-Project-Id`` header is **required** — 400 when missing or empty.
-      * If no DSN is configured alongside the flag, fails closed with 500
-        (misconfiguration) rather than falling through to the global token.
-      * Verifies the bearer token against the project's argon2id hash in
-        ``project_profiles.hashed_token``.
-      * If the project has **no** per-tenant token configured, falls back to
-        the global ``TAPPS_BRAIN_AUTH_TOKEN`` check so deployments that have
-        not yet issued per-tenant tokens continue to work unchanged.
-      * The global token is NOT accepted as a substitute when
-        ``X-Project-Id`` is absent — that would defeat per-tenant isolation
-        (TAP-626).
-
-    When the flag is unset (default), behaves exactly as before: checks
-    the global ``TAPPS_BRAIN_AUTH_TOKEN`` only.
-
-    When the global token is also unset, requests pass through
-    (not-for-production).
-    """
-    cfg = get_settings()
-    tok = _extract_bearer(request)
-
-    # ---- per-tenant path (STORY-070.8) ----
-    if _per_tenant_auth_enabled():
-        # TAP-626: flag on but no DSN is a server misconfiguration — fail closed
-        # rather than silently falling through to the global-token check (which
-        # would reproduce the supertoken bypass this fix is meant to close).
-        if not cfg.dsn:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": "server_misconfiguration",
-                    "detail": (
-                        "TAPPS_BRAIN_PER_TENANT_AUTH is enabled but no database DSN is configured."
-                    ),
-                },
-            )
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        # TAP-626: reject instead of falling through to the global-token check.
-        # Allowing the global token when X-Project-Id is absent makes it a
-        # supertoken that bypasses per-tenant isolation entirely.
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "bad_request",
-                    "detail": ("X-Project-Id header is required when per-tenant auth is enabled."),
-                },
-            )
-        # project_id is now guaranteed non-empty (rejected above if empty)
-        if tok is None:
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "unauthorized",
-                    "detail": "Authorization header required (Bearer token).",
-                },
-            )
-        if tok == "":
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "unauthorized",
-                    "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
-                },
-            )
-        result = _verify_per_tenant_token(project_id, tok, cfg.dsn)
-        if result is True:
-            return  # authenticated by per-tenant token
-        if result is False:
-            # Project has a token — wrong credential → 403
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden", "detail": "Invalid token."},
-            )
-        # result is None → project has no per-tenant token, fall through to global check
-
-    # ---- global token fallback ----
-    if not cfg.auth_token:
-        return
-    if tok is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Authorization header required (Bearer token).",
-            },
-        )
-    if tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Malformed Authorization header — expected 'Bearer <token>'.",
-            },
-        )
-    # TAP-544: constant-time comparison to avoid byte-by-byte timing recovery.
-    if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid token."},
-        )
-
-
-def _metrics_request_authenticated(request: Request, cfg: _Settings) -> bool:  # type: ignore[no-redef]  # noqa: F811
-    """TAP-547: gate for the Prometheus ``/metrics`` endpoint.
-
-    Return value semantics:
-
-    * ``True``  — caller presented a valid ``TAPPS_BRAIN_METRICS_TOKEN``
-      bearer; serve the full per-(project_id, agent_id) label surface.
-    * ``False`` — no metrics token is configured on the server.  The
-      endpoint still responds 200 but with tenant labels stripped (see
-      ``_collect_metrics(redact_tenant_labels=True)``) so reachable-but-
-      unprivileged callers cannot enumerate tenants.
-
-    Raises ``HTTPException`` with:
-
-    * 401 when a token IS configured and the bearer header is missing or
-      malformed.
-    * 403 when a token IS configured and the bearer does not match.
-    """
-    token = getattr(cfg, "metrics_token", None)
-    if not token:
-        return False
-    tok = _extract_bearer(request)
-    if tok is None or tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "unauthorized",
-                "detail": "Bearer token required for /metrics.",
-            },
-        )
-    # TAP-544-style constant-time comparison: the metrics token grants
-    # cross-tenant label visibility, so we avoid byte-by-byte timing
-    # recovery here too.
-    if not hmac.compare_digest(tok.encode("utf-8"), token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid metrics token."},
-        )
-    return True
-
-
-def require_admin_auth(request: Request) -> None:  # type: ignore[no-redef]  # noqa: F811
-    """Dependency: ``TAPPS_BRAIN_ADMIN_TOKEN`` check for ``/admin/*``.
-
-    When the admin token is unset, the route returns 503 — admin without a
-    token would bypass the trust model (EPIC-069).
-    """
-    cfg = get_settings()
-    if not cfg.admin_token:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "admin_disabled",
-                "detail": "Admin routes require TAPPS_BRAIN_ADMIN_TOKEN to be set.",
-            },
-        )
-    tok = _extract_bearer(request)
-    if tok is None or tok == "":
-        raise HTTPException(
-            status_code=401,
-            detail={"error": "unauthorized", "detail": "Bearer token required for admin routes."},
-        )
-    # TAP-544: constant-time comparison protects TAPPS_BRAIN_ADMIN_TOKEN from
-    # statistical timing recovery — admin routes grant cross-tenant power.
-    if not hmac.compare_digest(tok.encode("utf-8"), cfg.admin_token.encode("utf-8")):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "Invalid admin token."},
-        )
-
-
-# ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
 
@@ -1192,177 +976,6 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa:
             context=trace_ctx,
         ):
             return await call_next(request)  # type: ignore[no-any-return]
-
-
-# Paths that are intentionally unauthenticated and Origin-agnostic (TAP-627).
-# These are probe / scrape endpoints that must remain reachable from any origin
-# (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
-# bearer tokens that a DNS-rebinding attacker could steal.
-_ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset(  # type: ignore[no-redef]  # noqa: F811
-    {"/", "/health", "/healthz", "/ready", "/metrics", "/v1/tools/list", "/v1/skill"}
-)
-
-
-class OriginAllowlistMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa: F811
-    """DNS-rebinding guard applied to every bearer-authenticated route (TAP-627).
-
-    When ``TAPPS_BRAIN_ALLOWED_ORIGINS`` is set, any browser-originated request
-    (``Origin`` header present) whose origin is not in the allowlist receives a
-    ``403 Forbidden`` response before the handler is reached.
-
-    Intentionally exempt (unauthenticated probe / scrape endpoints that are
-    Origin-agnostic by design):
-
-    * ``/`` — root liveness check
-    * ``/health`` — liveness probe
-    * ``/healthz`` — readiness probe (DB-checked; used by Docker healthcheck)
-    * ``/ready`` — readiness probe (verbose; includes pool stats)
-    * ``/metrics`` — Prometheus scrape endpoint
-    * ``/v1/tools/list`` — static tool-catalog snapshot (TAP-1843; no secrets)
-
-    Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
-    protection to all bearer-authenticated routes (``/v1/*``, ``/admin/*``,
-    ``/mcp``, ``/info``, etc.) so that DNS-rebinding attacks against REST
-    endpoints are also blocked.
-    """
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        cfg = get_settings()
-        if cfg.allowed_origins and request.url.path not in _ORIGIN_EXEMPT_PATHS:
-            origin = request.headers.get("origin", "")
-            if origin and origin not in cfg.allowed_origins:
-                return JSONResponse(
-                    status_code=403,
-                    content={"error": "forbidden", "detail": f"Origin '{origin}' not allowed."},
-                )
-        return await call_next(request)  # type: ignore[no-any-return]
-
-
-class McpTenantMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa: F811
-    """Enforce the MCP wire envelope for ``/mcp``:
-
-    * ``X-Project-Id`` required (400 on miss).
-    * ``X-Agent-Id`` optional (defaults to ``"unknown"``).
-    * ``Authorization: Bearer <TAPPS_BRAIN_AUTH_TOKEN>``.
-    * Sets contextvars consumed by :mod:`tapps_brain.mcp_server`.
-    """
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        if not request.url.path.startswith("/mcp"):
-            return await call_next(request)  # type: ignore[no-any-return]
-
-        cfg = get_settings()
-
-        # Auth
-        if cfg.auth_token:
-            tok = _extract_bearer(request)
-            header_project_id = (request.headers.get("x-project-id") or "").strip() or None
-            if tok is None or tok == "":
-                tool = _peek_mcp_tool_name(await request.body())
-                logger.warning(
-                    "mcp_auth.missing_bearer",
-                    project_id=header_project_id,
-                    tool=tool,
-                    has_authorization_header=request.headers.get("authorization") is not None,
-                )
-                return JSONResponse(
-                    status_code=401,
-                    content=_mcp_auth_error_body(
-                        "Bearer token required for /mcp.",
-                        error="unauthorized",
-                        project_id=header_project_id,
-                        tool=tool,
-                    ),
-                )
-            # TAP-544: constant-time comparison for the /mcp bearer-token check.
-            if not hmac.compare_digest(tok.encode("utf-8"), cfg.auth_token.encode("utf-8")):
-                tool = _peek_mcp_tool_name(await request.body())
-                logger.warning(
-                    "mcp_auth.bearer_mismatch",
-                    project_id=header_project_id,
-                    tool=tool,
-                )
-                return JSONResponse(
-                    status_code=403,
-                    content=_mcp_auth_error_body(
-                        "Invalid token.",
-                        error="forbidden",
-                        project_id=header_project_id,
-                        tool=tool,
-                    ),
-                )
-
-        # Tenant headers
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "bad_request",
-                    "detail": "X-Project-Id header is required for /mcp requests.",
-                },
-            )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
-        # STORY-070.7: ``X-Tapps-Agent`` is the canonical per-call identity
-        # header; it takes precedence over the legacy ``X-Agent-Id`` so a
-        # pooled MCP connection can multiplex many agents without reconnect.
-        tapps_agent = (request.headers.get("x-tapps-agent") or "").strip()
-        if tapps_agent:
-            agent_id = tapps_agent
-        scope = (request.headers.get("x-tapps-scope") or "").strip() or None
-        group = (request.headers.get("x-tapps-group") or "").strip() or None
-
-        # STORY-073.2: Per-request profile resolution.
-        # Precedence: X-Brain-Profile header → agent_registry → server default.
-        # Validate the header value against the profile registry before trusting it.
-        from tapps_brain.mcp_server.profile_registry import UnknownProfileError
-
-        header_profile = (request.headers.get("x-brain-profile") or "").strip() or None
-        resolver = _get_profile_resolver()
-        if header_profile is not None:
-            try:
-                resolver.validate_profile_name(header_profile)
-            except UnknownProfileError as exc:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "bad_request",
-                        "detail": f"Unknown MCP profile {header_profile!r}.",
-                        "available": exc.available,
-                    },
-                )
-        resolved_profile = resolver.resolve(
-            project_id=project_id,
-            agent_id=agent_id,
-            header_profile=header_profile,
-        )
-
-        # Bridge into tapps_brain.mcp_server contextvars so the service layer
-        # sees the per-request tenant regardless of whether the JSON-RPC
-        # envelope also carries ``_meta.project_id``.
-        from tapps_brain import mcp_server as _mcp_mod
-
-        token_pid = _mcp_mod.REQUEST_PROJECT_ID.set(project_id)
-        token_agent = _mcp_mod.REQUEST_AGENT_ID.set(agent_id)
-        token_scope = _mcp_mod.REQUEST_SCOPE.set(scope)
-        token_group = _mcp_mod.REQUEST_GROUP.set(group)
-        token_profile = _mcp_mod.REQUEST_PROFILE.set(resolved_profile)
-        # Also mirror into request.state for handlers / observability.
-        request.state.project_id = project_id
-        request.state.agent_id = agent_id
-        request.state.scope = scope
-        request.state.group = group
-        request.state.brain_profile = resolved_profile
-        # STORY-070.12: track per-(project_id, agent_id) request counts.
-        _record_labeled_request(project_id, agent_id)
-        try:
-            return await call_next(request)  # type: ignore[no-any-return]
-        finally:
-            _mcp_mod.REQUEST_PROJECT_ID.reset(token_pid)
-            _mcp_mod.REQUEST_AGENT_ID.reset(token_agent)
-            _mcp_mod.REQUEST_SCOPE.reset(token_scope)
-            _mcp_mod.REQUEST_GROUP.reset(token_group)
-            _mcp_mod.REQUEST_PROFILE.reset(token_profile)
 
 
 # ---------------------------------------------------------------------------
@@ -1436,8 +1049,20 @@ def create_app(
     if store is not None:
         cfg.store = store
 
-    # Warn at startup if origin allow-list is empty (allow-all).
-    if not cfg.allowed_origins:
+    from tapps_brain.http.settings import is_strict_mode
+
+    if is_strict_mode():
+        if not cfg.auth_token:
+            raise RuntimeError(
+                "TAPPS_BRAIN_STRICT=1 requires TAPPS_BRAIN_AUTH_TOKEN "
+                "(or TAPPS_BRAIN_AUTH_TOKEN_FILE) to be set."
+            )
+        if not cfg.allowed_origins:
+            raise RuntimeError(
+                "TAPPS_BRAIN_STRICT=1 requires TAPPS_BRAIN_ALLOWED_ORIGINS "
+                "to be set to a comma-separated list of permitted browser origins."
+            )
+    elif not cfg.allowed_origins:
         logger.warning(
             "http_adapter.allowed_origins_empty",
             detail=(
@@ -4327,10 +3952,20 @@ def main() -> None:
 
 
 __all__ = [
+    "_ORIGIN_EXEMPT_PATHS",
     "HttpAdapter",
+    "McpTenantMiddleware",
+    "OriginAllowlistMiddleware",
+    "_extract_bearer",
+    "_mcp_auth_error_body",
+    "_metrics_request_authenticated",
+    "_peek_mcp_tool_name",
+    "_per_tenant_auth_enabled",
+    "_verify_per_tenant_token",
     "app",
     "create_app",
     "get_settings",
+    "hmac",
     "main",
     "require_admin_auth",
     "require_data_plane_auth",

@@ -211,14 +211,15 @@ class TestAsyncKnnSearch:
         out = asyncio.run(b.knn_search([0.0, 1.0, 0.0], k=5))
         assert out == [("k1", 0.1), ("k2", 0.2)]
 
-    def test_knn_search_swallows_db_errors(self) -> None:
+    def test_knn_search_propagates_db_errors(self) -> None:
         from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
 
         cur = _make_async_cursor()
         cur.execute = AsyncMock(side_effect=RuntimeError("pg down"))
         cm = _make_manager(cur)
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
-        assert asyncio.run(b.knn_search([0.1], k=3)) == []
+        with pytest.raises(RuntimeError, match="pg down"):
+            asyncio.run(b.knn_search([0.1], k=3))
 
 
 class TestAsyncVectorRowCount:
