@@ -1204,6 +1204,59 @@
         "summary": " V1 Kg Neighbors"
       }
     },
+    "/v1/kg/resolve_entities": {
+      "post": {
+        "description": "Batch-resolve KG entity refs to UUIDs (TAP-3249 / EPIC-078).\n\nREST counterpart for ``kg_service.resolve_entity_refs``.  Accepts an\n``entity_refs`` array with ``entity_type``/``canonical_name`` or\n``type``/``id`` shorthand and returns ``entity_ids`` (input order) plus\nper-ref ``results`` metadata.  Use this instead of piggybacking key\nresolution on ``POST /v1/kg/neighbors``.\n\nRequest body::\n\n    { \"entity_refs\": [\n        {\"entity_type\": \"module\", \"canonical_name\": \"retrieval\"},\n        {\"type\": \"agent\", \"id\": \"ralph\"}\n    ]}\n\nResponse::\n\n    { \"entity_ids\": [\"uuid-1\", \"uuid-2\"],\n      \"results\": [\n        {\"entity_id\": \"uuid-1\", \"entity_type\": \"module\",\n         \"canonical_name\": \"retrieval\", \"created\": false},\n        ...\n      ]}",
+        "operationId": "_v1_kg_resolve_entities_v1_kg_resolve_entities_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Resolve Entities"
+      }
+    },
     "/v1/kg/resolve_entity": {
       "post": {
         "description": "Resolve or create a KG entity by (entity_type, canonical_name).\n\nREST counterpart of the ``brain_resolve_entity`` MCP tool.  Turns a\nhuman-readable ``(entity_type, canonical_name)`` pair into the UUID\nrequired by ``/v1/experience`` edge specs.  Two calls with the same\ninputs always return the same UUID \u2014 safe to call concurrently.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier (informational).\n\nRequest body (JSON):\n  ``{ \"entity_type\": str, \"canonical_name\": str }``\n\nResponse: ``{ \"entity_id\": str, \"entity_type\": str,\n\"canonical_name\": str, \"created\": bool, \"confidence\": float,\n\"reason\": str }``\n\nIntroduced in TAP-2725.",

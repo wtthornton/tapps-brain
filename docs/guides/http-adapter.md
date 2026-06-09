@@ -141,6 +141,7 @@ These are the surface AgentForge / NLTlabsPE / any non-MCP consumer should targe
 | `/v1/experience:batch` | POST | Record up to N events (per-event transactions). | `brain_record_events_batch` |
 | `/v1/experience:query` | POST | **v3.24.0+** — query `experience_events` by `event_type`, time range, optional `entity_id`. | `brain_query_events` |
 | `/v1/kg/resolve_entity` | POST | Resolve `(entity_type, canonical_name)` → entity UUID. | `brain_resolve_entity` |
+| `/v1/kg/resolve_entities` | POST | **v3.25+** — batch-resolve `entity_refs[]` → `entity_ids` + `results`. | — |
 | `/v1/kg/neighbors` | POST | 1–2 hop neighbourhood around entity UUIDs. | `brain_get_neighbors` |
 | `/v1/kg/explain` | POST | Shortest path between two entity UUIDs (≤ 3 hops). | `brain_explain_connection` |
 | `/v1/kg/feedback` | POST | `edge_helpful` / `edge_misleading` on a KG edge. | `brain_record_feedback` |
@@ -153,6 +154,24 @@ These are the surface AgentForge / NLTlabsPE / any non-MCP consumer should targe
   "entity_id"?: "src/tapps_brain/store.py",   // payload.file_path OR subject_key
   "limit"?: 100 }                              // cap 500
 // → { "events": [{event_id, event_type, payload, ts, agent_id, session_id?}], "count": N }
+```
+
+```jsonc
+// POST /v1/kg/resolve_entities (v3.25+)
+{ "entity_refs": [
+    {"entity_type": "module", "canonical_name": "retrieval"},
+    {"type": "agent", "id": "ralph"}
+  ]}
+// → { "entity_ids": ["uuid-1", "uuid-2"],
+//      "results": [{entity_id, entity_type, canonical_name, created}, ...] }
+```
+
+```jsonc
+// POST /v1/kg/neighbors — entity_refs resolved in input order, merged after entity_ids
+{ "entity_ids": ["uuid-existing"],           // optional — UUID strings only
+  "entity_refs": [{"type": "file", "id": "src/foo.py"}],  // optional
+  "hops"?: 1, "limit"?: 20 }
+// → { "neighbors": [...], "entity_ids": ["uuid-existing", "uuid-resolved"] }
 ```
 
 See [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-experience-flow.md), and [`experience-events.md`](../engineering/experience-events.md).

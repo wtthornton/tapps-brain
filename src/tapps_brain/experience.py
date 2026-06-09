@@ -105,20 +105,91 @@ class EntitySpec(BaseModel):
     source: str = Field(default="agent", description="Provenance source tag.")
 
 
+def _ref_to_lookup(ref: dict[str, Any]) -> tuple[str, str]:
+    """Extract ``(entity_type, canonical_name)`` from an entity ref object."""
+    entity_type = str(ref.get("entity_type") or ref.get("type") or "").strip()
+    canonical_name = str(ref.get("canonical_name") or ref.get("id") or ref.get("key") or "").strip()
+    return entity_type, canonical_name
+
+
+def _build_entity_lookup(
+    entities: list[EntitySpec],
+    entity_ids: list[str],
+) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
+    """Map upserted entities to UUIDs for same-transaction edge key resolution."""
+    typed: dict[tuple[str, str], str] = {}
+    by_name: dict[str, str] = {}
+    for spec, entity_id in zip(entities, entity_ids, strict=False):
+        typed[(spec.entity_type, spec.canonical_name)] = entity_id
+        by_name[spec.canonical_name] = entity_id
+    return typed, by_name
+
+
+def _resolve_edge_endpoint(
+    entity_id: str | None,
+    key: str | None,
+    ref: dict[str, Any] | None,
+    typed: dict[tuple[str, str], str],
+    by_name: dict[str, str],
+) -> str | None:
+    """Resolve one edge endpoint to a UUID using same-event entity upserts."""
+    if entity_id:
+        return entity_id
+    if ref is not None:
+        entity_type, canonical_name = _ref_to_lookup(ref)
+        if entity_type and canonical_name:
+            return typed.get((entity_type, canonical_name))
+        if canonical_name:
+            return by_name.get(canonical_name)
+        return None
+    if key:
+        return by_name.get(key)
+    return None
+
+
+def _edge_resolution_warning(index: int, field: str, msg: str) -> dict[str, Any]:
+    """Structured warning for an edge whose keys could not be resolved (TAP-3248)."""
+    return {
+        "kind": "edge",
+        "index": index,
+        "errors": [{"field": field, "msg": msg, "type": "unresolved"}],
+    }
+
+
 class EdgeSpec(BaseModel):
     """Spec for one KG edge to upsert atomically with the event.
 
-    Both ``subject_entity_id`` and ``object_entity_id`` must be pre-resolved
-    entity UUIDs (string form).  To create entities and reference them in one
-    call, include them in ``ExperienceEvent.entities`` and capture the returned
-    ``ExperienceResult.entity_ids`` for subsequent events — or resolve them
-    via :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.batch_resolve_entities`
-    before constructing the event.
+    Endpoints may be pre-resolved UUIDs (``subject_entity_id`` /
+    ``object_entity_id``) or canonical keys (``subject_key`` / ``object_key``)
+    referencing entities upserted in the same ``ExperienceEvent.entities`` list.
+    Typed refs (``subject_ref`` / ``object_ref``) accept ``entity_type`` +
+    ``canonical_name`` or ``type`` / ``id`` shorthand for disambiguation
+    (TAP-3248 / EPIC-078).
     """
 
-    subject_entity_id: str = Field(description="UUID of the subject entity (pre-resolved).")
+    subject_entity_id: str | None = Field(
+        default=None, description="UUID of the subject entity (pre-resolved)."
+    )
+    object_entity_id: str | None = Field(
+        default=None, description="UUID of the object entity (pre-resolved)."
+    )
+    subject_key: str | None = Field(
+        default=None,
+        description="Canonical name of the subject entity upserted in this event.",
+    )
+    object_key: str | None = Field(
+        default=None,
+        description="Canonical name of the object entity upserted in this event.",
+    )
+    subject_ref: dict[str, Any] | None = Field(
+        default=None,
+        description="Typed subject ref (entity_type/canonical_name or type/id).",
+    )
+    object_ref: dict[str, Any] | None = Field(
+        default=None,
+        description="Typed object ref (entity_type/canonical_name or type/id).",
+    )
     predicate: str = Field(description="Edge predicate label.")
-    object_entity_id: str = Field(description="UUID of the object entity (pre-resolved).")
     edge_class: str | None = Field(default=None, description="Optional edge class tag.")
     layer: str | None = Field(default=None, description="Memory layer, e.g. 'pattern', 'context'.")
     profile_name: str | None = Field(
@@ -127,6 +198,19 @@ class EdgeSpec(BaseModel):
     confidence: float = Field(default=0.6, ge=0.0, le=1.0, description="Initial confidence score.")
     source: str = Field(default="agent", description="Provenance source tag.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata JSONB.")
+
+    @model_validator(mode="after")
+    def _require_endpoints(self) -> EdgeSpec:
+        """Require subject/object via UUID, key, or typed ref — not predicate alone."""
+        has_subject = bool(self.subject_entity_id or self.subject_key or self.subject_ref)
+        has_object = bool(self.object_entity_id or self.object_key or self.object_ref)
+        if not has_subject:
+            raise ValueError("edge requires subject_entity_id, subject_key, or subject_ref")
+        if not has_object:
+            raise ValueError("edge requires object_entity_id, object_key, or object_ref")
+        if not self.predicate.strip():
+            raise ValueError("predicate is required")
+        return self
 
 
 class EvidenceSpec(BaseModel):
@@ -256,6 +340,10 @@ class ExperienceResult(BaseModel):
     )
     evidence_ids: list[str] = Field(
         default_factory=list, description="UUIDs of attached evidence rows, in input order."
+    )
+    warnings: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Non-fatal edge resolution warnings (TAP-3248), merged at HTTP layer.",
     )
 
 
@@ -393,6 +481,90 @@ class ExperienceEventRecorder:
             logger.warning("experience_embedding_compute_failed", exc_info=True)
             return None, None
 
+    def _upsert_edges(
+        self,
+        cur: Any,  # noqa: ANN401 — psycopg cursor
+        edges: list[EdgeSpec],
+        entities: list[EntitySpec],
+        entity_ids: list[str],
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """Upsert edges after resolving key/ref endpoints against same-event entities."""
+        edge_ids: list[str] = []
+        warnings: list[dict[str, Any]] = []
+        typed, by_name = _build_entity_lookup(entities, entity_ids)
+
+        for index, edge_spec in enumerate(edges):
+            subject_id = _resolve_edge_endpoint(
+                edge_spec.subject_entity_id,
+                edge_spec.subject_key,
+                edge_spec.subject_ref,
+                typed,
+                by_name,
+            )
+            object_id = _resolve_edge_endpoint(
+                edge_spec.object_entity_id,
+                edge_spec.object_key,
+                edge_spec.object_ref,
+                typed,
+                by_name,
+            )
+            if not subject_id:
+                warnings.append(
+                    _edge_resolution_warning(
+                        index,
+                        "subject_entity_id",
+                        "could not resolve subject endpoint from keys in this event",
+                    )
+                )
+                continue
+            if not object_id:
+                warnings.append(
+                    _edge_resolution_warning(
+                        index,
+                        "object_entity_id",
+                        "could not resolve object endpoint from keys in this event",
+                    )
+                )
+                continue
+
+            cur.execute(
+                _kg_sql.GET_ACTIVE_EDGE_SQL,
+                (
+                    self._brain_id,
+                    subject_id,
+                    edge_spec.predicate,
+                    object_id,
+                ),
+            )
+            existing = cur.fetchone()
+            if existing is not None:
+                edge_ids.append(str(existing[0]))
+            else:
+                cur.execute(
+                    _kg_sql.INSERT_EDGE_SQL,
+                    (
+                        self._project_id,
+                        self._brain_id,
+                        self._project_id,
+                        subject_id,
+                        edge_spec.predicate,
+                        object_id,
+                        edge_spec.edge_class,
+                        edge_spec.layer,
+                        edge_spec.profile_name,
+                        edge_spec.confidence,
+                        edge_spec.source,
+                        self._agent_id,
+                        self._agent_id,
+                        json.dumps(edge_spec.metadata),
+                    ),
+                )
+                row = cur.fetchone()
+                if row:
+                    edge_ids.append(str(row[0]))
+
+        return edge_ids, warnings
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -423,6 +595,7 @@ class ExperienceEventRecorder:
         edge_ids: list[str] = []
         evidence_ids: list[str] = []
         memory_key: str | None = None
+        edge_warnings: list[dict[str, Any]] = []
 
         log = logger.bind(event_type=event.event_type, event_id=event_id)
 
@@ -495,44 +668,10 @@ class ExperienceEventRecorder:
                 if row:
                     entity_ids.append(str(row[0]))
 
-            # Step 4 — upsert KG edges.
-            for edge_spec in event.edges:
-                # Reuse existing active edge rather than duplicating it.
-                cur.execute(
-                    _kg_sql.GET_ACTIVE_EDGE_SQL,
-                    (
-                        self._brain_id,
-                        edge_spec.subject_entity_id,
-                        edge_spec.predicate,
-                        edge_spec.object_entity_id,
-                    ),
-                )
-                existing = cur.fetchone()
-                if existing is not None:
-                    edge_ids.append(str(existing[0]))
-                else:
-                    cur.execute(
-                        _kg_sql.INSERT_EDGE_SQL,
-                        (
-                            self._project_id,  # tenant_id
-                            self._brain_id,
-                            self._project_id,
-                            edge_spec.subject_entity_id,
-                            edge_spec.predicate,
-                            edge_spec.object_entity_id,
-                            edge_spec.edge_class,
-                            edge_spec.layer,
-                            edge_spec.profile_name,
-                            edge_spec.confidence,
-                            edge_spec.source,
-                            self._agent_id,
-                            self._agent_id,  # created_by_agent
-                            json.dumps(edge_spec.metadata),
-                        ),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        edge_ids.append(str(row[0]))
+            # Step 4 — upsert KG edges (resolve key/ref endpoints from step 3).
+            edge_ids, edge_warnings = self._upsert_edges(
+                cur, event.edges, event.entities, entity_ids
+            )
 
             # Step 5 — attach evidence rows.
             for ev_spec in event.evidence:
@@ -584,6 +723,7 @@ class ExperienceEventRecorder:
             entity_ids=entity_ids,
             edge_ids=edge_ids,
             evidence_ids=evidence_ids,
+            warnings=edge_warnings,
         )
 
     def record_many(self, events: list[ExperienceEvent]) -> list[ExperienceResult]:
@@ -631,6 +771,7 @@ class ExperienceEventRecorder:
                 edge_ids: list[str] = []
                 evidence_ids: list[str] = []
                 memory_key: str | None = None
+                edge_warnings: list[dict[str, Any]] = []
 
                 # Insert the event row.
                 cur.execute(
@@ -693,42 +834,9 @@ class ExperienceEventRecorder:
                     if row:
                         entity_ids.append(str(row[0]))
 
-                for edge_spec in event.edges:
-                    cur.execute(
-                        _kg_sql.GET_ACTIVE_EDGE_SQL,
-                        (
-                            self._brain_id,
-                            edge_spec.subject_entity_id,
-                            edge_spec.predicate,
-                            edge_spec.object_entity_id,
-                        ),
-                    )
-                    existing = cur.fetchone()
-                    if existing is not None:
-                        edge_ids.append(str(existing[0]))
-                    else:
-                        cur.execute(
-                            _kg_sql.INSERT_EDGE_SQL,
-                            (
-                                self._project_id,
-                                self._brain_id,
-                                self._project_id,
-                                edge_spec.subject_entity_id,
-                                edge_spec.predicate,
-                                edge_spec.object_entity_id,
-                                edge_spec.edge_class,
-                                edge_spec.layer,
-                                edge_spec.profile_name,
-                                edge_spec.confidence,
-                                edge_spec.source,
-                                self._agent_id,
-                                self._agent_id,
-                                json.dumps(edge_spec.metadata),
-                            ),
-                        )
-                        row = cur.fetchone()
-                        if row:
-                            edge_ids.append(str(row[0]))
+                edge_ids, edge_warnings = self._upsert_edges(
+                    cur, event.edges, event.entities, entity_ids
+                )
 
                 for ev_spec in event.evidence:
                     cur.execute(
@@ -771,6 +879,7 @@ class ExperienceEventRecorder:
                         entity_ids=entity_ids,
                         edge_ids=edge_ids,
                         evidence_ids=evidence_ids,
+                        warnings=edge_warnings,
                     )
                 )
 

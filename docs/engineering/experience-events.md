@@ -176,10 +176,14 @@ Since **3.22.4**, the `record_event` service wrapper (used by `POST /v1/experien
 `POST /v1/experience:batch`, and the `brain_record_event` MCP tool) coerces each
 `entities` / `edges` / `evidence` item into its spec **before** the atomic write.
 A spec that fails Pydantic validation — e.g. an `EdgeSpec` missing its
-`subject_entity_id` / `object_entity_id`, or an `EvidenceSpec` with neither (or
+endpoints (no UUID, key, or ref), or an `EvidenceSpec` with neither (or
 both) of `edge_id` / `entity_id` — is **skipped, not fatal**: the core event and
 all *valid* side-effects still commit atomically, and the response is **HTTP 200**
 with a `warnings` array. Each warning is payload-free:
+
+Since **v3.25.0** (TAP-3248), edges may use `subject_key`/`object_key` referencing
+entities upserted in the same event. Unresolved keys after entity upsert also emit
+`warnings` (kind `edge`, type `unresolved`) without aborting the event.
 
 ```jsonc
 {

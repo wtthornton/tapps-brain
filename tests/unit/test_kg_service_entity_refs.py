@@ -24,10 +24,25 @@ def test_resolve_entity_refs_requires_type_and_name() -> None:
 
 @patch("tapps_brain.services.kg_service.resolve_entity")
 def test_resolve_entity_refs_type_id_shorthand(mock_resolve: MagicMock) -> None:
-    mock_resolve.return_value = {"entity_id": "uuid-1"}
+    mock_resolve.return_value = {
+        "entity_id": "uuid-1",
+        "entity_type": "file",
+        "canonical_name": "src/foo.py",
+        "created": False,
+    }
     refs = [{"type": "file", "id": "src/foo.py"}]
     out = kg_service.resolve_entity_refs(MagicMock(), "proj", "brain", refs=refs)
-    assert out == {"entity_ids": ["uuid-1"]}
+    assert out == {
+        "entity_ids": ["uuid-1"],
+        "results": [
+            {
+                "entity_id": "uuid-1",
+                "entity_type": "file",
+                "canonical_name": "src/foo.py",
+                "created": False,
+            }
+        ],
+    }
     mock_resolve.assert_called_once()
     _args, kwargs = mock_resolve.call_args
     assert kwargs["entity_type"] == "file"
@@ -36,9 +51,15 @@ def test_resolve_entity_refs_type_id_shorthand(mock_resolve: MagicMock) -> None:
 
 @patch("tapps_brain.services.kg_service.resolve_entity")
 def test_resolve_entity_stable_uuid_across_calls(mock_resolve: MagicMock) -> None:
-    mock_resolve.return_value = {"entity_id": "stable-uuid"}
+    mock_resolve.return_value = {
+        "entity_id": "stable-uuid",
+        "entity_type": "file",
+        "canonical_name": "packages/tapps-mcp/checklist.py",
+        "created": True,
+    }
     path = "packages/tapps-mcp/checklist.py"
     ref = [{"entity_type": "file", "canonical_name": path}]
     first = kg_service.resolve_entity_refs(MagicMock(), "proj", "brain", refs=ref)
     second = kg_service.resolve_entity_refs(MagicMock(), "proj", "brain", refs=ref)
     assert first["entity_ids"] == second["entity_ids"] == ["stable-uuid"]
+    assert first["results"][0]["entity_id"] == "stable-uuid"

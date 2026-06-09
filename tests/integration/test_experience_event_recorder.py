@@ -245,6 +245,52 @@ class TestRecordHappyPath:
         r2 = recorder.record(ExperienceEvent(event_type="x", entities=[spec]))
         assert r1.entity_ids[0] == r2.entity_ids[0]
 
+    def test_entities_and_edges_with_key_shorthand(self, recorder: ExperienceEventRecorder) -> None:
+        """TAP-3248: entities + edges with key/type in one atomic write."""
+        result = recorder.record(
+            ExperienceEvent(
+                event_type="workflow_completed",
+                entities=[
+                    EntitySpec(**{"key": "task-123", "type": "task"}),
+                    EntitySpec(**{"key": "agentforge", "type": "agent"}),
+                ],
+                edges=[
+                    EdgeSpec(
+                        subject_key="agentforge",
+                        object_key="task-123",
+                        predicate="completed_task",
+                    )
+                ],
+            )
+        )
+        assert len(result.entity_ids) == 2
+        assert len(result.edge_ids) == 1
+        assert result.warnings == []
+        uuid.UUID(result.edge_ids[0])
+
+    def test_unresolved_edge_key_emits_warning_not_error(
+        self, recorder: ExperienceEventRecorder
+    ) -> None:
+        """Unresolved edge keys skip the edge and return a TAP-2866-style warning."""
+        result = recorder.record(
+            ExperienceEvent(
+                event_type="tool_called",
+                entities=[EntitySpec(entity_type="agent", canonical_name="only-one")],
+                edges=[
+                    EdgeSpec(
+                        subject_key="only-one",
+                        object_key="missing-task",
+                        predicate="completed_task",
+                    )
+                ],
+            )
+        )
+        assert result.event_id
+        assert result.edge_ids == []
+        assert len(result.warnings) == 1
+        assert result.warnings[0]["kind"] == "edge"
+        assert result.warnings[0]["errors"][0]["field"] == "object_entity_id"
+
     def test_event_with_payload(
         self, recorder: ExperienceEventRecorder, cm: object, project_id: str
     ) -> None:

@@ -240,8 +240,11 @@ def record_event(
     )
     result = recorder.record(event)
     result_dict = result.model_dump()
-    if warnings:
-        result_dict["warnings"] = warnings
+    merged_warnings = list(warnings)
+    if result.warnings:
+        merged_warnings.extend(result.warnings)
+    if merged_warnings:
+        result_dict["warnings"] = merged_warnings
     return result_dict
 
 
@@ -449,8 +452,11 @@ def record_events_batch(
     results: list[dict[str, Any]] = []
     for record_result, warns in zip(batch_results, per_event_warnings, strict=False):
         result_dict = record_result.model_dump()
-        if warns:
-            result_dict["warnings"] = warns
+        merged_warnings = list(warns)
+        if record_result.warnings:
+            merged_warnings.extend(record_result.warnings)
+        if merged_warnings:
+            result_dict["warnings"] = merged_warnings
         results.append(result_dict)
     return {
         "results": results,
@@ -716,6 +722,7 @@ def resolve_entity_refs(
         return {"entity_ids": []}
 
     entity_ids: list[str] = []
+    results: list[dict[str, Any]] = []
     for idx, ref in enumerate(refs):
         if not isinstance(ref, dict):
             return {
@@ -744,7 +751,15 @@ def resolve_entity_refs(
         if resolved.get("error"):
             return resolved
         entity_ids.append(str(resolved["entity_id"]))
-    return {"entity_ids": entity_ids}
+        results.append(
+            {
+                "entity_id": resolved["entity_id"],
+                "entity_type": resolved["entity_type"],
+                "canonical_name": resolved["canonical_name"],
+                "created": resolved["created"],
+            }
+        )
+    return {"entity_ids": entity_ids, "results": results}
 
 
 # ---------------------------------------------------------------------------

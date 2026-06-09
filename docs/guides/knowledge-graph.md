@@ -104,9 +104,14 @@ Entities are upserted on `(brain_id, entity_type, canonical_name)`. If one alrea
 
 ```python
 {
-  "subject_entity_id": "<uuid>",      // required — pre-resolved
+  # Endpoints — supply UUIDs OR keys/refs referencing entities in the same event:
+  "subject_entity_id": "<uuid>",      // pre-resolved UUID (classic path)
+  "object_entity_id": "<uuid>",
+  "subject_key": "agentforge",        // canonical_name from same-event entities (v3.25+)
+  "object_key": "task-123",
+  "subject_ref": {"type": "agent", "id": "ralph"},  // typed disambiguation
+  "object_ref": {"entity_type": "task", "canonical_name": "task-123"},
   "predicate": "depends_on",          // required
-  "object_entity_id": "<uuid>",       // required — pre-resolved
   "edge_class": "static",             // optional tag
   "layer": "pattern",                 // optional — MemoryTier name
   "profile_name": "repo-brain",       // optional — profile that defined this edge type
@@ -116,10 +121,16 @@ Entities are upserted on `(brain_id, entity_type, canonical_name)`. If one alrea
 }
 ```
 
-Both `subject_entity_id` and `object_entity_id` must be **pre-resolved UUIDs**. The two patterns for getting them:
+Endpoints may be **pre-resolved UUIDs** or **canonical keys** referencing entities
+upserted in the same `brain_record_event` / `POST /v1/experience` call (TAP-3248).
+When keys cannot be resolved against same-event entities, the edge is skipped and
+a `warnings` entry is returned (TAP-2866) — the core event still commits.
 
-1. **Include the entities in the same `brain_record_event` call** — they upsert first, then capture `entity_ids[i]` from the response.
-2. **Resolve in a separate call** — use the KG store's `batch_resolve_entities` or surface-form analysis (see [`kg_query_analysis.py`](../../src/tapps_brain/kg_query_analysis.py)).
+For entities defined in a prior request, resolve UUIDs via:
+
+1. **`POST /v1/kg/resolve_entity`** — single `(entity_type, canonical_name)` (TAP-2725).
+2. **`POST /v1/kg/resolve_entities`** — batch `entity_refs[]` (TAP-3249).
+3. Include entities in the same call and use `subject_key`/`object_key` (simplest).
 
 #### `EvidenceSpec`
 

@@ -312,6 +312,58 @@ class TestResolveEntityEndpoint:
         assert "psycopg" not in resp.text.lower()
 
 
+class TestResolveEntitiesEndpoint:
+    """`/v1/kg/resolve_entities` — batch name → UUID (TAP-3249)."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_entities_batch_returns_ordered_results(self) -> None:
+        p_cm, _p_resolve, _p_record, _p_neighbors = _kg_svc_patches()
+        batch_result = {
+            "entity_ids": ["uuid-a", "uuid-b"],
+            "results": [
+                {
+                    "entity_id": "uuid-a",
+                    "entity_type": "module",
+                    "canonical_name": "retrieval",
+                    "created": True,
+                },
+                {
+                    "entity_id": "uuid-b",
+                    "entity_type": "agent",
+                    "canonical_name": "ralph",
+                    "created": False,
+                },
+            ],
+        }
+        with (
+            p_cm,
+            patch(
+                "tapps_brain.services.kg_service.resolve_entity_refs",
+                return_value=batch_result,
+            ),
+        ):
+            resp = await _post(
+                "/v1/kg/resolve_entities",
+                {
+                    "entity_refs": [
+                        {"entity_type": "module", "canonical_name": "retrieval"},
+                        {"type": "agent", "id": "ralph"},
+                    ]
+                },
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["entity_ids"] == ["uuid-a", "uuid-b"]
+        assert len(body["results"]) == 2
+        assert body["results"][0]["created"] is True
+        assert body["results"][1]["created"] is False
+
+    @pytest.mark.asyncio
+    async def test_resolve_entities_missing_array_returns_400(self) -> None:
+        resp = await _post("/v1/kg/resolve_entities", {})
+        assert resp.status_code == 400
+
+
 class TestKgPopulateThenRetrieve:
     """End-to-end populate-then-retrieve KG flow (TAP-2723 / TAP-2727).
 
@@ -471,9 +523,12 @@ class TestExperienceMalformedSpec:
         warnings = body.get("warnings", [])
         assert len(warnings) == 1
         assert warnings[0]["kind"] == "edge"
-        fields = {err["field"] for err in warnings[0]["errors"]}
-        assert "subject_entity_id" in fields
-        assert "object_entity_id" in fields
+        errors = warnings[0]["errors"]
+        assert any(
+            err.get("field") in {"subject_entity_id", "subject_key", ""}
+            or "subject" in err.get("msg", "")
+            for err in errors
+        )
 
     @pytest.mark.asyncio
     async def test_edge_missing_entity_ids_is_not_500_or_422(self) -> None:
