@@ -142,7 +142,7 @@ async def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONRespo
 
     import tapps_brain.http_adapter as _http_mod
 
-    tok = _http_mod._extract_bearer(request)  # type: ignore[attr-defined]
+    tok = _http_mod._extract_bearer(request)
     project_id = (request.headers.get("x-project-id") or "").strip() or None
     if tok is None or tok == "":
         tool = _peek_mcp_tool_name(await request.body())
