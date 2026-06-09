@@ -1,7 +1,7 @@
 ---
 id: EPIC-032
 title: "OTel GenAI semantic conventions — standardized telemetry export"
-status: in_progress
+status: done
 priority: low
 created: 2026-03-23
 updated: 2026-05-18

@@ -93,14 +93,27 @@ The legacy `--project-dir` flag is accepted for local dev but no longer selects 
 
 ### Cursor
 
-In Cursor Settings > MCP, add a new server:
+**Deployed brain (recommended for dogfooding)** — add to `.cursor/mcp.json` with the
+`coder` profile to limit tool-schema load. Full setup: [mcp-client-repo-setup.md](mcp-client-repo-setup.md).
 
-- **Name:** `tapps-brain`
-- **Type:** `command`
-- **Command:** `tapps-brain-mcp`
-- **Env:** `TAPPS_BRAIN_PROJECT=<your-project-id>`
+```json
+{
+  "mcpServers": {
+    "tapps-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${env:TAPPS_BRAIN_AUTH_TOKEN}",
+        "X-Project-Id": "your-project-slug",
+        "X-Agent-Id": "cursor-<user>",
+        "X-Brain-Profile": "coder"
+      }
+    }
+  }
+}
+```
 
-Or add to `.cursor/mcp.json`:
+**Local stdio (dev only)** — requires a Postgres DSN on the machine running the server:
 
 ```json
 {

@@ -2,7 +2,13 @@
   "mcpServers": {
     "tapps-mcp": {
       "command": "tapps-mcp",
-      "args": ["serve", "--transport", "stdio"]
+      "args": ["serve", "--transport", "stdio"],
+      "env": {
+        "TAPPS_MCP_PROJECT_ROOT": "${workspaceFolder}",
+        "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://127.0.0.1:8080",
+        "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${env:TAPPS_BRAIN_AUTH_TOKEN}",
+        "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+      }
     },
     "docs-mcp": {
       "command": "uv",
@@ -17,6 +23,16 @@
     "playwright": {
       "command": "npx",
       "args": ["@playwright/mcp@latest"]
+    },
+    "tapps-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${env:TAPPS_BRAIN_AUTH_TOKEN}",
+        "X-Project-Id": "tapps-brain",
+        "X-Agent-Id": "cursor-wtthornton",
+        "X-Brain-Profile": "coder"
+      }
     }
   }
 }

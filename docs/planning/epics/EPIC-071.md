@@ -1,7 +1,7 @@
 ---
 id: EPIC-071
 title: "TappsBrainClient & AsyncTappsBrainClient — SDK Hardening and Documentation"
-status: planned
+status: done
 priority: high
 created: 2026-04-15
 updated: 2026-05-18

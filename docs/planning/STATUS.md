@@ -1,10 +1,10 @@
 # Project status snapshot
 
-**Last updated:** 2026-04-20 (America/Los_Angeles) — **v3.10.0** — Security batch (TAP-626–655): per-tenant auth bypass, origin allowlist, SQL injection via f-string, MD5/SHA1 FIPS, default bind 127.0.0.1; graph centrality scoring (TAP-734); temporal_sensitivity field (TAP-735); failed_approaches on MemoryEntry (TAP-731); TAP-605 mcp_server/__init__.py split into 7 submodules. Postgres-only (ADR-007). **next release:** v3.10.1 — critical client hotfixes (TAP-743/744/747) + security batch (TAP-709–729) + refactors (TAP-605/607).
+**Last updated:** 2026-06-09 — **v3.24.0** — Wave-2 consumer APIs: `brain_query_events` + `/v1/experience:query` (EPIC-074); `brain_profile_set/get` + migration 024 `profile_scoped_data` (EPIC-075); `GET /v1/skill` for HTTP-only clients (TAP-2981). Postgres-only (ADR-007). **Linear backlog:** zero open issues in [tapps-brain project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — file new work via `linear-issue` skill before coding.
 
-**Package version (`pyproject.toml`):** **3.10.0**
+**Package version (`pyproject.toml`):** **3.24.0**
 
-Human-readable snapshot of the repo. For task order, use [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) (Ralph) or epic files under [`epics/`](./epics/).
+Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Ralph loop order: [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md). Epic acceptance criteria: [`epics/`](./epics/).
 
 ## Feature intake standard
 
@@ -34,7 +34,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
-- **Migrations 007–014:** flywheel meta, project profiles, project RLS, idempotency keys, per-tenant auth, RLS force, temporal sensitivity (TAP-735), failed_approaches (TAP-731). All `ADD COLUMN IF NOT EXISTS`; backward-compatible. Current max: **014**.
+- **Migrations 007–024:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`). Current max private migration: **024**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
@@ -95,7 +95,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-029 | Feedback Collection | done | 2026-03-23 |
 | EPIC-030 | Diagnostics & Self-Monitoring | done | 2026-03-23 |
 | EPIC-031 | Continuous Improvement Flywheel | done | 2026-03-23 |
-| EPIC-032 | OTel GenAI semantic conventions | planned | — |
+| EPIC-032 | OTel GenAI semantic conventions | done | 2026-04-27 — [TAP-807](https://linear.app/tappscodingagents/issue/TAP-807) |
 | EPIC-033 | Plugin SDK Alignment | done | 2026-03-23 |
 | EPIC-034 | Production readiness QA remediation | done | 2026-03-24 |
 | EPIC-035 | Install and upgrade UX consistency | done | 2026-03-24 |
@@ -123,44 +123,43 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-057 | Unified Agent API — AgentBrain facade | done | 2026-04-09 — v3.1.0 |
 | EPIC-058 | Docker & Deployment Support — Postgres Hive infrastructure | done | 2026-04-09 — v3.1.0 |
 | EPIC-059 | PostgreSQL-only persistence plane — SQLite rip-out | done | 2026-04-11 — ADR-007 extended; stage 2 complete |
-| EPIC-060 | Engineering documentation — architecture + exceptions | in progress | 060.2 (breaking changes) + 060.8 (diagram) remaining |
-| EPIC-061 | Operator runbook | in progress | 061 final story (docs/operations/ alert thresholds) remaining |
-| EPIC-062 | Environment contract and README | in progress | confirm .env.example keys + README link audit |
+| EPIC-060 | Engineering documentation — architecture + exceptions | done | 2026-04-27 — [TAP-801](https://linear.app/tappscodingagents/issue/TAP-801) |
+| EPIC-061 | Operator runbook | done | 2026-04-27 — [TAP-802](https://linear.app/tappscodingagents/issue/TAP-802) |
+| EPIC-062 | Environment contract and README | done | 2026-04-27 |
 | EPIC-063 | (internal) | done | — |
 | EPIC-064 | NLT brand tokens + motion system + IA foundation | done | 2026-04-15 |
-| EPIC-065 | Live dashboard — /snapshot endpoint + panels | in progress | 065.3–065.7 remaining |
-| EPIC-066 | Postgres-only persistence — production readiness | in progress | 66.1–66.6 done; 66.7–66.13 remaining |
+| EPIC-065 | Live dashboard — /snapshot endpoint + panels | done | 2026-04-27 — [TAP-804](https://linear.app/tappscodingagents/issue/TAP-804) |
+| EPIC-066 | Postgres-only persistence — production readiness | done | 2026-04-14+ — [TAP-803](https://linear.app/tappscodingagents/issue/TAP-803) |
 | EPIC-067 | AsyncMemoryStore (aio.py) | done | 2026-04-14 |
-| EPIC-068 | Multi-page brain-visual dashboard (hash router, 6 pages, NLT brand) | in progress | 68.1–68.7 done; 68.8 quality sweep remaining |
+| EPIC-068 | Multi-page brain-visual dashboard (hash router, 6 pages, NLT brand) | done | 2026-04-15 — [TAP-470](https://linear.app/tappscodingagents/issue/TAP-470) |
 | EPIC-069 | Multi-tenant project_id on the wire + Postgres profile registry | done | 2026-04-14 — ADR-010 |
 | EPIC-070 | Streamable HTTP + FastAPI adapter + service layer | done | 2026-04-14 — v3.5.x; commit f182700 |
-| EPIC-071 | TappsBrainClient SDK hardening + async lifecycle + client guide | planned | depends on EPIC-070 |
-| EPIC-072 | Async-native Postgres core (psycopg3 AsyncConnectionPool) | planned | after EPIC-071 |
+| EPIC-071 | TappsBrainClient SDK hardening + async lifecycle + client guide | done | 2026-05-18 — [TAP-2133](https://linear.app/tappscodingagents/issue/TAP-2133) |
+| EPIC-072 | Async-native Postgres core (psycopg3 AsyncConnectionPool) | done | 2026-05-07 — [TAP-806](https://linear.app/tappscodingagents/issue/TAP-806) |
+| EPIC-073 | Per-profile MCP tool filtering | done | 2026-04-20 — [TAP-563](https://linear.app/tappscodingagents/issue/TAP-563); Phase 2/3 rollout is ops (see EPIC-073.md) |
+| EPIC-074 | Experience event query API | done | 2026-06-09 — [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155) |
+| EPIC-075 | Profile-scoped learned data KV | done | 2026-06-09 — [TAP-3156](https://linear.app/tappscodingagents/issue/TAP-3156) |
 
 ## Current focus
 
-**Shipped in v3.2.0 (2026-04-09):**
-- **EPIC-048** — Optional/auxiliary capabilities: session GC retention policy + token budget (048.1); relations batch + cycle detection + max-edges cap (048.2); markdown round-trip with YAML front matter schema version (048.3); eval CI golden set + `run_eval_golden.py` artifact (048.4); doc validation strict mode + pluggable lookup engine guide (048.5); visual snapshot PNG capture — `capture_png()`, `tapps-brain visual capture`, `[visual]` extra (048.6).
-- **EPIC-048 (retrieval)** — Default embedding switched to `BAAI/bge-small-en-v1.5`; FlashRank local reranker replaces Cohere; `[reranker]` extra now installs flashrank; `TAPPS_SEMANTIC_SEARCH` env var removed (always enabled).
-- **Docker** — `docker/Dockerfile.migrate` base upgraded to `python:3.13-slim`.
+**Shipped in v3.24.0 (2026-06-09):**
+- **EPIC-074** — `brain_query_events` MCP + `POST /v1/experience:query`; migration 023 index; `EntitySpec` type/id shorthand; experience-events docs.
+- **EPIC-075** — `brain_profile_set/get` MCP + REST profile data endpoints; migration 024 `profile_scoped_data` with RLS.
+- **TAP-2981** — `GET /v1/skill` returns version-matched SKILL.md for HTTP-only consumers.
 
-**Shipped in v3.1.0 (2026-04-09):**
-- **EPIC-053** — Per-agent brain identity: `MemoryStore(agent_id=)` routes to `{project_dir}/.tapps-brain/agents/{id}/memory.db`; auto-registration; `source_agent` auto-fill; CLI/MCP `--agent-id` passthrough; `maintenance split-by-agent` migration tool.
-- **EPIC-054** — Hive backend abstraction: `HiveBackend` / `FederationBackend` / `AgentRegistryBackend` protocols in `_protocols.py`; `SqliteHiveBackend` / `SqliteFederationBackend` adapters in `backends.py`; `create_hive_backend()` / `create_federation_backend()` factories; `TAPPS_BRAIN_HIVE_DSN` / `TAPPS_BRAIN_FEDERATION_DSN` env vars; `PropagationEngine` uses `HiveBackend` protocol.
-- **EPIC-055** — PostgreSQL Hive & Federation: `PostgresHiveBackend` / `PostgresConnectionManager` in `postgres_hive.py`; `pgvector` semantic search + `tsvector` FTS + `LISTEN/NOTIFY`; SQL migrations in `src/tapps_brain/migrations/hive/` and `migrations/federation/`; `PostgresFederationBackend`; conformance test suite; CLI `maintenance migrate-hive` / `hive-schema-status`.
-- **EPIC-056** — Declarative groups + expert publishing: `MemoryStore(groups=[…], expert_domains=[…])` auto-creates/joins groups; expert auto-publish on `architectural`/`pattern` tiers; `save(agent_scope="group")` routing; cross-project group resolution; profile YAML `hive.groups` / `hive.expert_domains` / `hive.recall_weights`.
-- **EPIC-057** — Unified `AgentBrain` API: `src/tapps_brain/agent_brain.py`; `remember()`, `recall()`, `forget()`, `learn_from_success()`, `learn_from_failure()`, `set_task_context()`; context manager; simplified `brain_*` MCP tools; top-level CLI aliases; `docs/guides/llm-brain-guide.md` + `docs/guides/agent-integration.md`.
-- **EPIC-058** — Docker deployment: `docker/docker-compose.hive.yaml` (pgvector/pgvector:pg17), `docker/init-hive.sql`, `docker/Dockerfile.migrate`, `docker/README.md`; `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` auto-migration; Hive-aware health checks (`hive_connected`, `hive_latency_ms`, pool stats); `maintenance backup-hive` / `restore-hive`; `docs/guides/hive-deployment.md` + `docs/guides/hive-operations.md`.
-
-**Previously shipped (still on `main`):** All EPIC-040–052 stories — see epic files and git log.
+**Recently shipped (v3.17–v3.23):** EPIC-072 async-native Postgres (writes + HTTP recall), EPIC-071 SDK hardening, EPIC-073 MCP profile filtering, OpenClaw removal (3.23.0), June quality audit ([TAP-2755](https://linear.app/tappscodingagents/issue/TAP-2755)).
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
-**Next (canonical queue: [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — system of record as of 2026-04-21):**
-1. **EPIC-032** — OTel GenAI semantic conventions (low priority; defer until stakeholder ask). Tracked as [TAP-807](https://linear.app/tappscodingagents/issue/TAP-807).
-2. **Backlog gating:** Save-path metrics beyond ADR-006, EPIC-042 eval hygiene, NLI/async conflict wiring — triggers in [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating) still apply.
+**Queue (2026-06-09):** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) has **zero open issues**. New feature work requires Linear intake per [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
 
-The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer on 2026-04-21; see that file for the seeding table and historical change log.
+**Operational (see [`EPIC-073.md`](epics/EPIC-073.md) rollout plan):**
+1. ~~Opt-in `X-Brain-Profile: coder` in this repo's MCP client config.~~ **Done (2026-06-09)** — `.mcp.json` + `.cursor/mcp.json`.
+2. Monitor `mcp_profile_resolution_source_total` before flipping `TAPPS_BRAIN_DEFAULT_PROFILE=coder`.
+
+**Backlog gating (execute only on trigger):** Save-path observability, EPIC-042 eval hygiene, NLI/async conflict wiring — see [`PLANNING.md` § Optional backlog gating](PLANNING.md#optional-backlog-gating).
+
+The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer on 2026-04-21.
 
 ## READY-036 release gate (2026-03-24)
 

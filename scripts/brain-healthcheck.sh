@@ -191,9 +191,25 @@ fi
 
 BRAIN_PROFILE="$(jq_path mcpServers tapps-brain headers X-Brain-Profile)"
 if [[ -n "$BRAIN_PROFILE" ]]; then
-    pass "X-Brain-Profile: $BRAIN_PROFILE (tool filter active)"
+    pass ".mcp.json X-Brain-Profile: $BRAIN_PROFILE (tool filter active)"
 else
-    warn "X-Brain-Profile not set — using 'full' profile (all 55 tools). Add header to .mcp.json to reduce context bloat."
+    warn ".mcp.json: X-Brain-Profile not set — using 'full' profile (all 59 tools). Add header to reduce context bloat."
+fi
+
+if [[ -f .cursor/mcp.json ]]; then
+    cursor_profile="$(python3 -c "
+import json
+try:
+    d = json.load(open('.cursor/mcp.json'))
+    print(d.get('mcpServers', {}).get('tapps-brain', {}).get('headers', {}).get('X-Brain-Profile', ''))
+except Exception:
+    pass
+" 2>/dev/null)"
+    if [[ -n "$cursor_profile" ]]; then
+        pass ".cursor/mcp.json X-Brain-Profile: $cursor_profile"
+    else
+        warn ".cursor/mcp.json: tapps-brain block missing X-Brain-Profile (Cursor gets full tool surface)"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

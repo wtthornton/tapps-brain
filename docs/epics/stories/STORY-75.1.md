@@ -11,16 +11,10 @@ Add Postgres storage for per-project per-profile learned KV separate from privat
 
 ## Acceptance
 
-- [ ] - [ ] Table profile_scoped_data with columns project_id
-- [ ] profile_name
-- [ ] data_key
-- [ ] value_json
-- [ ] updated_at
-- [ ] UNIQUE (project_id
-- [ ] profile_name
-- [ ] data_key) and RLS FORCE on project_id
-- [ ] Down migration drops table cleanly; migration version registered in private schema
-- [ ] No federation or Hive tables in v1
+- [x] Table `profile_scoped_data` with columns `project_id`, `profile_name`, `data_key`, `value_json`, `updated_at`
+- [x] UNIQUE `(project_id, profile_name, data_key)` and RLS FORCE on `project_id`
+- [x] Down migration drops table cleanly; migration version 24 registered in private schema
+- [x] No federation or Hive tables in v1
 
 ## Refs
 

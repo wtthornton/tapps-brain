@@ -1,7 +1,7 @@
 ---
 id: EPIC-073
 title: "Per-profile MCP tool filtering — reduce agent-visible tool count from 55"
-status: in_progress
+status: done
 priority: high
 created: 2026-04-17
 target_date: 2026-04-26
@@ -73,6 +73,7 @@ The solution is per-profile tool filtering:
 **Goal:** New repo-embedded agents adopt profiles explicitly.
 
 * Update `.mcp.json` in consuming repos to include `"X-Brain-Profile": "coder"`.
+* **tapps-brain repo (2026-06-09):** adopted in root `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor); `X-Agent-Id` = `claude-code-wtthornton` / `cursor-wtthornton`.
 * Monitor `mcp_profile_resolution_source_total{source="header"}` — this should
   grow as clients are updated.
 * Monitor `mcp_tools_list_total{profile}` — confirms which profiles are active.

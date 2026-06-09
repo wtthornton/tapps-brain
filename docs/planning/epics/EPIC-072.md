@@ -1,7 +1,7 @@
 ---
 id: EPIC-072
 title: "Async-Native Postgres Core — psycopg3 AsyncConnection upgrade"
-status: planned
+status: done
 priority: medium
 created: 2026-04-15
 updated: 2026-05-18

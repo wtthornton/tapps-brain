@@ -14,7 +14,7 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [3.24.0] — 2026-06-09
 
-Ships the experience-event **read** path that unblocks tapps-mcp from retiring per-project `.tapps-mcp/metrics/*.jsonl` local state (EPIC-074 / [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155)). Writes via `brain_record_event` already persisted full payloads to `experience_events`; this release adds query-by-`event_type` with optional time range and file-path filter.
+Wave-2 consumer APIs: experience-event **read** path (EPIC-074 / [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155)) and profile-scoped learned KV (EPIC-075 / [TAP-3156](https://linear.app/tappscodingagents/issue/TAP-3156)). Also ships version-matched skill distribution for HTTP-only clients ([TAP-2981](https://linear.app/tappscodingagents/issue/TAP-2981)).
 
 ### Added
 
@@ -22,6 +22,9 @@ Ships the experience-event **read** path that unblocks tapps-mcp from retiring p
 - **Migration 023** — btree index `(project_id, event_type, event_time DESC)` on `experience_events` for the query path ([TAP-3158](https://linear.app/tappscodingagents/issue/TAP-3158) / STORY-074.2). Integration round-trip test: `quality_metric` record → query by `file_path`.
 - **`EntitySpec` `type` / `id` shorthand** ([TAP-3159](https://linear.app/tappscodingagents/issue/TAP-3159) / STORY-074.3). Accepts tapps-mcp's `{"type": "file", "id": "packages/..."}` entity shape alongside the existing `key` → `canonical_name` coercion (TAP-2675).
 - **Docs** — `quality_metric`, `quality_gate_fail`, and `checklist_outcome` event types plus query API smoke example in `docs/engineering/experience-events.md` ([TAP-3160](https://linear.app/tappscodingagents/issue/TAP-3160) / STORY-074.4).
+- **`brain_profile_set` / `brain_profile_get` MCP tools + REST `POST /v1/profile/data:set` and `POST /v1/profile/data:get`** ([TAP-3163](https://linear.app/tappscodingagents/issue/TAP-3163), [TAP-3162](https://linear.app/tappscodingagents/issue/TAP-3162) / EPIC-075). Stores JSON by `(project_id, profile_name, data_key)` scoped to negotiated `X-Brain-Profile`; `brain_profile_get` returns `value_json` or `ok: false`. Registered in `full` and `operator` profiles ([TAP-3164](https://linear.app/tappscodingagents/issue/TAP-3164)).
+- **Migration 024** — `profile_scoped_data` table with RLS on `project_id` ([TAP-3162](https://linear.app/tappscodingagents/issue/TAP-3162)).
+- **`GET /v1/skill`** — returns version-matched `tapps-brain` SKILL.md body for HTTP-only consumers ([TAP-2981](https://linear.app/tappscodingagents/issue/TAP-2981)); skill asset bundled via `src/tapps_brain/_assets/tapps-brain-skill.md`.
 
 ## [3.23.0] — 2026-06-05
 

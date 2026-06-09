@@ -1,7 +1,7 @@
 # Epic 75: Profile-scoped learned data KV — unblock tapps-mcp domain weights
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** Shipped
 **Priority:** P2 - Medium
 **Estimated LOE:** ~1 week (1 developer)
 **Dependencies:** EPIC-074 (independent; can ship in parallel after 074 P0 if capacity allows)
@@ -36,9 +36,7 @@ Brain profile negotiation exists but has no read/write surface for learned profi
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] profile_scoped_data table with RLS on project_id; brain_profile_set stores JSON by (project_id
-- [ ] profile_name
-- [ ] data_key); brain_profile_get returns value or ok=false; tools in full and operator profiles; integration test round-trip; federation deferred to follow-up
+- [x] profile_scoped_data table with RLS on project_id (migration 024); brain_profile_set stores JSON by (project_id, profile_name, data_key); brain_profile_get returns value_json or ok=false; MCP brain_profile_set/get plus REST POST /v1/profile/data:set and /v1/profile/data:get; tools in full and operator profiles; Postgres integration test round-trip for domain_weights; federation deferred to follow-up
 
 <!-- docsmcp:end:acceptance-criteria -->
 
