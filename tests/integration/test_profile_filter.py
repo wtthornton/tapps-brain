@@ -219,16 +219,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_77(self) -> None:
-        """The MCP server must have exactly 77 registered tools (64 standard + 13 operator)."""
+    def test_registered_tool_count_is_80(self) -> None:
+        """The MCP server must have exactly 80 registered tools (67 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 77, (
-            f"Expected 77 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 80, (
+            f"Expected 80 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 77 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 80 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -515,7 +515,7 @@ class TestBackwardsCompat:
         """
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 64  # callable surface unchanged
+        assert len(full_tools) == 67  # callable surface unchanged (EPIC-075: +3)
         eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(

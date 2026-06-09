@@ -478,6 +478,9 @@ significantly slower at scale.
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | `connection refused` | DB not running or wrong port | `docker compose -p tapps-brain ps` and check `TAPPS_HTTP_PORT` in `docker/.env` |
+| `/ready` 503 + `tapps_runtime` auth failed (hive container healthy) | Dev pytest Postgres on `tapps-brain_default` hijacked hostname `tapps-brain-db` — see [postgres-dsn.md § Dev vs deploy](postgres-dsn.md#dev-vs-deploy-postgres-epic-076) | `make check-compose-isolation`; `docker stop tapps-brain-dev-db`; `make brain-down && make brain-up` (uses project `tapps-brain-dev`) |
+| MCP `initialize` 500 / `TooManyRequests` on pool after DB was unreachable | Connection pools saturated during a prolonged outage | `docker restart tapps-brain-http`; re-run `make brain-healthcheck` |
+| `project_not_registered` / MCP 403 (`TAPPS_BRAIN_STRICT=1`) | `X-Project-Id` slug not in registry | `docker exec tapps-brain-http tapps-brain project register <slug> --profile /usr/local/lib/python3.13/site-packages/tapps_brain/profiles/repo-brain.yaml` |
 | `password authentication failed` for `tapps_runtime` | `TAPPS_BRAIN_RUNTIME_PASSWORD` in `docker/.env` doesn't match what the migrate sidecar set on the role | Restart the stack with `make hive-deploy` — the migrate sidecar is idempotent and will re-set the password to the current env value |
 | `permission denied for schema public` on brain startup | Brain connecting as a role without USAGE on public, or migrate sidecar didn't run | Confirm the migrate sidecar exited 0; confirm the brain DSN points at `tapps_runtime` (`docker exec tapps-brain-http printenv TAPPS_BRAIN_DATABASE_URL`) |
 | `extension "vector" does not exist` | Wrong Postgres image | Use `pgvector/pgvector:pg17` |
