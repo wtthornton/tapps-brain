@@ -72,7 +72,7 @@ Add a ~50-line vanilla JS hash router to index.html. The router listens on windo
 - [x] Hash router and persistent side-nav shell code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on `brain-visual-router.js` and nav/CSS changes in `index.html`; no Critical issues open
+- [ ] tapps-reviewer run on `brain-visual-router.js` and nav/CSS changes in `index.html`; no Critical issues open
 
 <!-- docsmcp:end:definition-of-done -->
 

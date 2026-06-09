@@ -48,13 +48,12 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_64_tools(self) -> None:
-        # TAP-2093 added `brain_audit_consumers`; TAP-2094 added
-        # `recall_quality_metrics`; TAP-2099 added `brain_export`;
-        # TAP-2725 added `brain_resolve_entity`.
+    def test_get_full_returns_67_tools(self) -> None:
+        # EPIC-075 added brain_query_events, brain_record_events_batch,
+        # brain_record_feedback to full (+3 over TAP-2725 baseline).
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 64
+        assert len(tools) == 67
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -69,12 +68,11 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_77_tools(self) -> None:
-        # TAP-2099 added `brain_export`; TAP-2725 added `brain_resolve_entity`
-        # to the full profile (subset of operator).
+    def test_get_operator_returns_80_tools(self) -> None:
+        # EPIC-075: +3 experience/feedback tools in operator superset.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 77
+        assert len(tools) == 80
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -191,7 +189,7 @@ class TestBundledProfiles:
     def test_get_reviewer_is_read_only(self) -> None:
         reg = ProfileRegistry()
         reviewer = reg.get("reviewer")
-        assert len(reviewer) == 8
+        assert len(reviewer) == 9
         assert "brain_recall" in reviewer
         assert "memory_search" in reviewer
         assert "memory_get" in reviewer
@@ -376,10 +374,9 @@ class TestValidateAgainst:
         """All bundled profiles must pass validation against the live tool set.
 
         Tool count is pinned to detect drift; bump when adding/removing a
-        ``@mcp.tool`` decorated function.  TAP-2093 added
-        `brain_audit_consumers` → 74; TAP-2094 added `recall_quality_metrics`
-        → 75; TAP-2099 added `brain_export` → 76; TAP-2725 added
-        `brain_resolve_entity` → 77.
+        ``@mcp.tool`` decorated function.  EPIC-075 added
+        `brain_query_events`, `brain_record_events_batch`, and
+        `brain_record_feedback` → 80.
         """
         import re
 
@@ -389,7 +386,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 77, f"Expected 77 tools, found {len(all_tools)}"
+        assert len(all_tools) == 80, f"Expected 80 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -457,12 +454,12 @@ class TestCustomConfigPath:
 class TestDeferredTools:
     """Per-tool ``defer_loading: true`` annotation parsing + ``get_deferred``."""
 
-    def test_bundled_full_has_56_deferred_tools(self) -> None:
-        """`full` profile keeps 8 eager daily drivers + 56 deferred (TAP-2725: +1)."""
+    def test_bundled_full_has_59_deferred_tools(self) -> None:
+        """`full` profile keeps 8 eager daily drivers + 59 deferred (EPIC-075: +3)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
-        assert len(deferred) == 56
+        assert len(deferred) == 59
         assert len(eager) == 8
 
     def test_bundled_full_eager_set_matches_daily_drivers(self) -> None:
@@ -482,12 +479,12 @@ class TestDeferredTools:
             }
         )
 
-    def test_bundled_operator_has_69_deferred_tools(self) -> None:
-        """`operator` profile shares 8 daily drivers; remaining 69 deferred (TAP-2725: +1)."""
+    def test_bundled_operator_has_72_deferred_tools(self) -> None:
+        """`operator` profile shares 8 daily drivers; remaining 72 deferred (EPIC-075: +3)."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
-        assert len(deferred) == 69
+        assert len(deferred) == 72
         assert len(eager) == 8
 
     def test_bundled_operator_eager_matches_full(self) -> None:

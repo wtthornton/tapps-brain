@@ -24215,7 +24215,7 @@ input order.
 
 This is the all-or-nothing primitive used by the
 ``POST /v1/experience:batch`` REST endpoint for high-throughput
-consumers (Ralph-style autonomous loops emitting 20+ events/min).
+consumers (high-volume autonomous agent loops emitting 20+ events/min).
 
 **Parameters:**
 

@@ -41,7 +41,7 @@ The storage layer is the foundation of the entire system. Bugs here affect every
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 017-A through 017-H for the full breakdown.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).
 
 ## Priority Order
 

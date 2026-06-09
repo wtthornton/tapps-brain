@@ -72,7 +72,7 @@ Refactor the current hero bento grid into the Overview page (data-page=overview)
 - [x] Overview page — decision strip and health summary code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on health-summary strip and quick-nav changes in `index.html`; no Critical issues open
+- [ ] tapps-reviewer run on health-summary strip and quick-nav changes in `index.html`; no Critical issues open
 
 <!-- docsmcp:end:definition-of-done -->
 

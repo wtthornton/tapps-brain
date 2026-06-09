@@ -14,7 +14,7 @@ npm install -g @anthropic-ai/claude-code@latest
 # Ensure wrapper is on PATH for non-login shells (e.g. Ralph / tmux)
 if ! grep -q '.local/bin' "${HOME}/.bashrc" 2>/dev/null; then
   echo "" >> "${HOME}/.bashrc"
-  echo '# Claude Code + tools (tapps-brain / Ralph)' >> "${HOME}/.bashrc"
+  echo '# Claude Code + tools (tapps-brain)' >> "${HOME}/.bashrc"
   echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
   echo "Appended PATH line to ~/.bashrc"
 fi

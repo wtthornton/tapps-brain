@@ -108,7 +108,6 @@ artifacts = ["src/tapps_brain/profiles/*.yaml", "src/tapps_brain/mcp_server/*.ya
 # works from an installed wheel (examples/ lives outside the wheel normally).
 [tool.hatch.build.targets.wheel.force-include]
 "examples/coding-project-init" = "tapps_brain/_scaffolds/coding-project-init"
-".claude/skills/tapps-brain/SKILL.md" = "tapps_brain/_assets/tapps-brain-skill.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -221,6 +220,7 @@ ignore = [
     "ANN401",  # mcp: Any and **kwargs: Any — FastMCP is optional dep, typed as Any intentionally
     "TC003",   # contextvars used in runtime annotation (ContextVar.get() called at request time)
 ]
+"src/tapps_brain/mcp_server/tools_kg.py" = ["PLR0911"]  # KG tools: validation early-return envelopes
 "src/tapps_brain/http_adapter.py" = [
     "ANN401",
     "B904",     # HTTP adapters re-raise as HTTPException deliberately

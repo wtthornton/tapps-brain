@@ -1,12 +1,12 @@
 # Next session — agent handoff prompt
 
-Copy everything below the line into a new chat (or Ralph task) as the **user message**.
+Copy everything below the line into a new chat as the **user message**.
 
 ---
 
 **Project:** tapps-brain — PostgreSQL-backed memory for AI assistants (pgvector HNSW + tsvector hybrid search, Hive federation, Streamable HTTP MCP at `:8080`, `AgentBrain` facade, async-native HTTP write/recall path). Postgres-only (ADR-007).
 
-**Start by reading:** `CLAUDE.md`, `docs/planning/STATUS.md`, then the epic you implement (if any). **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). EPIC-076 ([TAP-3176](https://linear.app/tappscodingagents/issue/TAP-3176)) closed 2026-06-09 — dev/hive compose isolation shipped. File new work via `linear-issue` skill before coding. Ralph loop only: `.ralph/fix_plan.md`.
+**Start by reading:** `CLAUDE.md`, `docs/planning/STATUS.md`, then the epic you implement (if any). **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). File new work via `linear-issue` skill before coding.
 
 **Package version:** `3.24.0` (`pyproject.toml`).
 
@@ -44,4 +44,4 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 ---
 
-*File purpose: paste-the-prompt handoff. Last synced: 2026-06-09 — v3.24.0 wave-2 APIs shipped; Linear backlog empty.*
+*File purpose: paste-the-prompt handoff. Last synced: 2026-06-09 — EPIC-077 cleanup in progress; open Linear: TAP-3198.*

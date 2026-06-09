@@ -1,10 +1,10 @@
 # Project status snapshot
 
-**Last updated:** 2026-06-09 — **v3.24.0** — Wave-2 consumer APIs: `brain_query_events` + `/v1/experience:query` (EPIC-074); `brain_profile_set/get` + migration 024 `profile_scoped_data` (EPIC-075); `GET /v1/skill` for HTTP-only clients (TAP-2981). Postgres-only (ADR-007). **Linear backlog:** zero open issues in [tapps-brain project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — file new work via `linear-issue` skill before coding.
+**Last updated:** 2026-06-09 — **v3.24.0** — Wave-2 consumer APIs shipped (EPIC-074/075). **EPIC-077** (TAP-3198 autonomous-loop cleanup) complete except release gate. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
 
 **Package version (`pyproject.toml`):** **3.24.0**
 
-Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Ralph loop order: [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md). Epic acceptance criteria: [`epics/`](./epics/).
+Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic acceptance criteria: [`epics/`](./epics/).
 
 ## Feature intake standard
 
@@ -139,6 +139,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 | EPIC-073 | Per-profile MCP tool filtering | done | 2026-04-20 — [TAP-563](https://linear.app/tappscodingagents/issue/TAP-563); Phase 2/3 rollout is ops (see EPIC-073.md) |
 | EPIC-074 | Experience event query API | done | 2026-06-09 — [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155) |
 | EPIC-075 | Profile-scoped learned data KV | done | 2026-06-09 — [TAP-3156](https://linear.app/tappscodingagents/issue/TAP-3156) |
+| EPIC-077 | Retire autonomous loop (Ralph) | done | 2026-06-09 — [TAP-3198](https://linear.app/tappscodingagents/issue/TAP-3198) |
 
 ## Current focus
 
@@ -151,7 +152,7 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
-**Queue (2026-06-09):** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) has **zero open issues**. New feature work requires Linear intake per [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
+**Queue (2026-06-09):** EPIC-077 cleanup landed; file new work via `linear-issue` per [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
 
 **Operational (see [`EPIC-073.md`](epics/EPIC-073.md) rollout plan):**
 1. ~~Opt-in `X-Brain-Profile: coder` in this repo's MCP client config.~~ **Done (2026-06-09)** — `.mcp.json` + `.cursor/mcp.json`.
@@ -166,7 +167,7 @@ The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a p
 - **Script:** `scripts/release-ready.sh` — fail-fast packaging, version tests, pytest (optional skip via `SKIP_FULL_PYTEST=1`), ruff, mypy.
 - **CI:** `.github/workflows/ci.yml` — `release-ready` job runs the shell gate with `SKIP_FULL_PYTEST=1` after the test matrix.
 - **Remediation on failure:** `scripts/publish-checklist.md`, `docs/planning/epics/EPIC-036.md`.
-- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `.ralph/AGENT.md`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.3+).
+- **Documented in:** root `README.md`, `CLAUDE.md`, `.cursor/rules/project.mdc`, `docs/guides/mcp.md`, `docs/guides/getting-started.md`, `docs/planning/PLANNING.md`, `CHANGELOG.md` (v2.0.3+).
 
 ## READY-035 docs consistency evidence (2026-03-24)
 
@@ -188,6 +189,6 @@ The legacy [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a p
 
 ## WSL / Windows
 
-- Ralph and full test runs are **WSL-first** (bash, Linux `.venv`). See **`CLAUDE.md`** → *Ralph on Windows (use WSL)*.
+- Full test runs are **WSL-first** (bash, Linux `.venv`). See **`CLAUDE.md`** for WSL notes.
 - In WSL, activate with `source .venv/bin/activate` (not `Scripts/activate`).
 - **One checkout, one OS for `.venv`:** alternating `uv sync` on the same tree between WSL (Linux layout) and native Windows can leave `.venv` in a state where `uv` fails to replace `lib64` (access denied). Remove `.venv` and run `uv sync --group dev` on the platform you are using, or keep separate clones per OS.

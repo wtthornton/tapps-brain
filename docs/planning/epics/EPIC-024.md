@@ -27,4 +27,4 @@ Review all unit test files for: test quality, missing edge cases, flaky test pat
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 024-A through 024-N.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

@@ -191,7 +191,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "description": "Rate of cold-path probes (cache misses) per second. Sustained rate indicates the TAP-1833 cache isn't holding between Ralph loops.",
+      "description": "Rate of cold-path probes (cache misses) per second. Sustained rate indicates the TAP-1833 cache isn't holding between agent sessions.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -235,7 +235,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "description": "Fraction of tools/list calls served from the in-process TAP-1833 cache. Should be high (> 95%) during sustained Ralph campaigns.",
+      "description": "Fraction of tools/list calls served from the in-process TAP-1833 cache. Should be high (> 95%) during sustained agent campaigns.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },

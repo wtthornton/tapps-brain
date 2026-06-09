@@ -172,7 +172,7 @@ Tag important entries with `critical` or `security` for ranking boost.
 
 ## Linear automation (Claude Agent user)
 
-**Status: IN PROGRESS — wrapper script ready, API key pending human step.** `scripts/run-ralph.sh` sources the credential automatically (TAP-1846 done). The remaining step is generating a Personal API key for the Claude Agent Linear user and writing it to `~/.config/claude-agent/linear.env` (TAP-1845 — human browser action). Full design and credential setup in [`docs/guides/linear-claude-agent.md`](docs/guides/linear-claude-agent.md). Wrapper usage in [`docs/guides/ralph-setup.md`](docs/guides/ralph-setup.md).
+**Status: IN PROGRESS — API key pending human step (TAP-1845).** Full design in [`docs/guides/linear-claude-agent.md`](docs/guides/linear-claude-agent.md). Ralph wrapper archived under `scripts/archive/ralph/` (EPIC-077).
 
 Summary: a dedicated Linear user *Claude Agent* (`tapp.thornton+claude@gmail.com`, username `claude`) will be driven by a scheduled poller authed with a Personal API key at `~/.config/claude-agent/linear.env` (chmod 600, never committed). The interactive Linear plugin inside Claude Code stays authed as the operator — only the poller posts as Claude Agent. Trigger convention: `@Claude Agent` in a comment. Dedup: watermark in tapps-brain + in-thread reply check + hidden `<!-- claude-reply:<id> -->` marker.
 
@@ -202,84 +202,15 @@ Feature intake and triage governance for agents:
 - `docs/planning/AGENT_FEATURE_GOVERNANCE.md`
 - `docs/planning/ISSUE_TRIAGE_VIEWS.md`
 
-## Ralph (Autonomous Dev Loop)
+## Delivery queue (Linear)
 
-This project is configured for [Ralph for Claude Code](https://github.com/frankbria/ralph-claude-code) — an autonomous development loop that drives Claude Code CLI through tasks iteratively.
+**Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (priority + status). Epic acceptance criteria live in [`docs/planning/epics/`](docs/planning/epics/). File new work via the `linear-issue` skill before coding.
 
-### Ralph Rules
+**Session startup:** read `AGENTS.md`, this file, and `docs/planning/STATUS.md`; pick the assigned Linear issue or ask what to file next.
 
-- **Ralph loop only:** `.ralph/fix_plan.md` is the single source of truth for *which task to run next* in that autonomous loop. PROMPT.md defines *how* to work. PROMPT.md must not override fix_plan task order.
-- **Product delivery (humans, Cursor, PRs):** canonical queue is the [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (system of record for priority and status as of 2026-04-21). Epic design + acceptance criteria still live in [`docs/planning/epics/`](docs/planning/epics/); each Linear issue links back to its epic file. `.ralph/` is **not packaged** and should not be edited for feature bookkeeping unless explicitly syncing Ralph. See `docs/planning/PLANNING.md` (section *Open issues roadmap vs Ralph tooling*). The legacy [`docs/planning/open-issues-roadmap.md`](docs/planning/open-issues-roadmap.md) was retired to a pointer on 2026-04-21.
-- Do ONE task per loop from fix_plan.md, in the order listed.
-- Do not skip ahead, reorder, or pick tasks from other sources (epics, specs) unless fix_plan.md explicitly references them.
-- **Do NOT run pytest, ruff, or mypy mid-epic.** QA is deferred to epic boundaries (when the last `- [ ]` in a `##` section is completed). Set `TESTS_STATUS: DEFERRED` for all mid-epic tasks. This saves 2-5 minutes per loop.
-- **Do NOT use `-c` or `-e` one-liner flags with any interpreter** (`python3`, `bash`, `sh`, `perl`, `ruby`, `node`) — the PreToolUse hook blocks all of these and wastes a tool call plus retry latency (TAP-1858). Write scratch scripts to `/tmp/tap_NNN_check.py` instead, or use stdin heredoc form `python3 - << 'EOF' ... EOF` which is not blocked.
+**Ralph retired (2026-06-09):** the autonomous Ralph loop is no longer used. See `.ralph/README.md`, `docs/planning/epics/EPIC-077.md`, and archived material under `scripts/archive/ralph/` and `docs/planning/archive/ralph-retired/`.
 
-### Ralph Files
-
-- `.ralph/PROMPT.md` — Process instructions for the autonomous agent (NOT priorities)
-- `.ralph/AGENT.md` — Build/test/lint commands Ralph uses
-- `.ralph/fix_plan.md` — **The priority-ordered task list** (Ralph works through this top to bottom)
-- `.ralph/specs/` — Detailed requirement specs (reference only, not task drivers)
-- `.ralph/logs/` — Loop execution logs
-- `.ralphrc` — Project-level Ralph configuration (rate limits, tool permissions, timeouts)
-
-### Running Ralph
-
-**Always `cd` to this repository’s root first** (the folder that contains `pyproject.toml`). Paths like `/path/to/tapps-brain` in generic guides are placeholders, not real directories. Example if you cloned under `~/code`:
-
-```bash
-cd ~/code/tapps-brain
-test -f pyproject.toml || { echo "Not the repo root — find the folder with pyproject.toml"; exit 1; }
-uv sync --group dev
-export PATH="$HOME/.local/bin:$PATH"   # if ralph / claude live here
-claude --version    # must be installed; Ralph invokes the Claude Code CLI
-```
-
-```bash
-# Start the autonomous loop
-ralph
-
-# Start with tmux monitoring dashboard (requires tmux)
-ralph --monitor
-
-# Start with live streaming output
-ralph --live
-
-# Import a PRD or spec into Ralph tasks
-ralph-import docs/some-spec.md
-```
-
-### Ralph on Windows (use WSL)
-
-Ralph’s global install is bash-based (`~/.ralph/ralph_loop.sh`). **Do not double-click `ralph` or run it from Explorer** — the file has no `.exe`; Windows shows **“Open with…”** instead of executing it.
-
-From Windows, use **WSL** (or Git Bash). Convenience script from the repo (resolves the project path and runs `ralph` inside your default WSL distro):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/Invoke-RalphWsl.ps1 --status
-powershell -ExecutionPolicy Bypass -File scripts/Invoke-RalphWsl.ps1 --live
-```
-
-Inside WSL directly (same as Linux): ensure `PATH` includes `$HOME/.local/bin`, `cd` to the repo, then `ralph` / `ralph --live`.
-
-1. **Install Ralph inside WSL** (or sync from Windows): copy `C:\Users\<you>\.ralph\` → `~/.ralph/` and `ralph*` wrappers → `~/.local/bin/`, then fix CRLF if copied from Windows:
-   `bash scripts/wsl-fix-ralph-crlf.sh`
-2. **Dependencies in WSL**: `tmux` (for `--monitor`), `jq`, and `claude` on `PATH`. If `sudo apt install jq` is not an option, install a user-local binary (see `scripts/wsl-verify-ralph.sh`).
-3. From the repo: `cd /mnt/c/cursor/tapps-brain` (or your path), ensure `export PATH="$HOME/.local/bin:$PATH"`, then `ralph --live` or `ralph --monitor`.
-4. **Upgrade Claude Code in WSL** (if `claude --version` is below 2.0.76 or auto-update hits `EACCES`): in Ubuntu run `sed -i 's/\r$//' scripts/wsl-upgrade-claude-code.sh && bash scripts/wsl-upgrade-claude-code.sh` — installs to `~/.local` (no sudo). Ralph already prepends `~/.local/bin` to `PATH`.
-5. **Background from Windows**: run `scripts/wsl-run-ralph-bg.sh` inside WSL (uses **detached `tmux`** so Ralph survives after `wsl.exe` exits; plain `nohup` is killed when the Windows-launched WSL session ends). Log path is printed (`.ralph/logs/tmux-ralph-*.log`). Attach with `tmux attach -t ralph-loop`.
-
-### How It Works
-
-Ralph reads `.ralph/PROMPT.md` + `.ralph/fix_plan.md`, invokes Claude Code CLI, analyzes the output, checks progress, and loops until tasks are complete. It includes a circuit breaker to stop if no progress is being made, rate limiting, and session continuity across iterations.
-
-### Important
-
-- **Do not modify** `.ralph/` or `.ralphrc` during a Ralph loop — these are Ralph's control files
-- Ralph commits its own changes with descriptive messages referencing stories
-- Open-issues delivery order is tracked in `docs/planning/open-issues-roadmap.md`; Ralph’s `fix_plan.md` should be **reconciled** with that file when starting a Ralph campaign on roadmap work
-- Inside Ralph: see fix_plan.md for the next task (not PROMPT.md alone)
+**Python one-liners in Claude Code:** do not use `-c` or `-e` flags with interpreters when a PreToolUse guard is active — write `/tmp/snippet.py` or use `python3 - << 'EOF' ... EOF` instead.
 
 <!-- BEGIN: karpathy-guidelines c9a44ae (MIT, forrestchang/andrej-karpathy-skills) -->
 <!--

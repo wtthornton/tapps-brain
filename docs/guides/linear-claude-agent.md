@@ -1,19 +1,15 @@
 # Linear automation via a dedicated Claude Agent user
 
-**Status:** Partially Active (as of 2026-05-16) — `scripts/run-ralph.sh`
-wrapper is ready (TAP-1846/WS3.2); the API key at
-`~/.config/claude-agent/linear.env` is the remaining **human step**
-(TAP-1845/WS3.1 — log in as Claude Agent in a browser, generate a
-Personal API key, write it to the path above). See
-[ralph-setup.md](ralph-setup.md) for wrapper usage and the credential
-load order.
+**Status:** Partially Active (as of 2026-06-09) — API key at
+`~/.config/claude-agent/linear.env` remains the **human step**
+(TAP-1845). Historical autonomous-loop wiring archived under
+[`docs/planning/archive/ralph-retired/`](../planning/archive/ralph-retired/)
+(EPIC-077).
 
 **Credential-free alternative (WS3.3/TAP-1847):** the `tapps_linear_count`
 MCP tool in tapps-mcp reads open/done counts directly from the
 `.tapps-mcp-cache/linear-snapshots/` files populated by the
-`linear-read` skill — no `LINEAR_API_KEY` required. When
-`LINEAR_API_KEY` is unset, Ralph's `on-session-start.sh` hook should
-call this tool instead. Snapshots must be < 1 hour old; otherwise the
+`linear-read` skill — no `LINEAR_API_KEY` required. Snapshots must be < 1 hour old; otherwise the
 count falls back to `available=false`. **Design decision: use WS3.1/3.2
 OR WS3.3 — not both unless belt-and-braces counting is desired.**
 Flip sections from "planned" to "current" as each step lands.
@@ -21,22 +17,9 @@ Flip sections from "planned" to "current" as each step lands.
 **Quick verify** (run after WS3.1 completes):
 
 ```bash
-# Confirm the credential file is present and well-formed
+# Confirm credential file is present (poller / direct GraphQL use)
 grep -c '^LINEAR_API_KEY=lin_api_' ~/.config/claude-agent/linear.env \
   && echo "OK" || echo "MISSING or wrong format"
-
-# Confirm Linear accepts the key as Claude Agent
-source ~/.config/claude-agent/linear.env
-curl -s \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ viewer { id name email } }"}' \
-  https://api.linear.app/graphql | python3 -m json.tool
-# Expected: "name": "Claude Agent" (not the operator's name)
-
-# Confirm the wrapper picks it up
-bash scripts/run-ralph.sh --version 2>&1 | head -2
-# Expected: [run-ralph] Loaded Linear credentials from ~/.config/claude-agent/linear.env
 ```
 
 **Audience:** a human operator wiring a Linear workspace so Claude-driven
@@ -51,8 +34,7 @@ research/update/status change, and never double-reply.
 
 Non-goal: the bot does **not** implement the underlying engineering
 work. It only comments, updates fields, and triages. Implementation work
-still runs through the normal Claude Code / Ralph paths on the operator's
-workstation.
+still runs through Claude Code on the operator's workstation.
 
 ## Linear user
 
@@ -226,20 +208,18 @@ than using the plugin — keeps the attribution model simple.
   surface errors via whatever the operator's existing notification
   channel is.
 
-## WS3 — Ralph count source: WS3.1/3.2 vs WS3.3
+## WS3 — Linear issue counts: API key vs cache
 
-Ralph needs open/done issue counts each loop to drive its exit gate.
-Two approaches ship; **pick one per workspace** (belt-and-braces mode
-is possible but adds complexity).
+Automation that needs open/done issue counts can use either a Personal API
+key (direct GraphQL) or the cache-based `tapps_linear_count` tool. **Pick one
+per workspace** unless belt-and-braces counting is desired.
 
 ### WS3.1/3.2 — Personal API key (direct Linear fetch)
 
 - Operator generates a Personal API key logged in as Claude Agent (TAP-1845).
 - Key stored at `~/.config/claude-agent/linear.env` (chmod 600, never committed).
-- `scripts/run-ralph.sh` sources the env file before exec-ing Ralph (TAP-1846).
-- Ralph's `on-session-start.sh` calls the Linear GraphQL directly when
-  `LINEAR_API_KEY` is set. Counts are always fresh.
-- **Pro:** fresh counts on every loop. **Con:** one additional secret to manage.
+- Poller or scripts `source` the env file before calling Linear GraphQL.
+- **Pro:** fresh counts on every run. **Con:** one additional secret to manage.
 
 ### WS3.3 — tapps_linear_count (cache-based, zero secrets)
 
@@ -260,40 +240,17 @@ tapps_linear_count(team, project, max_age_seconds=3600)
 - Falls back to `available=false` when no fresh snapshot is found — caller should
   log a warning and skip the count rather than blocking.
 
-**Hook integration** (`.ralph/hooks/on-session-start.sh`):
-
-```bash
-if [ -z "${LINEAR_API_KEY:-}" ]; then
-  # WS3.3: use tapps-mcp cache (zero secrets, potentially 5-min stale)
-  COUNT_RESULT=$(claude mcp call tapps-mcp tapps_linear_count \
-    --team TappsCodingAgents --project tapps-brain 2>/dev/null)
-  OPEN=$(echo "$COUNT_RESULT" | python3 -c "
-import json, sys
-d = json.load(sys.stdin).get('data', {})
-print(d.get('open', 'N/A') if d.get('available') else 'N/A')
-" 2>/dev/null || echo "N/A")
-  DONE=$(echo "$COUNT_RESULT" | python3 -c "
-import json, sys
-d = json.load(sys.stdin).get('data', {})
-print(d.get('done', 'N/A') if d.get('available') else 'N/A')
-" 2>/dev/null || echo "N/A")
-  echo "Linear count (open_count=$OPEN, age=$(echo "$COUNT_RESULT" | \
-    python3 -c "import json,sys; d=json.load(sys.stdin).get('data',{}); print(str(int(d.get('age_seconds',0)))+'s')" \
-    2>/dev/null || echo '?')) via tapps-mcp cache"
-fi
-```
-
-- **Pro:** zero secrets, uses existing cache. **Con:** counts may be up to
-  5 min stale (cache TTL); returns `available=false` on cold starts before
-  the first `linear-read` skill call populates the cache.
-
-**Quick verify** (WS3.3):
+**Example (CLI):**
 
 ```bash
 # After at least one list_issues call via the linear-read skill:
 tapps-mcp call tapps_linear_count --team TappsCodingAgents --project tapps-brain
 # Expected: {"data": {"available": true, "open": N, "done": M, ...}}
 ```
+
+- **Pro:** zero secrets, uses existing cache. **Con:** counts may be up to
+  5 min stale (cache TTL); returns `available=false` on cold starts before
+  the first `linear-read` skill call populates the cache.
 
 ### Decision matrix
 
@@ -313,7 +270,7 @@ Flip these to `[x]` as we land each piece.
 - [ ] GraphQL `viewer` sanity check returns `Claude Agent`.
 - [x] `tapps_linear_count` tool added to tapps-mcp (WS3.3/TAP-1847); reads from
   `.tapps-mcp-cache/linear-snapshots/`; falls back to `available=false` when stale.
-- [ ] `on-session-start.sh` hook calls `tapps_linear_count` when `LINEAR_API_KEY` unset.
+- [ ] Poller uses `tapps_linear_count` when `LINEAR_API_KEY` unset (WS3.3 fallback).
 - [ ] Poller script written (language / location TBD during impl).
 - [ ] Watermark read/write wired to tapps-brain memory.
 - [ ] All three dedup layers implemented and unit-tested.

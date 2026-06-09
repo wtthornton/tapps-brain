@@ -30,6 +30,8 @@ def _allow_privileged_dev_role() -> None:
         os.environ.pop("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", None)
     else:
         os.environ["TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE"] = prev
+
+
 _BRAIN_ID = "tapps-brain"
 
 

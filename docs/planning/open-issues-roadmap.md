@@ -12,7 +12,7 @@ This roadmap drifted faster than we reconciled it. Epics and stories own their o
 
 - **What's next / priority?** → [Linear: `tapps-brain` project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (filter by priority, status, assignee).
 - **What does an epic mean / what are its acceptance criteria?** → the epic file under [`epics/`](epics/). Each Linear parent issue links back to its epic spec.
-- **Ralph loop?** → [`.ralph/fix_plan.md`](../../.ralph/fix_plan.md) stays as Ralph's loop driver. It's independent from Linear and from this file (and was never the product-delivery queue — see [`PLANNING.md` § *Open issues roadmap vs Ralph tooling*](PLANNING.md#open-issues-roadmap-vs-ralph-tooling)).
+- **Autonomous loop?** → **Retired 2026-06-09** (EPIC-077). Use Linear only; see `docs/planning/archive/ralph-retired/`.
 
 ## Issue seeding (2026-04-21)
 

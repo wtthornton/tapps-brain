@@ -75,7 +75,7 @@ Run the full MCP quality matrix: docs-mcp docs_validate_epic on EPIC-068.md; doc
 - [ ] All tasks completed
 - [ ] Quality sweep — docs-mcp, tapps-mcp, Lighthouse, accessibility audit reviewed and approved
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run as final gate on all `index.html` changes across 068.1–068.7; no Critical issues open
+- [ ] tapps-reviewer run as final gate on all `index.html` changes across 068.1–068.7; no Critical issues open
 - [ ] README.md updated with nav breakdown, reduced-motion test steps, and View Transitions browser support note (carries the deferred task from 068.1)
 - [ ] Lighthouse Accessibility ≥ 90 recorded in EPIC-068.md
 

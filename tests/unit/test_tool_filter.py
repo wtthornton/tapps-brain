@@ -198,17 +198,17 @@ class TestListToolsFilter:
         assert {t.name for t in result} == coder_tools
 
     def test_bundled_full_profile_returns_8_eager_tools(self) -> None:
-        """TAP-1985: `full` profile defaults to 8 daily drivers; 56 deferred.
+        """TAP-1985: `full` profile defaults to 8 daily drivers; 59 deferred.
 
         Replaces the prior "returns 59 tools" assertion. The callable surface
-        (``registry.get('full')``) is 64 post-TAP-2725, but the default
+        (``registry.get('full')``) is 67 post-EPIC-075, but the default
         ``tools/list`` payload returns only the 8 eager daily drivers so the
         eager catalog stays within the per-server budget (parent epic
         TAP-1983).
         """
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 64  # callable surface (TAP-2725: +1)
+        assert len(all_tool_names) == 67  # callable surface (EPIC-075: +3)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -470,7 +470,7 @@ class TestDeferredToolBehavior:
         """Operator profile shares the 8-tool daily-driver budget."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 77  # callable surface (TAP-2725: +1)
+        assert len(all_tool_names) == 80  # callable surface (EPIC-075: +3)
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -490,7 +490,7 @@ class TestDeferredToolBehavior:
 
         # TAP-1973: coder + agent_brain each gained `brain_record_events_batch`.
         # TAP-2093: agent_brain gained `brain_audit_consumers` (11 → 12).
-        expected_counts = {"coder": 18, "reviewer": 8, "seeder": 6, "agent_brain": 12}
+        expected_counts = {"coder": 18, "reviewer": 9, "seeder": 6, "agent_brain": 12}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None

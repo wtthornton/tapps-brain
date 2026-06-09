@@ -68,7 +68,7 @@ Move the full scorecard section to data-page=health. Add a filter bar above the 
 - [ ] Health page — scorecard with filter bar and issue workflow code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on filter bar, sort toggle, and diff-badge changes; no Critical issues open
+- [ ] tapps-reviewer run on filter bar, sort toggle, and diff-badge changes; no Critical issues open
 - [ ] EPIC-065 diff-badge AC noted as deferred; all other ACs verified via demo JSON at `http://localhost:8090`
 
 <!-- docsmcp:end:definition-of-done -->

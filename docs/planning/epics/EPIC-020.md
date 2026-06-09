@@ -25,4 +25,4 @@ Full code review of safety, injection detection, validation, and contradiction h
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 020-A through 020-E.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

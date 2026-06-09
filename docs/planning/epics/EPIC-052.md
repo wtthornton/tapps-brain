@@ -50,7 +50,7 @@ The current tree has ~**30k LOC** across ~**64 modules**. Several files grew sub
 
 ## Stories
 
-Stories are sized for ~1 Ralph loop each (~15–30 min review + targeted fixes). Execute **in order**; later stories may depend on fixes from earlier ones.
+Stories are sized for ~one agent session each (~15–30 min review + targeted fixes). Execute **in order**; later stories may depend on fixes from earlier ones.
 
 Legend: **Effort** S ≤ 15 min, M ≤ 30 min, L ≤ 60 min.
 
@@ -391,5 +391,5 @@ Execute stories in numeric order (052.1 → 052.18). Storage foundations land fi
 ## Tracking
 
 - Link each story's PR back to this epic.
-- Mirror story status in `.ralph/fix_plan.md` under a new `EPIC-052` section for Ralph-loop execution.
+- Mirror story status in `this epic file (autonomous fix_plan retired EPIC-077)` under a new `EPIC-052` section for agent execution.
 - Update `STATUS.md` epics table as stories complete.

@@ -23,4 +23,4 @@ Full code review of configuration, profiles, metrics, and observability.
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 023-A through 023-C.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

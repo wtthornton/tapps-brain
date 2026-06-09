@@ -510,7 +510,7 @@ class TestBackwardsCompat:
     def test_no_header_list_tools_returns_8_eager_tools(self) -> None:
         """No profile header → list_tools returns 8 eager tools (TAP-1985).
 
-        Same surface as explicit 'full': the callable set is 64, but 56 are
+        Same surface as explicit 'full': the callable set is 67, but 59 are
         deferred and hidden from the default tools/list payload (TAP-2725).
         """
         registry = ProfileRegistry()

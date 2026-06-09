@@ -31,7 +31,7 @@ Agents must use **three evidence channels**: in-repo contracts, **web** primary 
 | Epic close (**064.CLEAN**) | `docs_validate_epic` on `EPIC-064.md`; `docs_check_cross_refs` on `docs/guides/`, `docs/planning/` as touched; `docs_check_style` on all new/changed markdown under those trees. | `tapps_checklist` with `task_type: "epic"`. If **any** story touched Python under `src/tapps_brain/`: run `tapps_impact_analysis` per changed file; `tapps_quality_gate` on `visual_snapshot.py` (or other hot modules) if modified; `tapps_dead_code` on `src/tapps_brain/` if exports or snapshot code moved; `tapps_dependency_graph` if imports changed. | Extend **Research notes** table with any new technique (one primary URL per row). |
 | Security-sensitive doc (e.g. privacy tiers, export paths) | Same as docs row; ensure links to `visual-snapshot.md` / privacy guides remain valid. | Optional `tapps_security_scan` if new SQL or migration snippets ship alongside this epic (unlikely for pure HTML—document “N/A” if skipped). | [WCAG Understanding](https://www.w3.org/WAI/WCAG22/Understanding/) as needed |
 
-**Cursor naming:** tasks in `.ralph/fix_plan.md` use the `mcp__tapps-mcp <tool>` / `mcp__docs-mcp <tool>` invocation style (same as EPIC-059–063 CLEAN tasks).
+**Cursor naming:** tasks in `this epic file (autonomous fix_plan retired EPIC-077)` use the `mcp__tapps-mcp <tool>` / `mcp__docs-mcp <tool>` invocation style (same as EPIC-059–063 CLEAN tasks).
 
 ## Research notes (2026 — for implementation)
 

@@ -160,7 +160,7 @@ FTS5 special characters are tested, but real-world memory values contain emoji, 
 **Status:** done
 **Effort:** S
 **Depends on:** STORY-016.1, STORY-016.2, STORY-016.3, STORY-016.4, STORY-016.5, STORY-016.6
-**Context refs:** `docs/planning/STATUS.md`, `.ralph/fix_plan.md`
+**Context refs:** `docs/planning/STATUS.md`, `this epic file (autonomous fix_plan retired EPIC-077)`
 **Verification:** `pytest tests/ -v --tb=short --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95`
 
 #### Why

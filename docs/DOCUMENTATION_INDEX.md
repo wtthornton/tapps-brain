@@ -45,7 +45,7 @@
 ## Getting Started
 
 - [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — <!-- tapps-generated: v3.10.13 --> *(updated 2026-05-18)*
-- [Ralph Setup Guide (Windows + WSL)](RALPH_SETUP_GUIDE.md) — Step-by-step guide for setting up Ralph on a new project. Covers the common pitfalls. *(updated 2026-05-11)*
+- [Ralph setup (retired 2026-06-09)](planning/archive/ralph-retired/RALPH_SETUP_GUIDE.md) — Archived; delivery is Linear-only (EPIC-077).
 - [tapps-brain benchmarks](benchmarks/README.md) — End-to-end QA benchmarks for tapps-brain. These are **answer-based** *(updated 2026-05-11)*
 - [tapps-brain case studies](case-studies/README.md) — Production adopter case studies — how real teams run tapps-brain in their *(updated 2026-05-11)*
 - [NLT Labs — Brand Style Sheet & Logo Pack Audit](design/nlt-brand/README.md) — | Item | Location | *(updated 2026-05-11)*
@@ -53,7 +53,7 @@
 - [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-05-11)*
 - [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-05-11)*
 - [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-05-17)*
-- [Ralph setup guide](guides/ralph-setup.md) — This guide covers the end-to-end setup for running Ralph against the *(updated 2026-05-16)*
+- [Ralph setup guide (retired)](planning/archive/ralph-retired/ralph-setup.md) — Archived EPIC-077; use Linear for delivery.
 ## Guides
 
 - [Getting Started with tapps-brain](ONBOARDING.md) — - Python >=3.12 *(updated 2026-05-19)*
@@ -82,7 +82,7 @@
 - [Knowledge Graph — Agent Guide](guides/knowledge-graph.md) — KG + experience MCP tools including `brain_query_events` (v3.24.0+). *(updated 2026-06-09)*
 - [Knowledge-Graph Populate-then-Retrieve Flow](guides/kg-experience-flow.md) — resolve → record → neighbours **or** record → `brain_query_events`. *(updated 2026-06-09)*
 - [LangGraph Store Adapter (`@tapps-brain/langgraph`)](guides/langgraph-adapter.md) — **Package:** `@tapps-brain/langgraph` *(updated 2026-05-11)*
-- [Linear automation via a dedicated Claude Agent user](guides/linear-claude-agent.md) — **Status:** Partially Active (as of 2026-05-16) — `scripts/run-ralph.sh` *(updated 2026-05-16)*
+- [Linear automation via a dedicated Claude Agent user](guides/linear-claude-agent.md) — Personal API key poller design (TAP-1845 human step pending). Ralph wrapper retired — see `scripts/archive/ralph/`.
 - [LLM Brain Guide](guides/llm-brain-guide.md) — Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools. *(updated 2026-05-12)*
 - [MCP tools for repo-embedded agents](guides/mcp-tools-for-agents.md) — Complete reference for every tool the deployed tapps-brain exposes over MCP (55 tools, verified live against `tapps-b... *(updated 2026-05-16)*
 - [MCP Server: Using tapps-brain with AI Assistants](guides/mcp.md) — tapps-brain exposes its full API via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), making per... *(updated 2026-05-12)*
@@ -181,7 +181,7 @@
 - [EPIC-037: Plugin SDK Realignment — Fix API Contract to Match Real SDK](planning/epics/EPIC-037.md) — Plugin SDK realignment epic (archived). *(updated 2026-05-11)*
 - [EPIC-038: Plugin Simplification — Remove Dead Compat Layers and Streamline](planning/epics/EPIC-038.md) — Plugin simplification epic (archived). *(updated 2026-05-11)*
 - [EPIC-039: Replace Custom MCP Client with Official @modelcontextprotocol/sdk](planning/epics/EPIC-039.md) — The plugin's `mcp_client.ts` is a hand-rolled JSON-RPC 2.0 client (~466 lines) that implements Content-Lengt... *(updated 2026-05-11)*
-- [EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades](planning/epics/EPIC-040.md) — Per-story checkboxes, phases, and GitHub issue mapping (**#24–#44**) live in **`.ralph/fix_plan.md`** under `## EPIC-... *(updated 2026-05-11)*
+- [EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades](planning/epics/EPIC-040.md) — Done; story checklist in epic file (autonomous fix_plan retired EPIC-077).
 - [EPIC-041: Federation hub + Hive groups + operator docs](planning/epics/EPIC-041.md) — Post–**#49** (v1 project-local `memory_group`) work queued on GitHub and in [`open-issues-roadmap.md`](../open-issues... *(updated 2026-05-11)*
 - [Improvement program: `features-and-technologies.md` (index)](planning/epics/EPIC-042-feature-tech-index.md) — **Source map:** [`docs/engineering/features-and-technologies.md`](../../engineering/features-and-technologies.md) *(updated 2026-05-11)*
 - [EPIC-042: Retrieval and ranking (RAG-style memory)](planning/epics/EPIC-042.md) — Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Core product valu... *(updated 2026-05-11)*
@@ -258,7 +258,7 @@
 - [Story 70.5 -- Parity test — MCP tool registry versus HTTP route manifest](planning/epics/stories/STORY-070.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.6 -- Update Docker image and compose for unified HTTP/MCP surface](planning/epics/stories/STORY-070.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.7 -- AgentForge integration spike and remote-MCP migration guide](planning/epics/stories/STORY-070.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy everything below the line into a new chat (or Ralph task) as the **user message**. *(updated 2026-05-11)*
+- [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy into a new chat as the **user message** (Linear-driven delivery).
 - [Open Issues Roadmap — retired](planning/open-issues-roadmap.md) — **Status:** retired 2026-04-21. This file is no longer the canonical delivery queue. *(updated 2026-05-11)*
 - [File-backed memory mirror — feasibility report (TAP-2095)](research/file-backed-memory-mirror.md) — **Status:** spike complete · **Recommendation:** **build narrower** — ship a one-shot `brain_export --layout=managed-... *(updated 2026-05-18)*
 - [Story 70.1 -- Streamable-HTTP MCP transport](stories/STORY-070.1-streamable-http-mcp-transport.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*

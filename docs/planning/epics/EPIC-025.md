@@ -24,4 +24,4 @@ Review all integration tests, benchmarks, test infrastructure, TypeScript plugin
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 025-A through 025-G.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

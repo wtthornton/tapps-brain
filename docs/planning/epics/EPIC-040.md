@@ -12,7 +12,7 @@ completed: 2026-04-09
 
 ## Canonical task list
 
-Per-story checkboxes, phases, and GitHub issue mapping (**#24–#44**) live in **`.ralph/fix_plan.md`** under `## EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades`. That section is the detailed execution list; this file is the planning-directory anchor and summary.
+Per-story checkboxes, phases, and GitHub issue mapping (**#24–#44**) tracked in this epic file (autonomous fix_plan retired EPIC-077).
 
 ## Summary
 

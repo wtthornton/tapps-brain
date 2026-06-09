@@ -160,12 +160,16 @@ class TestGetNeighborsUuidValidation:
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
             svc._get_or_create_cm.return_value = MagicMock(name="cm")
             svc._DEFAULT_BRAIN_ID = "brain"
+            svc.collect_neighbor_entity_ids.return_value = {
+                "entity_ids": [VALID_UUID_A],
+            }
             svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": [VALID_UUID_A]}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_get_neighbors")
             body = json.loads(tool.fn(entity_ids_json=json.dumps([VALID_UUID_A])))
 
         assert "error" not in body
+        svc.collect_neighbor_entity_ids.assert_called_once()
         svc.get_neighbors.assert_called_once()
 
 

@@ -77,7 +77,7 @@ Move the Hive Hub panel and Agents table to data-page=agents. Add a client-side 
 - [ ] Agents and Hive page — SVG topology diagram and registry code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on SVG topology generation and agent-detail drawer; explicit XSS check on any innerHTML using snapshot data (agent_id, namespace strings)
+- [ ] tapps-reviewer run on SVG topology generation and agent-detail drawer; explicit XSS check on any innerHTML using snapshot data (agent_id, namespace strings)
 - [ ] SVG font-family set explicitly on all text elements (not relying on CSS inheritance)
 - [ ] All ACs verified at `http://localhost:8090` with demo JSON
 

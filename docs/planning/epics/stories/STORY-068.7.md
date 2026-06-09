@@ -68,7 +68,7 @@ Move Integrity checks and Privacy/Export info to data-page=integrity. Add a visu
 - [ ] Integrity and Export page — checks, privacy tiers, export workflow code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on privacy-tier selector and integrity display; no Critical issues open
+- [ ] tapps-reviewer run on privacy-tier selector and integrity display; no Critical issues open
 - [ ] EPIC-066 schema field check completed before implementation (see Technical Notes)
 - [ ] All ACs verified at `http://localhost:8090` with demo JSON
 

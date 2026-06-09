@@ -272,7 +272,7 @@ The CLAUDE.md rules above tell Claude *when* to call `brain_recall`, but a
 fresh session can still forget on turn 1. If you want the harness to
 guarantee the recall happens, add the SessionStart hook documented in
 [claude-code-hooks.md](claude-code-hooks.md). It is additive to any
-existing Ralph / TappsMCP hooks and does not require secrets in the hook
+existing TappsMCP hooks and does not require secrets in the hook
 script (it uses the MCP session that `.mcp.json` already opens).
 
 ### 6c. (Optional) Install the tapps-brain Claude Code skill

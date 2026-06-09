@@ -24,4 +24,4 @@ Full code review of all user-facing interfaces: MCP server (54 tools), CLI (41 c
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 022-A through 022-G.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

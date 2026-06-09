@@ -65,8 +65,7 @@ registered `tapps-brain` as a server.
 ### Register it in settings.json
 
 Append a third entry to the existing `hooks.SessionStart` array in
-`.claude/settings.json` (don't replace — TappsMCP and Ralph use earlier
-entries):
+`.claude/settings.json` (append — TappsMCP hooks use the same array):
 
 ```json
 {
@@ -210,32 +209,27 @@ Hooks are the wrong layer for this change.
 
 ## Interaction with existing hooks
 
-The repo's `.claude/hooks/` directory contains hooks for **three**
+The repo's `.claude/hooks/` directory contains hooks for **two**
 distinct systems:
 
-- **Ralph** (`.ralph/hooks/on-*.sh`) — the autonomous development loop.
-  Fires on SessionStart/Stop/PreToolUse/SubagentStop/TeammateIdle/
-  TaskCompleted.
 - **TappsMCP** (`.claude/hooks/tapps-*.sh`) — the quality tool.
   `tapps-session-start.sh` injects a reminder to call
-  `tapps_session_start()`; `tapps-memory-auto-capture.sh` runs
-  `tapps-mcp auto-capture` on Stop; `tapps-pre-compact.sh` backs up
-  scoring context.
+  `tapps_session_start()`; `tapps-stop.sh` reminds about validation;
+  `tapps-pre-compact.sh` backs up scoring context.
 - **tapps-brain** (this guide) — the cross-session memory service.
   `tapps-brain-session-start.sh` is the only adopted hook.
 
-All three coexist under the same `hooks.SessionStart` array in
+Both coexist under the same `hooks.SessionStart` array in
 `.claude/settings.json` — each entry is a separate matcher / command
 pair. They run independently; Claude sees the concatenation of their
 stdout as one system-reminder block on turn 1.
 
-The three system-reminders visible at the start of every session are:
+**Autonomous loop hooks retired (EPIC-077, 2026-06-09).** See `docs/planning/archive/ralph-retired/`.
 
-1. Ralph: "Injecting Ralph loop context…" (from the `.ralph` install).
-2. TappsMCP: "REQUIRED: Call tapps_session_start() NOW as your first
-   action."
-3. tapps-brain (new): "Before answering the user's first message, call
-   brain_recall…"
+The system-reminders visible at the start of every session include:
+
+1. TappsMCP: "REQUIRED: Call tapps_session_start() NOW as your first action."
+2. tapps-brain: "Before answering the user's first message, call brain_recall…"
 
 ## Troubleshooting
 

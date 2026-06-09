@@ -677,7 +677,7 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_record_feedback(  # noqa: PLR0911  # dual-path tool: guard-clause early returns
+    def brain_record_feedback(
         feedback_type: str,
         edge_id: str = "",
         entry_key: str = "",

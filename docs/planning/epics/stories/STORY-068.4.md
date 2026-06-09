@@ -66,7 +66,7 @@ Move Pulse, Memory Groups, Tag Cloud, and Access Histograms from the main scroll
 - [ ] Memory page — pulse, groups, tags, histograms code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on memory page markup and JS changes; no Critical issues open
+- [ ] tapps-reviewer run on memory page markup and JS changes; no Critical issues open
 - [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->

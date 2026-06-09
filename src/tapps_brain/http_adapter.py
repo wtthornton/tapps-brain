@@ -3514,11 +3514,11 @@ def create_app(
                 detail={"error": "bad_request", "detail": "entity_refs must be a list."},
             )
 
-        validated_entity_ids = [
-            _validate_uuid_field(e, f"entity_ids[{i}]")
-            for i, e in enumerate(entity_ids)
-            if e
-        ] if isinstance(entity_ids, list) else []
+        validated_entity_ids = (
+            [_validate_uuid_field(e, f"entity_ids[{i}]") for i, e in enumerate(entity_ids) if e]
+            if isinstance(entity_ids, list)
+            else []
+        )
 
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc

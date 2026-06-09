@@ -7,26 +7,15 @@ Feature intake and triage policy for agent-created `feat` work lives in:
 - `AGENT_FEATURE_GOVERNANCE.md`
 - `ISSUE_TRIAGE_VIEWS.md`
 
-## Open issues roadmap vs Ralph tooling
+## Delivery queue (Linear)
 
-**Plan (what to follow when):**
+**Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — priority and status live in Linear; acceptance criteria live in [`epics/`](epics/).
 
-| Context | Source of truth for *what* to do next | Packaged in PyPI? |
-|--------|----------------------------------------|-------------------------------|
-| Human or Cursor agent implementing shipped features | [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) (priority + status); `epics/` for design | N/A — delivery is tracked in Linear |
-| Ralph autonomous loop (Claude Code CLI) | `.ralph/fix_plan.md` for *that loop’s* next unchecked task | **No** — `.ralph/` is dev automation only, not part of the installable package |
+- Feature PRs and agents should **update Linear** when priorities or status change, and update epic files when acceptance criteria or story scope change.
+- File new work via the `linear-issue` skill before coding (`FEATURE_FEASIBILITY_CRITERIA.md`).
 
-**Fix (avoid drift and wrong edits):**
-
-- Feature PRs and non-Ralph agents should **update Linear** when priorities or status change, and update epic files in [`epics/`](epics/) when acceptance criteria or story scope change.
-- They should **not** edit `.ralph/` for bookkeeping unless the maintainer explicitly wants Ralph’s checklist synced.
-- Ralph is allowed to update `.ralph/fix_plan.md` per `.ralph/PROMPT.md` after its own loops; that does not substitute for updating Linear for product tracking.
-
-**Update (ongoing):**
-
-- When starting a Ralph campaign on Linear-tracked work, **copy or reconcile** the OPEN-ISSUES block in `fix_plan.md` from the relevant Linear issues so Ralph’s queue matches delivery intent.
-
-> **2026-04-21 change:** [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer after repeated drift against `epics/` frontmatter. Linear is now the system of record for priority and status; [`epics/`](epics/) remains the source of truth for acceptance criteria and story design.
+> **2026-04-21:** [`open-issues-roadmap.md`](open-issues-roadmap.md) was retired to a pointer — Linear is the system of record.  
+> **2026-06-09:** Ralph autonomous loop retired (EPIC-077 / TAP-3198). Archived under `scripts/archive/ralph/` and `docs/planning/archive/ralph-retired/`.
 
 ## Optional backlog gating
 
@@ -96,7 +85,7 @@ docs/planning/
     ├── EPIC-037.md      ← Plugin SDK realignment — fix API contract to match real SDK (done)
     ├── EPIC-038.md      ← Plugin simplification — remove dead compat layers (done)
     ├── EPIC-039.md      ← Replace custom MCP client with official @modelcontextprotocol/sdk (done)
-    ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (active; full story checklist in `.ralph/fix_plan.md` § EPIC-040)
+    ├── EPIC-040.md      ← tapps-brain v2.0 research-driven upgrades (done)
     ├── EPIC-041.md      ← Federation hub memory_group (#51), Hive groups (#52), operator clarity (#63–#64)
     ├── EPIC-042.md … EPIC-051.md  ← Feature/technology improvement program (`docs/engineering/features-and-technologies.md`; index `epics/EPIC-042-feature-tech-index.md`; **EPIC-051** checklist decisions in `adr/ADR-00*.md`)
     ├── EPIC-059.md … EPIC-063.md  ← **Greenfield v3 (pre-GA):** Postgres-only, agent-first runtime, observability, MCP-primary, trust boundaries (no v2 migration path)
@@ -219,7 +208,7 @@ The AI will load the epic context, find the story, read its context refs, implem
 - Update story status in the epic file as work progresses.
 - When all stories in an epic are `done`, set the epic status to `done`.
 - Commit status changes alongside the code they relate to.
-- Optionally refresh [`STATUS.md`](./STATUS.md) when schema version, default test counts, or major interface changes land (human-oriented snapshot; Ralph task order stays in `.ralph/fix_plan.md`).
+- Optionally refresh [`STATUS.md`](./STATUS.md) when schema version, default test counts, or major interface changes land (human-oriented snapshot).
 
 ### Commit Messages
 

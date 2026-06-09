@@ -152,4 +152,4 @@ The real `registerTool` accepts a tool object (`AnyAgentTool`) or a factory func
                     └──→ 037.4 (entry + engine signatures)
 ```
 
-037.2, 037.3, and 037.4 can be worked in parallel after 037.1, but sequential is fine for Ralph.
+037.2, 037.3, and 037.4 can be worked in parallel after 037.1, but sequential is fine sequentially.

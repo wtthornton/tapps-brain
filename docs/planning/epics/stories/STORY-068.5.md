@@ -67,7 +67,7 @@ Move retrieval and vector stats panels to data-page=retrieval. Add explicit P50/
 - [ ] Retrieval page — mode, latency histogram, vector stats code reviewed and approved
 - [ ] Tests passing (unit + integration)
 - [ ] No regressions introduced
-- [ ] ralph-reviewer run on retrieval page markup and JS changes; no Critical issues open
+- [ ] tapps-reviewer run on retrieval page markup and JS changes; no Critical issues open
 - [ ] All ACs verified at `http://localhost:8090` with demo JSON
 
 <!-- docsmcp:end:definition-of-done -->

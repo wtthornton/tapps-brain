@@ -23,4 +23,4 @@ Full code review of cross-project and cross-agent sharing systems. The HiveStore
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 021-A through 021-D.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

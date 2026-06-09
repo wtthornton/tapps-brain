@@ -118,5 +118,5 @@ All tasks are independent and can be done in any order.
 ## Notes
 
 - All changes must maintain 95% test coverage
-- All tasks are small (S effort) — each fits a single Ralph loop
+- All tasks are small (S effort) — each fits a single agent session
 - No new dependencies or architectural changes

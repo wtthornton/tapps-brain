@@ -41,7 +41,7 @@ Who talks to tapps-brain and why. The brain is one Docker container fronted by H
 C4Context
     title tapps-brain — System Context
 
-    Person(coding_agent, "Coding Agent", "Claude Code, Cursor, AgentForge agent, Ralph loop")
+    Person(coding_agent, "Coding Agent", "Claude Code, Cursor, AgentForge agent")
     Person(operator, "Operator", "Human SRE / dev — uses CLI for maintenance, migrations, audits")
 
     System_Boundary(deployment, "tapps-brain deployment") {

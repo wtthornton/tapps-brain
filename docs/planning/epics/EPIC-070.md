@@ -208,7 +208,7 @@ Write a remote-client example in examples/agentforge-client.py using the MCP Pyt
 | `docker/Dockerfile.http` | 5 | 1 recent: 2d6373a feat: EPIC-066/067 — Postgres productio... | - |
 | `docker/docker-compose.hive.yaml` | 83 | 5 recent: cd8ff51 feat(EPIC-068): multi-page brain-visual... | - |
 | `pyproject.toml` | 168 | 5 recent: 8b95daa release: v3.5.1 — patch 3 bugs caught b... | - |
-| `.mcp.json` | 32 | 1 recent: 4e64379 fix(ralph): enable tapps-mcp permission... | - |
+| `.mcp.json` | 32 | 1 recent: 4e64379 fix(agent): enable tapps-mcp permission... | - |
 
 <!-- docsmcp:end:files-affected -->
 

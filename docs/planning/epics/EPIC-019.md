@@ -25,4 +25,4 @@ Full code review of memory lifecycle management: decay, consolidation, GC, promo
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 019-A through 019-E.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

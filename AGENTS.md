@@ -82,20 +82,11 @@ on every push and PR — no Docker needed locally just for CI. The
 automatically in CI, and `scripts/apply_all_migrations.py` runs before pytest
 to ensure all schema migrations are applied.
 
-## Ralph (autonomous loop — Linux / Ubuntu)
+## Delivery queue
 
-Run commands from the **repository root** (the directory that contains `pyproject.toml`). Do **not** type a literal path like `/path/to/tapps-brain` — that is only a placeholder in generic docs. Use your real clone path, for example:
+Run commands from the **repository root** (the directory that contains `pyproject.toml`).
 
-```bash
-cd ~/code/tapps-brain          # or: cd /home/you/your-clone/tapps-brain
-test -f pyproject.toml && echo "OK: repo root" || echo "Wrong directory"
-uv sync --group dev
-export PATH="$HOME/.local/bin:$PATH"   # so `ralph` and `claude` resolve if installed there
-claude --version
-ralph                                  # or: ralph --live
-```
-
-Ralph reads `.ralph/fix_plan.md` and `.ralph/PROMPT.md`. Logs: `.ralph/logs/`. Full detail: `CLAUDE.md` § Ralph.
+**Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic specs: `docs/planning/epics/`. Ralph autonomous loop **retired 2026-06-09** — see `docs/planning/epics/EPIC-077.md`.
 
 ## v3 Load Smoke (concurrent-agent benchmark)
 

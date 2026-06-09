@@ -25,4 +25,4 @@ Full code review of all retrieval, scoring, ranking, and search files. The retri
 
 ## Stories
 
-See `.ralph/fix_plan.md` tasks 018-A through 018-E.
+Story checklist in this epic file (autonomous fix_plan retired EPIC-077).

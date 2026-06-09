@@ -36,7 +36,7 @@ Any accepted feature must remain aligned with repository constraints in `CLAUDE.
 - Core remains synchronous by design (no async/await architecture drift in core modules).
 - Storage is PostgreSQL write-through (private store, Hive, Federation) with migration safety (ADR-007).
 - Changes are backward-compatible by default and avoid forced migrations unless explicitly approved.
-- Feature proposals must not modify Ralph control files (`.ralph/`, `.ralphrc`) as part of feature work.
+- Feature proposals must not modify retired autonomous-loop control files (see EPIC-077).
 - Avoid introducing always-on infra dependencies that conflict with local-first/offline expectations.
 
 If a proposed feature requires violating one of these constraints, mark `reject` or `approve_with_rescope`.
