@@ -6,7 +6,7 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 
 **Project:** tapps-brain — PostgreSQL-backed memory for AI assistants (pgvector HNSW + tsvector hybrid search, Hive federation, Streamable HTTP MCP at `:8080`, `AgentBrain` facade, async-native HTTP write/recall path). Postgres-only (ADR-007).
 
-**Start by reading:** `CLAUDE.md`, `docs/planning/STATUS.md`, then the epic you implement (if any). **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) — **zero open issues as of 2026-06-09**. File new work via `linear-issue` skill before coding. Ralph loop only: `.ralph/fix_plan.md`.
+**Start by reading:** `CLAUDE.md`, `docs/planning/STATUS.md`, then the epic you implement (if any). **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Active epic: [TAP-3176](https://linear.app/tappscodingagents/issue/TAP-3176) / `docs/planning/epics/EPIC-076.md` (dev/deploy stack isolation). File new work via `linear-issue` skill before coding. Ralph loop only: `.ralph/fix_plan.md`.
 
 **Package version:** `3.24.0` (`pyproject.toml`).
 
@@ -28,7 +28,20 @@ Copy everything below the line into a new chat (or Ralph task) as the **user mes
 - **EPIC-042 eval/GitHub hygiene** — trigger (b): milestone or stakeholder requires epic closure.
 - **In-product NLI/async conflict wiring** — trigger (c): explicit product requirement (never on sync `save`).
 
-**When Linear backlog is empty (current state):**
+**EPIC-076 (TAP-3176) — in progress:**
+
+| Story | Linear | Status |
+|-------|--------|--------|
+| 076.1 DNS isolation | TAP-3177 | Done |
+| 076.2 Makefile guards | TAP-3179 | Done |
+| 076.3 Profile-aware healthcheck | TAP-3178 | Done |
+| 076.4 Pool recovery runbook | TAP-3180 | Backlog |
+| 076.5 wire-repo-to-brain.sh | TAP-3181 | Backlog |
+| 076.6 hive-deploy register | TAP-3182 | Backlog |
+| 076.7 test_profile_filter | TAP-3183 | Backlog |
+| 076.8 Docs runbook | TAP-3184 | Backlog |
+
+**When Linear backlog is otherwise empty:**
 
 | If product needs… | Action |
 |-------------------|--------|

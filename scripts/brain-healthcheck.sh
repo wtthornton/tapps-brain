@@ -3,8 +3,9 @@
 # tapps-brain (container tapps-brain-http) and that the MCP round-trip works.
 #
 # Usage:
-#   bash scripts/brain-healthcheck.sh           # from repo root
-#   bash scripts/brain-healthcheck.sh --quiet   # suppress per-check output
+#   bash scripts/brain-healthcheck.sh                    # from repo root
+#   bash scripts/brain-healthcheck.sh --quiet            # suppress per-check output
+#   bash scripts/brain-healthcheck.sh --profile coder    # override X-Brain-Profile expectations
 #
 # Exit codes: 0 all checks passed, 1 warnings only, 2 at least one failure.
 #
@@ -15,9 +16,21 @@
 set -uo pipefail
 
 QUIET=0
-if [[ "${1:-}" == "--quiet" ]]; then
-    QUIET=1
-fi
+CLI_PROFILE=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --quiet) QUIET=1; shift ;;
+        --profile)
+            if [[ -z "${2:-}" ]]; then
+                echo "brain-healthcheck: --profile requires a value" >&2
+                exit 2
+            fi
+            CLI_PROFILE="$2"
+            shift 2
+            ;;
+        *) shift ;;
+    esac
+done
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -76,14 +89,22 @@ sys.stdout.write("\n".join(lines) if lines else data)
 # Emits: "<session-id>" for stateful, or "STATELESS" when the server returns a
 # valid initialize result but no Mcp-Session-Id header (TAPPS_BRAIN_STATELESS_HTTP=1).
 # Emits empty string on failure.
+mcp_profile_args() {
+    if [[ -n "${CHECK_PROFILE:-}" && "$CHECK_PROFILE" != "full" ]]; then
+        printf '%s' "-H" "X-Brain-Profile: ${CHECK_PROFILE}"
+    fi
+}
+
 mcp_initialize() {
     local tmp_headers tmp_body sid init_ok
     tmp_headers="$(mktemp)"
     tmp_body="$(mktemp)"
+    # shellcheck disable=SC2046
     curl -sS -D "$tmp_headers" -o "$tmp_body" -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
         -H "X-Project-Id: ${PROJECT_ID}" \
         -H "X-Agent-Id: ${AGENT_ID}" \
+        $(mcp_profile_args) \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
         --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"brain-healthcheck","version":"1.0"}}}' \
@@ -112,10 +133,12 @@ except Exception:
 
 mcp_notify_initialized() {
     local sid="$1"
+    # shellcheck disable=SC2046
     curl -sS -o /dev/null -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
         -H "X-Project-Id: ${PROJECT_ID}" \
         -H "X-Agent-Id: ${AGENT_ID}" \
+        $(mcp_profile_args) \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
         -H "Mcp-Session-Id: ${sid}" \
@@ -125,10 +148,12 @@ mcp_notify_initialized() {
 # mcp_call <session-id> <json-rpc body> — emits parsed JSON body.
 mcp_call() {
     local sid="$1" body="$2"
+    # shellcheck disable=SC2046
     curl -sS -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
         -H "X-Project-Id: ${PROJECT_ID}" \
         -H "X-Agent-Id: ${AGENT_ID}" \
+        $(mcp_profile_args) \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
         -H "Mcp-Session-Id: ${sid}" \
@@ -210,6 +235,15 @@ except Exception:
     else
         warn ".cursor/mcp.json: tapps-brain block missing X-Brain-Profile (Cursor gets full tool surface)"
     fi
+fi
+
+CHECK_PROFILE="${CLI_PROFILE:-${BRAIN_PROFILE:-full}}"
+if [[ -n "$CLI_PROFILE" ]]; then
+    pass "healthcheck profile override: $CHECK_PROFILE"
+elif [[ -n "$BRAIN_PROFILE" ]]; then
+    pass "healthcheck profile from .mcp.json: $CHECK_PROFILE"
+else
+    warn "healthcheck profile: full (no X-Brain-Profile in .mcp.json)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -298,11 +332,25 @@ try:
 except Exception:
     pass
 ' 2>/dev/null)"
-        for t in brain_recall brain_remember memory_save memory_search memory_recall memory_delete; do
+        case "$CHECK_PROFILE" in
+            coder)
+                required_tools=(brain_recall brain_remember brain_status)
+                ;;
+            reviewer)
+                required_tools=(brain_recall memory_get hive_search memory_search)
+                ;;
+            full|*)
+                required_tools=(
+                    brain_recall brain_remember
+                    memory_save memory_search memory_recall memory_delete
+                )
+                ;;
+        esac
+        for t in "${required_tools[@]}"; do
             if printf ' %s ' "$tool_names" | grep -q " $t "; then
-                pass "tool exposed: $t"
+                pass "tool exposed ($CHECK_PROFILE): $t"
             else
-                warn "expected tool missing: $t"
+                fail "required tool missing for profile '$CHECK_PROFILE': $t"
             fi
         done
 

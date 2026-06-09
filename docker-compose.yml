@@ -3,6 +3,11 @@
 # Starts a local Postgres + pgvector instance for running the test suite.
 # Credentials are intentionally simple — do NOT use in production.
 #
+# Compose project: `tapps-brain-dev` (via `make brain-up` / DEV_COMPOSE in the
+# Makefile). This keeps the dev DB on network `tapps-brain-dev_default`, separate
+# from the deployed hive stack (`tapps-brain_default` / hostname `tapps-brain-db`).
+# See EPIC-076.
+#
 # For production or team deployment see docker/docker-compose.hive.yaml
 # and docs/guides/hive-deployment.md.
 #

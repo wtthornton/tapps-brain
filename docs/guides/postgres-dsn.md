@@ -122,6 +122,17 @@ Example:
 }
 ```
 
+## Dev vs deploy Postgres (EPIC-076)
+
+Two Compose stacks can run on one machine; they must use **different Compose projects**:
+
+| Target | Makefile | Compose project | Network | DB hostname (in-network) | Database |
+|---|---|---|---|---|---|
+| Pytest / local dev | `make brain-up` | `tapps-brain-dev` | `tapps-brain-dev_default` | `tapps-brain-db` | `tapps_brain_dev` |
+| Deployed brain (MCP at :8080) | `make hive-up` | `tapps-brain` | `tapps-brain_default` | `tapps-brain-db` | `tapps_brain` |
+
+Before EPIC-076, both files used project `tapps-brain`, so `make brain-up` could register the dev container as `tapps-brain-db` on `tapps-brain_default` and break `tapps-brain-http` (symptoms: `/ready` 503, `tapps_runtime` auth errors). Always use Makefile targets — not bare `docker compose up` at the repo root.
+
 ## See also
 
 - [`.env.example`](../../.env.example) — ready-made template at repo root

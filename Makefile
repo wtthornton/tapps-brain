@@ -9,7 +9,10 @@
 #
 # See docs/guides/postgres-dsn.md for all env-var options.
 
-COMPOSE       := docker compose
+# Dev pytest Postgres (docker-compose.yml). Project `tapps-brain-dev` keeps the
+# dev DB off `tapps-brain_default` so `tapps-brain-db` DNS stays hive-only
+# (EPIC-076 / STORY-076.1).
+DEV_COMPOSE   := docker compose -p tapps-brain-dev
 # Full stack (Postgres + unified tapps-brain-http + migrate + dashboard).
 # Project name `tapps-brain` keeps the network name `tapps-brain_default`,
 # which AgentForge and other consumers resolve by DNS.
@@ -32,7 +35,26 @@ TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
         hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-brain-env \
-        publish-brain-image
+        check-compose-isolation publish-brain-image
+
+# Abort when the dev Postgres container is on tapps-brain_default (pre-076.1 layout
+# or bare `docker compose up` without -p tapps-brain-dev). Set BRAIN_FORCE=1 to skip.
+check-compose-isolation:
+	@if [ "$${BRAIN_FORCE:-0}" = "1" ]; then exit 0; fi; \
+	if ! docker network inspect tapps-brain_default >/dev/null 2>&1; then exit 0; fi; \
+	if docker network inspect tapps-brain_default --format '{{range .Containers}}{{.Name}} {{end}}' \
+	   | grep -q 'tapps-brain-dev-db'; then \
+	  echo ""; \
+	  echo "ERROR: tapps-brain-dev-db is on network tapps-brain_default."; \
+	  echo "       It hijacks hostname tapps-brain-db and breaks the hive MCP stack."; \
+	  echo "       Fix:  docker stop tapps-brain-dev-db"; \
+	  echo "             docker network disconnect tapps-brain_default tapps-brain-dev-db 2>/dev/null || true"; \
+	  echo "             make brain-down && make brain-up"; \
+	  echo "       (brain-up uses compose project tapps-brain-dev — see docs/guides/postgres-dsn.md)"; \
+	  echo "       Override: BRAIN_FORCE=1 make brain-up"; \
+	  echo ""; \
+	  exit 1; \
+	fi
 
 help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -42,21 +64,22 @@ help:  ## Show available targets
 # Docker / Postgres lifecycle
 # ---------------------------------------------------------------------------
 
-brain-up:  ## Start dev Postgres+pgvector in the background (docker-compose.yml)
-	$(COMPOSE) up -d
+brain-up:  ## Start dev Postgres (project tapps-brain-dev; safe alongside hive-up)
+	@$(MAKE) check-compose-isolation
+	$(DEV_COMPOSE) up -d
 	@echo "Waiting for Postgres to be ready…"
-	@$(COMPOSE) exec tapps-brain-db sh -c \
+	@$(DEV_COMPOSE) exec tapps-brain-db sh -c \
 	  'for i in $$(seq 1 30); do pg_isready -U tapps -d tapps_brain_dev && exit 0; sleep 1; done; echo "Postgres did not become ready in time"; exit 1'
 	@echo "Postgres is ready. DSN: $(TAPPS_DEV_DSN)"
 
 brain-down:  ## Stop dev containers and remove volumes (destructive)
-	$(COMPOSE) down -v
+	$(DEV_COMPOSE) down -v
 
 brain-restart:  ## Restart the dev Postgres container (keeps volumes)
-	$(COMPOSE) restart tapps-brain-db
+	$(DEV_COMPOSE) restart tapps-brain-db
 
 brain-psql:  ## Open a psql shell in the running dev Postgres container
-	$(COMPOSE) exec tapps-brain-db psql -U tapps -d tapps_brain_dev
+	$(DEV_COMPOSE) exec tapps-brain-db psql -U tapps -d tapps_brain_dev
 
 brain-migrate:  ## Apply all pending schema migrations (private, hive, federation)
 	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
@@ -135,11 +158,13 @@ check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 
 hive-deploy:  ## Full deploy: check env → build → migrate → up. Safe to rerun.
 	$(MAKE) check-brain-env
+	@$(MAKE) check-compose-isolation
 	$(MAKE) hive-build
 	$(HIVE_COMPOSE) up -d
 
 hive-up:  ## Start the unified brain stack without rebuilding
 	$(MAKE) check-brain-env
+	@$(MAKE) check-compose-isolation
 	$(HIVE_COMPOSE) up -d
 
 hive-down:  ## Stop brain containers (keeps volumes — data preserved)

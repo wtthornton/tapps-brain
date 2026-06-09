@@ -34,8 +34,8 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 
 | Target | Description |
 |---|---|
-| `make brain-up` | Start Postgres+pgvector in the background |
-| `make brain-down` | Stop containers and remove volumes |
+| `make brain-up` | Start **dev** Postgres+pgvector (`tapps-brain-dev` compose project; safe alongside `hive-up`) |
+| `make brain-down` | Stop dev containers and remove volumes |
 | `make brain-restart` | Restart the Postgres container (keeps data) |
 | `make brain-psql` | Open a psql shell in the running container |
 | `make brain-migrate` | Apply all pending schema migrations (idempotent) |
@@ -51,7 +51,7 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 
 ### DSN override
 
-The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_brain_dev` (matches the top-level `docker-compose.yml` quick-start service `tapps-brain-db`).
+The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_brain_dev` (matches `make brain-up`, compose project `tapps-brain-dev`). The **deployed** hive DB uses project `tapps-brain` and hostname `tapps-brain-db` on `tapps-brain_default` — do not mix the two on the same Docker network (see `docs/guides/postgres-dsn.md` § Dev vs deploy Postgres).
 Override with:
 
 ```bash
