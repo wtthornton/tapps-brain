@@ -95,28 +95,22 @@ redirect.
 
 ### 5b. (Optional) Restrict tools with a profile
 
-By default every client receives all 55 standard tools (`full` profile).
-Adding an `X-Brain-Profile` header cuts that down to the subset appropriate
-for the use case — fewer tool names in context, smaller schema payload, and
-narrower attack surface.
+By default every client receives all **67** standard tools (`full` profile), all visible in `tools/list` on the Docker reference stack. Adding an `X-Brain-Profile` header cuts that down to the subset appropriate for the use case.
 
 **Choosing a profile:**
 
-| Use case | Profile | Callable | Eager |
-|---|---|---|---|
-| AgentBrain consumer / brain_* facade only | `agent_brain` | 10 | 10 |
-| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 17 | 17 |
-| Read-only PR / code-review bot | `reviewer` | 8 | 8 |
-| Bulk ingestion / seeding script | `seeder` | 6 | 6 |
-| Human admin or operator console | `operator` | 72 | 8 |
-| Everything (backwards-compatible default) | `full` | 59 | 8 |
+| Use case | Profile | Tools (callable = eager) |
+|---|---|---|
+| AgentBrain consumer / brain_* facade only | `agent_brain` | 15 |
+| Repo-embedded coding agent (Claude Code, Cursor, Aider) | `coder` | 21 |
+| Read-only PR / code-review bot | `reviewer` | 9 |
+| Bulk ingestion / seeding script | `seeder` | 6 |
+| Human admin or operator console | `operator` | 80 |
+| Everything (backwards-compatible default) | `full` | 67 |
 
 Omitting the header is equivalent to `full` — no existing client breaks.
 
-> **`full` and `operator` defer 51 / 64 tools** (TAP-1985). The default `tools/list`
-> response on those profiles returns the 8-tool daily-driver budget; the rest are
-> reachable via `tools/call` and via Anthropic Tool Search BETA (opt-in client
-> header `advanced-tool-use-2025-11-20`). See [profiles.md](profiles.md#available-profiles).
+> **Deferred catalog (optional):** upstream bundles may mark tools with `defer_loading: true` to shrink the default `tools/list` payload to an 8-tool daily-driver set (TAP-1985). The **Docker reference stack disables defer_loading** so every registered tool appears in `tools/list`. Re-enable per-tool defer entries in `mcp_profiles.yaml` if you need the smaller catalog.
 
 **Claude Code** — add `X-Brain-Profile` to `.mcp.json`:
 

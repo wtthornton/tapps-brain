@@ -126,9 +126,9 @@ class TestGoldenFileContracts:
         """Golden file for 'operator' must list exactly 80 tools (EPIC-075: +3)."""
         assert len(_load_golden("operator")) == 80
 
-    def test_coder_golden_has_18_tools(self) -> None:
-        """Golden file for 'coder' must list exactly 18 tools (TAP-1973: +1)."""
-        assert len(_load_golden("coder")) == 18
+    def test_coder_golden_has_21_tools(self) -> None:
+        """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
+        assert len(_load_golden("coder")) == 21
 
     def test_reviewer_golden_has_9_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 9 tools (EPIC-074: +1)."""
@@ -138,9 +138,9 @@ class TestGoldenFileContracts:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
 
-    def test_agent_brain_golden_has_12_tools(self) -> None:
-        """Golden file for 'agent_brain' must list exactly 12 brain_* tools (TAP-2093: +1)."""
-        assert len(_load_golden("agent_brain")) == 12
+    def test_agent_brain_golden_has_15_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 15 brain_* tools (v3.24 +3)."""
+        assert len(_load_golden("agent_brain")) == 15
 
     def test_agent_brain_golden_is_brain_star_only(self) -> None:
         """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
@@ -292,27 +292,20 @@ class TestProfileFilterIntegration:
             f"  Missing (expected but not returned): {sorted(expected_visible - actual)}"
         )
 
-    def test_no_profile_header_returns_eager_full_set(self) -> None:
-        """No profile (contextvar None) → 8 eager tools from `full` (TAP-1985).
-
-        The full callable surface remains 59 (callable via tools/call), but
-        51 of those carry `defer_loading: true` and are hidden from the
-        default tools/list response.
-        """
+    def test_no_profile_header_returns_full_set(self) -> None:
+        """No profile (contextvar None) → full callable surface in tools/list."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        eager_full = registry.get("full") - registry.get_deferred("full")
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_no_profile", default=None
         )
-        # Deliberately NOT setting cv → simulates "no X-Brain-Profile header"
         mcp = _make_mock_mcp(full_tools)
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert {t.name for t in result} == eager_full
-        assert len(result) == 8
+        assert {t.name for t in result} == registry.get("full")
+        assert len(result) == 67
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -507,27 +500,21 @@ class TestBackwardsCompat:
             if env_backup is not None:
                 os.environ["TAPPS_BRAIN_DEFAULT_PROFILE"] = env_backup
 
-    def test_no_header_list_tools_returns_8_eager_tools(self) -> None:
-        """No profile header → list_tools returns 8 eager tools (TAP-1985).
-
-        Same surface as explicit 'full': the callable set is 67, but 59 are
-        deferred and hidden from the default tools/list payload (TAP-2725).
-        """
+    def test_no_header_list_tools_returns_full_surface(self) -> None:
+        """No profile header → list_tools returns the full callable surface."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 67  # callable surface unchanged (EPIC-075: +3)
-        eager_full = registry.get("full") - registry.get_deferred("full")
+        assert len(full_tools) == 67
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
         )
-        # cv is None — simulates no X-Brain-Profile header
         mcp = _make_mock_mcp(full_tools)
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 8
-        assert {t.name for t in result} == eager_full
+        assert len(result) == 67
+        assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
         """Explicit 'full' header must produce an identical result to no header."""
@@ -598,9 +585,9 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 59),
-            ("coder", 17),
-            ("reviewer", 8),
+            ("full", 67),
+            ("coder", 21),
+            ("reviewer", 9),
             ("seeder", 6),
         ],
     )

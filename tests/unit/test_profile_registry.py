@@ -128,18 +128,11 @@ class TestBundledProfiles:
         assert "brain_get_neighbors" in coder
         assert "brain_explain_connection" in coder
 
-    def test_get_coder_tool_count_is_18(self) -> None:
-        """TAP-2006 + TAP-1973: pin the coder profile size at 18 tools.
-
-        Six facade + four hook-callable + three quality-loop + four cross-repo /
-        KG discovery (`hive_search`, `memory_find_related`,
-        `brain_get_neighbors`, `brain_explain_connection`) + one KG batch
-        (`brain_record_events_batch`, TAP-1973). Bump this in lockstep with the
-        profile YAML when the surface changes.
-        """
+    def test_get_coder_tool_count_is_21(self) -> None:
+        """Pin the coder profile size at 21 tools (v3.24 +3 experience/profile KV)."""
         reg = ProfileRegistry()
         coder = reg.get("coder")
-        assert len(coder) == 18, sorted(coder)
+        assert len(coder) == 21, sorted(coder)
 
     def test_coder_description_calls_out_kg_discovery_tools(self) -> None:
         """TAP-2006: description must surface the discovery primitives by name.
@@ -150,7 +143,7 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         description = reg.get_description("coder")
         assert "memory_find_related" in description
-        assert "brain_get_neighbors" in description
+        assert "brain_query_events" in description
 
     def test_get_coder_excludes_destructive_ops(self) -> None:
         reg = ProfileRegistry()
@@ -224,16 +217,11 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
-    def test_get_agent_brain_returns_12_tools(self) -> None:
-        """TAP-1579 (+TAP-1973, TAP-2093): 'agent_brain' profile exposes brain_* tools.
-
-        Started at 10 tools in TAP-1579; TAP-1973 added
-        `brain_record_events_batch` for partial-success N-event backfill;
-        TAP-2093 added `brain_audit_consumers` for declared-vs-active audits.
-        """
+    def test_get_agent_brain_returns_15_tools(self) -> None:
+        """TAP-1579 + v3.24: agent_brain exposes brain_* facade + experience/profile KV."""
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        assert len(agent_brain) == 12
+        assert len(agent_brain) == 15
         assert "brain_record_events_batch" in agent_brain
         assert "brain_audit_consumers" in agent_brain
 
@@ -454,45 +442,33 @@ class TestCustomConfigPath:
 class TestDeferredTools:
     """Per-tool ``defer_loading: true`` annotation parsing + ``get_deferred``."""
 
-    def test_bundled_full_has_59_deferred_tools(self) -> None:
-        """`full` profile keeps 8 eager daily drivers + 59 deferred (EPIC-075: +3)."""
+    def test_bundled_full_has_no_deferred_tools(self) -> None:
+        """Docker reference stack exposes the full `full` surface eagerly."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
-        assert len(deferred) == 59
-        assert len(eager) == 8
+        assert len(deferred) == 0
+        assert len(eager) == 67
 
-    def test_bundled_full_eager_set_matches_daily_drivers(self) -> None:
-        """The 8 eager tools in `full` are the documented daily-driver budget."""
+    def test_bundled_full_eager_set_matches_callable_surface(self) -> None:
+        """All callable tools in `full` appear in tools/list by default."""
         reg = ProfileRegistry()
         eager = reg.get("full") - reg.get_deferred("full")
-        assert eager == frozenset(
-            {
-                "brain_recall",
-                "brain_remember",
-                "brain_status",
-                "brain_get_neighbors",
-                "brain_explain_connection",
-                "memory_search",
-                "memory_find_related",
-                "hive_search",
-            }
-        )
+        assert eager == reg.get("full")
 
-    def test_bundled_operator_has_72_deferred_tools(self) -> None:
-        """`operator` profile shares 8 daily drivers; remaining 72 deferred (EPIC-075: +3)."""
+    def test_bundled_operator_has_no_deferred_tools(self) -> None:
+        """Docker reference stack exposes the full `operator` surface eagerly."""
         reg = ProfileRegistry()
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
-        assert len(deferred) == 72
-        assert len(eager) == 8
+        assert len(deferred) == 0
+        assert len(eager) == 80
 
-    def test_bundled_operator_eager_matches_full(self) -> None:
-        """Daily-driver budget is identical between `full` and `operator`."""
+    def test_bundled_operator_eager_matches_callable_surface(self) -> None:
+        """All callable tools in `operator` appear in tools/list by default."""
         reg = ProfileRegistry()
-        full_eager = reg.get("full") - reg.get_deferred("full")
         operator_eager = reg.get("operator") - reg.get_deferred("operator")
-        assert full_eager == operator_eager
+        assert operator_eager == reg.get("operator")
 
     def test_bundled_coder_has_no_deferred_tools(self) -> None:
         """Small profiles (coder/reviewer/seeder/agent_brain) keep all eager."""

@@ -97,7 +97,13 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 | `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending *private* schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the live DB schema exceeds the max bundled version (downgrade guard). **Not recommended for multi-host deployments** — use a one-shot migration job instead. |
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Auto-run Postgres schema migrations on startup |
 
-**Docker deployment:** `docker/docker-compose.hive.yaml` brings up the unified stack — one `tapps-brain-db` (pgvector/pg17) + one `tapps-brain-http` (serves private memory + Hive + Federation on `/mcp/` + `/v1/*` at :8080) + a one-shot `tapps-brain-migrate` sidecar + optional `tapps-visual` dashboard. Secrets/config live in `docker/.env` (template: `docker/.env.example`). `docker/init-db.sql` bootstraps the `vector` extension on first DB start. Use `make hive-deploy` from repo root. See `docs/guides/hive-deployment.md` and `docs/guides/agentforge-integration.md`.
+**Docker deployment:** `docker/docker-compose.hive.yaml` brings up the unified stack — one `tapps-brain-db` (pgvector/pg17) + one `tapps-brain-http` (serves private memory + Hive + Federation on `/mcp/` + `/v1/*` at :8080) + a one-shot `tapps-brain-migrate` sidecar + optional `tapps-visual` dashboard. Secrets/config live in `docker/.env` (template: `docker/.env.example`). `docker/init-db.sql` bootstraps the `vector` extension on first DB start.
+
+- **First deploy:** `make hive-deploy` (after `cp docker/.env.example docker/.env` and filling secrets).
+- **Fast code upgrade (default):** `make dev-deploy` — rebuilds wheel + http image only, restarts `tapps-brain-http`, runs `brain-smoke-live`. Use `MIGRATE=1 make dev-deploy` when SQL under `src/tapps_brain/migrations/` changed.
+- **`docker/.env` must include** non-empty `TAPPS_BRAIN_ALLOWED_ORIGINS` — compose sets `TAPPS_BRAIN_STRICT=1`; missing origins crash-loop the brain on `:8080`. Local dev: `http://127.0.0.1:8088,http://localhost:8088`.
+
+See `docs/guides/dev-docker-loop.md`, `docs/guides/hive-deployment.md`, and `docs/guides/agentforge-integration.md`.
 
 ### Source layout: `src/tapps_brain/`
 

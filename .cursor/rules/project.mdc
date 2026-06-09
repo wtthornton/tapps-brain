@@ -74,6 +74,19 @@ mypy --strict src/tapps_brain/
 - Coverage minimum: 95%
 - LF line endings enforced via `.gitattributes`
 
+## Local Docker deploy (agents)
+
+When upgrading tapps-brain on the **local unified stack** (`docker-compose.hive.yaml`, project `tapps-brain`):
+
+| Situation | Command |
+|---|---|
+| First-time | `make hive-deploy` after `docker/.env` is filled from `docker/.env.example` |
+| Code upgrade (default) | `make dev-deploy` |
+| SQL migrations changed | `MIGRATE=1 make dev-deploy` |
+| `docker/.env` only | `docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --no-deps --force-recreate tapps-brain-http` |
+
+`docker/.env` **must** set non-empty `TAPPS_BRAIN_ALLOWED_ORIGINS` (compose enforces `TAPPS_BRAIN_STRICT=1`). Without it, `tapps-brain-http` crash-loops. Local dev: `http://127.0.0.1:8088,http://localhost:8088`. Verify with `make brain-smoke-live`. Details: `docs/guides/dev-docker-loop.md`.
+
 ## Cursor (IDE)
 
 - **Quick pointers:** `AGENTS.md` — setup, tests, doc links. **VS Code/Cursor:** `.vscode/settings.json` (Python/Ruff/mypy, 100-char ruler), `.vscode/extensions.json` (recommended extensions), `.vscode/tasks.json` (pytest, ruff, mypy, `release-ready.sh`). **Indexing:** `.cursorignore` excludes `.venv/` and caches.

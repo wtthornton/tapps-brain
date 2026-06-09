@@ -174,16 +174,11 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == set(ALL_TOOLS)
 
-    def test_bundled_coder_profile_returns_18_tools(self) -> None:
-        """Real ProfileRegistry.get('coder') must return exactly 18 tools.
-
-        6 facade + 4 hook-callable + 3 quality + 5 cross-repo/graph
-        (`hive_search`, `memory_find_related`, `brain_get_neighbors`,
-        `brain_explain_connection`, `brain_record_events_batch` — TAP-1973).
-        """
+    def test_bundled_coder_profile_returns_21_tools(self) -> None:
+        """Real ProfileRegistry.get('coder') must return exactly 21 tools."""
         real_registry = ProfileRegistry()
         coder_tools = real_registry.get("coder")
-        assert len(coder_tools) == 18
+        assert len(coder_tools) == 21
 
         all_tool_names = list(real_registry.get("full"))
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -197,55 +192,36 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == coder_tools
 
-    def test_bundled_full_profile_returns_8_eager_tools(self) -> None:
-        """TAP-1985: `full` profile defaults to 8 daily drivers; 59 deferred.
-
-        Replaces the prior "returns 59 tools" assertion. The callable surface
-        (``registry.get('full')``) is 67 post-EPIC-075, but the default
-        ``tools/list`` payload returns only the 8 eager daily drivers so the
-        eager catalog stays within the per-server budget (parent epic
-        TAP-1983).
-        """
+    def test_bundled_full_profile_returns_all_tools(self) -> None:
+        """Docker reference stack: `full` profile lists every callable tool."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 67  # callable surface (EPIC-075: +3)
+        assert len(all_tool_names) == 67
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
         )
-        # Simulate "no X-Brain-Profile header" → contextvar is None → "full"
         mcp = _make_mock_mcp(all_tool_names)
 
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 8
-        assert {t.name for t in result} == {
-            "brain_recall",
-            "brain_remember",
-            "brain_status",
-            "brain_get_neighbors",
-            "brain_explain_connection",
-            "memory_search",
-            "memory_find_related",
-            "hive_search",
-        }
+        assert len(result) == 67
+        assert {t.name for t in result} == real_registry.get("full")
 
-    def test_bundled_full_profile_omits_deferred_tools_from_list(self) -> None:
-        """TAP-1985: deferred tool names must not appear in the default list."""
+    def test_bundled_full_profile_includes_previously_deferred_tools(self) -> None:
+        """Tools that were defer_loading-only must appear in the default list."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
         )
-        cv.set("full")
         mcp = _make_mock_mcp(all_tool_names)
 
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
-        result = mcp._tool_manager.list_tools()
-        visible = {t.name for t in result}
+        result_names = {t.name for t in mcp._tool_manager.list_tools()}
         for sample in (
             "memory_save",
             "memory_delete",
@@ -253,8 +229,7 @@ class TestListToolsFilter:
             "flywheel_process",
             "tapps_brain_session_end",
         ):
-            assert sample in real_registry.get_deferred("full")
-            assert sample not in visible
+            assert sample in result_names
 
 
 # ---------------------------------------------------------------------------
@@ -444,10 +419,8 @@ class TestDeferredToolBehavior:
     """
 
     @pytest.mark.asyncio
-    async def test_deferred_tool_remains_callable_in_full_profile(self) -> None:
-        """Tool Search recovery — a deferred tool's full definition is reachable
-        because call_tool still accepts it. The list curtain is visibility-only.
-        """
+    async def test_deferred_tool_visible_and_callable_in_full_profile(self) -> None:
+        """Promoted stack: deferred tools appear in list_tools and remain callable."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
 
@@ -459,18 +432,16 @@ class TestDeferredToolBehavior:
 
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
-        # `memory_save` is deferred — must not appear in tools/list...
         list_result = mcp._tool_manager.list_tools()
-        assert "memory_save" not in {t.name for t in list_result}
-        # ...but must still execute via tools/call (Tool Search recovery).
+        assert "memory_save" in {t.name for t in list_result}
         call_result = await mcp._tool_manager.call_tool("memory_save", {})
         assert call_result == "ok"
 
-    def test_bundled_operator_returns_8_eager_tools(self) -> None:
-        """Operator profile shares the 8-tool daily-driver budget."""
+    def test_bundled_operator_returns_all_tools(self) -> None:
+        """Operator profile lists the full callable surface."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 80  # callable surface (EPIC-075: +3)
+        assert len(all_tool_names) == 80
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -481,16 +452,14 @@ class TestDeferredToolBehavior:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 8
+        assert len(result) == 80
 
-    def test_small_profiles_unchanged_by_defer_loading(self) -> None:
-        """coder/reviewer/seeder/agent_brain are all-eager (no deferred entries)."""
+    def test_small_profiles_all_eager(self) -> None:
+        """coder/reviewer/seeder/agent_brain remain all-eager small profiles."""
         real_registry = ProfileRegistry()
         full_tools = list(real_registry.get("full"))
 
-        # TAP-1973: coder + agent_brain each gained `brain_record_events_batch`.
-        # TAP-2093: agent_brain gained `brain_audit_consumers` (11 → 12).
-        expected_counts = {"coder": 18, "reviewer": 9, "seeder": 6, "agent_brain": 12}
+        expected_counts = {"coder": 21, "reviewer": 9, "seeder": 6, "agent_brain": 15}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None

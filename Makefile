@@ -186,6 +186,15 @@ check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 	  echo ""; \
 	  exit 1; \
 	fi
+	@if ! grep -qE '^TAPPS_BRAIN_ALLOWED_ORIGINS=.+' docker/.env; then \
+	  echo ""; \
+	  echo "ERROR: TAPPS_BRAIN_ALLOWED_ORIGINS is missing or empty in docker/.env."; \
+	  echo "       docker-compose.hive.yaml sets TAPPS_BRAIN_STRICT=1 — the brain will"; \
+	  echo "       crash-loop without allowed origins. Add (local dev example):"; \
+	  echo "         TAPPS_BRAIN_ALLOWED_ORIGINS=http://127.0.0.1:8088,http://localhost:8088"; \
+	  echo ""; \
+	  exit 1; \
+	fi
 
 hive-deploy:  ## Full deploy: check env → build → migrate → up. Safe to rerun.
 	$(MAKE) check-brain-env
