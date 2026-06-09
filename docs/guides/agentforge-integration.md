@@ -9,6 +9,77 @@ connects to tapps-brain's Postgres-backed memory.
 
 ---
 
+## What's new in v3.25.0 for AgentForge
+
+The EPIC-078 release closes the REST DX gaps exposed during AgentForge 4.37.0
+integration: same-transaction edge key resolution, batch entity resolve, and
+explicit consumer contracts for remember tiers and experience wire format.
+
+| Surface | Change | Why AgentForge cares |
+|---|---|---|
+| `POST /v1/experience` `EdgeSpec` | **`subject_key` / `object_key`** (and optional **`subject_ref` / `object_ref`**) resolve against entities upserted in the same request — no pre-resolved UUIDs required. (TAP-3248) | Task-completion events can post `entities[{key,type}]` + `edges[{subject_key,object_key,predicate}]` in one round trip. |
+| `POST /v1/kg/resolve_entities` | Batch REST endpoint wrapping `resolve_entity_refs` — returns **`entity_ids`** (input order) + per-ref **`results`**. (TAP-3249) | Stop piggybacking key→UUID resolution on `POST /v1/kg/neighbors`. |
+| Consumer contract docs | Remember tiers, experience v3.22+ wire format, neighbors `entity_refs` ordering. (TAP-3250) | Surfaces pitfalls AgentForge patched locally (`invalid_tier`, EdgeSpec UUIDs, EvidenceSpec XOR). |
+
+---
+
+## REST consumer contracts (HTTP-only integrators)
+
+These contracts were validated during AgentForge 4.37.0 integration with
+tapps-brain-http 3.24.0. Brain behaviour was correct; the gaps were API/DX and
+documentation clarity.
+
+### `/v1/remember` — valid `MemoryTier` values
+
+`POST /v1/remember` accepts **`architectural`**, **`pattern`**, **`procedural`**, and
+**`context`** only. There is **no `cache` tier** — HTTP response caching belongs in
+your client: store fetch results in a **`context`-tier** memory entry with
+`metadata` (e.g. `{"http_cache": true, "etag": "...", "fetched_at": "..."}`) via
+`/v1/remember`, not as a brain tier label. Posting `tier: "cache"` returns a
+validation error (`invalid_tier`).
+
+### `/v1/experience` — v3.22+ wire format
+
+Since **v3.22.4** (TAP-2865/2866/2868):
+
+- **`EntitySpec`** accepts `key`/`type` shorthand → coerced to `canonical_name` /
+  `entity_type` (TAP-2675).
+- **`EdgeSpec`** accepts pre-resolved UUIDs **or** `subject_key`/`object_key` referencing
+  entities in the same event (TAP-3248). Typed disambiguation:
+  `subject_ref`/`object_ref` with `entity_type`+`canonical_name` or `type`/`id`.
+- **`EvidenceSpec`** requires **exactly one** of `edge_id` or `entity_id` (XOR). Both
+  set or neither set → spec skipped, **200 + `warnings`**, not 500 (TAP-2868).
+- Malformed side-effects are **non-fatal**: core event commits; inspect
+  `warnings: [{kind, index, errors}]` (TAP-2866). Log warnings in your bridge
+  (TAP-3196).
+
+Pre-v3.22 clients that posted edges without UUIDs received opaque 500s; upgrade to
+3.22.4+ and either supply UUIDs, use key shorthand (3.25+), or accept warnings
+while fixing payloads.
+
+### `/v1/kg/neighbors` — `entity_refs` vs `entity_ids`
+
+- Pass **`entity_ids`**: array of UUID strings only. Non-UUID values → **422**
+  (`validation_error`), not 500.
+- Pass **`entity_refs`**: array of `{entity_type, canonical_name}` or `{type, id}`
+  objects; the brain resolves each ref and merges UUIDs before the graph query
+  (TAP-3161). Response **`entity_ids`** mirrors the resolved order (explicit UUIDs
+  first, then resolved refs).
+- For **resolve-only** callers (no neighbourhood needed), use
+  **`POST /v1/kg/resolve_entity`** (single) or **`POST /v1/kg/resolve_entities`**
+  (batch, TAP-3249) — do not misuse `/v1/kg/neighbors`.
+
+### Related fixes (cross-links)
+
+| Ticket | What |
+|---|---|
+| [TAP-2865](https://linear.app/tappscodingagents/issue/TAP-2865) | Typed 422 for malformed experience bodies (no masked 500). |
+| [TAP-2866](https://linear.app/tappscodingagents/issue/TAP-2866) | Resilient side-effect coercion → 200 + `warnings`. |
+| [TAP-3196](https://linear.app/tappscodingagents/issue/TAP-3196) | Log experience write warnings in consumer bridges. |
+| [TAP-2725](https://linear.app/tappscodingagents/issue/TAP-2725) | Singular `POST /v1/kg/resolve_entity`. |
+
+---
+
 ## What's new in v3.24.0 for AgentForge
 
 The 2026-06-09 release adds a **read path** for `experience_events` so integrators

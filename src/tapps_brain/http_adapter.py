@@ -3442,6 +3442,92 @@ def create_app(
         )
         return JSONResponse(status_code=200, content=result)
 
+    @app.post("/v1/kg/resolve_entities", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_resolve_entities(request: Request) -> JSONResponse:
+        """Batch-resolve KG entity refs to UUIDs (TAP-3249 / EPIC-078).
+
+        REST counterpart for ``kg_service.resolve_entity_refs``.  Accepts an
+        ``entity_refs`` array with ``entity_type``/``canonical_name`` or
+        ``type``/``id`` shorthand and returns ``entity_ids`` (input order) plus
+        per-ref ``results`` metadata.  Use this instead of piggybacking key
+        resolution on ``POST /v1/kg/neighbors``.
+
+        Request body::
+
+            { "entity_refs": [
+                {"entity_type": "module", "canonical_name": "retrieval"},
+                {"type": "agent", "id": "ralph"}
+            ]}
+
+        Response::
+
+            { "entity_ids": ["uuid-1", "uuid-2"],
+              "results": [
+                {"entity_id": "uuid-1", "entity_type": "module",
+                 "canonical_name": "retrieval", "created": false},
+                ...
+              ]}
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        entity_refs = body.get("entity_refs")
+        if not isinstance(entity_refs, list):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "detail": "entity_refs must be a JSON array.",
+                },
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.resolve_entity_refs,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            refs=entity_refs,
+        )
+        if isinstance(result, dict) and result.get("error") == "bad_request":
+            raise HTTPException(status_code=400, detail=result)
+        return JSONResponse(status_code=200, content=result)
+
     # -------- admin-plane routes (EPIC-069) --------
 
     def _open_registry() -> tuple[Any, Any]:
