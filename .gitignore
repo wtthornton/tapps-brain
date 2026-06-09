@@ -95,14 +95,9 @@ docker/secrets/
 .tapps-mcp-cache/
 .tapps-mcp/
 
-# Ralph managed entries
+# Ralph retired (EPIC-077) — only pointer README is tracked
 .ralph/*
-!.ralph/PROMPT.md
-!.ralph/AGENT.md
-!.ralph/fix_plan.md
-!.ralph/hooks/
-!.ralph/hooks/**
-!.ralph/.gitkeep
+!.ralph/README.md
 .ralph-brief.json
 *.log
 .DS_Store
