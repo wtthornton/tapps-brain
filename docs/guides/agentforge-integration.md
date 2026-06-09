@@ -9,6 +9,28 @@ connects to tapps-brain's Postgres-backed memory.
 
 ---
 
+## What's new in v3.24.0 for AgentForge
+
+The 2026-06-09 release adds a **read path** for `experience_events` so integrators
+can query stored metrics without scraping Postgres. Full detail in
+[`CHANGELOG.md`](../../CHANGELOG.md#3240--2026-06-09).
+
+| Surface | Change | Why AgentForge cares |
+|---|---|---|
+| `brain_query_events` MCP tool | New tool — filter by required `event_type`, optional `since`/`until`, optional `entity_id` (`payload.file_path` or `subject_key`). Returns full `payload` JSONB round-trip. `limit` default 100, cap 500. (TAP-3157) | `BrainBridge.query_events()` can migrate off direct SQL for `quality_metric` history. Registered in `full`, `operator` (deferred), `reviewer`. |
+| `POST /v1/experience:query` | REST mirror of `brain_query_events` with the same body + `X-Project-Id`. | HTTP-only consumers get metrics without the Python wheel. |
+| `EntitySpec` shorthand | `type` → `entity_type`, `id` → `canonical_name` on experience/KG specs. (TAP-3159) | tapps-mcp `quality_metric` writes can use compact entity refs. |
+| Migration 023 | Index on `(project_id, event_type, event_time DESC)`. | Keeps file-scoped metric queries fast at scale. |
+
+**Smoke from repo root** (live stack on `:8080`):
+
+```bash
+make brain-smoke-live     # record + query round-trip over HTTP
+make brain-healthcheck    # MCP wiring + brain_recall
+```
+
+---
+
 ## What's new in v3.22.4 for AgentForge
 
 The 2026-06-05 release closes the `POST /v1/experience` masked-500 incident

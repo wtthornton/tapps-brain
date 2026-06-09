@@ -42,7 +42,7 @@ envelope — Docker healthchecks (`curl -f /healthz`) still flip correctly.
   "mcp_ok":        true,           // MCP ASGI sub-app mounted
   "queue_depth":   0,              // write + read in-flight ops
   "circuit_state": "closed",       // closed | degraded | open | half_open
-  "brain_version": "3.19.0"        // matches pyproject.toml
+  "brain_version": "3.24.0"        // matches pyproject.toml
 }
 ```
 
@@ -64,7 +64,7 @@ path and adds two fields; `ok` is ANDed with `experience_writable`:
   "mcp_ok":              true,
   "queue_depth":         0,
   "circuit_state":       "closed",
-  "brain_version":       "3.22.4",
+  "brain_version":       "3.24.0",
   "experience_writable": true,                  // experience_events table + partitions present
   "experience_detail":   "ready (13 partitions)"
 }
@@ -83,7 +83,7 @@ HTTP cache headers so clients can implement conditional fetch:
 |---|---|---|
 | `ETag` | `W/"<sha256:16>"` | Weak validator over the JSON payload; per-cache-slot (per-profile when `X-Brain-Profile` is set). |
 | `Cache-Control` | `public, max-age=300` | Matches the 300 s server-side cache TTL (TAP-1833). |
-| `X-Brain-Version` | `3.19.0` | Lets clients invalidate caches when the brain version changes. |
+| `X-Brain-Version` | `3.24.0` | Lets clients invalidate caches when the brain version changes. |
 | `X-Catalog-Generated-At` | `<iso8601>` | Snapshot-build timestamp from the lifespan hook. |
 
 Conditional fetch:
@@ -94,7 +94,7 @@ curl -is http://localhost:8080/v1/tools/list | head
 # HTTP/1.1 200 OK
 # ETag: W/"3f5e9b0e7d4a1c2e"
 # Cache-Control: public, max-age=300
-# X-Brain-Version: 3.19.0
+# X-Brain-Version: 3.24.0
 # X-Catalog-Generated-At: 2026-05-17T20:18:00Z
 # ...
 
@@ -132,6 +132,30 @@ These are the surface AgentForge / NLTlabsPE / any non-MCP consumer should targe
 | `/v1/reinforce:batch` | POST | Reinforce up to N entries in one round trip. | `memory_reinforce_many` |
 | `/info` | GET | Runtime build info + flags. | — |
 | `/snapshot` | GET | Live read-only `VisualSnapshot` (TTL-cached). | — |
+
+### Knowledge graph & experience routes (v3.19.0+ / v3.24.0+)
+
+| Route | Method | Purpose | MCP equivalent |
+|---|---|---|---|
+| `/v1/experience` | POST | Record one experience event (+ optional KG side-effects). | `brain_record_event` |
+| `/v1/experience:batch` | POST | Record up to N events (per-event transactions). | `brain_record_events_batch` |
+| `/v1/experience:query` | POST | **v3.24.0+** — query `experience_events` by `event_type`, time range, optional `entity_id`. | `brain_query_events` |
+| `/v1/kg/resolve_entity` | POST | Resolve `(entity_type, canonical_name)` → entity UUID. | `brain_resolve_entity` |
+| `/v1/kg/neighbors` | POST | 1–2 hop neighbourhood around entity UUIDs. | `brain_get_neighbors` |
+| `/v1/kg/explain` | POST | Shortest path between two entity UUIDs (≤ 3 hops). | `brain_explain_connection` |
+| `/v1/kg/feedback` | POST | `edge_helpful` / `edge_misleading` on a KG edge. | `brain_record_feedback` |
+
+```jsonc
+// POST /v1/experience:query (v3.24.0+)
+{ "event_type": "quality_metric",              // required
+  "since"?: "2026-06-01T00:00:00Z",
+  "until"?: "2026-06-09T23:59:59Z",
+  "entity_id"?: "src/tapps_brain/store.py",   // payload.file_path OR subject_key
+  "limit"?: 100 }                              // cap 500
+// → { "events": [{event_id, event_type, payload, ts, agent_id, session_id?}], "count": N }
+```
+
+See [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-experience-flow.md), and [`experience-events.md`](../engineering/experience-events.md).
 
 ### Body shapes (single-entry routes)
 

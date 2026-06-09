@@ -70,7 +70,7 @@ Does this duplicate a CHANGELOG / CLAUDE.md entry?  → NO
 
 ## Wire setup for a new repo
 
-See [`docs/guides/mcp-client-repo-setup.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/mcp-client-repo-setup.md) — covers `.mcp.json`, per-repo bearer token, profile selection, and the SessionStart hook that auto-primes recall on turn 1.
+See [`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md) — covers `.mcp.json`, per-repo bearer token, profile selection, and the SessionStart hook that auto-primes recall on turn 1.
 
 ## Verify a running deployment
 
@@ -85,11 +85,11 @@ make brain-smoke-live     # HTTP: /healthz, experience record + query round-trip
 
 ## References
 
-- **Canonical agent guide**: [`docs/guides/llm-brain-guide.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/llm-brain-guide.md) — when to remember / recall / share, full tier guide, MCP tool examples.
-- **AgentForge integrators**: [`docs/guides/agentforge-integration.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/agentforge-integration.md) — Python `AgentBrain` SDK + HTTP `BrainBridge` paths.
-- **Error taxonomy**: [`docs/guides/errors.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/errors.md) — HTTP + JSON-RPC envelopes, retry policy.
-- **HTTP surface**: [`docs/guides/http-adapter.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/http-adapter.md) — `/healthz` phased body, `/v1/tools/list` ETag headers, `/v1/experience:query`.
-- **Experience events + query API**: [`docs/engineering/experience-events.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
-- **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
-- **Deploy + upgrade**: [`docs/guides/hive-deployment.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/hive-deployment.md) — `make hive-deploy`, `BRAIN_VERSION` bump.
-- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3240--2026-06-09) — current at v3.24.0.
+- **Canonical agent guide**: [`docs/guides/llm-brain-guide.md`](docs/guides/llm-brain-guide.md) — when to remember / recall / share, full tier guide, MCP tool examples.
+- **AgentForge integrators**: [`docs/guides/agentforge-integration.md`](docs/guides/agentforge-integration.md) — Python `AgentBrain` SDK + HTTP `BrainBridge` paths.
+- **Error taxonomy**: [`docs/guides/errors.md`](docs/guides/errors.md) — HTTP + JSON-RPC envelopes, retry policy.
+- **HTTP surface**: [`docs/guides/http-adapter.md`](docs/guides/http-adapter.md) — `/healthz` phased body, `/v1/tools/list` ETag headers, `/v1/experience:query`.
+- **Experience events + query API**: [`docs/engineering/experience-events.md`](docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
+- **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
+- **Deploy + upgrade**: [`docs/guides/hive-deployment.md`](docs/guides/hive-deployment.md) — `make hive-deploy`, `BRAIN_VERSION` bump.
+- **Latest release notes**: [`CHANGELOG.md`](CHANGELOG.md#3240--2026-06-09) — current at v3.24.0.

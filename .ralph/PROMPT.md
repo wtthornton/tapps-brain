@@ -150,22 +150,30 @@ Do NOT read `.ralph/fix_plan.md` — it is a harness sentinel only.
 7. Implement the smallest complete change for that issue.
 8. Run targeted verification for the touched scope (see Testing Guidelines below).
 9. Commit with the Linear ID: `feat(TAP-NNN): description` or `fix(TAP-NNN): description`. Commits go to the issue branch, not main.
-9a. **Push branch to origin and merge to main:**
+9a. **Push branch and merge via PR — NEVER push or merge to `main` locally (the R0 hook blocks it):**
     ```bash
     git push -u origin <issue.gitBranchName>
-    gh pr merge <issue.gitBranchName> --squash --delete-branch 2>/dev/null \\
-      || (git checkout main && git merge --squash <issue.gitBranchName> \\
-          && git commit -m "feat(TAP-NNN): squash merge from <branch>")
+    gh pr create --fill --head <issue.gitBranchName> --base main 2>/dev/null || true
+    gh pr merge <issue.gitBranchName> --squash --delete-branch
     ```
-    If this step fails (conflicts, permission denied, required checks): set `MERGED: deferred-blocker`, post `save_comment` with the error and unmerged branch SHAs, leave ticket **In Progress**, then **STOP**.
-9b. **Verify push reached origin — paste the output into the status block:**
+    `gh pr merge` lands the squash commit on `origin/main` server-side — no local push to main is
+    needed or allowed. If `gh pr merge` fails (conflicts, permission, required checks): set
+    `MERGED: deferred-blocker`, `save_comment` with the error + unmerged branch SHA(s), leave the
+    ticket **In Progress**, then **STOP**.
+    Do NOT fall back to `git checkout main && git merge`, `git push origin main`, or
+    `git reset --hard` — all are blocked by the R0 / destructive-command hooks and will dead-end
+    the loop (wasted tool calls + orphaned local-main commits).
+9b. **Verify the squash commit reached `origin/main` — paste the output into the status block:**
     ```bash
-    git push origin main
     git fetch origin
-    git rev-list --left-right --count origin/main...main
+    git log origin/main --oneline --grep="TAP-NNN" | head -3
     ```
-    - If `git push origin main` exits non-zero **OR** the divergence output is NOT `0	0` (i.e. `0       0`): set `MERGED: no`, leave ticket **In Progress**, post `save_comment` listing unmerged SHAs and the divergence output, then **STOP — do NOT move to Done**.
-    - If both succeed and divergence is `0	0`: set `MERGED: yes`, confirm with `git log main --oneline --grep="TAP-NNN" | head -3`, then continue.
+    - If the grep returns no commit on `origin/main`: set `MERGED: no`, leave **In Progress**,
+      `save_comment` with the unmerged branch SHA(s), then **STOP — do NOT move to Done**.
+    - If the commit is present on `origin/main`: set `MERGED: yes`, then continue.
+    (Local `main` may lag `origin/main` — that's fine and expected. Step 3 re-bases every new
+    branch off `origin/main` via `git fetch && git checkout -B`, so local-main drift never affects
+    later loops.)
 10. **Spawn `ralph-reviewer` subagent** to review your diff. Give it the issue ID + branch name + commit SHA(s). It reads the diff and returns a verdict: blockers, suggestions, or clean.
     - **Blockers** (obvious bugs, missing error handling, security issues, broken tests): address them in an additional commit on the same branch, then re-spawn the reviewer to re-verify. Max 2 review cycles per loop.
     - **Non-blocker suggestions** (style nits, optional refactors): note in the `save_comment` for the human. Do not block the Done transition.

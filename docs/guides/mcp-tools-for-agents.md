@@ -373,12 +373,35 @@ for full client-specific examples (Claude Code, Cursor, Aider).
 
 ---
 
+## Knowledge graph & experience events (EPIC-076 / EPIC-074)
+
+Deferred on the `full` profile unless Tool Search is enabled — see [knowledge-graph.md](knowledge-graph.md) for full signatures and constraints.
+
+### `brain_record_event`
+Atomic write of one `experience_events` row + optional memory / entities / edges / evidence in a single Postgres transaction.
+- **When I use it:** recording a workflow outcome, linking modules/services via KG edges, or emitting a `quality_metric` payload for later query.
+
+### `brain_query_events` (v3.24.0+)
+Query stored event payloads by `event_type`, optional time range, optional `entity_id` (file path or `subject_key`).
+- Args: `event_type*`, `since`, `until`, `entity_id`, `limit` (default 100, cap 500).
+- **When I use it:** read back `quality_metric` scores for a file, audit `checklist_outcome` events, or any payload written via `brain_record_event`. **Not** a substitute for `brain_get_neighbors` (structure only).
+- REST: `POST /v1/experience:query`.
+
+### `brain_get_neighbors` / `brain_explain_connection` / `brain_record_feedback`
+KG neighbourhood, shortest-path, and edge-confidence feedback — see [knowledge-graph.md](knowledge-graph.md).
+
+### `brain_resolve_entity` / `brain_record_events_batch`
+Resolve entity names to UUIDs before edge writes; batch N events in one MCP call — see [kg-experience-flow.md](kg-experience-flow.md).
+
+---
+
 ## Related docs
 
 - [docs/guides/agent-playbook.md](agent-playbook.md) — the *decision tree* version of this catalog: when to call what, response shapes, failure modes.
-- [docs/guides/knowledge-graph.md](knowledge-graph.md) — full reference for the four `brain_record_event` / `brain_get_neighbors` / `brain_explain_connection` / `brain_record_feedback` tools, with spec dataclasses and constraints.
+- [docs/guides/knowledge-graph.md](knowledge-graph.md) — full reference for KG + experience tools (`brain_record_event`, `brain_query_events`, neighbours, feedback, etc.).
+- [docs/guides/kg-experience-flow.md](kg-experience-flow.md) — populate-then-query: resolve → record → neighbours **or** record → `brain_query_events`.
 - [docs/guides/mcp-client-repo-setup.md](mcp-client-repo-setup.md) — wiring `.mcp.json` + `.env` for a new repo.
 - [docs/guides/claude-code-hooks.md](claude-code-hooks.md) — the SessionStart hook that auto-primes `brain_recall` on turn 1.
 - [docs/guides/auto-recall.md](auto-recall.md) — how `memory_recall` ranks and fuses results.
 - [docs/guides/hive.md](hive.md) — cross-agent / cross-repo shared memory model.
-- [scripts/brain-healthcheck.sh](../../scripts/brain-healthcheck.sh) — `make brain-healthcheck` verifies all of the above is live.
+- [scripts/brain-healthcheck.sh](../../scripts/brain-healthcheck.sh) — `make brain-healthcheck` verifies MCP wiring + recall; `make brain-smoke-live` exercises HTTP experience record/query on the live stack.

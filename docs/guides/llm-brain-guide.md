@@ -163,3 +163,37 @@ Custom profiles can add additional tiers (`ephemeral`, `personal`, etc.) — cal
   }
 }
 ```
+
+## Experience events & metrics (v3.24.0+)
+
+Use `brain_record_event` to **write** structured events (including `quality_metric`
+payloads). Use `brain_query_events` to **read them back** — not `brain_get_neighbors`,
+which returns KG edge structure only.
+
+### Record a quality metric
+
+```json
+{
+  "tool": "brain_record_event",
+  "arguments": {
+    "event_type": "quality_metric",
+    "payload_json": "{\"file_path\": \"src/tapps_brain/store.py\", \"score\": 91.0, \"gate_passed\": true}"
+  }
+}
+```
+
+### Query metrics for a file
+
+```json
+{
+  "tool": "brain_query_events",
+  "arguments": {
+    "event_type": "quality_metric",
+    "entity_id": "src/tapps_brain/store.py",
+    "limit": 50
+  }
+}
+```
+
+REST equivalents: `POST /v1/experience` (write), `POST /v1/experience:query` (read).
+See [`kg-experience-flow.md`](kg-experience-flow.md) and [`experience-events.md`](../engineering/experience-events.md).

@@ -8,6 +8,7 @@
 # precedence changes, or `ralph --sandbox` would route around Max plan billing.
 unset ANTHROPIC_API_KEY
 unset ANTHROPIC_AUTH_TOKEN
+[ -f "$HOME/.config/claude-agent/linear.env" ] && source "$HOME/.config/claude-agent/linear.env"  # TAP-1845/1846
 
 # Project identification
 PROJECT_NAME="tapps-brain"
@@ -64,7 +65,7 @@ CLAUDE_AUTO_UPDATE=false  # set false — npm global update fails on this machin
 
 # Agent mode (v1.0+): use --agent ralph instead of -p with --allowedTools
 # Requires CLI v2.1+. Falls back to legacy -p mode if unsupported.
-RALPH_USE_AGENT=false  # was true; legacy mode is forced anyway by custom ALLOWED_TOOLS (Issue #154) — explicit avoids per-loop fallback warning
+RALPH_USE_AGENT=true  # agent mode: uses .claude/agents/ralph.md, disallowedTools blocklist
 RALPH_AGENT_NAME="ralph"
 
 # Parallelism (v1.1.0 — Experimental)
@@ -93,7 +94,7 @@ CLAUDE_MODEL="claude-sonnet-4-6"  # Token optimization: main loop on Sonnet (~5x
 CLAUDE_AUTO_UPDATE=false
 
 # Minimum Claude CLI version required
-CLAUDE_MIN_VERSION="2.0.76"
+CLAUDE_MIN_VERSION="2.1.0"  # agent mode (--agent flag) requires CLI v2.1+
 
 # Enable verbose logging
 RALPH_VERBOSE=false
@@ -104,7 +105,7 @@ RALPH_VERBOSE=false
 # NOTE (Issue #154): Agent mode is also auto-disabled when ALLOWED_TOOLS is
 # customized above, because agent mode uses a blocklist (disallowedTools) which
 # is incompatible with the allowlist approach. See TOOL PERMISSIONS section.
-RALPH_AGENT_NAME="ralph"
+# RALPH_AGENT_NAME — set above on line 68, dup removed
 
 # Custom prompt file (relative to .ralph/)
 # PROMPT_FILE="PROMPT.md"
@@ -263,7 +264,7 @@ RALPH_MAX_EXPLORER_RESOLVE=5
 # Bump MCP probe timeout — dockerized tapps-brain MCP cold-start exceeds the
 # 30s default, causing 'claude mcp list' probe to time out and prompt-side MCP
 # guidance blocks to be omitted at session start.
-RALPH_MCP_PROBE_TIMEOUT_SECONDS=120
+RALPH_MCP_PROBE_TIMEOUT_SECONDS=240
 
 # --- 2026-05-07 follow-ups from run 177817309114405 review ---
 # Coordinator (TAP-915) sub-agent timeout. Default 120s is insufficient here:

@@ -333,14 +333,17 @@ A healthy response is a JSON envelope with tool definitions. Expect 8 eager
 tools on the default `full` profile (51 are deferred — see TAP-1985) or
 ~17 for `coder`.
 
-## Knowledge-Graph tools (EPIC-076)
+## Knowledge-Graph tools (EPIC-076 + EPIC-074)
 
-Four new tools are available on the `full` and `coder` profiles from EPIC-076:
+KG and experience tools on the `full`, `operator`, and `coder` profiles (several are `defer_loading: true` on `full` — still callable via `tools/call`):
 
 | Tool | Purpose |
 |---|---|
 | `brain_record_event` | Write an `experience_events` row + optional memory / entity / edge / evidence in **one Postgres transaction**. |
-| `brain_get_neighbors` | Fetch 1-hop or 2-hop neighbourhood graph rows around one or more KG entities. |
+| `brain_query_events` | **v3.24.0+** — query stored event payloads by `event_type`, time range, and optional `entity_id` (`payload.file_path` or `subject_key`). |
+| `brain_record_events_batch` | N events in one MCP round-trip (per-event transactions; partial success allowed). |
+| `brain_resolve_entity` | Resolve `(entity_type, canonical_name)` → stable entity UUID for edge specs. |
+| `brain_get_neighbors` | Fetch 1-hop or 2-hop neighbourhood graph rows around one or more KG entities (structure only — not event payloads). |
 | `brain_explain_connection` | Find the shortest path (≤ 3 hops) between two entities and return the full edge chain. |
 | `brain_record_feedback` | Rate a KG edge as `edge_helpful` or `edge_misleading` to adjust its confidence score. |
 
@@ -384,6 +387,19 @@ brain_record_feedback(
 )
 ```
 
+**`brain_query_events`** — call to read back metrics or audit events written via `brain_record_event` (v3.24.0+, TAP-3157). Example — quality scores for a file:
+
+```python
+brain_query_events(
+    event_type="quality_metric",
+    entity_id="src/tapps_brain/store.py",
+    limit=50,
+)
+# → {"events": [{event_id, event_type, payload, ts, agent_id, ...}], "count": N}
+```
+
+Entity specs accept tapps-mcp shorthand: `{"type": "file", "id": "path/to/file.py"}` maps to `entity_type` / `canonical_name`.
+
 ### Matching HTTP endpoints
 
 For non-MCP callers (HTTP REST clients, AgentForge):
@@ -391,6 +407,7 @@ For non-MCP callers (HTTP REST clients, AgentForge):
 | Endpoint | Body fields |
 |---|---|
 | `POST /v1/experience` | `event_type` (required) + optional `payload`, `entities`, `edges`, `evidence`, `memory_key/value` |
+| `POST /v1/experience:query` | `event_type` (required) + optional `since`, `until`, `entity_id`, `limit` (cap 500) |
 | `POST /v1/kg/neighbors` | `entity_ids` (list of UUID strings), `hops` (1–2), `limit` |
 | `POST /v1/kg/explain` | `subject_id`, `object_id`, `max_hops` (1–3) |
 | `POST /v1/kg/feedback` | `edge_id`, `feedback_type` (`edge_helpful` or `edge_misleading`) |

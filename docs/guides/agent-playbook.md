@@ -154,14 +154,17 @@ Full table: [`errors.md`](errors.md).
 
 ## 7. Knowledge-Graph tools (EPIC-076, deployed brains only)
 
-When the deployed brain has the KG enabled, four extra tools become available:
+When the deployed brain has the KG enabled, these tools become available (several are deferred-loaded on the `full` profile — still callable via `tools/call`):
 
 - `brain_record_event` — atomic write of an `ExperienceEvent` + optional memory/entity/edge/evidence in one transaction.
-- `brain_get_neighbors` — 1-hop or 2-hop neighbourhood around an entity.
+- `brain_query_events` — **v3.24.0+** read back stored event payloads (`quality_metric`, etc.) by `event_type` and optional `entity_id` (file path). REST: `POST /v1/experience:query`.
+- `brain_record_events_batch` — N events in one MCP round-trip.
+- `brain_resolve_entity` — resolve a named entity to a stable UUID before writing edges.
+- `brain_get_neighbors` — 1-hop or 2-hop neighbourhood around an entity (structure only — not event payloads).
 - `brain_explain_connection` — shortest path (≤3 hops) between two entities.
 - `brain_record_feedback` — `edge_helpful` / `edge_misleading` signal for KG edges.
 
-Use these when reasoning about **relationships between things** (e.g. "what other workflows touched this database?"). For plain "did we decide X" lookups, stay with `brain_recall`. Full reference: [`knowledge-graph.md`](knowledge-graph.md).
+Use KG tools when reasoning about **relationships between things** (e.g. "what other workflows touched this database?"). Use `brain_query_events` when you need **metrics or audit payloads** written by `brain_record_event`. For plain "did we decide X" lookups, stay with `brain_recall`. Full reference: [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-experience-flow.md).
 
 ---
 
@@ -181,9 +184,10 @@ Use these when reasoning about **relationships between things** (e.g. "what othe
 1. [`mcp-client-repo-setup.md`](mcp-client-repo-setup.md) — wire `.mcp.json` for your repo.
 2. [`mcp-tools-for-agents.md`](mcp-tools-for-agents.md) — every tool, with "when I'd reach for it" notes.
 3. [`llm-brain-guide.md`](llm-brain-guide.md) — short tier reference and write examples.
-4. [`agent-integration.md`](agent-integration.md) — in-process `AgentBrain` facade detail.
-5. [`memory-scopes.md`](memory-scopes.md) — project group vs Hive vs profile (don't confuse them).
-6. [`profile-catalog.md`](profile-catalog.md) — built-in profiles and their layer stacks.
-7. [`errors.md`](errors.md) — full error taxonomy + retry semantics.
-8. [`claude-code-hooks.md`](claude-code-hooks.md) — the SessionStart hook that auto-primes recall on turn 1.
-9. [`hive.md`](hive.md), [`hive-vs-federation.md`](hive-vs-federation.md) — cross-agent and cross-project sharing.
+4. [`kg-experience-flow.md`](kg-experience-flow.md) — record events, query metrics, explore KG neighbours.
+5. [`agent-integration.md`](agent-integration.md) — in-process `AgentBrain` facade detail.
+6. [`memory-scopes.md`](memory-scopes.md) — project group vs Hive vs profile (don't confuse them).
+7. [`profile-catalog.md`](profile-catalog.md) — built-in profiles and their layer stacks.
+8. [`errors.md`](errors.md) — full error taxonomy + retry semantics.
+9. [`claude-code-hooks.md`](claude-code-hooks.md) — the SessionStart hook that auto-primes recall on turn 1.
+10. [`hive.md`](hive.md), [`hive-vs-federation.md`](hive-vs-federation.md) — cross-agent and cross-project sharing.

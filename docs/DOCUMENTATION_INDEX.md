@@ -79,7 +79,8 @@
 - [Hive Guide: Cross-Agent Memory Sharing](guides/hive.md) — The Hive is tapps-brain's cross-agent memory layer. Agents share knowledge through Hive namespaces (`universal`, per-... *(updated 2026-05-11)*
 - [HTTP Adapter](guides/http-adapter.md) — The tapps-brain HTTP adapter is the language-neutral entrypoint to the brain. It runs alongside the MCP server (or st... *(updated 2026-05-17)*
 - [Idempotency Keys for Write Operations](guides/idempotency.md) — **Feature flag:** `TAPPS_BRAIN_IDEMPOTENCY=1` (default OFF) *(updated 2026-05-11)*
-- [Knowledge Graph — Agent Guide](guides/knowledge-graph.md) — **Audience:** AI coding agents using the four `brain_*` knowledge-graph tools on a deployed tapps-brain (EPIC-076 / T... *(updated 2026-05-11)*
+- [Knowledge Graph — Agent Guide](guides/knowledge-graph.md) — KG + experience MCP tools including `brain_query_events` (v3.24.0+). *(updated 2026-06-09)*
+- [Knowledge-Graph Populate-then-Retrieve Flow](guides/kg-experience-flow.md) — resolve → record → neighbours **or** record → `brain_query_events`. *(updated 2026-06-09)*
 - [LangGraph Store Adapter (`@tapps-brain/langgraph`)](guides/langgraph-adapter.md) — **Package:** `@tapps-brain/langgraph` *(updated 2026-05-11)*
 - [Linear automation via a dedicated Claude Agent user](guides/linear-claude-agent.md) — **Status:** Partially Active (as of 2026-05-16) — `scripts/run-ralph.sh` *(updated 2026-05-16)*
 - [LLM Brain Guide](guides/llm-brain-guide.md) — Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools. *(updated 2026-05-12)*

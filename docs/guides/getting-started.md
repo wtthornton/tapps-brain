@@ -155,7 +155,10 @@ When `reranker_enabled=True` and flashrank is installed, reranking is automatic.
 
 ## Next steps
 
+- **Deploy the brain (Docker):** Unified Postgres + HTTP/MCP → [Hive Deployment Guide](hive-deployment.md). After deploy: `make brain-healthcheck` and `make brain-smoke-live` from the repo root.
+- **Wire a client repo:** `.mcp.json`, bearer token, profiles → [MCP Client Repo Setup](mcp-client-repo-setup.md)
 - **Hive (multi-agent):** Share memories across agents → [Hive Guide](hive.md)
 - **MCP setup:** Full client configuration → [MCP Server Guide](mcp.md)
+- **Knowledge graph & metrics:** Record/query experience events → [KG Experience Flow](kg-experience-flow.md), [Knowledge Graph Guide](knowledge-graph.md)
 - **Auto-recall:** Prompt injection and capture → [Auto-Recall Guide](auto-recall.md)
 - **Federation:** Cross-project memory → [Federation Guide](federation.md)

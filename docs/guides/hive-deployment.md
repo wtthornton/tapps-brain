@@ -24,8 +24,15 @@ make hive-deploy                        # OR, directly:
 # 3. Verify
 docker compose -p tapps-brain -f docker/docker-compose.hive.yaml ps
 curl http://localhost:8080/health       # {"status":"ok","service":"tapps-brain",...}
-curl http://localhost:8080/healthz      # {"status":"ok","detail":"ready (migration_version=N)"} — DB-checked
+curl http://localhost:8080/healthz      # phased body: ok, db_ok, mcp_ok, brain_version, ...
+curl -sS 'http://localhost:8080/healthz?deep=1' | jq .experience_writable  # write-path probe
+
+# From the tapps-brain repo (requires TAPPS_BRAIN_AUTH_TOKEN in .env or docker/.env):
+make brain-healthcheck    # MCP wiring + brain_recall round-trip
+make brain-smoke-live     # HTTP: experience record + /v1/experience:query round-trip
 ```
+
+`make hive-smoke` boots an **isolated** stack on alternate ports and tears it down — use that in CI, not against the live `:8080` server you just deployed.
 
 The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tapps`: applies Hive + private + federation schema, creates the least-privilege `tapps_runtime` role, grants DML on all tables, sets `TAPPS_BRAIN_RUNTIME_PASSWORD` on the role, then exits. The `tapps-brain-http` container then starts and connects as `tapps_runtime` (no superuser, no `BYPASSRLS`, no table ownership) — the privileged-role audit guard stays on.
 
@@ -56,7 +63,8 @@ Every service image in `docker/docker-compose.hive.yaml` resolves to `docker-<sv
 4. **Verify the live version**:
    ```bash
    curl -sS http://localhost:8080/healthz | jq .brain_version
-   # → "3.20.1"
+   # → "3.24.0"
+   make brain-smoke-live   # optional: experience record + query round-trip
    ```
 
 If you leave `BRAIN_VERSION` unset, every image resolves to `:latest` and you get the previous (drift-prone) behavior — useful for local development against a freshly-built tree, but **not recommended for production** because `docker compose up -d` will not re-pull `:latest` on its own. Always pin `BRAIN_VERSION` in production `docker/.env`.

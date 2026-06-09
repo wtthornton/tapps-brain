@@ -1,8 +1,8 @@
 # Knowledge Graph — Agent Guide
 
-**Audience:** AI coding agents using the four `brain_*` knowledge-graph tools on a deployed tapps-brain (EPIC-076 / TAP-1502).
+**Audience:** AI coding agents using the `brain_*` knowledge-graph and experience tools on a deployed tapps-brain (EPIC-076 / TAP-1502; query API EPIC-074 / TAP-3157).
 
-**Purpose:** explain when to reach for the KG instead of plain memory, the four MCP tools, the input dataclasses, common patterns, and the constraints that protect KG quality.
+**Purpose:** explain when to reach for the KG instead of plain memory, the KG/experience MCP tools (including `brain_query_events` v3.24.0+), the input dataclasses, common patterns, and the constraints that protect KG quality.
 
 For the broader playbook (recall, remember, tier picking, error taxonomy), see [`agent-playbook.md`](agent-playbook.md). For the underlying schema and design rationale, see [`docs/engineering/experience-events.md`](../engineering/experience-events.md) and ADRs [011](../planning/adr/ADR-011-kg-schema-postgres.md), [012](../planning/adr/ADR-012-evidence-required-edges.md), [013](../planning/adr/ADR-013-kg-inherits-memory-lifecycle.md).
 
@@ -17,10 +17,11 @@ Reach for the KG when you need to reason about **relationships between things**:
 | Question shape | Tool |
 |---|---|
 | "Did we decide X?" → text recall | [`brain_recall`](agent-playbook.md#brain_recall) |
-| "What's connected to entity Y?" → 1- or 2-hop neighbourhood | [`brain_get_neighbors`](#3-brain_get_neighbors) |
-| "How does X relate to Y?" → shortest path | [`brain_explain_connection`](#4-brain_explain_connection) |
+| "What's connected to entity Y?" → 1- or 2-hop neighbourhood | [`brain_get_neighbors`](#4-brain_get_neighbors) |
+| "How does X relate to Y?" → shortest path | [`brain_explain_connection`](#5-brain_explain_connection) |
 | "Record this workflow + the entities it touched, atomically" | [`brain_record_event`](#2-brain_record_event) |
-| "Edge X turned out wrong / right" | [`brain_record_feedback`](#5-brain_record_feedback) |
+| "Read back stored event payloads (metrics, tool-call scores)" | [`brain_query_events`](#3-brain_query_events) |
+| "Edge X turned out wrong / right" | [`brain_record_feedback`](#6-brain_record_feedback) |
 
 If a KG tool returns nothing useful, fall back to `brain_recall`. The KG is an *additional* surface, not a replacement.
 
@@ -180,7 +181,50 @@ The response gives you two `entity_ids`. A follow-up call can use those UUIDs in
 
 ---
 
-## 3. `brain_get_neighbors`
+## 3. `brain_query_events`
+
+**v3.24.0+ (TAP-3157).** Reads rows from `experience_events` with full `payload` JSONB round-trip. Use for `quality_metric`, `quality_gate_fail`, and `checklist_outcome` events — **not** for KG neighbourhood structure (`brain_get_neighbors` returns edges/entities only).
+
+### MCP signature
+
+```jsonc
+{
+  "tool": "brain_query_events",
+  "arguments": {
+    "event_type": "quality_metric",              // required
+    "since": "2026-06-01T00:00:00Z",           // optional — inclusive lower bound on event_time
+    "until": "2026-06-09T23:59:59Z",           // optional — inclusive upper bound
+    "entity_id": "src/tapps_brain/store.py",   // optional — matches payload.file_path OR subject_key (v1)
+    "limit": 100                                 // default 100, server cap 500
+  }
+}
+```
+
+### Response shape
+
+```jsonc
+{
+  "events": [
+    {
+      "event_id": "uuid",
+      "event_type": "quality_metric",
+      "payload": { "score": 91.0, "file_path": "...", "gate_passed": true, ... },
+      "ts": "2026-06-09T12:00:01.123456+00:00",
+      "agent_id": "cursor-agent",
+      "session_id": "optional"
+    }
+  ],
+  "count": 1
+}
+```
+
+REST mirror: `POST /v1/experience:query` with the same JSON body + `X-Project-Id` header. Registered in `full`, `operator` (deferred), and `reviewer` profiles.
+
+See [`experience-events.md`](../engineering/experience-events.md) for the `quality_metric` contract and a record→query smoke example.
+
+---
+
+## 4. `brain_get_neighbors`
 
 Returns the 1- or 2-hop neighbourhood graph around one or more entities in a single SQL round-trip.
 
@@ -232,7 +276,7 @@ Don't fetch huge neighbourhoods to scan visually. If `limit=200` returns 200 edg
 
 ---
 
-## 4. `brain_explain_connection`
+## 5. `brain_explain_connection`
 
 Finds the **shortest path** (≤ 3 hops) between two entities via BFS over the active edge graph.
 
@@ -281,7 +325,7 @@ Each hop does one `get_neighbors` SQL call (limit 50 per step). A `max_hops=3` B
 
 ---
 
-## 5. `brain_record_feedback`
+## 6. `brain_record_feedback`
 
 Records feedback on **either** a KG edge **or** a private memory entry — the routing depends on which subject identifier is set.
 
@@ -335,7 +379,7 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 
 ---
 
-## 6. Constraints that protect KG quality
+## 7. Constraints that protect KG quality
 
 | Constraint | What it means for agents |
 |---|---|
@@ -348,7 +392,7 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 
 ---
 
-## 7. Failure modes
+## 8. Failure modes
 
 | Response | Cause | Recovery |
 |---|---|---|
@@ -360,7 +404,7 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 
 ---
 
-## 8. Common patterns
+## 9. Common patterns
 
 ### Capture a successful workflow run and its touched entities
 
@@ -419,7 +463,7 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 
 ---
 
-## 9. Anti-patterns
+## 10. Anti-patterns
 
 - **Don't put plain facts in the KG.** "We use Tailwind for styling" is a `brain_remember(tier="architectural")`, not an entity + edge. The KG is for *relationships*; recall handles facts.
 - **Don't write edges without evidence.** Pre-bake an `EvidenceSpec` in every `brain_record_event` that includes an `EdgeSpec`. ADR-012 will reject you otherwise; the rejection rolls back the whole event.
@@ -430,11 +474,12 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 
 ---
 
-## 10. Related docs
+## 11. Related docs
 
 - [`agent-playbook.md`](agent-playbook.md) — the broader recall/remember/forget decision tree.
-- [`mcp-tools-for-agents.md`](mcp-tools-for-agents.md) — every MCP tool (brain_record_event etc. are in §11 in the live catalog).
-- [`docs/engineering/experience-events.md`](../engineering/experience-events.md) — full `experience_events` schema, partitioning, and payload examples.
+- [`kg-experience-flow.md`](kg-experience-flow.md) — populate-then-query: KG neighbours vs `brain_query_events`.
+- [`mcp-tools-for-agents.md`](mcp-tools-for-agents.md) — every MCP tool with "when I'd reach for it" notes.
+- [`docs/engineering/experience-events.md`](../engineering/experience-events.md) — full `experience_events` schema, `brain_query_events` API, and payload examples.
 - [`ADR-011`](../planning/adr/ADR-011-kg-schema-postgres.md) — why the KG lives in Postgres with RLS (not a separate graph DB).
 - [`ADR-012`](../planning/adr/ADR-012-evidence-required-edges.md) — why every edge needs evidence.
 - [`ADR-013`](../planning/adr/ADR-013-kg-inherits-memory-lifecycle.md) — why entities and edges share the `MemoryEntry` lifecycle fields.
