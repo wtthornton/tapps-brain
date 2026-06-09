@@ -83,8 +83,13 @@ class EntitySpec(BaseModel):
         """
         if isinstance(data, dict):
             patched = dict(data)
-            if not patched.get("canonical_name") and patched.get("key"):
-                patched["canonical_name"] = str(patched["key"])
+            if not patched.get("canonical_name"):
+                if patched.get("id"):
+                    patched["canonical_name"] = str(patched["id"])
+                elif patched.get("key"):
+                    patched["canonical_name"] = str(patched["key"])
+            if not patched.get("entity_type") and patched.get("type"):
+                patched["entity_type"] = str(patched["type"])
             if not patched.get("entity_type"):
                 patched["entity_type"] = "concept"
             return patched

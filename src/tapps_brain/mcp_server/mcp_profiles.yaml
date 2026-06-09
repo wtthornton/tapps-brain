@@ -82,6 +82,8 @@ profiles:
         defer_loading: true
       - name: brain_record_events_batch
         defer_loading: true
+      - name: brain_query_events
+        defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
       - name: brain_resolve_entity
@@ -216,6 +218,8 @@ profiles:
       - name: brain_record_event
         defer_loading: true
       - name: brain_record_events_batch
+        defer_loading: true
+      - name: brain_query_events
         defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
@@ -381,9 +385,10 @@ profiles:
   reviewer:
     description: >
       Read-only subset for PR/code review agents. No writes, no deletes.
-      Provides recall, search, and graph traversal only.
+      Provides recall, search, graph traversal, and experience event queries.
     tools:
       - brain_recall
+      - brain_query_events
       - hive_search
       - memory_find_related
       - memory_get

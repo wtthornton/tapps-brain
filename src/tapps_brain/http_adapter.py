@@ -3248,6 +3248,85 @@ def create_app(
         # /v1/experience endpoint and the documented OpenAPI contract).
         return JSONResponse(status_code=200, content=result)
 
+    @app.post("/v1/experience:query", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_experience_query(request: Request) -> JSONResponse:
+        """Query experience events with full payload round-trip.
+
+        REST counterpart of the ``brain_query_events`` MCP tool (TAP-3157).
+        Returns stored ``experience_events.payload`` JSONB for metrics and
+        dashboard consumers.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+
+        Request body (JSON):
+          ``{ "event_type": str, "since"?: str, "until"?: str,
+              "entity_id"?: str, "limit"?: int }``
+
+        Response: ``{ "events": [{event_id, event_type, payload, ts,
+        agent_id, session_id?}], "count": int }``
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+
+        try:
+            raw = await request.body()
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Failed to read request body."},
+            )
+        if not raw:
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+            )
+        if len(raw) > 65_536:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            )
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+            )
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+            )
+
+        event_type = (body.get("event_type") or "").strip()
+        if not event_type:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "event_type is required."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.query_events,
+            cm,
+            project_id,
+            event_type=event_type,
+            since=body.get("since") or None,
+            until=body.get("until") or None,
+            entity_id=body.get("entity_id") or None,
+            limit=int(body.get("limit", _kg_svc._QUERY_EVENTS_DEFAULT_LIMIT)),
+        )
+        if isinstance(result, dict) and result.get("error"):
+            status = 400 if result.get("error") == "bad_request" else 503
+            raise HTTPException(status_code=status, detail=result)
+        return JSONResponse(status_code=200, content=result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.

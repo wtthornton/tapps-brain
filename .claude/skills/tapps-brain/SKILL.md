@@ -1,7 +1,7 @@
 ---
 name: tapps-brain
 description: Persistent cross-session memory + knowledge graph for AI coding agents. Use when you need to recall prior decisions before making a non-trivial choice, save the rationale behind a decision so it survives the session, share findings across agents in a project (Hive), or record an experience event / KG triple. Talk to the deployed brain at http://127.0.0.1:8080/mcp/ via MCP tools — never via raw psycopg.
-version: "3.23.0"
+version: "3.24.0"
 origin: tapps-brain
 ---
 
@@ -17,7 +17,7 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 - The user asks "what did we decide about X" / "why is Y the way it is" / "have we seen this before."
 - Multiple agents in the same project need to coordinate — Hive (shared memory).
 - A task succeeded or failed in a way worth teaching future sessions (`brain_learn_success` / `brain_learn_failure`).
-- Adding an experience event or KG triple (`brain_record_event` / `brain_record_events_batch`, `brain_record_feedback`).
+- Adding or querying experience events / KG triples (`brain_record_event` / `brain_record_events_batch`, `brain_query_events`, `brain_record_feedback`).
 
 ## Core operations
 
@@ -28,7 +28,7 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 | Share across agents | `brain_remember(..., agent_scope="hive")` | Modern primary param. `agent_scope` accepts `private` (default) / `domain` / `hive` / `group:<name>`. The legacy `share=True` / `share_with="hive"` flags still work but `agent_scope` supersedes them. Hive is a feature of the brain, not a separate service. |
 | Teach from an outcome | `brain_learn_success(...)` / `brain_learn_failure(...)` | AgentBrain facade — records what worked / what to avoid so future recalls surface it. Pass `failed_approaches=[...]` on `brain_remember` for inline anti-patterns. |
 
-The eager `tools/list` catalog returns 8 daily-driver tools (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools (`brain_learn_success`/`brain_learn_failure`, `brain_record_event`/`brain_record_events_batch`, `brain_resolve_entity`, `brain_export`, `recall_quality_metrics`, `brain_audit_consumers`, the `memory_*`/`feedback_*` family) are deferred-loaded — still callable via `tools/call` and reachable via Anthropic Tool Search BETA (`advanced-tool-use-2025-11-20` header) — TAP-1985.
+The eager `tools/list` catalog returns 8 daily-driver tools (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools (`brain_learn_success`/`brain_learn_failure`, `brain_record_event`/`brain_record_events_batch`, `brain_query_events`, `brain_resolve_entity`, `brain_export`, `recall_quality_metrics`, `brain_audit_consumers`, the `memory_*`/`feedback_*` family) are deferred-loaded — still callable via `tools/call` and reachable via Anthropic Tool Search BETA (`advanced-tool-use-2025-11-20` header) — TAP-1985.
 
 ## Pick a tier
 
@@ -77,4 +77,4 @@ See [`docs/guides/mcp-client-repo-setup.md`](https://github.com/wtthornton/tapps
 - **AgentForge integrators**: [`docs/guides/agentforge-integration.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/agentforge-integration.md) — Python `AgentBrain` SDK + HTTP `BrainBridge` paths.
 - **Error taxonomy**: [`docs/guides/errors.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/errors.md) — HTTP + JSON-RPC envelopes, retry policy.
 - **HTTP surface**: [`docs/guides/http-adapter.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/http-adapter.md) — `/healthz` phased body, `/v1/tools/list` ETag headers.
-- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3224--2026-06-05) — current at v3.22.4.
+- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3240--2026-06-09) — current at v3.24.0.

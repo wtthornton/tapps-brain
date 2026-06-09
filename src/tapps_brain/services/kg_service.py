@@ -246,6 +246,95 @@ def record_event(
 
 
 # ---------------------------------------------------------------------------
+# query_events (TAP-3157 / STORY-074.1)
+# ---------------------------------------------------------------------------
+
+_QUERY_EVENTS_MAX_LIMIT = 500
+_QUERY_EVENTS_DEFAULT_LIMIT = 100
+
+
+def query_events(
+    cm: Any,
+    project_id: str,
+    *,
+    event_type: str,
+    since: str | None = None,
+    until: str | None = None,
+    entity_id: str | None = None,
+    limit: int = _QUERY_EVENTS_DEFAULT_LIMIT,
+) -> dict[str, Any]:
+    """Query ``experience_events`` rows with optional time and entity filters.
+
+    Returns full write-time ``payload`` JSONB for each matching row.  The
+    optional ``entity_id`` filter matches ``payload.file_path`` or
+    ``subject_key`` (v1 — not KG entity UUID).
+
+    Parameters
+    ----------
+    cm:
+        Open :class:`~tapps_brain.postgres_connection.PostgresConnectionManager`.
+    project_id:
+        Tenant scope (RLS via ``project_context``).
+    event_type:
+        Required semantic category filter (e.g. ``quality_metric``).
+    since / until:
+        Optional ISO-8601 bounds on ``event_time`` (inclusive).
+    entity_id:
+        Optional file-path or subject-key filter.
+    limit:
+        Maximum rows returned (default 100, server cap 500).
+    """
+    if not (event_type or "").strip():
+        return {"error": "bad_request", "detail": "event_type is required."}
+
+    eff_limit = max(1, min(int(limit), _QUERY_EVENTS_MAX_LIMIT))
+
+    conditions: list[str] = ["event_type = %s"]
+    params: list[Any] = [event_type.strip()]
+
+    if since and since.strip():
+        conditions.append("event_time >= %s")
+        params.append(since.strip())
+    if until and until.strip():
+        conditions.append("event_time <= %s")
+        params.append(until.strip())
+    if entity_id and entity_id.strip():
+        eid = entity_id.strip()
+        conditions.append("(payload->>'file_path' = %s OR subject_key = %s)")
+        params.extend([eid, eid])
+
+    where = " AND ".join(conditions)
+    sql = (
+        "SELECT id::text, event_type, payload, event_time, agent_id, session_id "
+        f"FROM experience_events WHERE {where} "
+        "ORDER BY event_time DESC LIMIT %s"
+    )
+    params.append(eff_limit)
+
+    events: list[dict[str, Any]] = []
+    with cm.project_context(project_id) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    for row in rows:
+        event_time = row[3]
+        ts = event_time.isoformat() if hasattr(event_time, "isoformat") else str(event_time)
+        payload = row[2] if isinstance(row[2], dict) else {}
+        evt: dict[str, Any] = {
+            "event_id": row[0],
+            "event_type": row[1],
+            "payload": payload,
+            "ts": ts,
+            "agent_id": row[4],
+        }
+        if row[5]:
+            evt["session_id"] = row[5]
+        events.append(evt)
+
+    return {"events": events, "count": len(events)}
+
+
+# ---------------------------------------------------------------------------
 # record_events_batch (TAP-1934)
 # ---------------------------------------------------------------------------
 

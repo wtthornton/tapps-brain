@@ -1,9 +1,10 @@
 """Knowledge-Graph MCP tool registrations (EPIC-076 STORY-076.5).
 
-Exposes four tools on the standard server:
+Exposes KG / experience tools on the standard server:
 
 * ``brain_record_event``  — write one :class:`~tapps_brain.experience.ExperienceEvent`
   plus optional memory / entity / edge / evidence atomically.
+* ``brain_query_events`` — query stored experience event payloads (TAP-3157).
 * ``brain_get_neighbors`` — fetch 1-hop or 2-hop neighbourhood around entities.
 * ``brain_explain_connection`` — find the shortest path (≤3 hops) between two
   entities.
@@ -421,6 +422,56 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
             # already reflects only the valid_events slice.
 
         return json.dumps(svc_result, default=str)
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_query_events(
+        event_type: str,
+        since: str = "",
+        until: str = "",
+        entity_id: str = "",
+        limit: int = 100,
+    ) -> str:
+        """Query stored experience events with full payload round-trip.
+
+        REST counterpart: ``POST /v1/experience:query``.  Unblocks tapps-mcp
+        metrics migration (TAP-3157) — returns write-time ``payload`` JSONB
+        from ``experience_events``.
+
+        Parameters
+        ----------
+        event_type:
+            Required semantic category (e.g. ``quality_metric``).
+        since / until:
+            Optional ISO-8601 UTC bounds on ``event_time`` (inclusive).
+        entity_id:
+            Optional filter matching ``payload.file_path`` or ``subject_key``
+            (v1 — not KG entity UUID).
+        limit:
+            Maximum rows (default 100, server cap 500).
+
+        Returns
+        -------
+        JSON object: ``{ "events": [{event_id, event_type, payload, ts,
+        agent_id, session_id?}], "count": int }``
+        """
+        project_id = _pid()
+
+        cm = kg_service._get_or_create_cm()
+        if cm is None:
+            return json.dumps(
+                {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
+            )
+
+        result = kg_service.query_events(
+            cm,
+            project_id,
+            event_type=event_type,
+            since=since or None,
+            until=until or None,
+            entity_id=entity_id or None,
+            limit=limit,
+        )
+        return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_get_neighbors(

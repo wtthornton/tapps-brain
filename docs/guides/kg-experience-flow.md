@@ -12,13 +12,26 @@ The tapps-brain Knowledge Graph (KG) stores entities (named nodes) and edges
 write an edge you first need UUIDs for both endpoints; to get those UUIDs you
 call `brain_resolve_entity` (MCP) or `POST /v1/kg/resolve_entity` (REST).
 
-The three-step populate-then-retrieve flow is:
+The populate-then-retrieve flows are:
+
+**KG neighbourhood (structure only):**
 
 ```
 1. resolve_entity (name → UUID)
 2. record_event   (write edge using UUID)
 3. get_neighbors  (read neighbourhood by UUID)
 ```
+
+**Experience event payloads (metrics / audit — since 3.24.0):**
+
+```
+1. record_event      (write event + payload)
+2. brain_query_events (read payloads by event_type / file_path)
+```
+
+Use `brain_query_events` (MCP) or `POST /v1/experience:query` (REST) for
+`quality_metric` and other `experience_events` rows — not `brain_get_neighbors`,
+which returns KG edge structure only.
 
 ## Step 1 — Resolve or create an entity
 

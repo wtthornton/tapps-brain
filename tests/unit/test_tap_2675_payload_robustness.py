@@ -39,6 +39,16 @@ class TestEntitySpecKeyShorthand:
         assert spec.canonical_name == "real-name"
         assert spec.entity_type == "concept"
 
+    def test_type_id_shorthand_from_tapps_mcp(self) -> None:
+        spec = EntitySpec(**{"type": "file", "id": "packages/tapps-mcp/checklist.py"})
+        assert spec.entity_type == "file"
+        assert spec.canonical_name == "packages/tapps-mcp/checklist.py"
+
+    def test_explicit_entity_type_wins_over_type_shorthand(self) -> None:
+        spec = EntitySpec(**{"type": "file", "entity_type": "module", "id": "store.py"})
+        assert spec.entity_type == "module"
+        assert spec.canonical_name == "store.py"
+
     def test_empty_payload_still_rejected(self) -> None:
         # No key and no canonical_name → nothing to name the entity → still invalid.
         with pytest.raises(ValueError, match="canonical_name"):

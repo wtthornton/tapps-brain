@@ -12,6 +12,17 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.24.0] — 2026-06-09
+
+Ships the experience-event **read** path that unblocks tapps-mcp from retiring per-project `.tapps-mcp/metrics/*.jsonl` local state (EPIC-074 / [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155)). Writes via `brain_record_event` already persisted full payloads to `experience_events`; this release adds query-by-`event_type` with optional time range and file-path filter.
+
+### Added
+
+- **`brain_query_events` MCP tool + `POST /v1/experience:query` REST endpoint** ([TAP-3157](https://linear.app/tappscodingagents/issue/TAP-3157) / STORY-074.1). Returns full write-time `payload` JSONB round-trip (`event_id`, `event_type`, `payload`, `ts`, `agent_id`, optional `session_id`). Filters: required `event_type`; optional `since` / `until` on `event_time`; optional `entity_id` matching `payload.file_path` or `subject_key` (v1 — not KG UUID). `limit` default 100, server cap 500. Registered in `full`, `operator` (deferred), and `reviewer` profiles; REST route profile-gated via `rest_profile_gate.py`.
+- **Migration 023** — btree index `(project_id, event_type, event_time DESC)` on `experience_events` for the query path ([TAP-3158](https://linear.app/tappscodingagents/issue/TAP-3158) / STORY-074.2). Integration round-trip test: `quality_metric` record → query by `file_path`.
+- **`EntitySpec` `type` / `id` shorthand** ([TAP-3159](https://linear.app/tappscodingagents/issue/TAP-3159) / STORY-074.3). Accepts tapps-mcp's `{"type": "file", "id": "packages/..."}` entity shape alongside the existing `key` → `canonical_name` coercion (TAP-2675).
+- **Docs** — `quality_metric`, `quality_gate_fail`, and `checklist_outcome` event types plus query API smoke example in `docs/engineering/experience-events.md` ([TAP-3160](https://linear.app/tappscodingagents/issue/TAP-3160) / STORY-074.4).
+
 ## [3.23.0] — 2026-06-05
 
 Removes the dead OpenClaw distribution channel and closes the release-artifact drift class surfaced after 3.22.4 (a missing OpenAPI snapshot and an `llms.txt` stuck two versions behind). No runtime behaviour changes — the deployed write path is identical to 3.22.4.

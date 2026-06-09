@@ -43,6 +43,74 @@ Well-known types used by the tapps-brain toolchain:
 | `tool_called` | An external tool or API was invoked and returned. |
 | `approach_failed` | An attempted approach did not succeed; captures failure context. |
 | `memory_recalled` | A recall query was executed; captures hit count and utility. |
+| `quality_metric` | TappsMCP tool-call quality score emitted after `tapps_score_file` / `tapps_quick_check`. |
+| `quality_gate_fail` | Quality gate rejected a file; captures preset, score, and blocking findings. |
+| `checklist_outcome` | End-of-task checklist result (`complete` / missing required tools). |
+
+---
+
+## Query API — `brain_query_events` (TAP-3157)
+
+Since **3.24.0**, stored event payloads can be read back via MCP
+``brain_query_events`` or REST ``POST /v1/experience:query``.  This unblocks
+tapps-mcp from retiring ``.tapps-mcp/metrics/*.jsonl`` local state.
+
+**MCP:**
+
+```python
+result = brain_query_events(
+    event_type="quality_metric",
+    entity_id="packages/tapps-mcp/src/tapps_mcp/checklist.py",
+    limit=50,
+)
+# {"events": [{"event_id": "…", "event_type": "quality_metric",
+#   "payload": {"score": 87.5, "duration_ms": 420, "gate_passed": true,
+#               "started_at": "2026-06-09T12:00:00Z", "file_path": "…"},
+#   "ts": "2026-06-09T12:00:01.123456+00:00", "agent_id": "cursor-agent"}],
+#  "count": 1}
+```
+
+**REST:**
+
+```http
+POST /v1/experience:query
+X-Project-Id: tapps-brain
+Content-Type: application/json
+
+{"event_type": "quality_metric", "entity_id": "src/tapps_brain/store.py", "limit": 100}
+```
+
+**Filters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `event_type` | yes | Exact match on `experience_events.event_type`. |
+| `since` / `until` | no | ISO-8601 UTC bounds on `event_time` (inclusive). |
+| `entity_id` | no | v1: matches `payload.file_path` **or** `subject_key` (not KG UUID). |
+| `limit` | no | Default 100; server cap 500. |
+
+**Smoke round-trip:**
+
+```python
+from tapps_brain.services import kg_service
+
+file_path = "src/tapps_brain/store.py"
+kg_service.record_event(
+    cm, project_id, brain_id, agent_id,
+    event_type="quality_metric",
+    payload={
+        "score": 91.0,
+        "duration_ms": 312,
+        "gate_passed": True,
+        "started_at": "2026-06-09T12:00:00Z",
+        "file_path": file_path,
+    },
+    entities=[{"type": "file", "id": file_path}],
+)
+out = kg_service.query_events(cm, project_id, event_type="quality_metric", entity_id=file_path)
+assert out["count"] >= 1
+assert out["events"][0]["payload"]["score"] == 91.0
+```
 
 ---
 

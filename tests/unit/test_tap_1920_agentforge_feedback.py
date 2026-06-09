@@ -440,6 +440,7 @@ class TestRestProfileGate:
         assert resolve_tool_for_path("/v1/remember") == "brain_remember"
         assert resolve_tool_for_path("/v1/experience") == "brain_record_event"
         assert resolve_tool_for_path("/v1/experience:batch") == "brain_record_event"
+        assert resolve_tool_for_path("/v1/experience:query") == "brain_query_events"
         assert resolve_tool_for_path("/v1/kg/feedback") == "brain_record_feedback"
 
     def test_unknown_route_returns_none(self) -> None:

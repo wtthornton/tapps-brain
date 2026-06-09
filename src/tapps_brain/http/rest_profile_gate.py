@@ -43,6 +43,7 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     # Knowledge graph (EPIC-076)
     "/v1/experience": "brain_record_event",
     "/v1/experience:batch": "brain_record_event",  # TAP-1934 — same tool
+    "/v1/experience:query": "brain_query_events",  # TAP-3157 — STORY-074.1
     "/v1/kg/neighbors": "brain_get_neighbors",
     "/v1/kg/explain": "brain_explain_connection",
     "/v1/kg/feedback": "brain_record_feedback",
