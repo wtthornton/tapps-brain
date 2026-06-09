@@ -208,9 +208,7 @@ def require_data_plane_auth(request: Request) -> None:
                 status_code=503,
                 detail={
                     "error": "service_unavailable",
-                    "detail": (
-                        "Authentication is required but TAPPS_BRAIN_AUTH_TOKEN is unset."
-                    ),
+                    "detail": ("Authentication is required but TAPPS_BRAIN_AUTH_TOKEN is unset."),
                 },
             )
         return
