@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim
 
 # psql needed for role creation + password ALTER (step 3–4 of the entrypoint).
@@ -7,7 +8,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY dist/tapps_brain-*.whl /tmp/
-RUN whl=$(ls /tmp/tapps_brain-*.whl) && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    whl=$(ls /tmp/tapps_brain-*.whl) && \
     pip install --no-cache-dir "${whl}[cli]" "psycopg[binary]" && \
     rm /tmp/tapps_brain-*.whl
 

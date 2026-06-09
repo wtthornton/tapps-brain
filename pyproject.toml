@@ -86,6 +86,7 @@ dev = [
     "pytest>=8.0,<9",
     "pytest-asyncio>=0.25,<2",
     "pytest-cov>=6.0,<8",
+    "pytest-xdist>=3.6,<4",
     "pytest-benchmark>=5.0,<6",
     "mypy>=1.14,<3",
     "ruff>=0.9,<1",

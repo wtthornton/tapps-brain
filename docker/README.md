@@ -48,11 +48,16 @@ Other useful targets:
 | Target | What it does |
 |--------|--------------|
 | `make hive-deploy` | Full deploy — check env → build wheel + images → up (migrate runs automatically) |
+| `make dev-deploy` | **Fast inner loop** — reload http (or migrate if SQL changed) + `brain-smoke-live` |
+| `make hive-reload-http` | Wheel + http image only; restart `tapps-brain-http` (DB + visual unchanged) |
+| `make hive-reload` | Wheel + http + migrate images; run migrate sidecar; restart brain |
 | `make hive-build` | Build wheel + Docker images only |
 | `make hive-up` | Start services without rebuilding |
 | `make hive-down` | Stop containers (keeps volumes) |
 | `make hive-logs` | Tail logs from all services |
 | `make hive-smoke` | End-to-end smoke test: boots full stack on throwaway ports, asserts all endpoints, tears down |
+
+See [docs/guides/dev-docker-loop.md](../docs/guides/dev-docker-loop.md) for tiered gates and 10–20 deploys/day workflow.
 
 ### Manual steps (if not using make)
 

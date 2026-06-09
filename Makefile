@@ -21,6 +21,13 @@ PYTEST        := uv run pytest
 RUFF          := uv run ruff
 MYPY          := uv run mypy
 
+# Faster Docker rebuilds (pip cache mounts in Dockerfiles.http / Dockerfile.migrate).
+export DOCKER_BUILDKIT ?= 1
+
+# Parallel workers for brain-test-fast (-n auto). Set BRAIN_TEST_FAST_N=0 to disable.
+BRAIN_TEST_FAST_N ?= auto
+PYTEST_XDIST_FLAG := $(if $(filter 0,$(BRAIN_TEST_FAST_N)),,-n $(BRAIN_TEST_FAST_N))
+
 # Export so `$(HIVE_COMPOSE)` (build/up) sees the pyproject-derived version in
 # its environment, which overrides any stale BRAIN_VERSION in docker/.env. Without
 # this, plain `make hive-deploy` tags/runs images at the .env value, not the real
@@ -34,7 +41,8 @@ TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
-        hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-brain-env \
+        hive-wheel hive-build hive-deploy hive-reload-http hive-reload dev-deploy \
+        hive-up hive-down hive-logs hive-smoke check-brain-env \
         check-compose-isolation publish-brain-image
 
 # Abort when the dev Postgres container is on tapps-brain_default (pre-076.1 layout
@@ -97,9 +105,9 @@ brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate
 	    --cov-report=term-missing \
 	    --cov-fail-under=95
 
-brain-test-fast:  ## Tests excluding slow/benchmark, no coverage (rapid iteration)
+brain-test-fast:  ## Tests excluding slow/benchmark, no coverage, parallel (rapid iteration)
 	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
-	  $(PYTEST) tests/ --tb=short -q -m "not benchmark and not slow" -x
+	  $(PYTEST) tests/ --tb=short -q -m "not benchmark and not slow" -x $(PYTEST_XDIST_FLAG)
 
 # ---------------------------------------------------------------------------
 # Lint / type
@@ -131,10 +139,33 @@ brain-qa:  ## Full QA: lint + type + migrations + tests (mirrors CI)
 #   TAPPS_BRAIN_DB_PASSWORD, TAPPS_BRAIN_AUTH_TOKEN, TAPPS_BRAIN_ADMIN_TOKEN
 # ---------------------------------------------------------------------------
 
-hive-build:  ## Build wheel + Docker images for the unified tapps-brain stack
+hive-wheel:  ## Build wheel only (dist/*.whl) — used by reload targets
 	rm -f dist/*.whl dist/*.tar.gz
 	uv build
+
+hive-build: hive-wheel  ## Build wheel + Docker images for the unified tapps-brain stack
 	$(HIVE_COMPOSE) build
+
+hive-reload-http:  ## Rebuild wheel + http image only; restart brain (keep DB + visual)
+	$(MAKE) check-brain-env
+	@$(MAKE) check-compose-isolation
+	$(MAKE) hive-wheel
+	$(HIVE_COMPOSE) build tapps-brain-http
+	$(HIVE_COMPOSE) up -d tapps-brain-db
+	$(HIVE_COMPOSE) up -d --no-deps --force-recreate tapps-brain-http
+
+hive-reload:  ## Rebuild wheel + http + migrate; run migrate sidecar; restart brain
+	$(MAKE) check-brain-env
+	@$(MAKE) check-compose-isolation
+	$(MAKE) hive-wheel
+	$(HIVE_COMPOSE) build tapps-brain-http tapps-brain-migrate
+	$(HIVE_COMPOSE) up -d tapps-brain-db
+	$(HIVE_COMPOSE) run --rm tapps-brain-migrate
+	@bash scripts/migrations-changed.sh --stamp
+	$(HIVE_COMPOSE) up -d --no-deps --force-recreate tapps-brain-http
+
+dev-deploy:  ## Fast loop: reload http (or migrate if SQL changed) + brain-smoke-live
+	@bash scripts/dev-deploy.sh
 
 check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 	@if [ ! -f docker/.env ]; then \

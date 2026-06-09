@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim
 
 ARG TAPPS_BRAIN_VERSION=unknown
@@ -10,8 +11,9 @@ LABEL tapps_brain_version="${TAPPS_BRAIN_VERSION}"
 COPY dist/tapps_brain-*.whl /tmp/
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && whl=$(ls /tmp/tapps_brain-*.whl) \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.cache/pip \
+    whl=$(ls /tmp/tapps_brain-*.whl) \
     && pip install --no-cache-dir "${whl}[cli,mcp,http]" "psycopg[binary]"
 
 # STORY-070.15: one binary, both transports.

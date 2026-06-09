@@ -34,6 +34,8 @@ make brain-smoke-live     # HTTP: experience record + /v1/experience:query round
 
 `make hive-smoke` boots an **isolated** stack on alternate ports and tears it down — use that in CI, not against the live `:8080` server you just deployed.
 
+For **10–20 code deploys per day** after the first `hive-deploy`, use **`make dev-deploy`** ([dev-docker-loop.md](dev-docker-loop.md)): rebuilds only the http image (or runs migrate when SQL changed), then `brain-smoke-live`.
+
 The migrate sidecar (`tapps-brain-migrate`) runs once, as the DB owner role `tapps`: applies Hive + private + federation schema, creates the least-privilege `tapps_runtime` role, grants DML on all tables, sets `TAPPS_BRAIN_RUNTIME_PASSWORD` on the role, then exits. The `tapps-brain-http` container then starts and connects as `tapps_runtime` (no superuser, no `BYPASSRLS`, no table ownership) — the privileged-role audit guard stays on.
 
 There is no "Hive service" to start separately; the brain serves private memory + Hive + Federation from the same DSN over the same `/mcp/` + `/v1/*` API.

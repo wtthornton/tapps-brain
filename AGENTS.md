@@ -40,12 +40,15 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make brain-psql` | Open a psql shell in the running container |
 | `make brain-migrate` | Apply all pending schema migrations (idempotent) |
 | `make brain-test` | Full test suite with coverage (≥ 95 %) |
-| `make brain-test-fast` | Tests excluding benchmarks, no coverage, fail-fast (`-x`) |
+| `make brain-test-fast` | Tests excluding benchmarks, no coverage, fail-fast (`-x`), parallel (`-n auto`) |
 | `make brain-lint` | Ruff lint + format check |
 | `make brain-type` | Strict mypy type check |
 | `make brain-qa` | Full QA: lint + type + tests (mirrors CI) |
 | `make brain-healthcheck` | MCP wiring + recall round-trip against the live brain |
 | `make brain-smoke-live` | HTTP smoke on the live stack (`/healthz`, `experience:query` round-trip) |
+| `make dev-deploy` | Fast Docker loop: reload brain + live smoke ([dev-docker-loop.md](docs/guides/dev-docker-loop.md)) |
+| `make hive-reload-http` | Rebuild wheel + http image only; restart brain container |
+| `make hive-reload` | Rebuild + run migrate sidecar when SQL changed; restart brain |
 | `make hive-smoke` | Isolated compose smoke (alternate ports; boots and tears down) |
 | `make publish-brain-image` | Build wheel + `docker-tapps-brain-http:latest` + versioned tag (for AgentForge) |
 
