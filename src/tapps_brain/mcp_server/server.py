@@ -445,6 +445,7 @@ def create_server(  # noqa: PLR0915
         register_knowledge_tools,
         register_memory_tools,
     )
+    from tapps_brain.mcp_server.tools_profile import register_profile_tools
     from tapps_brain.mcp_server.tools_resources import register_resources_and_prompts
 
     register_brain_tools(mcp, ctx)
@@ -456,6 +457,7 @@ def create_server(  # noqa: PLR0915
     register_agent_tools(mcp, ctx)
     register_knowledge_tools(mcp, ctx)
     register_kg_tools(mcp, ctx)
+    register_profile_tools(mcp, ctx)
 
     # ------------------------------------------------------------------
     # Profile registry (EPIC-073 STORY-073.1)

@@ -265,6 +265,11 @@ class TestCoreTools:
             "brain_record_events_batch",
             # KG entity resolution (TAP-2725)
             "brain_resolve_entity",
+            # Experience query (TAP-3157 / EPIC-074)
+            "brain_query_events",
+            # Profile-scoped learned data (EPIC-075)
+            "brain_profile_set",
+            "brain_profile_get",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"

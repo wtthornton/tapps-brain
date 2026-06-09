@@ -283,7 +283,16 @@ is auto-discovered by Claude Code — no action needed.
 
 For agents working on **other repos** that consume the deployed brain,
 install the skill once so the harness can trigger it on recall / remember
-keywords. Two install paths:
+keywords. Three install paths:
+
+```bash
+# 0. HTTP-only consumers (AgentForge, CI) — fetch the version pinned to the
+#    running brain (TAP-2981). No GitHub raw URL drift:
+mkdir -p .claude/skills/tapps-brain
+curl -fsSL http://127.0.0.1:8080/v1/skill | jq -r '.body' \
+     > .claude/skills/tapps-brain/SKILL.md
+# Response also includes {name, version} — compare version to your brain image tag.
+```
 
 ```bash
 # 1. Project-scoped (recommended for repo-specific behavioural rules) —

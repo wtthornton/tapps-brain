@@ -84,6 +84,10 @@ profiles:
         defer_loading: true
       - name: brain_query_events
         defer_loading: true
+      - name: brain_profile_get
+        defer_loading: true
+      - name: brain_profile_set
+        defer_loading: true
       - name: brain_record_feedback
         defer_loading: true
       - name: brain_resolve_entity
@@ -220,6 +224,10 @@ profiles:
       - name: brain_record_events_batch
         defer_loading: true
       - name: brain_query_events
+        defer_loading: true
+      - name: brain_profile_get
+        defer_loading: true
+      - name: brain_profile_set
         defer_loading: true
       - name: brain_record_feedback
         defer_loading: true

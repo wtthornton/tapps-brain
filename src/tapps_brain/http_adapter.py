@@ -382,6 +382,40 @@ def _validate_uuid_field(value: Any, field_name: str) -> str:
         ) from None
 
 
+async def _parse_json_object_body(request: Request) -> dict[str, Any]:
+    """Parse a JSON object request body with standard size and shape guards."""
+    try:
+        raw = await request.body()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": "Failed to read request body."},
+        ) from None
+    if not raw:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": "Empty request body."},
+        )
+    if len(raw) > 65_536:
+        raise HTTPException(
+            status_code=413,
+            detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+        )
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+        ) from None
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+        )
+    return body
+
+
 # TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
 # and Prometheus scrape (every 15 s) don't each open a new standalone Postgres
 # connection.  Key = DSN string; value = (expires_at, result_tuple).
@@ -1165,7 +1199,7 @@ class OtelSpanMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa:
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
 _ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset(  # type: ignore[no-redef]  # noqa: F811
-    {"/", "/health", "/healthz", "/ready", "/metrics", "/v1/tools/list"}
+    {"/", "/health", "/healthz", "/ready", "/metrics", "/v1/tools/list", "/v1/skill"}
 )
 
 
@@ -3327,6 +3361,94 @@ def create_app(
             raise HTTPException(status_code=status, detail=result)
         return JSONResponse(status_code=200, content=result)
 
+    @app.get("/v1/skill")
+    async def _v1_skill() -> JSONResponse:
+        """Return the version-pinned tapps-brain agent skill body (TAP-2981)."""
+        from tapps_brain.skill_content import load_tapps_brain_skill
+
+        return JSONResponse(status_code=200, content=load_tapps_brain_skill())
+
+    @app.post("/v1/profile/data:set", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_profile_data_set(request: Request) -> JSONResponse:
+        """Store profile-scoped learned KV (REST counterpart of ``brain_profile_set``)."""
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        body = await _parse_json_object_body(request)
+        profile_name = (body.get("profile") or "").strip()
+        data_key = (body.get("key") or "").strip()
+        value_json = body.get("value_json")
+        if not profile_name:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "profile is required."},
+            )
+        if not data_key:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "key is required."},
+            )
+        if not isinstance(value_json, dict):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "value_json must be a JSON object."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import profile_data_service as _profile_svc
+
+        result = await asyncio.to_thread(
+            _profile_svc.profile_data_set,
+            cm,
+            project_id,
+            profile_name=profile_name,
+            data_key=data_key,
+            value_json=value_json,
+        )
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(status_code=400, detail=result)
+        return JSONResponse(status_code=200, content=result)
+
+    @app.post("/v1/profile/data:get", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_profile_data_get(request: Request) -> JSONResponse:
+        """Read profile-scoped learned KV (REST counterpart of ``brain_profile_get``)."""
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        body = await _parse_json_object_body(request)
+        profile_name = (body.get("profile") or "").strip()
+        data_key = (body.get("key") or "").strip()
+        if not profile_name:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "profile is required."},
+            )
+        if not data_key:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "key is required."},
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import profile_data_service as _profile_svc
+
+        result = await asyncio.to_thread(
+            _profile_svc.profile_data_get,
+            cm,
+            project_id,
+            profile_name=profile_name,
+            data_key=data_key,
+        )
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(status_code=400, detail=result)
+        return JSONResponse(status_code=200, content=result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.
@@ -3338,8 +3460,8 @@ def create_app(
           - ``X-Agent-Id`` (optional): agent identifier.
 
         Request body (JSON):
-          ``{ "entity_ids": [str], "hops"?: int=1, "limit"?: int=20,
-              "predicate_filter"?: str }``
+          ``{ "entity_ids"?: [str], "entity_refs"?: [{entity_type, canonical_name}],
+              "hops"?: int=1, "limit"?: int=20, "predicate_filter"?: str }``
 
         Response: ``{ "neighbors": [{...}], "entity_ids": [str] }``
         """
@@ -3380,24 +3502,38 @@ def create_app(
             )
 
         entity_ids = body.get("entity_ids") or []
-        if not isinstance(entity_ids, list) or not entity_ids:
+        entity_refs = body.get("entity_refs") or []
+        if entity_ids and not isinstance(entity_ids, list):
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": "entity_ids must be a non-empty list."},
+                detail={"error": "bad_request", "detail": "entity_ids must be a list."},
+            )
+        if entity_refs and not isinstance(entity_refs, list):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "entity_refs must be a list."},
             )
 
-        # TAP-2140: validate UUID-bound entity_ids before they reach psycopg.
         validated_entity_ids = [
-            _validate_uuid_field(e, f"entity_ids[{i}]") for i, e in enumerate(entity_ids) if e
-        ]
-        if not validated_entity_ids:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "entity_ids must be a non-empty list."},
-            )
+            _validate_uuid_field(e, f"entity_ids[{i}]")
+            for i, e in enumerate(entity_ids)
+            if e
+        ] if isinstance(entity_ids, list) else []
 
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
+
+        collected = await asyncio.to_thread(
+            _kg_svc.collect_neighbor_entity_ids,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            entity_ids=validated_entity_ids,
+            entity_refs=[r for r in entity_refs if isinstance(r, dict)] if entity_refs else [],
+        )
+        if isinstance(collected, dict) and collected.get("error"):
+            raise HTTPException(status_code=400, detail=collected)
+        validated_entity_ids = collected.get("entity_ids", [])
 
         result = await asyncio.to_thread(
             _kg_svc.get_neighbors,

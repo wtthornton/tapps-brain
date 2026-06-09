@@ -44,6 +44,8 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/experience": "brain_record_event",
     "/v1/experience:batch": "brain_record_event",  # TAP-1934 — same tool
     "/v1/experience:query": "brain_query_events",  # TAP-3157 — STORY-074.1
+    "/v1/profile/data:set": "brain_profile_set",  # TAP-3163 — STORY-075.2
+    "/v1/profile/data:get": "brain_profile_get",
     "/v1/kg/neighbors": "brain_get_neighbors",
     "/v1/kg/explain": "brain_explain_connection",
     "/v1/kg/feedback": "brain_record_feedback",
@@ -60,6 +62,7 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/ready",
         "/metrics",
         "/v1/tools/list",
+        "/v1/skill",
     }
 )
 

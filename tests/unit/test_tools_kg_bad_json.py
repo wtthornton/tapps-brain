@@ -255,6 +255,9 @@ class TestBrainGetNeighborsBadJson:
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
             svc._get_or_create_cm.return_value = MagicMock(name="cm")
             svc._DEFAULT_BRAIN_ID = "brain"
+            svc.collect_neighbor_entity_ids.return_value = {
+                "entity_ids": [uuid_a, uuid_b],
+            }
             svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": [uuid_a, uuid_b]}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_get_neighbors")
@@ -263,22 +266,23 @@ class TestBrainGetNeighborsBadJson:
             svc.get_neighbors.assert_called_once()
             assert svc.get_neighbors.call_args.kwargs["entity_ids"] == [uuid_a, uuid_b]
 
-    def test_empty_entity_ids_json_still_calls_service(
+    def test_empty_entity_ids_without_refs_returns_bad_request(
         self, mcp: Any, fake_ctx: ToolContext
     ) -> None:
-        """Back-compat: empty string still maps to []; service is queried."""
+        """TAP-3161: callers must supply entity_ids_json or entity_refs_json."""
         from tapps_brain.mcp_server.tools_kg import register_kg_tools
 
         with patch("tapps_brain.mcp_server.tools_kg.kg_service") as svc:
             svc._get_or_create_cm.return_value = MagicMock(name="cm")
             svc._DEFAULT_BRAIN_ID = "brain"
-            svc.get_neighbors.return_value = {"neighbors": [], "entity_ids": []}
             register_kg_tools(mcp, fake_ctx)
             tool = _get_tool(mcp, "brain_get_neighbors")
             body = json.loads(tool.fn(entity_ids_json=""))
-            assert body == {"neighbors": [], "entity_ids": []}
-            svc.get_neighbors.assert_called_once()
-            assert svc.get_neighbors.call_args.kwargs["entity_ids"] == []
+            assert body == {
+                "error": "bad_request",
+                "detail": "entity_ids_json or entity_refs_json is required.",
+            }
+            svc.get_neighbors.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

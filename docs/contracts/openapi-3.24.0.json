@@ -182,7 +182,7 @@
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
     "version": "3.24.0",
-    "x-schema-version": 22
+    "x-schema-version": 24
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1153,7 +1153,7 @@
     },
     "/v1/kg/neighbors": {
       "post": {
-        "description": "Return the neighbourhood graph around one or more KG entities.\n\nREST counterpart of the ``brain_get_neighbors`` MCP tool.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entity_ids\": [str], \"hops\"?: int=1, \"limit\"?: int=20,\n      \"predicate_filter\"?: str }``\n\nResponse: ``{ \"neighbors\": [{...}], \"entity_ids\": [str] }``",
+        "description": "Return the neighbourhood graph around one or more KG entities.\n\nREST counterpart of the ``brain_get_neighbors`` MCP tool.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entity_ids\"?: [str], \"entity_refs\"?: [{entity_type, canonical_name}],\n      \"hops\"?: int=1, \"limit\"?: int=20, \"predicate_filter\"?: str }``\n\nResponse: ``{ \"neighbors\": [{...}], \"entity_ids\": [str] }``",
         "operationId": "_v1_kg_neighbors_v1_kg_neighbors_post",
         "parameters": [
           {
@@ -1361,6 +1361,112 @@
           }
         ],
         "summary": " V1 Learn Success"
+      }
+    },
+    "/v1/profile/data:get": {
+      "post": {
+        "description": "Read profile-scoped learned KV (REST counterpart of ``brain_profile_get``).",
+        "operationId": "_v1_profile_data_get_v1_profile_data_get_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Profile Data Get"
+      }
+    },
+    "/v1/profile/data:set": {
+      "post": {
+        "description": "Store profile-scoped learned KV (REST counterpart of ``brain_profile_set``).",
+        "operationId": "_v1_profile_data_set_v1_profile_data_set_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Profile Data Set"
       }
     },
     "/v1/recall": {
@@ -1694,6 +1800,59 @@
           }
         ],
         "summary": " V1 Remember Batch"
+      }
+    },
+    "/v1/skill": {
+      "get": {
+        "description": "Return the version-pinned tapps-brain agent skill body (TAP-2981).",
+        "operationId": "_v1_skill_v1_skill_get",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Skill"
       }
     },
     "/v1/tools/list": {

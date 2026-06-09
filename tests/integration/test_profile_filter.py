@@ -118,21 +118,21 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_64_tools(self) -> None:
-        """Golden file for 'full' must list exactly 64 tools (TAP-2725: +1)."""
-        assert len(_load_golden("full")) == 64
+    def test_full_golden_has_67_tools(self) -> None:
+        """Golden file for 'full' must list exactly 67 tools (EPIC-075: +3)."""
+        assert len(_load_golden("full")) == 67
 
-    def test_operator_golden_has_77_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 77 tools (TAP-2725: +1)."""
-        assert len(_load_golden("operator")) == 77
+    def test_operator_golden_has_80_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 80 tools (EPIC-075: +3)."""
+        assert len(_load_golden("operator")) == 80
 
     def test_coder_golden_has_18_tools(self) -> None:
         """Golden file for 'coder' must list exactly 18 tools (TAP-1973: +1)."""
         assert len(_load_golden("coder")) == 18
 
-    def test_reviewer_golden_has_8_tools(self) -> None:
-        """Golden file for 'reviewer' must list exactly 8 tools."""
-        assert len(_load_golden("reviewer")) == 8
+    def test_reviewer_golden_has_9_tools(self) -> None:
+        """Golden file for 'reviewer' must list exactly 9 tools (EPIC-074: +1)."""
+        assert len(_load_golden("reviewer")) == 9
 
     def test_seeder_golden_has_6_tools(self) -> None:
         """Golden file for 'seeder' must list exactly 6 tools."""

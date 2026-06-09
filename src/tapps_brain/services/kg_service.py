@@ -676,6 +676,77 @@ def resolve_entity(
         kg.close()
 
 
+def collect_neighbor_entity_ids(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    *,
+    entity_ids: list[str] | None = None,
+    entity_refs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Merge explicit UUIDs with resolved entity refs for neighbourhood queries."""
+    merged = list(entity_ids or [])
+    if entity_refs:
+        resolved = resolve_entity_refs(cm, project_id, brain_id, refs=entity_refs)
+        if resolved.get("error"):
+            return resolved
+        merged.extend(resolved.get("entity_ids", []))
+    if not merged:
+        return {
+            "error": "bad_request",
+            "detail": "entity_ids or entity_refs is required.",
+        }
+    return {"entity_ids": merged}
+
+
+def resolve_entity_refs(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    *,
+    refs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve ``entity_refs`` objects to entity UUID strings.
+
+    Each ref accepts ``entity_type``/``canonical_name`` or tapps-mcp
+    ``type``/``id`` shorthand.  Returns ``{"entity_ids": [str, ...]}`` or an
+    error envelope.
+    """
+    if not refs:
+        return {"entity_ids": []}
+
+    entity_ids: list[str] = []
+    for idx, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            return {
+                "error": "bad_request",
+                "detail": f"entity_refs[{idx}] must be a JSON object.",
+            }
+        entity_type = (ref.get("entity_type") or ref.get("type") or "").strip()
+        canonical_name = (
+            ref.get("canonical_name") or ref.get("id") or ref.get("key") or ""
+        ).strip()
+        if not entity_type or not canonical_name:
+            return {
+                "error": "bad_request",
+                "detail": (
+                    f"entity_refs[{idx}] requires entity_type and canonical_name "
+                    "(or type/id shorthand)."
+                ),
+            }
+        resolved = resolve_entity(
+            cm,
+            project_id,
+            brain_id,
+            entity_type=entity_type,
+            canonical_name=canonical_name,
+        )
+        if resolved.get("error"):
+            return resolved
+        entity_ids.append(str(resolved["entity_id"]))
+    return {"entity_ids": entity_ids}
+
+
 # ---------------------------------------------------------------------------
 # get_neighbors
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+brain_query_events
 brain_recall
 hive_search
 memory_find_related

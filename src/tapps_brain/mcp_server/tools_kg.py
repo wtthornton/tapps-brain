@@ -68,6 +68,40 @@ def _validate_uuid(value: str, field: str) -> dict[str, str] | None:
         return _bad_uuid_error(field, value)
 
 
+def _parse_uuid_list_json(raw: str, field: str) -> dict[str, Any]:
+    """Parse a JSON UUID array parameter or return an error envelope."""
+    if not raw or not raw.strip():
+        return {"entity_ids": []}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return _bad_json_error(field, str(exc))
+    if not isinstance(parsed, list):
+        return _bad_json_error(field, f"expected JSON array, got {type(parsed).__name__}")
+    entity_ids = [str(e) for e in parsed if e]
+    for i, eid in enumerate(entity_ids):
+        uuid_err = _validate_uuid(eid, f"{field}[{i}]")
+        if uuid_err is not None:
+            return uuid_err
+    return {"entity_ids": entity_ids}
+
+
+def _parse_entity_refs_json(raw: str) -> dict[str, Any]:
+    """Parse entity_refs_json into dict refs or return an error envelope."""
+    if not raw or not raw.strip():
+        return {"entity_refs": []}
+    try:
+        parsed_refs = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return _bad_json_error("entity_refs_json", str(exc))
+    if not isinstance(parsed_refs, list):
+        return _bad_json_error(
+            "entity_refs_json",
+            f"expected JSON array, got {type(parsed_refs).__name__}",
+        )
+    return {"entity_refs": [r for r in parsed_refs if isinstance(r, dict)]}
+
+
 def _validate_optional_json_object(raw: str, field: str) -> dict[str, str] | None:
     """Validate that *raw* parses to a JSON object — or is empty (TAP-1969).
 
@@ -475,7 +509,8 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_get_neighbors(
-        entity_ids_json: str,
+        entity_ids_json: str = "",
+        entity_refs_json: str = "",
         hops: int = 1,
         limit: int = 20,
         predicate_filter: str = "",
@@ -490,7 +525,12 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         ----------
         entity_ids_json:
             JSON array of entity UUID strings, e.g.
-            ``'["uuid1", "uuid2"]'``.
+            ``'["uuid1", "uuid2"]'``.  Optional when ``entity_refs_json`` is
+            supplied.
+        entity_refs_json:
+            Optional JSON array of ``{entity_type, canonical_name}`` (or
+            ``{type, id}`` shorthand) objects.  Each ref is resolved via
+            ``brain_resolve_entity`` before the neighbourhood query (TAP-3161).
         hops:
             Neighbourhood depth: ``1`` (direct neighbours) or ``2``
             (two-hop recursive CTE).  Values > 2 are clamped to ``2``.
@@ -527,29 +567,30 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
                 {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
             )
 
-        # TAP-1968: surface JSON decode failures as a structured bad_json error
-        # rather than silently substituting an empty entity_ids list (which used
-        # to return a misleading empty-neighbourhood response).
-        entity_ids: list[str] = []
-        if entity_ids_json and entity_ids_json.strip():
-            try:
-                parsed = json.loads(entity_ids_json)
-            except json.JSONDecodeError as exc:
-                return json.dumps(_bad_json_error("entity_ids_json", str(exc)))
-            if not isinstance(parsed, list):
-                return json.dumps(
-                    _bad_json_error(
-                        "entity_ids_json",
-                        f"expected JSON array, got {type(parsed).__name__}",
-                    )
-                )
-            entity_ids = [str(e) for e in parsed if e]
+        parsed_ids = _parse_uuid_list_json(entity_ids_json, "entity_ids_json")
+        if parsed_ids.get("error"):
+            return json.dumps(parsed_ids, default=str)
+        parsed_refs = _parse_entity_refs_json(entity_refs_json)
+        if parsed_refs.get("error"):
+            return json.dumps(parsed_refs, default=str)
+        if not parsed_ids.get("entity_ids") and not parsed_refs.get("entity_refs"):
+            return json.dumps(
+                {
+                    "error": "bad_request",
+                    "detail": "entity_ids_json or entity_refs_json is required.",
+                }
+            )
 
-        # TAP-2726: validate each entity ID is a UUID before the DB ::uuid cast.
-        for i, eid in enumerate(entity_ids):
-            uuid_err = _validate_uuid(eid, f"entity_ids_json[{i}]")
-            if uuid_err is not None:
-                return json.dumps(uuid_err)
+        collected = kg_service.collect_neighbor_entity_ids(
+            cm,
+            project_id,
+            kg_service._DEFAULT_BRAIN_ID,
+            entity_ids=parsed_ids.get("entity_ids", []),
+            entity_refs=parsed_refs.get("entity_refs", []),
+        )
+        if collected.get("error"):
+            return json.dumps(collected, default=str)
+        entity_ids = collected["entity_ids"]
 
         result = kg_service.get_neighbors(
             cm,
