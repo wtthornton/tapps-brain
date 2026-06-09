@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.13
-# TappsMCP Stop hook - Memory Capture (Epic 34.5)
-# Writes session quality data to .tapps-mcp/session-capture.json for
-# persistence into shared memory on next session start.
+# tapps-mcp-hook-version: 3.12.16
+# TappsMCP Stop hook - Session Quality Tracker (TAP-1999)
+# Session episodic memory migrated to brain-native memory_index_session.
+# Hook retained only for the stop_hook_active guard (prevents infinite loops).
 # IMPORTANT: Must check stop_hook_active to prevent infinite loops.
 INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
@@ -13,17 +13,8 @@ fi
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 CAPTURE_DIR="$PROJECT_DIR/.tapps-mcp"
 MARKER="$CAPTURE_DIR/.validation-marker"
-VALIDATED="false"
 if [ -f "$MARKER" ]; then
-  VALIDATED="true"
+  : # validation occurred; tapps_session_start handles brain indexing via memory_index_session
 fi
-DATE=$("$PYBIN" -c "from datetime import date; print(date.today().isoformat())" 2>/dev/null   || date +%Y-%m-%d 2>/dev/null || echo "unknown")
-FILES=$("$PYBIN" -c   "import subprocess,sys;r=subprocess.run(['git','diff','--name-only','HEAD'],capture_output=True,text=True,cwd='$PROJECT_DIR');print(len([f for f in r.stdout.strip().split(chr(10)) if f.endswith('.py') and f]))"   2>/dev/null || echo "0")
-mkdir -p "$CAPTURE_DIR" 2>/dev/null || exit 0
-"$PYBIN" -c "
-import json,sys
-data={'date':'$DATE','validated':$VALIDATED,'files_edited':int('$FILES' or '0')}
-with open('$CAPTURE_DIR/session-capture.json','w') as f:
-    json.dump(data,f)
-" 2>/dev/null
+# Session capture now handled by brain-native memory_index_session (TAP-1999).
 exit 0

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.13
+# tapps-mcp-hook-version: 3.12.16
 # TappsMCP SubagentStart hook
 # Injects TappsMCP awareness into spawned subagents.
 INPUT=$(cat)

@@ -1,38 +1,36 @@
 {
   "mcpServers": {
     "tapps-mcp": {
+      "type": "stdio",
       "command": "tapps-mcp",
-      "args": ["serve", "--transport", "stdio"],
+      "args": [
+        "serve"
+      ],
       "env": {
-        "TAPPS_MCP_PROJECT_ROOT": "${workspaceFolder}",
-        "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://127.0.0.1:8080",
-        "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${env:TAPPS_BRAIN_AUTH_TOKEN}",
-        "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+        "TAPPS_MCP_PROJECT_ROOT": "/home/wtthornton/code/tapps-brain",
+        "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+        "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+        "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain",
+        "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+        "TAPPS_BRAIN_PROFILE": "full"
       }
     },
     "docs-mcp": {
-      "command": "uv",
+      "type": "stdio",
+      "command": "docsmcp",
       "args": [
-        "run",
-        "--directory",
-        "${workspaceFolder}/../tapps-mcp/packages/docs-mcp",
-        "docsmcp",
         "serve"
-      ]
+      ],
+      "env": {
+        "DOCS_MCP_PROJECT_ROOT": "/home/wtthornton/code/tapps-brain",
+        "TAPPS_BRAIN_PROFILE": "agent_brain"
+      }
     },
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest"]
-    },
-    "tapps-brain": {
-      "type": "http",
-      "url": "http://127.0.0.1:8080/mcp/",
-      "headers": {
-        "Authorization": "Bearer ${env:TAPPS_BRAIN_AUTH_TOKEN}",
-        "X-Project-Id": "tapps-brain",
-        "X-Agent-Id": "cursor-wtthornton",
-        "X-Brain-Profile": "coder"
-      }
+      "args": [
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }

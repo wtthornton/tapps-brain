@@ -1,3 +1,4 @@
+<!-- tapps-claude-version: 3.12.16 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -290,7 +291,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 <!-- END: karpathy-guidelines -->
 
-<!-- BEGIN: tapps-obligations v3.10.13 -->
+<!-- BEGIN: tapps-obligations v3.12.16 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.
@@ -332,7 +333,9 @@ This runs scoring + quality gate + security scan in a single call.
 
 For multi-file changes: You should call `tapps_validate_changed(file_paths="file1.py,file2.py")` with explicit paths to batch-validate changed files. **Always pass `file_paths`** — auto-detect scans all git-changed files and can be very slow. Default is quick mode; only use `quick=false` as a last resort (pre-release, security audit).
 Run the quality gate before considering work done.
-You should call `tapps_checklist(task_type)` as the final step to verify no required tools were skipped.
+You should call `tapps_checklist(task_type)` as the final step to verify no required tools were skipped. The response carries an inline `usage_gaps` payload (same data as the standalone `tapps_usage` tool) — read it for any missed lookups or unvalidated edits before declaring done. The Stop hook (`tapps-stop.sh`) writes to `.tapps-mcp/.completion-gate-violations.jsonl` in warn mode when code edits ship without validation; no block — pure telemetry that feeds `tapps_usage`.
+
+> **Skill deprecations (v3.12.0):** `tapps-score`, `tapps-gate`, `tapps-validate`, `tapps-report` are deprecated wrappers around single MCP tools. Prefer the direct tool calls or `/tapps-finish-task`.
 
 ### Domain Decisions
 
@@ -352,7 +355,7 @@ You should call `tapps_validate_config(file_path)` when changing Dockerfile, doc
 
 `tapps_memory` provides persistent cross-session knowledge with **42 actions** (save, search, consolidate, federation, profiles, hive, health, knowledge graph, batch ops, feedback, native session memory, and more). **Tiers:** architectural (180d), pattern (60d), procedural (30d), context (14d). **Scopes:** project, branch, session. Max 1500 entries. Configure `memory_hooks` in `.tapps-mcp.yaml` for auto-recall and auto-capture.
 
-**Cross-session handoff:** when one session needs to pass a token, ID, or payload to a later session, call `tapps_memory(action="save", key="<slug>", value="<payload>")` instead of printing to stdout — the default `project` scope is already cross-session within the same repo. Read it back from the next session with `action="get"` (by key) or `action="search"`. For cross-agent handoff in Agent Teams, use `action="hive_propagate"`; for cross-project, use the federation actions.
+**Cross-session handoff:** prefer `/tapps-handoff-session` and `/tapps-continue-session` (`.tapps-mcp/session-handoff.md`). For ad-hoc payloads use `tapps-mcp memory save/get`. Cross-agent: `hive_propagate`; cross-project: federation actions.
 
 ## Quality Gate Behavior
 

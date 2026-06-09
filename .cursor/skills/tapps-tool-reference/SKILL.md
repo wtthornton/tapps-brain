@@ -3,6 +3,7 @@ name: tapps-tool-reference
 description: >-
   Look up when to use each TappsMCP tool. Full tool reference with per-tool
   guidance for session start, scoring, validation, checklist, docs, experts.
+  Use when you need guidance on which TappsMCP tool to call for a given situation.
 mcp_tools:
   - tapps_server_info
 ---

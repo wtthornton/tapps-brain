@@ -3,6 +3,7 @@ name: tapps-memory
 description: >-
   Manage shared project memory for cross-session knowledge persistence.
   42 actions: save, search, federation, profiles, Hive, knowledge graph, batch ops, feedback, native session memory, and more.
+  Use when saving cross-session decisions, searching prior patterns, or managing the project knowledge store.
 mcp_tools:
   - tapps_memory
   - tapps_session_notes

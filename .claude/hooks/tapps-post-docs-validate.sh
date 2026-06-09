@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.13
+# tapps-mcp-hook-version: 3.12.16
 # TappsMCP PostToolUse hook — Linear gate sentinel writer (TAP-981 / TAP-1328)
 # Writes .tapps-mcp/.linear-validate-sentinel ONLY when the validate call
 # returned agent_ready=true. Failed validations no longer unlock save_issue.

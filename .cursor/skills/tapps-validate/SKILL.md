@@ -1,9 +1,11 @@
 ---
 name: tapps-validate
-description: Validate all changed files meet quality thresholds before declaring work complete.
+description: Validate all changed files meet quality thresholds before declaring work complete. Use when you have finished editing Python files and want to batch-validate all changed files against the quality gate.
 mcp_tools:
   - tapps_validate_changed
 ---
+
+> **DEPRECATED (v3.11.0+):** Wraps a single MCP tool with no orchestration. Call `tapps_validate_changed` directly or invoke the `tapps-finish-task` skill (bundles validate + checklist + memory save). Scheduled for removal in v3.12.0.
 
 Validate changed files using TappsMCP:
 

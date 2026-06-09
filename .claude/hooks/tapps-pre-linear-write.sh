@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.13
+# tapps-mcp-hook-version: 3.12.16
 # TappsMCP PreToolUse hook — Linear write gate (TAP-981)
 # Blocks mcp__plugin_linear_linear__save_issue if no recent
 # docs_validate_linear_issue sentinel (within 30 minutes). Bypass with
@@ -52,6 +52,7 @@ ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 SENTINEL="$ROOT/.tapps-mcp/.linear-validate-sentinel"
 if [ ! -f "$SENTINEL" ]; then
   cat >&2 <<'MSG'
+[TappsMCP refusal layer=hook-only/defense-in-depth] Primary gate is the docs_save_linear_issue server tool (TAP-2008 Agent Gateway). This hook is the fallback layer — it fired because the raw Linear plugin was called directly instead of through the wrapper.
 TappsMCP: Blocked mcp__plugin_linear_linear__save_issue — no recent docs_validate_linear_issue call.
 Route Linear writes through the `linear-issue` skill:
   1. docs_generate_story (or docs_generate_epic)
@@ -74,6 +75,7 @@ if [ "$AGE" -le 1800 ]; then
   exit 0
 fi
 cat >&2 <<MSG
+[TappsMCP refusal layer=hook-only/defense-in-depth] Primary gate is the docs_save_linear_issue server tool (TAP-2008 Agent Gateway). This hook is the fallback layer — it fired because the raw Linear plugin was called directly instead of through the wrapper.
 TappsMCP: Blocked mcp__plugin_linear_linear__save_issue — last docs_validate_linear_issue was ${AGE}s ago (> 1800s freshness window).
 Re-validate before push: docs_validate_linear_issue(title=..., description=..., ...)
 Or set TAPPS_LINEAR_SKIP_VALIDATE=1 for emergency bypass (logged).

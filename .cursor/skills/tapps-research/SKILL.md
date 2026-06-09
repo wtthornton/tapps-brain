@@ -2,7 +2,8 @@
 name: tapps-research
 description: >-
   Look up library documentation and research best practices
-  for the technologies used in this project.
+  for the technologies used in this project. Use when writing code that uses
+  an external library or when you need API reference or version-specific guidance.
 mcp_tools:
   - tapps_lookup_docs
 ---

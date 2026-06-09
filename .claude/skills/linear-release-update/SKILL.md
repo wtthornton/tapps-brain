@@ -2,7 +2,7 @@
 name: linear-release-update
 user-invocable: true
 model: claude-haiku-4-5-20251001
-description: Post a structured Linear project update document on a version release. Orchestrates tapps_release_update → docs_validate_release_update → save_document → cache invalidation.
+description: Post a structured Linear project update document on a version release. Orchestrates tapps_release_update → docs_validate_release_update → save_document → cache invalidation. Use when posting a release announcement to Linear after shipping a new version.
 allowed-tools: mcp__tapps-mcp__tapps_release_update mcp__docs-mcp__docs_generate_release_update mcp__docs-mcp__docs_validate_release_update mcp__plugin_linear_linear__save_document mcp__tapps-mcp__tapps_linear_snapshot_invalidate
 argument-hint: "--version vX.Y.Z --prev-version vX.Y.W [--team <team>] [--project <project>] [--dry-run]"
 ---

@@ -2,11 +2,13 @@
 name: tapps-gate
 user-invocable: true
 model: claude-haiku-4-5-20251001
-description: Run a quality gate check and report pass/fail with blocking issues.
+description: Run a quality gate check and report pass/fail with blocking issues. Use when checking if a Python file passes the quality threshold before declaring a task complete.
 allowed-tools: mcp__tapps-mcp__tapps_quality_gate
 argument-hint: "[file-path]"
 disable-model-invocation: true
 ---
+
+> **DEPRECATED (v3.11.0+):** This skill wraps a single MCP tool and adds no orchestration. Call `mcp__tapps-mcp__tapps_quality_gate(file_path=...)` directly, or invoke `/tapps-finish-task` for end-of-task orchestration. Scheduled for removal in v3.12.0.
 
 Run a quality gate check using TappsMCP:
 

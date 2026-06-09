@@ -1,6 +1,6 @@
 ---
 name: linear-issue
-description: Create, lint, validate, or triage Linear issues for agents. Routes to docs-mcp Linear tools and the Linear plugin by user intent.
+description: Create, lint, validate, or triage Linear issues for agents. Routes to docs-mcp Linear tools and the Linear plugin by user intent. Use when creating, linting, validating, or triaging a Linear issue or epic.
 mcp_tools:
   - docs_generate_story
   - docs_lint_linear_issue

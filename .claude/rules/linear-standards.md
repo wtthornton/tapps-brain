@@ -5,63 +5,6 @@ alwaysApply: true
 
 All Linear writes in this project — epic creation, story creation, issue updates — MUST route through the `linear-issue` skill, which in turn routes through the docs-mcp generator and validator tools. Raw calls to `mcp__plugin_linear_linear__save_issue` are a rule violation.
 
-## Pre-filing reconciliation (TAP-2171)
-
-**Before generating any new epic or story, run a 3-step check against the codebase to confirm the work is not already shipped.** The largest single source of wasted agent time on this project is filing tickets from epic-design documents whose acceptance criteria have already landed on `main` (three drift-pattern closures landed in one session on 2026-05-18 — see TAP-2131, TAP-2134, TAP-2135). The check costs < 2 minutes; the cost of skipping it is 15 minutes to 2 hours of audit / re-spec work.
-
-The check is gated upstream of `docs_generate_epic` / `docs_generate_story` — when an AC is already shipped, you do not file the ticket; when **some** ACs are shipped, you carve out a narrower follow-up ticket (TAP-2170 is the worked example of the carve-out pattern).
-
-### 1. Grep the commit history
-
-For each major AC keyword (feature name, env-var name, module name, span name):
-
-```bash
-git log --grep="<keyword>" --all --oneline | head -20
-git log --all --oneline -- src/<module>/ | head -20
-```
-
-Look for `feat(`, `fix(`, or `chore(` commits whose subject line names the AC. Spot-check the one or two most recent matches.
-
-### 2. Grep the current code
-
-For each AC that names a symbol, constant, env-var, or attribute:
-
-```bash
-grep -rn "<symbol>" src/ tests/ | head
-```
-
-A hit on `src/` means the symbol exists on `main`. Open the file and confirm the AC's *behaviour* matches what's there — names can collide. A hit on `tests/` is corroborating evidence the behaviour is exercised.
-
-### 3. Diff the ticket draft against the shipped behaviour
-
-Read each AC line and mark it:
-
-- **(a) verified-open** — symbol does not exist, behaviour is not observable on `main`. Keep the AC.
-- **(b) already-shipped** — symbol exists and behaviour matches. Drop the AC; record the shipped commit hash under "Already-shipped (closed-out)".
-- **(c) partially-shipped** — some sub-bullets shipped, others not. Carve the unshipped slice into a narrower ticket (TAP-2170 pattern); record the shipped commits on the original draft and link the new narrow ticket.
-
-If **every** AC is (b), do not file the ticket. If the parent design doc (an `EPIC-*.md` in `docs/planning/epics/`) still describes the work as open, update that file in the same PR that closes the would-be ticket.
-
-### Worked example — TAP-2135 (OTel GenAI semconv)
-
-Original draft AC list (paraphrased):
-
-1. Emit `gen_ai.system` on MCP tool-call spans
-2. Emit `gen_ai.tool.name` on MCP tool-call spans
-3. Emit `gen_ai.operation.name = "execute_tool"`
-4. Emit `mcp.method.name`
-5. Emit `gen_ai.data_source.id`
-6. Add structured retrieval events to recall spans
-7. Capture content opt-in gated by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`
-
-Step 1 — `git log --grep="STORY-032" --oneline | head -20` shows ten commits from STORY-032.2 through STORY-032.10.
-
-Step 2 — `grep -rn 'gen_ai\.system\|GEN_AI_SYSTEM' src/` shows the constant defined in `src/tapps_brain/otel_tracer.py:93` and set on every span in `start_mcp_tool_span`. Same pattern for `gen_ai.tool.name`, `gen_ai.operation.name`, `mcp.method.name`, retrieval events, and content-capture opt-in. `grep -rn 'gen_ai\.data_source\.id' src/` returns nothing.
-
-Step 3 — ACs 1–4, 6, 7 are (b) already-shipped (refs: STORY-032.2 through STORY-032.10). AC 5 is (a) verified-open.
-
-**Outcome:** Close the original ticket as Done with commit annotations; carve AC 5 into a one-point follow-up ticket (TAP-2170) with the file anchors found in step 2. Total time: ~10 minutes. Filing the original ticket as-is would have wasted at least an hour of re-discovery work.
-
 ## Required flow
 
 ### For a new epic

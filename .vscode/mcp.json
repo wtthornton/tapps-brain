@@ -1,13 +1,5 @@
 {
   "servers": {
-    "tapps-brain": {
-      "type": "stdio",
-      "command": "tapps-brain-mcp",
-      "args": [
-        "--project-dir",
-        "${workspaceFolder}"
-      ]
-    },
     "tapps-mcp": {
       "type": "stdio",
       "command": "tapps-mcp",
@@ -15,7 +7,7 @@
         "serve"
       ],
       "env": {
-        "TAPPS_MCP_PROJECT_ROOT": "${workspaceFolder}"
+        "TAPPS_MCP_PROJECT_ROOT": "/home/wtthornton/code/tapps-brain"
       }
     }
   }

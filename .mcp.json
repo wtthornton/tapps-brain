@@ -24,17 +24,6 @@
         "DOCS_MCP_PROJECT_ROOT": "."
       },
       "instructions": "TRIGGER POINTS — call these proactively: (1) session start → docs_session_start to inventory existing docs + spot gaps; (2) when user asks \"is documentation current?\" → docs_check_drift (code-vs-docs) + docs_check_freshness (age) + docs_check_links (broken internal refs); (3) before release → docs_check_completeness + docs_check_style for a release-readiness pass; (4) when creating new docs → docs_generate_readme / _changelog / _release_notes / _api / _adr / _onboarding / _contributing / _prd / _diagram / _architecture / _epic / _story / _purpose / _doc_index / _llms_txt / _frontmatter; (5) for Linear-issue-as-source-of-truth workflows → docs_lint_linear_issue / _validate_linear_issue / _linear_triage. BENEFIT: generates docs deterministically from code + git state (not prose-authored), preserves human-written content via smart-merge markers, and catches drift/broken-links before users do. 35 MCP tools, all read- or generate-and-merge — never destructive."
-    },
-    "tapps-brain": {
-      "type": "http",
-      "url": "http://127.0.0.1:8080/mcp/",
-      "headers": {
-        "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
-        "X-Project-Id": "tapps-brain",
-        "X-Agent-Id": "claude-code-wtthornton",
-        "X-Brain-Profile": "coder"
-      },
-      "instructions": "Persistent cross-session memory served by the DEPLOYED tapps-brain HTTP adapter. Tenant: project_id=tapps-brain, profile=coder (17 tools: brain_* facade + session hooks + quality loop + graph tools). agent_id=claude-code-wtthornton. Use brain_recall on session start, brain_remember for decisions with rationale, brain_learn_success/brain_learn_failure for reinforcement."
     }
   }
 }

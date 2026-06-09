@@ -4,10 +4,14 @@ user-invocable: true
 model: claude-haiku-4-5-20251001
 description: >-
   Generate a quality report across Python files in the project.
-  Scores multiple files and presents an aggregate summary.
+  Scores multiple files and presents an aggregate summary. Use when you
+  want an aggregate quality overview across multiple Python files.
 allowed-tools: mcp__tapps-mcp__tapps_report
 argument-hint: "[file-path or empty for project-wide]"
+disable-model-invocation: true
 ---
+
+> **DEPRECATED (v3.11.0+):** This skill wraps a single MCP tool and adds no orchestration. Call `mcp__tapps-mcp__tapps_report(file_paths=...)` directly. Scheduled for removal in v3.12.0.
 
 Generate a quality report using TappsMCP:
 

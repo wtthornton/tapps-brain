@@ -2,7 +2,8 @@
 name: tapps-security
 description: >-
   Run a comprehensive security audit on a Python file including vulnerability scanning
-  and dependency CVE checks.
+  and dependency CVE checks. Use when reviewing security-sensitive changes,
+  before a security audit, or before a production release.
 mcp_tools:
   - tapps_security_scan
   - tapps_dependency_scan

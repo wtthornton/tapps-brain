@@ -3,7 +3,8 @@ name: tapps-research
 user-invocable: true
 description: >-
   Look up library documentation and research best practices
-  for the technologies used in this project.
+  for the technologies used in this project. Use when writing code that uses
+  an external library or when you need API reference or version-specific guidance.
 allowed-tools: mcp__tapps-mcp__tapps_lookup_docs
 argument-hint: "[library] [topic]"
 context: fork

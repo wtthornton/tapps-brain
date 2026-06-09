@@ -4,7 +4,9 @@ user-invocable: true
 model: claude-sonnet-4-6
 description: >-
   Orchestrate a parallel review-fix-validate pipeline across multiple changed files.
-  Spawns tapps-review-fixer agents in worktrees for parallel processing.
+  Spawns tapps-review-fixer agents in worktrees for parallel processing. Use when
+  you have multiple changed Python files that need parallel review, scoring, and
+  quality gate fixing before declaring work complete.
 allowed-tools: mcp__tapps-mcp__tapps_validate_changed mcp__tapps-mcp__tapps_checklist
 context: fork
 agent: general-purpose

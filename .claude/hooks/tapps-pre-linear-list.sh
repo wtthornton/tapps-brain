@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.10.13
+# tapps-mcp-hook-version: 3.12.16
 # TappsMCP PreToolUse hook — Linear cache-first read gate (TAP-1224)
 # Gates raw mcp__plugin_linear_linear__list_issues calls behind a recent
 # tapps_linear_snapshot_get sentinel for the same (team, project, state,
@@ -130,6 +130,7 @@ if [ "$CATEGORY" = "cross_project" ]; then
 fi
 if [ "$MODE" = "warn" ]; then
   cat >&2 <<MSG
+[TappsMCP refusal layer=hook-only/defense-in-depth] Primary gate is the tapps_linear_list_issues server tool (TAP-2008 Agent Gateway). This hook is the fallback layer — it fired because the raw Linear plugin was called directly instead of through the wrapper.
 TappsMCP: Linear cache-first read rule (TAP-1224, warn mode) — no recent tapps_linear_snapshot_get for this (team, project, state) slice.
 Route reads through the \`linear-read\` skill (TAP-1260):
   1. tapps_linear_snapshot_get(team, project, state)
@@ -140,6 +141,7 @@ MSG
   exit 0
 fi
 cat >&2 <<MSG
+[TappsMCP refusal layer=hook-only/defense-in-depth] Primary gate is the tapps_linear_list_issues server tool (TAP-2008 Agent Gateway). This hook is the fallback layer — it fired because the raw Linear plugin was called directly instead of through the wrapper.
 TappsMCP: Blocked mcp__plugin_linear_linear__list_issues — no recent tapps_linear_snapshot_get for this (team, project, state) slice.
 Route reads through the \`linear-read\` skill (TAP-1260):
   1. tapps_linear_snapshot_get(team, project, state)

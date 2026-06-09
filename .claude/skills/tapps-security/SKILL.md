@@ -4,7 +4,8 @@ user-invocable: true
 model: claude-sonnet-4-6
 description: >-
   Run a comprehensive security audit including vulnerability scanning
-  and dependency CVE checks.
+  and dependency CVE checks. Use when reviewing security-sensitive changes,
+  before a security audit, or before a production release.
 allowed-tools: >-
   mcp__tapps-mcp__tapps_security_scan
   mcp__tapps-mcp__tapps_dependency_scan

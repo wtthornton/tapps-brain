@@ -4,7 +4,8 @@ user-invocable: true
 model: claude-haiku-4-5-20251001
 description: >-
   Change the TappsMCP enforcement intensity (high, medium, or low).
-  Controls which quality tools are mandatory vs optional.
+  Controls which quality tools are mandatory vs optional. Use when you want
+  to switch between strict, balanced, or advisory enforcement modes.
 allowed-tools: mcp__tapps-mcp__tapps_set_engagement_level
 argument-hint: "[high|medium|low]"
 disable-model-invocation: true

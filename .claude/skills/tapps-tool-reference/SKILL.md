@@ -5,6 +5,7 @@ model: claude-haiku-4-5-20251001
 description: >-
   Look up when to use each TappsMCP tool. Full tool reference with per-tool
   guidance for session start, scoring, validation, checklist, docs, experts, and more.
+  Use when you need guidance on which TappsMCP tool to call for a given situation.
 allowed-tools: mcp__tapps-mcp__tapps_server_info
 argument-hint: "[tool-name or 'all']"
 ---
@@ -52,7 +53,7 @@ provide the full tool reference from this skill.
 ## Pipeline & init
 | Tool | When to use it |
 |------|----------------|
-| **tapps_init** | Pipeline bootstrap (once per project) - creates AGENTS.md, rules, hooks. **CLI fallback:** `tapps-mcp upgrade --force --host auto` then `tapps-mcp doctor` |
+| **tapps_init** | Pipeline bootstrap (once per project) - creates AGENTS.md, rules, hooks, MCP config (default). **CLI fallback:** `tapps-mcp upgrade --force --host auto` then `tapps-mcp doctor` |
 | **tapps_upgrade** | After TappsMCP version update - refreshes generated files |
 | **tapps_doctor** | Diagnose configuration issues |
 | **tapps_set_engagement_level** | Change enforcement intensity (high/medium/low) |

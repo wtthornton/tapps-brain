@@ -2,7 +2,9 @@
 name: tapps-finish-task
 description: >-
   Run the end-of-task TAPPS pipeline in one shot: validate changed files,
-  verify the checklist, and optionally save learnings to memory.
+  verify the checklist, and optionally save learnings to memory. Use when
+  you have finished implementing a task and want to validate, checklist,
+  and save learnings in one shot.
 mcp_tools:
   - tapps_validate_changed
   - tapps_checklist
@@ -15,3 +17,5 @@ Close out the current task end-to-end. Run each step; do NOT skip one that faile
 2. **Verify the checklist.** Call `tapps_checklist(task_type=<feature|bugfix|refactor|security|review>)`. If `complete: false`, address each entry in `missing_steps` and re-run.
 3. **Save learnings (conditional).** If the session produced a non-obvious architectural or pattern-level decision, call `tapps_memory(action="save", tier=<"architectural"|"pattern">)`. Skip for routine fixes.
 4. **Report.** Emit a one-line summary: `Files validated: N pass. Checklist: <task_type> complete. Memory saved: yes|no.`
+
+5. **Transfer (optional).** If the user is ending the chat, invoke the `tapps-handoff-session` skill so the next session can run `tapps-continue-session`.
