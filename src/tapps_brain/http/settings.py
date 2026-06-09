@@ -130,6 +130,11 @@ class _Settings:
 _settings: _Settings = _Settings()
 
 
+def is_strict_mode() -> bool:
+    """True when ``TAPPS_BRAIN_STRICT=1`` (production/docker deploy profile)."""
+    return os.environ.get("TAPPS_BRAIN_STRICT", "").strip() == "1"
+
+
 def get_settings() -> _Settings:
     """Return the process-wide :class:`_Settings` singleton."""
     return _settings

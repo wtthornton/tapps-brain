@@ -201,6 +201,18 @@ def require_data_plane_auth(request: Request) -> None:
 
     # ---- global token fallback ----
     if not cfg.auth_token:
+        from tapps_brain.http.settings import is_strict_mode
+
+        if is_strict_mode():
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "service_unavailable",
+                    "detail": (
+                        "Authentication is required but TAPPS_BRAIN_AUTH_TOKEN is unset."
+                    ),
+                },
+            )
         return
     if tok is None:
         raise HTTPException(

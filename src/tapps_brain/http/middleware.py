@@ -91,7 +91,7 @@ def _mcp_auth_error_body(
 # (load-balancer health checks, Prometheus scrapers, etc.) and do not accept
 # bearer tokens that a DNS-rebinding attacker could steal.
 _ORIGIN_EXEMPT_PATHS: frozenset[str] = frozenset(
-    {"/", "/health", "/ready", "/metrics", "/v1/tools/list"}
+    {"/", "/health", "/healthz", "/ready", "/metrics", "/v1/tools/list", "/v1/skill"}
 )
 
 
@@ -124,6 +124,18 @@ async def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONRespo
     round-trip to the server logs.
     """
     if not auth_token:
+        from tapps_brain.http.settings import is_strict_mode
+
+        if is_strict_mode():
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "service_unavailable",
+                    "detail": (
+                        "MCP authentication is required but TAPPS_BRAIN_AUTH_TOKEN is unset."
+                    ),
+                },
+            )
         return None
     # Lazy import avoids circular dep; gets the patched version in tests.
     import hmac
@@ -258,8 +270,11 @@ class OriginAllowlistMiddleware(BaseHTTPMiddleware):
 
     * ``/`` — root liveness check
     * ``/health`` — liveness probe
+    * ``/healthz`` — readiness probe (DB-checked; used by Docker healthcheck)
     * ``/ready`` — readiness probe
     * ``/metrics`` — Prometheus scrape endpoint
+    * ``/v1/tools/list`` — static tool-catalog snapshot (TAP-1843; no secrets)
+    * ``/v1/skill`` — version-matched SKILL.md for HTTP-only consumers
 
     Previously only ``/mcp`` was guarded (STORY-070.3/4).  TAP-627 extends
     protection to all bearer-authenticated routes (``/v1/*``, ``/admin/*``,

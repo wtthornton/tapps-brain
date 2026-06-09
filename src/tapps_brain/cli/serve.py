@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import threading
 from pathlib import Path
 from typing import Annotated, Any
@@ -10,6 +11,16 @@ import structlog
 import typer
 
 from tapps_brain.cli._common import app, project_app
+
+_OPERATOR_MCP_BEARER_PREFIX = "bearer "
+
+
+def operator_mcp_bearer_ok(authorization: str, expected_token: str) -> bool:
+    """Constant-time bearer check for the operator MCP ASGI wrapper (TAP-544)."""
+    if not authorization.lower().startswith(_OPERATOR_MCP_BEARER_PREFIX):
+        return False
+    provided = authorization[len(_OPERATOR_MCP_BEARER_PREFIX) :]
+    return hmac.compare_digest(provided.encode("utf-8"), expected_token.encode("utf-8"))
 
 
 @app.command("serve")
@@ -174,7 +185,6 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
                     return
 
                 # Wrap with a minimal bearer-token ASGI middleware.
-                _bearer_prefix = "bearer "
                 _inner = _asgi
 
                 async def _authed_app(scope: object, receive: object, send: object) -> None:
@@ -184,7 +194,7 @@ def cmd_serve(  # noqa: PLR0915  # orchestrator: many independent startup steps
                             k.lower(): v for k, v in _scope.get("headers", [])
                         }
                         _auth = _hdrs.get(b"authorization", b"").decode()
-                        if not _auth.lower().startswith(_bearer_prefix) or _auth[7:] != _tok:
+                        if not operator_mcp_bearer_ok(_auth, _tok):
                             await send(  # type: ignore[operator]
                                 {
                                     "type": "http.response.start",
