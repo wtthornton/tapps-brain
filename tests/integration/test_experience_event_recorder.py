@@ -245,9 +245,7 @@ class TestRecordHappyPath:
         r2 = recorder.record(ExperienceEvent(event_type="x", entities=[spec]))
         assert r1.entity_ids[0] == r2.entity_ids[0]
 
-    def test_entities_and_edges_with_key_shorthand(
-        self, recorder: ExperienceEventRecorder
-    ) -> None:
+    def test_entities_and_edges_with_key_shorthand(self, recorder: ExperienceEventRecorder) -> None:
         """TAP-3248: entities + edges with key/type in one atomic write."""
         result = recorder.record(
             ExperienceEvent(

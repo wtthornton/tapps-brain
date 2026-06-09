@@ -108,9 +108,7 @@ class EntitySpec(BaseModel):
 def _ref_to_lookup(ref: dict[str, Any]) -> tuple[str, str]:
     """Extract ``(entity_type, canonical_name)`` from an entity ref object."""
     entity_type = str(ref.get("entity_type") or ref.get("type") or "").strip()
-    canonical_name = str(
-        ref.get("canonical_name") or ref.get("id") or ref.get("key") or ""
-    ).strip()
+    canonical_name = str(ref.get("canonical_name") or ref.get("id") or ref.get("key") or "").strip()
     return entity_type, canonical_name
 
 
@@ -204,14 +202,10 @@ class EdgeSpec(BaseModel):
     @model_validator(mode="after")
     def _require_endpoints(self) -> EdgeSpec:
         """Require subject/object via UUID, key, or typed ref — not predicate alone."""
-        has_subject = bool(
-            self.subject_entity_id or self.subject_key or self.subject_ref
-        )
+        has_subject = bool(self.subject_entity_id or self.subject_key or self.subject_ref)
         has_object = bool(self.object_entity_id or self.object_key or self.object_ref)
         if not has_subject:
-            raise ValueError(
-                "edge requires subject_entity_id, subject_key, or subject_ref"
-            )
+            raise ValueError("edge requires subject_entity_id, subject_key, or subject_ref")
         if not has_object:
             raise ValueError("edge requires object_entity_id, object_key, or object_ref")
         if not self.predicate.strip():
