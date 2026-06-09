@@ -11,10 +11,20 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _mod
+from tapps_brain.http.auth import _admin_rate_buckets, _admin_rate_lock
 from tapps_brain.http_adapter import _service_version, _Settings, create_app
+
+
+@pytest.fixture(autouse=True)
+def _clear_admin_rate_limit_state() -> None:
+    """TAP-780 buckets are module-global; reset so this file's suite stays isolated."""
+    with _admin_rate_lock:
+        _admin_rate_buckets.clear()
+
 
 # ---------------------------------------------------------------------------
 # Shared test helpers (replaces real-server helpers from old test)

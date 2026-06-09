@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _http_mod
 from tapps_brain.http.middleware import McpTenantMiddleware, OriginAllowlistMiddleware
-from tapps_brain.http_adapter import _Settings, _service_version, create_app
+from tapps_brain.http_adapter import _service_version, _Settings, create_app
 
 
 def _make_settings(
