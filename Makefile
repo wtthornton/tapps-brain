@@ -30,7 +30,7 @@ BRAIN_IMAGE   ?= docker-tapps-brain-http
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
-        brain-lint brain-type brain-qa brain-psql brain-healthcheck \
+        brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
         hive-build hive-deploy hive-up hive-down hive-logs hive-smoke check-brain-env \
         publish-brain-image
 
@@ -153,6 +153,9 @@ hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints
 
 brain-healthcheck:  ## Verify this repo is wired to the deployed tapps-brain and MCP tools work
 	@bash scripts/brain-healthcheck.sh
+
+brain-smoke-live:  ## HTTP smoke test against the running tapps-brain stack (no compose boot)
+	@bash scripts/brain_smoke_live.sh
 
 publish-brain-image:  ## Build wheel + all three stack images, each tagged :latest and :$(BRAIN_VERSION) (TAP-2136)
 	rm -f dist/*.whl dist/*.tar.gz

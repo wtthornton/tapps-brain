@@ -44,6 +44,9 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make brain-lint` | Ruff lint + format check |
 | `make brain-type` | Strict mypy type check |
 | `make brain-qa` | Full QA: lint + type + tests (mirrors CI) |
+| `make brain-healthcheck` | MCP wiring + recall round-trip against the live brain |
+| `make brain-smoke-live` | HTTP smoke on the live stack (`/healthz`, `experience:query` round-trip) |
+| `make hive-smoke` | Isolated compose smoke (alternate ports; boots and tears down) |
 | `make publish-brain-image` | Build wheel + `docker-tapps-brain-http:latest` + versioned tag (for AgentForge) |
 
 ### DSN override
