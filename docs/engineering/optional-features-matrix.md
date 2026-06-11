@@ -8,8 +8,8 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 |---|---|---|---|
 | MCP server | `mcp` extra | MCP runtime in `mcp_server/` package (7 submodules, TAP-605) | Startup error with install hint |
 | Vector embeddings | `vector` extra (`sentence-transformers`) | Hybrid retrieval and embedding writes | Falls back to non-vector retrieval |
-| Reranker | `reranker` extra (`flashrank`) | Local cross-encoder re-ranking in injection pipeline | No-op reranker path |
-| OTel exporter | `otel` extra | exporter creation path | exporter disabled (`None`) |
+| Reranker | `reranker` extra (`flashrank`) | Local cross-encoder re-ranking in injection pipeline | No-op reranker path (**Docker http image installs `[reranker]` by default**) |
+| OTel exporter | `otel` extra | exporter creation path | exporter disabled (`None`) (**Docker http image installs `[otel]` by default; set `OTEL_EXPORTER_OTLP_ENDPOINT`**) |
 | PostgreSQL private / Hive / Federation | `psycopg[binary]` + `psycopg_pool` (lazy, no extra) | `PostgresPrivateBackend`, `PostgresHiveBackend`, `PostgresFederationBackend` via factory functions in `backends.py` | **Hard error** — all durable stores require a `postgres://` DSN ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) |
 
 ## Profile and config toggles
@@ -38,8 +38,11 @@ This matrix documents behavior changes from extras, feature checks, and profile-
 | Env | `TAPPS_BRAIN_AGENT_ID` | Agent identity (alternative to `--agent-id`) |
 | Env | `TAPPS_BRAIN_GROUPS` | CSV group memberships |
 | Env | `TAPPS_BRAIN_EXPERT_DOMAINS` | CSV expert domains |
-| Env | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Auto-run Postgres schema migrations on startup |
-| Env | `TAPPS_BRAIN_HIVE_POOL_MIN` / `_MAX` | Postgres connection pool sizing (default 2/10) |
+| Env | `TAPPS_BRAIN_IDEMPOTENCY` | Write idempotency replay cache (`1` = on). **Docker compose default: `1`.** |
+| Env | `TAPPS_BRAIN_PER_TENANT_AUTH` | Per-project hashed bearer tokens (`1` = on). **Docker compose default: `1`.** |
+| Env | `TAPPS_BRAIN_OTEL_ENABLED` | OTel instrumentation master switch. **Docker compose default: `1`.** |
+| Env | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector URL — required for trace export |
+| MCP | `defer_loading` in `mcp_profiles.yaml` | When set, tools are callable but hidden from default `tools/list`. **Docker reference stack: disabled (all eager).** |
 
 ## Health / operator surfaces (GitHub #63)
 

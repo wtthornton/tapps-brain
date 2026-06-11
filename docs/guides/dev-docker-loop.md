@@ -17,10 +17,15 @@ Post-deploy smoke: prefer **`make brain-smoke-live`** (~10s). Use **`make brain-
 ## First-time setup
 
 ```bash
-cp docker/.env.example docker/.env   # fill in secrets
+cp docker/.env.example docker/.env   # fill in secrets + keep TAPPS_BRAIN_ALLOWED_ORIGINS
 make hive-deploy                     # full build: wheel + 3 images + migrate + up
 make brain-healthcheck               # once: MCP wiring + project registration
 ```
+
+`docker/.env` **must** include non-empty `TAPPS_BRAIN_ALLOWED_ORIGINS`. Compose sets
+`TAPPS_BRAIN_STRICT=1`; without origins the brain refuses to start. The template ships a
+local-dev default (`http://127.0.0.1:8088,http://localhost:8088` for tapps-visual). Agents:
+when a user asks to upgrade local Docker, prefer `make dev-deploy` over `hive-deploy`.
 
 Optional — warm embedding cache so restarts skip Hub download:
 
@@ -30,6 +35,21 @@ Optional — warm embedding cache so restarts skip Hub download:
 ```
 
 The `tapps-brain-hfcache` volume persists the HuggingFace model across container recreates.
+
+### Full feature promotion
+
+The reference Docker stack (`docker-compose.hive.yaml` + `docker/.env.example`) ships with:
+
+- **`[reranker,otel]`** in the http image — FlashRank + OTLP export SDK
+- **`TAPPS_BRAIN_IDEMPOTENCY=1`** — idempotent writes
+- **`TAPPS_BRAIN_PER_TENANT_AUTH=1`** — per-project tokens (global bearer fallback until rotated)
+- **All MCP tools eager** — full `tools/list` surface (no TAP-1985 defer curtain)
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` when you have a collector. Set `HF_TOKEN` and
+`TAPPS_BRAIN_METRICS_TOKEN` in `docker/.env` before network exposure.
+
+Wire IDE clients to the brain directly — see [mcp-client-repo-setup.md](mcp-client-repo-setup.md)
+(`tapps-brain` HTTP MCP + `X-Brain-Profile: full` in `.mcp.json` / `.cursor/mcp.json`).
 
 ## Inner loop (target ~3–8 min)
 
@@ -79,8 +99,22 @@ BRAIN_TEST_FAST_N=4 make brain-test-fast   # fixed worker count
 ## Keep the stack running
 
 - Do **not** run `make hive-down` between iterations — volumes and DB stay warm.
-- Use `docker compose -p tapps-brain restart tapps-brain-http` for env-only changes with no code rebuild.
+- For **env-only** changes in `docker/.env` (no image rebuild), recreate the brain container so new vars load:
+
+  ```bash
+  docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --no-deps --force-recreate tapps-brain-http
+  make brain-smoke-live
+  ```
+
 - Dev pytest Postgres (`make brain-up`, project `tapps-brain-dev`) must stay off `tapps-brain_default` — see [postgres-dsn.md § Dev vs deploy](postgres-dsn.md#dev-vs-deploy-postgres-epic-076).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `Connection reset by peer` on `:8080` right after deploy | `TAPPS_BRAIN_ALLOWED_ORIGINS` missing/empty while `TAPPS_BRAIN_STRICT=1` | Add origins to `docker/.env`, recreate `tapps-brain-http` (see above) |
+| `make dev-deploy` smoke fails immediately after recreate | Brain still loading embeddings (~30–60s on cold start) | Wait for `docker ps` → `(healthy)`, rerun `make brain-smoke-live` |
+| `check-brain-env` aborts on `ALLOWED_ORIGINS` | Pre-flight guard before build | Copy the line from `docker/.env.example` or add your dashboard origins |
 
 ## When to escalate
 

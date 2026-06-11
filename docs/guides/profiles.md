@@ -18,14 +18,14 @@ This is completely separate from MemoryStore profiles (memory layers, decay, sco
 
 | Profile | Callable | Eager | Intended for |
 |---------|----------|-------|-------------|
-| `agent_brain` | 10 | 10 | AgentBrain facade consumers — `brain_*` tools only. No `memory_*`, `hive_*`, or admin tools. |
-| `coder` | 17 | 17 | Repo-embedded coding agents (Claude Code, Cursor, Aider). brain_* facade + session hooks + quality loop + graph lookups. |
-| `reviewer` | 8 | 8 | Read-only PR/code review bots. Recall + search + graph only, no writes. |
-| `seeder` | 6 | 6 | Bulk ingestion scripts. Write-heavy subset, no reads beyond `brain_status`. |
-| `full` | 59 | 8 | All standard tools. Default when no `X-Brain-Profile` header is set. 51 deferred. |
-| `operator` | 72 | 8 | Full + 13 operator-only maintenance tools. Requires operator bearer token. 64 deferred. |
+| `agent_brain` | 15 | 15 | AgentBrain facade consumers — `brain_*` tools only. |
+| `coder` | 21 | 21 | Repo-embedded coding agents. Facade + hooks + quality loop + v3.24 experience/profile KV. |
+| `reviewer` | 9 | 9 | Read-only PR/code review bots. |
+| `seeder` | 6 | 6 | Bulk ingestion scripts. |
+| `full` | 67 | 67 | All standard tools. Default when no `X-Brain-Profile` header is set. |
+| `operator` | 80 | 80 | Full + operator-only maintenance tools. Requires operator bearer token. |
 
-> **Callable vs Eager** (TAP-1985, parent epic TAP-1983). *Callable* is the full tool set reachable via `tools/call`. *Eager* is the subset returned in the default `tools/list` response. Tools marked `defer_loading: true` in `mcp_profiles.yaml` are callable but hidden from `tools/list` by default; clients adopt Anthropic Tool Search BETA via the `advanced-tool-use-2025-11-20` opt-in header to discover deferred tools on demand. The 8-tool eager budget for `full` and `operator` is the daily-driver set: `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`. Small profiles (`coder` / `reviewer` / `seeder` / `agent_brain`) carry no deferred entries — their full surface is eager.
+> **Callable vs Eager** (TAP-1985). On the **Docker reference stack**, every callable tool is also eager — `defer_loading` is disabled in bundled `mcp_profiles.yaml`. Upstream/minimal deployments may defer non-daily-driver tools so default `tools/list` returns only 8 entries; those tools remain callable via `tools/call` and Tool Search BETA.
 
 ### Setting the profile for a Claude Code session
 

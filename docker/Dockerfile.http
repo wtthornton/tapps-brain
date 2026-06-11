@@ -4,17 +4,16 @@ FROM python:3.13-slim
 ARG TAPPS_BRAIN_VERSION=unknown
 LABEL tapps_brain_version="${TAPPS_BRAIN_VERSION}"
 
-# Install the [http] extra (FastAPI + uvicorn + starlette + mcp) and [mcp]
-# so FastMCP's Streamable HTTP transport is available.  Matches the install
-# pattern used by the other Dockerfiles in this directory (single pip invoke
-# against the pre-built wheel copied into /tmp).
+# Install [http] + [mcp] + [reranker] + [otel] so the Docker reference stack
+# ships FlashRank reranking and OTLP export (when OTEL_EXPORTER_OTLP_ENDPOINT
+# is set).  Matches the other Dockerfiles (single pip invoke on the wheel).
 COPY dist/tapps_brain-*.whl /tmp/
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/pip \
     whl=$(ls /tmp/tapps_brain-*.whl) \
-    && pip install --no-cache-dir "${whl}[cli,mcp,http]" "psycopg[binary]"
+    && pip install --no-cache-dir "${whl}[cli,mcp,http,reranker,otel]" "psycopg[binary]"
 
 # STORY-070.15: one binary, both transports.
 # Port 8080 — HTTP data-plane + /mcp + /admin/* (FastAPI / Uvicorn).

@@ -4,399 +4,215 @@
 # Tool names must exactly match the @mcp.tool()-decorated function names in
 # src/tapps_brain/mcp_server/__init__.py.
 #
-# ProfileRegistry validates all names at startup — add new tools here when
-# adding @mcp.tool decorators, otherwise the server will refuse to start.
-#
-# Profile summary:
-#   full        (63 tools, 8 eager) — all standard tools; default fallback
-#   operator    (76 tools, 8 eager) — full + 13 operator-only maintenance tools
-#   coder       (18 tools) — repo-embedded coding agent subset (+ KG tools EPIC-076)
-#   reviewer    ( 8 tools) — read-only PR/code review agents
+# Profile summary (Docker full-promotion stack, 2026-06):
+#   full        (67 tools, all eager) — default fallback; full tools/list surface
+#   operator    (80 tools, all eager) — full + operator-only maintenance tools
+#   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
+#   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (12 tools) — TAP-1579 canonical agent-brain consumer surface
-#                             (brain_* facade only; no memory_*/hive_*/feedback_*)
+#   agent_brain (15 tools) — TAP-1579 brain_* facade (+ v3.24 experience/profile KV)
 #
-# Canonical surface split (TAP-1579):
-#   agent-brain consumers (AgentBrain class, embedded agents) → `agent_brain`
-#     profile. Sees only `brain_*` tools — the high-level facade. Memory-layer
-#     `memory_*` tools, Hive `hive_*` tools, and admin tools are hidden.
-#   full-access consumers (operator scripts, full-fidelity clients) → `full`
-#     or `operator` profile. Sees the low-level surface.
-#   Coding agents that need session capture + reinforcement → `coder` profile
-#     (brain_* facade + memory_capture / memory_index_session / memory_reinforce).
-#
-# defer_loading (TAP-1985, parent epic TAP-1983):
-#   Tools in `full` / `operator` annotated as `{name: ..., defer_loading: true}`
-#   are still REGISTERED and CALLABLE — they're omitted from the default
-#   `tools/list` response to shrink the eager catalog from 59 → 8. Clients that
-#   adopt Anthropic Tool Search BETA (opt-in via `advanced-tool-use-2025-11-20`)
-#   discover deferred tools on demand. Eager budget per server is 8–12 (parent
-#   epic budget).
+# defer_loading (TAP-1985) is disabled in the Docker reference stack so every
+# registered tool appears in the default tools/list response. Re-enable per-tool
+# `{name, defer_loading: true}` entries if you need the 8-tool eager budget.
 
 profiles:
-  # --------------------------------------------------------------------------
-  # full — all standard tools (default fallback, backwards-compatible)
-  # 63 tools total: 8 eager daily drivers + 55 deferred (TAP-2099: +brain_export)
-  #
-  # Daily-driver budget (8) — eager catalog returned by `tools/list` when no
-  # Tool Search BETA header is present. Picked for highest call frequency in
-  # the brain_* facade + the two cross-cutting search primitives.
-  # --------------------------------------------------------------------------
   full:
     description: >
       All standard (non-operator) tools. Default profile when no X-Brain-Profile
-      header is set. Includes all brain_* facade tools + KG tools (EPIC-076).
-      Eager catalog (`tools/list`) returns the 8 daily-driver tools; the
-      remaining 55 carry `defer_loading: true` and are reachable via Tool Search
-      BETA (parent epic TAP-1983).
+      header is set. Docker reference stack exposes the full callable surface in
+      tools/list (no deferred entries).
     tools:
-      # Daily drivers (8) — eager catalog
-      - brain_recall
-      - brain_remember
-      - brain_status
-      - brain_get_neighbors
+      - agent_create
+      - agent_delete
+      - agent_list
+      - agent_register
+      - brain_audit_consumers
       - brain_explain_connection
-      - memory_search
-      - memory_find_related
+      - brain_export
+      - brain_forget
+      - brain_get_neighbors
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_profile_get
+      - brain_profile_set
+      - brain_query_events
+      - brain_recall
+      - brain_record_event
+      - brain_record_events_batch
+      - brain_record_feedback
+      - brain_remember
+      - brain_resolve_entity
+      - brain_status
+      - diagnostics_history
+      - diagnostics_report
+      - feedback_gap
+      - feedback_issue
+      - feedback_query
+      - feedback_rate
+      - feedback_record
+      - flywheel_gaps
+      - flywheel_process
+      - flywheel_report
+      - hive_propagate
+      - hive_push
       - hive_search
-      # Deferred (51) — reachable via Tool Search BETA on demand
-      - name: agent_create
-        defer_loading: true
-      - name: agent_delete
-        defer_loading: true
-      - name: agent_list
-        defer_loading: true
-      - name: agent_register
-        defer_loading: true
-      - name: brain_audit_consumers
-        defer_loading: true
-      - name: brain_export
-        defer_loading: true
-      - name: brain_forget
-        defer_loading: true
-      - name: brain_learn_failure
-        defer_loading: true
-      - name: brain_learn_success
-        defer_loading: true
-      - name: brain_record_event
-        defer_loading: true
-      - name: brain_record_events_batch
-        defer_loading: true
-      - name: brain_query_events
-        defer_loading: true
-      - name: brain_profile_get
-        defer_loading: true
-      - name: brain_profile_set
-        defer_loading: true
-      - name: brain_record_feedback
-        defer_loading: true
-      - name: brain_resolve_entity
-        defer_loading: true
-      - name: diagnostics_history
-        defer_loading: true
-      - name: diagnostics_report
-        defer_loading: true
-      - name: feedback_gap
-        defer_loading: true
-      - name: feedback_issue
-        defer_loading: true
-      - name: feedback_query
-        defer_loading: true
-      - name: feedback_rate
-        defer_loading: true
-      - name: feedback_record
-        defer_loading: true
-      - name: flywheel_gaps
-        defer_loading: true
-      - name: flywheel_process
-        defer_loading: true
-      - name: flywheel_report
-        defer_loading: true
-      - name: hive_propagate
-        defer_loading: true
-      - name: hive_push
-        defer_loading: true
-      - name: hive_status
-        defer_loading: true
-      - name: hive_wait_write
-        defer_loading: true
-      - name: hive_write_revision
-        defer_loading: true
-      - name: memory_audit
-        defer_loading: true
-      - name: memory_capture
-        defer_loading: true
-      - name: memory_delete
-        defer_loading: true
-      - name: memory_entries_by_tag
-        defer_loading: true
-      - name: memory_get
-        defer_loading: true
-      - name: memory_history
-        defer_loading: true
-      - name: memory_index_session
-        defer_loading: true
-      - name: memory_ingest
-        defer_loading: true
-      - name: memory_list
-        defer_loading: true
-      - name: memory_list_groups
-        defer_loading: true
-      - name: memory_list_tags
-        defer_loading: true
-      - name: memory_profile_onboarding
-        defer_loading: true
-      - name: memory_query_relations
-        defer_loading: true
-      - name: memory_recall
-        defer_loading: true
-      - name: memory_recall_many
-        defer_loading: true
-      - name: memory_reinforce
-        defer_loading: true
-      - name: memory_reinforce_many
-        defer_loading: true
-      - name: memory_relations
-        defer_loading: true
-      - name: memory_relations_get_batch
-        defer_loading: true
-      - name: memory_save
-        defer_loading: true
-      - name: memory_save_many
-        defer_loading: true
-      - name: memory_search_sessions
-        defer_loading: true
-      - name: memory_supersede
-        defer_loading: true
-      - name: memory_update_tags
-        defer_loading: true
-      - name: profile_info
-        defer_loading: true
-      - name: profile_switch
-        defer_loading: true
-      - name: recall_quality_metrics
-        defer_loading: true
-      - name: tapps_brain_session_end
-        defer_loading: true
+      - hive_status
+      - hive_wait_write
+      - hive_write_revision
+      - memory_audit
+      - memory_capture
+      - memory_delete
+      - memory_entries_by_tag
+      - memory_find_related
+      - memory_get
+      - memory_history
+      - memory_index_session
+      - memory_ingest
+      - memory_list
+      - memory_list_groups
+      - memory_list_tags
+      - memory_profile_onboarding
+      - memory_query_relations
+      - memory_recall
+      - memory_recall_many
+      - memory_reinforce
+      - memory_reinforce_many
+      - memory_relations
+      - memory_relations_get_batch
+      - memory_save
+      - memory_save_many
+      - memory_search
+      - memory_search_sessions
+      - memory_supersede
+      - memory_update_tags
+      - profile_info
+      - profile_switch
+      - recall_quality_metrics
+      - tapps_brain_session_end
 
-  # --------------------------------------------------------------------------
-  # operator — all tools (standard + operator-only maintenance)
-  # 76 tools total: 8 eager daily drivers + 68 deferred (55 standard + 13 admin)
-  # --------------------------------------------------------------------------
   operator:
     description: >
       All tools including operator-only maintenance operations. Intended for
-      the human operator / tapps-brain-operator-mcp server. Requires operator
-      bearer token. Eager catalog matches `full` (8 daily drivers); admin and
-      bulk-export tools are deferred — operators reach for them on demand via
-      Tool Search BETA.
+      the human operator / tapps-brain-operator-mcp server on :8090.
     tools:
-      # Daily drivers (8) — same eager catalog as `full`
-      - brain_recall
-      - brain_remember
-      - brain_status
-      - brain_get_neighbors
+      - agent_create
+      - agent_delete
+      - agent_list
+      - agent_register
+      - brain_audit_consumers
       - brain_explain_connection
-      - memory_search
-      - memory_find_related
+      - brain_export
+      - brain_forget
+      - brain_get_neighbors
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_profile_get
+      - brain_profile_set
+      - brain_query_events
+      - brain_recall
+      - brain_record_event
+      - brain_record_events_batch
+      - brain_record_feedback
+      - brain_remember
+      - brain_resolve_entity
+      - brain_status
+      - diagnostics_history
+      - diagnostics_report
+      - feedback_gap
+      - feedback_issue
+      - feedback_query
+      - feedback_rate
+      - feedback_record
+      - flywheel_evaluate
+      - flywheel_gaps
+      - flywheel_hive_feedback
+      - flywheel_process
+      - flywheel_report
+      - hive_propagate
+      - hive_push
       - hive_search
-      # Deferred standard tools (55) — same as `full`'s deferred set
-      - name: agent_create
-        defer_loading: true
-      - name: agent_delete
-        defer_loading: true
-      - name: agent_list
-        defer_loading: true
-      - name: agent_register
-        defer_loading: true
-      - name: brain_audit_consumers
-        defer_loading: true
-      - name: brain_export
-        defer_loading: true
-      - name: brain_forget
-        defer_loading: true
-      - name: brain_learn_failure
-        defer_loading: true
-      - name: brain_learn_success
-        defer_loading: true
-      - name: brain_record_event
-        defer_loading: true
-      - name: brain_record_events_batch
-        defer_loading: true
-      - name: brain_query_events
-        defer_loading: true
-      - name: brain_profile_get
-        defer_loading: true
-      - name: brain_profile_set
-        defer_loading: true
-      - name: brain_record_feedback
-        defer_loading: true
-      - name: brain_resolve_entity
-        defer_loading: true
-      - name: diagnostics_history
-        defer_loading: true
-      - name: diagnostics_report
-        defer_loading: true
-      - name: feedback_gap
-        defer_loading: true
-      - name: feedback_issue
-        defer_loading: true
-      - name: feedback_query
-        defer_loading: true
-      - name: feedback_rate
-        defer_loading: true
-      - name: feedback_record
-        defer_loading: true
-      - name: flywheel_gaps
-        defer_loading: true
-      - name: flywheel_process
-        defer_loading: true
-      - name: flywheel_report
-        defer_loading: true
-      - name: hive_propagate
-        defer_loading: true
-      - name: hive_push
-        defer_loading: true
-      - name: hive_status
-        defer_loading: true
-      - name: hive_wait_write
-        defer_loading: true
-      - name: hive_write_revision
-        defer_loading: true
-      - name: memory_audit
-        defer_loading: true
-      - name: memory_capture
-        defer_loading: true
-      - name: memory_delete
-        defer_loading: true
-      - name: memory_entries_by_tag
-        defer_loading: true
-      - name: memory_get
-        defer_loading: true
-      - name: memory_history
-        defer_loading: true
-      - name: memory_index_session
-        defer_loading: true
-      - name: memory_ingest
-        defer_loading: true
-      - name: memory_list
-        defer_loading: true
-      - name: memory_list_groups
-        defer_loading: true
-      - name: memory_list_tags
-        defer_loading: true
-      - name: memory_profile_onboarding
-        defer_loading: true
-      - name: memory_query_relations
-        defer_loading: true
-      - name: memory_recall
-        defer_loading: true
-      - name: memory_recall_many
-        defer_loading: true
-      - name: memory_reinforce
-        defer_loading: true
-      - name: memory_reinforce_many
-        defer_loading: true
-      - name: memory_relations
-        defer_loading: true
-      - name: memory_relations_get_batch
-        defer_loading: true
-      - name: memory_save
-        defer_loading: true
-      - name: memory_save_many
-        defer_loading: true
-      - name: memory_search_sessions
-        defer_loading: true
-      - name: memory_supersede
-        defer_loading: true
-      - name: memory_update_tags
-        defer_loading: true
-      - name: profile_info
-        defer_loading: true
-      - name: profile_switch
-        defer_loading: true
-      - name: recall_quality_metrics
-        defer_loading: true
-      - name: tapps_brain_session_end
-        defer_loading: true
-      # Operator-only deferred tools (13) — admin/bulk surface
-      - name: flywheel_evaluate
-        defer_loading: true
-      - name: flywheel_hive_feedback
-        defer_loading: true
-      - name: maintenance_consolidate
-        defer_loading: true
-      - name: maintenance_gc
-        defer_loading: true
-      - name: maintenance_stale
-        defer_loading: true
-      - name: memory_consolidation_config
-        defer_loading: true
-      - name: memory_consolidation_config_set
-        defer_loading: true
-      - name: memory_export
-        defer_loading: true
-      - name: memory_gc_config
-        defer_loading: true
-      - name: memory_gc_config_set
-        defer_loading: true
-      - name: memory_import
-        defer_loading: true
-      - name: tapps_brain_health
-        defer_loading: true
-      - name: tapps_brain_relay_export
-        defer_loading: true
+      - hive_status
+      - hive_wait_write
+      - hive_write_revision
+      - maintenance_consolidate
+      - maintenance_gc
+      - maintenance_stale
+      - memory_audit
+      - memory_capture
+      - memory_consolidation_config
+      - memory_consolidation_config_set
+      - memory_delete
+      - memory_entries_by_tag
+      - memory_export
+      - memory_find_related
+      - memory_gc_config
+      - memory_gc_config_set
+      - memory_get
+      - memory_history
+      - memory_import
+      - memory_index_session
+      - memory_ingest
+      - memory_list
+      - memory_list_groups
+      - memory_list_tags
+      - memory_profile_onboarding
+      - memory_query_relations
+      - memory_recall
+      - memory_recall_many
+      - memory_reinforce
+      - memory_reinforce_many
+      - memory_relations
+      - memory_relations_get_batch
+      - memory_save
+      - memory_save_many
+      - memory_search
+      - memory_search_sessions
+      - memory_supersede
+      - memory_update_tags
+      - profile_info
+      - profile_switch
+      - recall_quality_metrics
+      - tapps_brain_health
+      - tapps_brain_relay_export
+      - tapps_brain_session_end
 
-  # --------------------------------------------------------------------------
-  # coder — repo-embedded coding agent (18 tools)
-  # 6 facade + 4 hook-callable + 3 quality loop + 5 cross-repo/graph (EPIC-076 KG + TAP-1973 batch)
-  # --------------------------------------------------------------------------
   coder:
     description: >
       Repo-embedded coding agent subset. Exposes the brain_* facade, session
-      hooks, quality-loop tools, and cross-repo graph lookups. The KG
-      discovery primitives — `memory_find_related(key, max_hops=2)` for
-      memory-to-memory traversal and `brain_get_neighbors(entity_ids, hops=2)`
-      for entity-graph traversal — answer "what else does this file / rule
-      touch?" without dragging in the full memory_* admin surface. Use
-      `brain_explain_connection` to verify a hypothesised path between two
-      entities. Intentionally excludes destructive ops (memory_delete,
-      agent_delete, etc.) and bulk admin tools to reduce context-bloat and
-      attack surface.
+      hooks, quality-loop tools, cross-repo graph lookups (`memory_find_related`,
+      `brain_get_neighbors`, `brain_explain_connection`), and v3.24 experience
+      query + profile-scoped KV tools (`brain_query_events`, `brain_profile_get`,
+      `brain_profile_set`). Excludes destructive ops and bulk admin.
     tools:
-      # Facade (6) — primary agent API
-      - brain_recall
-      - brain_remember
-      - brain_forget
-      - brain_learn_success
-      - brain_learn_failure
-      - brain_status
-      # Hook-callable (4) — invoked by SessionStart / SessionEnd hooks
-      - memory_index_session
-      - memory_capture
-      - tapps_brain_session_end
-      - memory_search_sessions
-      # Quality loop (3) — reinforcement + feedback
-      - memory_reinforce
-      - feedback_rate
-      - feedback_gap
-      # Cross-repo + graph (5) — Hive and relation lookups + KG tools
-      - hive_search
-      - memory_find_related
-      - brain_get_neighbors
       - brain_explain_connection
+      - brain_forget
+      - brain_get_neighbors
+      - brain_learn_failure
+      - brain_learn_success
+      - brain_profile_get
+      - brain_profile_set
+      - brain_query_events
+      - brain_recall
       - brain_record_events_batch
+      - brain_remember
+      - brain_status
+      - feedback_gap
+      - feedback_rate
+      - hive_search
+      - memory_capture
+      - memory_find_related
+      - memory_index_session
+      - memory_reinforce
+      - memory_search_sessions
+      - tapps_brain_session_end
 
-  # --------------------------------------------------------------------------
-  # reviewer — read-only PR/code review agents (8 tools)
-  # --------------------------------------------------------------------------
   reviewer:
     description: >
       Read-only subset for PR/code review agents. No writes, no deletes.
-      Provides recall, search, graph traversal, and experience event queries.
     tools:
-      - brain_recall
       - brain_query_events
+      - brain_recall
       - hive_search
       - memory_find_related
       - memory_get
@@ -405,14 +221,9 @@ profiles:
       - memory_search
       - memory_search_sessions
 
-  # --------------------------------------------------------------------------
-  # seeder — bulk ingestion scripts (6 tools)
-  # --------------------------------------------------------------------------
   seeder:
     description: >
-      Bulk write subset for one-shot ingestion scripts. No read ops beyond
-      status. Intended for pipeline agents that bulk-populate memory before
-      a coding session starts.
+      Bulk write subset for one-shot ingestion scripts.
     tools:
       - brain_status
       - memory_capture
@@ -421,21 +232,10 @@ profiles:
       - memory_save_many
       - memory_supersede
 
-  # --------------------------------------------------------------------------
-  # agent_brain — canonical AgentBrain consumer surface (11 tools) — TAP-1579
-  # Exposes only the `brain_*` facade. Agents using the AgentBrain class never
-  # need the low-level `memory_*`, `hive_*`, `feedback_*`, `agent_*`, or
-  # `maintenance_*` tools — hiding them reduces context bloat and enforces the
-  # architectural boundary between the facade and the storage layer.
-  # --------------------------------------------------------------------------
   agent_brain:
     description: >
-      Canonical agent-brain consumer surface. Exposes only the high-level
-      brain_* facade (remember / recall / forget / learn_success /
-      learn_failure / status, plus the KG and event helpers). Excludes all
-      memory_*, hive_*, feedback_*, agent_*, and maintenance_* tools. Intended
-      for any agent that uses the AgentBrain class or speaks to tapps-brain
-      via the brain_* facade only.
+      Canonical agent-brain consumer surface — brain_* facade only, plus v3.24
+      experience query and profile-scoped KV helpers.
     tools:
       - brain_audit_consumers
       - brain_explain_connection
@@ -443,9 +243,13 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_profile_get
+      - brain_profile_set
+      - brain_query_events
       - brain_recall
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
       - brain_remember
       - brain_status
+

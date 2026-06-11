@@ -29,6 +29,7 @@ Quick reference for the Docker deployment of tapps-brain. The stack is a **unifi
    #   TAPPS_BRAIN_RUNTIME_PASSWORD  (tapps_runtime DML-only role, used by the brain)
    #   TAPPS_BRAIN_AUTH_TOKEN        (public bearer token)
    #   TAPPS_BRAIN_ADMIN_TOKEN       (operator MCP bearer token)
+   #   TAPPS_BRAIN_ALLOWED_ORIGINS   (required — compose sets STRICT=1)
    ```
 
 2. **Configure TLS** if exposing the dashboard to a network — see [docs/guides/hive-tls.md](../docs/guides/hive-tls.md).
@@ -94,11 +95,34 @@ All values come from `docker/.env` via compose variable substitution.
 | `TAPPS_BRAIN_RUNTIME_PASSWORD` | (required) | DML-only `tapps_runtime` role password — brain logs in with this |
 | `TAPPS_BRAIN_AUTH_TOKEN` | (required) | Bearer token for the public data plane on :8080 |
 | `TAPPS_BRAIN_ADMIN_TOKEN` | (required) | Bearer token for the operator MCP on :8090 |
-| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (set in production) |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (required in `docker/.env`) | Comma-separated browser origins. **Required** — compose sets `TAPPS_BRAIN_STRICT=1`. Local dev: `http://127.0.0.1:8088,http://localhost:8088` |
 | `TAPPS_HTTP_PORT` | `8080` | Host port mapped to the HTTP adapter |
 | `TAPPS_VISUAL_PORT` | `8088` | Host port for the brain-visual frontend |
 | `TAPPS_OPERATOR_MCP_PORT` | `8090` | Operator MCP port (loopback-only by default) |
 | `TAPPS_OPERATOR_MCP_BIND` | `127.0.0.1` | Operator MCP bind address. Set to `0.0.0.0` only behind a reverse proxy with auth. |
+
+### Full feature promotion (reference stack defaults)
+
+The compose file and `docker/.env.example` enable the full tapps-brain surface by default:
+
+| Area | Compose default | Notes |
+|------|-----------------|-------|
+| **FlashRank reranker** | On (image installs `[reranker]`) | Cross-encoder reranking after hybrid retrieval |
+| **OTel SDK** | On (`[otel]` in image; `TAPPS_BRAIN_OTEL_ENABLED=1`) | Set `OTEL_EXPORTER_OTLP_ENDPOINT` to ship spans |
+| **Write idempotency** | `TAPPS_BRAIN_IDEMPOTENCY=1` | `X-Idempotency-Key` replay cache |
+| **Per-tenant auth** | `TAPPS_BRAIN_PER_TENANT_AUTH=1` | Requires `X-Project-Id`; falls back to global token until `project rotate-token` |
+| **Embeddings** | `TAPPS_BRAIN_EMBEDDING_REQUIRED=1` | Hard-fail if model cannot load |
+| **MCP tools/list** | All profile tools eager | No `defer_loading` in bundled `mcp_profiles.yaml` |
+
+Strongly recommended in `docker/.env` (not defaulted to secrets): `HF_TOKEN`, `TAPPS_BRAIN_METRICS_TOKEN`.
+
+After changing `docker/.env` or the Dockerfile extras, rebuild the http image:
+
+```bash
+make dev-deploy
+```
+
+Client wiring: add direct `tapps-brain` HTTP MCP with `X-Brain-Profile: full` — see [mcp-client-repo-setup.md](../docs/guides/mcp-client-repo-setup.md).
 
 ## brain-visual frontend
 

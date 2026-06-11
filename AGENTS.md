@@ -52,6 +52,26 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make hive-smoke` | Isolated compose smoke (alternate ports; boots and tears down) |
 | `make publish-brain-image` | Build wheel + `docker-tapps-brain-http:latest` + versioned tag (for AgentForge) |
 
+### Local Docker stack (agents)
+
+When the user asks to **upgrade / redeploy tapps-brain to local Docker**, use the fast inner loop — not a full `hive-deploy` unless images/nginx/visual changed or the stack is new.
+
+| Situation | Command |
+|---|---|
+| **First-time** stack | `cp docker/.env.example docker/.env` → fill secrets → `make hive-deploy` |
+| **Code upgrade** (default, 10–20×/day) | `make dev-deploy` — wheel + http image rebuild + `brain-smoke-live` |
+| **SQL migrations** changed | `MIGRATE=1 make dev-deploy` |
+| **`docker/.env` only** (no rebuild) | `docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --no-deps --force-recreate tapps-brain-http` |
+| **Verify** after deploy | `make brain-smoke-live` (~10s) or `make brain-healthcheck` when MCP wiring changed |
+
+**Required in `docker/.env`:** `TAPPS_BRAIN_ALLOWED_ORIGINS` must be a non-empty comma-separated list. Compose sets `TAPPS_BRAIN_STRICT=1`; without origins the `tapps-brain-http` container crash-loops (`Connection reset by peer` on `:8080`). Local dev template value:
+
+```bash
+TAPPS_BRAIN_ALLOWED_ORIGINS=http://127.0.0.1:8088,http://localhost:8088
+```
+
+Keep DB + visual running between iterations — do **not** `make hive-down` between code deploys. Full workflow: [`docs/guides/dev-docker-loop.md`](docs/guides/dev-docker-loop.md).
+
 ### DSN override
 
 The default dev DSN is `postgres://tapps:tapps@localhost:5432/tapps_brain_dev` (matches `make brain-up`, compose project `tapps-brain-dev`). The **deployed** hive DB uses project `tapps-brain` and hostname `tapps-brain-db` on `tapps-brain_default` — do not mix the two on the same Docker network (see `docs/guides/postgres-dsn.md` § Dev vs deploy Postgres).

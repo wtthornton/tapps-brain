@@ -29,7 +29,7 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 | Teach from an outcome | `brain_learn_success(...)` / `brain_learn_failure(...)` | AgentBrain facade — records what worked / what to avoid so future recalls surface it. Pass `failed_approaches=[...]` on `brain_remember` for inline anti-patterns. |
 | Query stored metrics / events | `brain_query_events(event_type=..., entity_id=...)` | v3.24.0+ — read back `experience_events.payload` (e.g. `quality_metric` scores by `file_path`). Not `brain_get_neighbors` (KG structure only). REST: `POST /v1/experience:query`. |
 
-The eager `tools/list` catalog returns 8 daily-driver tools (`brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`). Non-daily-driver tools (`brain_learn_success`/`brain_learn_failure`, `brain_record_event`/`brain_record_events_batch`, `brain_query_events`, `brain_resolve_entity`, `brain_export`, `recall_quality_metrics`, `brain_audit_consumers`, the `memory_*`/`feedback_*` family) are deferred-loaded — still callable via `tools/call` and reachable via Anthropic Tool Search BETA (`advanced-tool-use-2025-11-20` header) — TAP-1985.
+The eager `tools/list` catalog on the Docker reference stack returns **all** profile tools (defer_loading disabled). Daily-driver tools include `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`, plus v3.24 helpers `brain_query_events`, `brain_profile_get`, `brain_profile_set` when using the `full` or `coder` profile.
 
 ## Pick a tier
 
@@ -72,6 +72,18 @@ Does this duplicate a CHANGELOG / CLAUDE.md entry?  → NO
 
 See [`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md) — covers `.mcp.json`, per-repo bearer token, profile selection, and the SessionStart hook that auto-primes recall on turn 1.
 
+## Upgrade local Docker (agents)
+
+When the user asks to deploy or upgrade the **local** brain stack:
+
+```bash
+make dev-deploy              # default: code-only wheel + http image + smoke (~3–8 min)
+MIGRATE=1 make dev-deploy    # when SQL under src/tapps_brain/migrations/ changed
+make hive-deploy             # first-time only, or nginx/visual image changes
+```
+
+`docker/.env` must include non-empty `TAPPS_BRAIN_ALLOWED_ORIGINS` (compose sets `STRICT=1`). Without it the container crash-loops on `:8080`. Env-only change: `docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --no-deps --force-recreate tapps-brain-http`.
+
 ## Verify a running deployment
 
 From the tapps-brain repo root (token in `.env` or `docker/.env`):
@@ -91,5 +103,5 @@ make brain-smoke-live     # HTTP: /healthz, experience record + query round-trip
 - **HTTP surface**: [`docs/guides/http-adapter.md`](docs/guides/http-adapter.md) — `/healthz` phased body, `/v1/tools/list` ETag headers, `/v1/experience:query`.
 - **Experience events + query API**: [`docs/engineering/experience-events.md`](docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
 - **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
-- **Deploy + upgrade**: [`docs/guides/hive-deployment.md`](docs/guides/hive-deployment.md) — `make hive-deploy`, `BRAIN_VERSION` bump.
+- **Deploy + upgrade**: [`docs/guides/dev-docker-loop.md`](docs/guides/dev-docker-loop.md) — `make dev-deploy` (fast), `MIGRATE=1`, `ALLOWED_ORIGINS` requirement. Production: [`hive-deployment.md`](docs/guides/hive-deployment.md).
 - **Latest release notes**: [`CHANGELOG.md`](CHANGELOG.md#3240--2026-06-09) — current at v3.24.0.

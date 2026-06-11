@@ -253,7 +253,7 @@ data:
 | `TAPPS_BRAIN_FEDERATION_DSN` | (fallback: `TAPPS_BRAIN_DATABASE_URL`) | **Optional.** Same rule for Federation. |
 | `TAPPS_BRAIN_AUTH_TOKEN` | (required) | Bearer token for the public `/mcp/` + `/v1/*` data plane. |
 | `TAPPS_BRAIN_ADMIN_TOKEN` | (required) | Bearer token for the operator MCP transport on `:8090` (loopback by default). |
-| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS origins for `/snapshot` (**set in production** — empty accepts all Origin headers, which exposes the data plane to DNS-rebinding attacks from any browser tab on the host network). |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | (required in `docker/.env`) | Comma-separated browser origins. Compose sets `TAPPS_BRAIN_STRICT=1` — **empty/missing crash-loops the brain**. Local dev: `http://127.0.0.1:8088,http://localhost:8088`. |
 | `TAPPS_BRAIN_METRICS_TOKEN` / `_TOKEN_FILE` | (unset) | Bearer token gating the full per-`(project_id, agent_id)` Prometheus surface on `/metrics` (TAP-547). When unset, `/metrics` serves a label-redacted body to any caller that can reach `:8080`. **Set in production.** Use `_TOKEN_FILE` to read from a file so the secret never enters the process environment. |
 | `HF_TOKEN` | (unset) | HuggingFace Hub token for the embedding-model cache rehydrate path. When unset, model downloads use the unauthenticated rate limit and the embedding provider stalls during a cache-cold deploy until the limit window resets. **Set in production**, especially on hosts with eviction-prone tmpfs caches. |
 | `TAPPS_BRAIN_AUTO_MIGRATE` / `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | (unset) | Leave unset on the brain — `tapps_runtime` cannot run DDL; migrations run in the migrate Job/sidecar. |
@@ -264,11 +264,11 @@ The runtime emits a startup warning for each of the gaps below — `docker logs 
 
 | Variable | Why it matters | Example value |
 |----------|---------------|---------------|
-| `TAPPS_BRAIN_ALLOWED_ORIGINS` | Empty → DNS-rebinding-class attacks against `:8080` succeed from any browser tab on the host network. | `https://dashboard.example.com,https://ide.example.com` |
+| `TAPPS_BRAIN_ALLOWED_ORIGINS` | Missing/empty with `STRICT=1` → brain refuses to start; too-broad list → DNS-rebinding risk. | Local: `http://127.0.0.1:8088,http://localhost:8088`; prod: `https://dashboard.example.com,https://ide.example.com` |
 | `TAPPS_BRAIN_METRICS_TOKEN` (or `_TOKEN_FILE`) | Unset → `/metrics` is callable unauthenticated; per-tenant labels are redacted but the request-rate surface still leaks. | `openssl rand -hex 32` |
 | `HF_TOKEN` | Unset → embedding model re-downloads from HuggingFace are rate-limited; if the local cache evicts during a high-churn deploy the brain stops embedding for several minutes. | A read-only token from https://huggingface.co/settings/tokens |
 
-All three are propagated by [`docker/docker-compose.hive.yaml`](../../docker/docker-compose.hive.yaml) — set them in `docker/.env` and they reach the container automatically. For Kubernetes, add them to the brain's ConfigMap (non-sensitive: `TAPPS_BRAIN_ALLOWED_ORIGINS`) or Secret (`TAPPS_BRAIN_METRICS_TOKEN`, `HF_TOKEN`).
+All three are propagated by [`docker/docker-compose.hive.yaml`](../../docker/docker-compose.hive.yaml) — set them in `docker/.env` and they reach the container automatically. The reference stack also enables **`TAPPS_BRAIN_IDEMPOTENCY=1`**, **`TAPPS_BRAIN_PER_TENANT_AUTH=1`**, **`TAPPS_BRAIN_OTEL_ENABLED=1`**, installs **`[reranker,otel]`** in the http image, and exposes all MCP tools eagerly (no `defer_loading`). See [`docker/README.md`](../../docker/README.md#full-feature-promotion-reference-stack-defaults).
 
 ```bash
 # docker/.env (production hardening — append below the four required vars)

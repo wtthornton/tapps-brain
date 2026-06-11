@@ -145,6 +145,19 @@ services:
       # idle backends exceed 50% of Postgres max_connections.
       TAPPS_BRAIN_PG_POOL_MIN: "${TAPPS_BRAIN_PG_POOL_MIN:-1}"
       TAPPS_BRAIN_PG_POOL_MAX: "${TAPPS_BRAIN_PG_POOL_MAX:-8}"
+      TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS: "${TAPPS_BRAIN_PG_POOL_CONNECT_TIMEOUT_SECONDS:-10}"
+      TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT: "${TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT:-300}"
+      # --- Full feature promotion (Docker reference stack) --------------------
+      # Write idempotency (X-Idempotency-Key / MCP _meta.idempotency_key).
+      TAPPS_BRAIN_IDEMPOTENCY: "${TAPPS_BRAIN_IDEMPOTENCY:-1}"
+      # Per-tenant bearer tokens (falls back to TAPPS_BRAIN_AUTH_TOKEN until
+      # `tapps-brain project rotate-token` is run for each project).
+      TAPPS_BRAIN_PER_TENANT_AUTH: "${TAPPS_BRAIN_PER_TENANT_AUTH:-1}"
+      # OTel SDK is installed in the http image; export requires endpoint.
+      TAPPS_BRAIN_OTEL_ENABLED: "${TAPPS_BRAIN_OTEL_ENABLED:-1}"
+      OTEL_SERVICE_NAME: "${OTEL_SERVICE_NAME:-tapps-brain}"
+      OTEL_EXPORTER_OTLP_TIMEOUT: "${OTEL_EXPORTER_OTLP_TIMEOUT:-5.0}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
     volumes:
       # Persist the HuggingFace model cache across container recreations (TAP-2672).
       # The embedding model (~130MB) is downloaded on first start; without this
@@ -180,10 +193,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.visual
     environment:
-      # Visual entrypoint injects this token into the nginx /snapshot proxy
-      # so the dashboard can call the authed brain endpoint without exposing
-      # the token to the browser. Same token as the public data plane.
+      # Visual entrypoint injects token + project id into the nginx /snapshot
+      # proxy so the dashboard can call the authed brain endpoint without
+      # exposing credentials to the browser.
       TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
+      TAPPS_BRAIN_PROJECT: ${TAPPS_BRAIN_PROJECT:-default}
     ports:
       - "${TAPPS_VISUAL_PORT:-8088}:80"
     depends_on:
