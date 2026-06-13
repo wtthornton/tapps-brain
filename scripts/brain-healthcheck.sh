@@ -343,6 +343,7 @@ except Exception:
                 required_tools=(
                     brain_recall brain_remember
                     memory_save memory_search memory_recall memory_delete
+                    docs_lookup docs_warm
                 )
                 ;;
         esac

@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from tapps_brain.mcp_server.context import ToolContext
 
 
-def register_docs_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
+def register_docs_tools(mcp: Any, _ctx: ToolContext) -> None:  # noqa: ANN401
     """Register ``docs_lookup`` and ``docs_warm`` on *mcp*."""
-    _resolve = ctx.resolve_store_for_call
+    from tapps_brain.docs_lookup import get_docs_store
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def docs_lookup(
@@ -32,7 +32,7 @@ def register_docs_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
             return json.dumps(
                 {"error": "invalid_mode", "detail": "mode must be 'code' or 'info'"},
             )
-        store = _resolve("")
+        store = get_docs_store()
         result = run_docs_lookup(store, library=library, topic=topic, mode=mode)
         return json.dumps(result, default=str)
 
@@ -43,6 +43,6 @@ def register_docs_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
             return json.dumps(
                 {"error": "invalid_mode", "detail": "mode must be 'code' or 'info'"},
             )
-        store = _resolve("")
+        store = get_docs_store()
         result = run_docs_warm(store, libraries, topic=topic, mode=mode)
         return json.dumps(result, default=str)

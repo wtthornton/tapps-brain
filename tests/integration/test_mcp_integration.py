@@ -132,6 +132,9 @@ class TestToolsDiscovery:
             "flywheel_gaps",
             # Session end
             "tapps_brain_session_end",
+            # Library docs (ADR-0014)
+            "docs_lookup",
+            "docs_warm",
         }
         assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
@@ -153,6 +156,8 @@ class TestToolsDiscovery:
             "tapps_brain_relay_export",
             "flywheel_evaluate",
             "flywheel_hive_feedback",
+            "docs_lookup",
+            "docs_warm",
         }
         assert operator_expected.issubset(tool_names), (
             f"Missing operator tools: {operator_expected - tool_names}"
@@ -169,6 +174,32 @@ class TestToolsDiscovery:
             result = await session.list_tools()
             for tool in result.tools:
                 assert tool.inputSchema is not None, f"Tool {tool.name} missing inputSchema"
+
+
+# ------------------------------------------------------------------
+# Library doc tools (ADR-0014)
+# ------------------------------------------------------------------
+
+
+class TestDocsTools:
+    """MCP protocol round-trip for ``docs_lookup`` / ``docs_warm``."""
+
+    @pytest.mark.requires_postgres
+    async def test_docs_lookup_invalid_library(self, mcp_server):
+        async with create_connected_server_and_client_session(mcp_server) as session:
+            result = await session.call_tool("docs_lookup", {"library": "   "})
+            body = json.loads(result.content[0].text)
+            assert body["success"] is False
+
+    @pytest.mark.requires_postgres
+    async def test_docs_lookup_invalid_mode(self, mcp_server):
+        async with create_connected_server_and_client_session(mcp_server) as session:
+            result = await session.call_tool(
+                "docs_lookup",
+                {"library": "pytest", "mode": "invalid"},
+            )
+            body = json.loads(result.content[0].text)
+            assert body["error"] == "invalid_mode"
 
 
 # ------------------------------------------------------------------

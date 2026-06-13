@@ -10,16 +10,21 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from tapps_brain.context7_sync import Context7Error, SyncContext7Client
 from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.services import memory_service
+
+if TYPE_CHECKING:
+    from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +57,55 @@ class DocsConfig:
             cache_ttl_seconds=ttl,
             context7_api_key=key,
         )
+
+
+_docs_store_cache: dict[tuple[str, str], MemoryStore] = {}
+_docs_store_lock = threading.Lock()
+
+
+def open_docs_store(
+    cfg: DocsConfig | None = None,
+    *,
+    project_root: Path | None = None,
+) -> MemoryStore:
+    """Open a ``MemoryStore`` for the shared library-docs project (ADR-0014).
+
+    Doc cache rows live under ``(project_id, agent_id)`` from :class:`DocsConfig`,
+    not the MCP caller's project.  Callers must ``close()`` when done unless using
+    :func:`get_docs_store` (process-wide cache for MCP tools).
+    """
+    from tapps_brain.backends import resolve_private_backend_from_env
+    from tapps_brain.store import MemoryStore
+
+    resolved = cfg or DocsConfig.from_env()
+    backend = resolve_private_backend_from_env(resolved.project_id, resolved.agent_id)
+    if backend is None:
+        msg = (
+            "Docs store requires TAPPS_BRAIN_DATABASE_URL "
+            "(postgres:// or postgresql:// DSN)."
+        )
+        raise ValueError(msg)
+    root = (project_root or Path.cwd()).resolve()
+    return MemoryStore(
+        root,
+        agent_id=resolved.agent_id,
+        private_backend=backend,
+        auto_register=False,
+        hive_store=None,
+    )
+
+
+def get_docs_store(cfg: DocsConfig | None = None) -> MemoryStore:
+    """Return a cached docs ``MemoryStore`` (one per ``(project_id, agent_id)``)."""
+    resolved = cfg or DocsConfig.from_env()
+    key = (resolved.project_id, resolved.agent_id)
+    with _docs_store_lock:
+        cached = _docs_store_cache.get(key)
+        if cached is not None:
+            return cached
+        store = open_docs_store(resolved)
+        _docs_store_cache[key] = store
+        return store
 
 
 def doc_memory_key(library: str, topic: str) -> str:

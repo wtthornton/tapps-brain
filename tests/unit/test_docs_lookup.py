@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tapps_brain.docs_import import import_cache_dir
 from tapps_brain.context7_sync import extract_context7_content
+from tapps_brain.docs_import import import_cache_dir
 from tapps_brain.docs_lookup import (
     DocsConfig,
     decode_doc_value,
@@ -132,6 +132,15 @@ def test_docs_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.project_id == "custom-docs"
     assert cfg.cache_ttl_seconds == 7200.0
     assert cfg.context7_api_key == "secret"
+
+
+def test_open_docs_store_requires_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tapps_brain.docs_lookup import open_docs_store
+
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+    with pytest.raises(ValueError, match="TAPPS_BRAIN_DATABASE_URL"):
+        open_docs_store()
 
 
 def test_doc_memory_key_normalizes() -> None:
