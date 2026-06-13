@@ -158,6 +158,10 @@ services:
       OTEL_SERVICE_NAME: "${OTEL_SERVICE_NAME:-tapps-brain}"
       OTEL_EXPORTER_OTLP_TIMEOUT: "${OTEL_EXPORTER_OTLP_TIMEOUT:-5.0}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      # ADR-0014 — brain-central doc RAG (Context7 on cache miss).
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
+      DOCS_CACHE_TTL: "${DOCS_CACHE_TTL:-86400}"
+      TAPPS_BRAIN_DOCS_PROJECT_ID: "${TAPPS_BRAIN_DOCS_PROJECT_ID:-library-docs}"
     volumes:
       # Persist the HuggingFace model cache across container recreations (TAP-2672).
       # The embedding model (~130MB) is downloaded on first start; without this
