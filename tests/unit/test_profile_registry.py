@@ -48,12 +48,12 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_67_tools(self) -> None:
+    def test_get_full_returns_69_tools(self) -> None:
         # EPIC-075 added brain_query_events, brain_record_events_batch,
         # brain_record_feedback to full (+3 over TAP-2725 baseline).
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 67
+        assert len(tools) == 69
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -68,11 +68,11 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_80_tools(self) -> None:
+    def test_get_operator_returns_82_tools(self) -> None:
         # EPIC-075: +3 experience/feedback tools in operator superset.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 80
+        assert len(tools) == 82
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -182,7 +182,7 @@ class TestBundledProfiles:
     def test_get_reviewer_is_read_only(self) -> None:
         reg = ProfileRegistry()
         reviewer = reg.get("reviewer")
-        assert len(reviewer) == 9
+        assert len(reviewer) == 10
         assert "brain_recall" in reviewer
         assert "memory_search" in reviewer
         assert "memory_get" in reviewer
@@ -374,7 +374,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 80, f"Expected 80 tools, found {len(all_tools)}"
+        assert len(all_tools) == 82, f"Expected 82 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -448,7 +448,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 67
+        assert len(eager) == 69
 
     def test_bundled_full_eager_set_matches_callable_surface(self) -> None:
         """All callable tools in `full` appear in tools/list by default."""
@@ -462,7 +462,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 80
+        assert len(eager) == 82
 
     def test_bundled_operator_eager_matches_callable_surface(self) -> None:
         """All callable tools in `operator` appear in tools/list by default."""

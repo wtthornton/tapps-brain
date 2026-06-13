@@ -118,21 +118,21 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_67_tools(self) -> None:
-        """Golden file for 'full' must list exactly 67 tools (EPIC-075: +3)."""
-        assert len(_load_golden("full")) == 67
+    def test_full_golden_has_69_tools(self) -> None:
+        """Golden file for 'full' must list exactly 69 tools."""
+        assert len(_load_golden("full")) == 69
 
-    def test_operator_golden_has_80_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 80 tools (EPIC-075: +3)."""
-        assert len(_load_golden("operator")) == 80
+    def test_operator_golden_has_82_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 82 tools."""
+        assert len(_load_golden("operator")) == 82
 
     def test_coder_golden_has_21_tools(self) -> None:
         """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
         assert len(_load_golden("coder")) == 21
 
     def test_reviewer_golden_has_9_tools(self) -> None:
-        """Golden file for 'reviewer' must list exactly 9 tools (EPIC-074: +1)."""
-        assert len(_load_golden("reviewer")) == 9
+        """Golden file for 'reviewer' must list exactly 10 tools."""
+        assert len(_load_golden("reviewer")) == 10
 
     def test_seeder_golden_has_6_tools(self) -> None:
         """Golden file for 'seeder' must list exactly 6 tools."""
@@ -219,16 +219,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_80(self) -> None:
-        """The MCP server must have exactly 80 registered tools (67 standard + 13 operator)."""
+    def test_registered_tool_count_is_82(self) -> None:
+        """The MCP server must have exactly 82 registered tools (69 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 80, (
-            f"Expected 80 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 82, (
+            f"Expected 82 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 80 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 82 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -305,7 +305,7 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 67
+        assert len(result) == 69
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -504,7 +504,7 @@ class TestBackwardsCompat:
         """No profile header → list_tools returns the full callable surface."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 67
+        assert len(full_tools) == 69
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -513,7 +513,7 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 67
+        assert len(result) == 69
         assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
@@ -585,7 +585,7 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 67),
+            ("full", 69),
             ("coder", 21),
             ("reviewer", 9),
             ("seeder", 6),

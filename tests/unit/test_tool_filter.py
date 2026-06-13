@@ -196,7 +196,7 @@ class TestListToolsFilter:
         """Docker reference stack: `full` profile lists every callable tool."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 67
+        assert len(all_tool_names) == 69
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -206,7 +206,7 @@ class TestListToolsFilter:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 67
+        assert len(result) == 69
         assert {t.name for t in result} == real_registry.get("full")
 
     def test_bundled_full_profile_includes_previously_deferred_tools(self) -> None:

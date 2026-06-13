@@ -94,6 +94,7 @@ main = _main_callback
 
 from . import (  # noqa: E402, F401
     diagnostics,
+    docs,
     feedback,
     hive,
     maintenance,

@@ -213,6 +213,10 @@ ignore = [
 "src/tapps_brain/_store_*.py" = ["PLR0915", "PLR2004", "N806"]
 # Service layer uses Any extensively for generic JSON/dict dispatch — intentional
 "src/tapps_brain/services/*.py" = ["ANN401"]
+"src/tapps_brain/docs_lookup.py" = ["ANN401", "PLR0911"]
+"src/tapps_brain/context7_sync.py" = ["ANN401"]
+"src/tapps_brain/docs_import.py" = ["ANN401", "TC003"]
+"src/tapps_brain/cli/docs.py" = ["TC003"]
 "src/tapps_brain/mcp_server/__init__.py" = [
     "ANN401", "PLR0911", "N806",
     "E402",   # conditional imports after module-level contextvars setup

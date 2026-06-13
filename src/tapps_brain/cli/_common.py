@@ -73,6 +73,7 @@ memory_app = typer.Typer(
     no_args_is_help=True,
 )
 maintenance_app = typer.Typer(help="Run store maintenance operations.", no_args_is_help=True)
+docs_app = typer.Typer(help="Library documentation cache (ADR-0014).", no_args_is_help=True)
 
 profile_app = typer.Typer(help="Manage memory profiles.", no_args_is_help=True)
 hive_app = typer.Typer(help="Manage the Hive shared brain.", no_args_is_help=True)
@@ -98,6 +99,7 @@ visual_app = typer.Typer(
 app.add_typer(store_app, name="store")
 app.add_typer(memory_app, name="memory")
 app.add_typer(maintenance_app, name="maintenance")
+app.add_typer(docs_app, name="docs")
 app.add_typer(profile_app, name="profile")
 app.add_typer(hive_app, name="hive")
 app.add_typer(agent_app, name="agent")
@@ -298,6 +300,7 @@ __all__ = [
     "agent_app",
     "app",
     "diagnostics_app",
+    "docs_app",
     "feedback_app",
     "flywheel_app",
     "get_cli_agent_id",

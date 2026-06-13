@@ -21,6 +21,8 @@ brain_resolve_entity
 brain_status
 diagnostics_history
 diagnostics_report
+docs_lookup
+docs_warm
 feedback_gap
 feedback_issue
 feedback_query

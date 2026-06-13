@@ -1,5 +1,6 @@
 brain_query_events
 brain_recall
+docs_lookup
 hive_search
 memory_find_related
 memory_get
