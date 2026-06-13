@@ -37,6 +37,7 @@ def _docs_config(*, with_api_key: bool = True) -> Any:
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key="test-key" if with_api_key else None,
+        llms_txt_fallback=False,
     )
 
 

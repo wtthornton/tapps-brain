@@ -42,7 +42,7 @@ TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
         hive-wheel hive-build hive-deploy hive-reload-http hive-reload dev-deploy \
-        hive-up hive-down hive-logs hive-smoke check-brain-env \
+        hive-up hive-down hive-logs hive-smoke check-brain-env brain-env-init \
         check-compose-isolation publish-brain-image
 
 # Abort when the dev Postgres container is on tapps-brain_default (pre-076.1 layout
@@ -195,6 +195,29 @@ check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 	  echo ""; \
 	  exit 1; \
 	fi
+
+TIER ?= balanced
+
+brain-env-init:  ## Append docker/defaults/$(TIER).env to docker/.env (replaces prior tier block)
+	@tier="$(TIER)"; \
+	tier_file="docker/defaults/$${tier}.env"; \
+	if [ ! -f "$$tier_file" ]; then \
+	  echo ""; \
+	  echo "ERROR: unknown tier '$$tier' (missing $$tier_file)"; \
+	  echo "       Valid tiers: cheap balanced quality it13"; \
+	  echo ""; \
+	  exit 1; \
+	fi; \
+	if [ ! -f docker/.env ]; then \
+	  cp docker/.env.example docker/.env; \
+	  echo "Created docker/.env from docker/.env.example — fill REPLACE_ME_* before deploy."; \
+	fi; \
+	tmp=$$(mktemp); \
+	awk 'BEGIN{skip=0} /^TAPPS_BRAIN_TIER=/{skip=1; next} skip && /^TAPPS_BRAIN_DEFAULT_PROFILE=/{skip=0; next} skip{next} {print}' docker/.env > "$$tmp"; \
+	mv "$$tmp" docker/.env; \
+	printf '\n' >> docker/.env; \
+	cat "$$tier_file" >> docker/.env; \
+	echo "Appended tier overlay: $$tier_file"
 
 hive-deploy:  ## Full deploy: check env → build → migrate → up. Safe to rerun.
 	$(MAKE) check-brain-env

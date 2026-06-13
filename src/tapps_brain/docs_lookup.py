@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from tapps_brain.context7_sync import Context7Error, SyncContext7Client
+from tapps_brain.llms_txt_sync import LlmsTxtError, SyncLlmsTxtClient
 from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.services import memory_service
 
@@ -35,6 +36,7 @@ DOCS_PROJECT_ENV = "TAPPS_BRAIN_DOCS_PROJECT_ID"
 DOCS_AGENT_ENV = "TAPPS_BRAIN_DOCS_AGENT_ID"
 DOCS_TTL_ENV = "DOCS_CACHE_TTL"
 CONTEXT7_KEY_ENV = "CONTEXT7_API_KEY"
+DOCS_LLMS_FALLBACK_ENV = "DOCS_LLMS_TXT_FALLBACK"
 
 
 @dataclass(frozen=True)
@@ -45,17 +47,21 @@ class DocsConfig:
     agent_id: str
     cache_ttl_seconds: float
     context7_api_key: str | None
+    llms_txt_fallback: bool
 
     @classmethod
     def from_env(cls) -> DocsConfig:
         ttl_raw = os.environ.get(DOCS_TTL_ENV, "").strip()
         ttl = float(ttl_raw) if ttl_raw else DEFAULT_DOCS_CACHE_TTL_SECONDS
         key = os.environ.get(CONTEXT7_KEY_ENV, "").strip() or None
+        fallback_raw = os.environ.get(DOCS_LLMS_FALLBACK_ENV, "1").strip().lower()
+        llms_fallback = fallback_raw not in {"0", "false", "no", "off"}
         return cls(
             project_id=os.environ.get(DOCS_PROJECT_ENV, "library-docs").strip() or "library-docs",
             agent_id=os.environ.get(DOCS_AGENT_ENV, DOCS_AGENT_ID).strip() or DOCS_AGENT_ID,
             cache_ttl_seconds=ttl,
             context7_api_key=key,
+            llms_txt_fallback=llms_fallback,
         )
 
 
@@ -74,7 +80,7 @@ def open_docs_store(
     not the MCP caller's project.  Callers must ``close()`` when done unless using
     :func:`get_docs_store` (process-wide cache for MCP tools).
     """
-    from tapps_brain.backends import resolve_private_backend_from_env
+    from tapps_brain.backends import resolve_hive_backend_from_env, resolve_private_backend_from_env
     from tapps_brain.store import MemoryStore
 
     resolved = cfg or DocsConfig.from_env()
@@ -85,13 +91,15 @@ def open_docs_store(
             "(postgres:// or postgresql:// DSN)."
         )
         raise ValueError(msg)
+    hive_store = resolve_hive_backend_from_env()
     root = (project_root or Path.cwd()).resolve()
     return MemoryStore(
         root,
         agent_id=resolved.agent_id,
         private_backend=backend,
         auto_register=False,
-        hive_store=None,
+        hive_store=hive_store,
+        hive_agent_id=resolved.agent_id,
     )
 
 
@@ -217,7 +225,7 @@ def _persist_doc_entry(
         tags=tags,
         scope="project",
         confidence=0.95,
-        agent_scope="private",
+        agent_scope="hive",
         group=normalize_memory_group(DOCS_MEMORY_GROUP),
     )
 
@@ -264,14 +272,46 @@ def _fetch_from_context7(
     library: str,
     topic: str,
     mode: str,
-) -> tuple[str, str]:
+) -> tuple[str | None, str, str]:
     client = SyncContext7Client(cfg.context7_api_key)
     matches = client.resolve_library(library)
     if not matches or not matches[0].get("id"):
         raise Context7Error(f"No Context7 match for {library}")
     context7_id = matches[0]["id"]
     content = client.fetch_docs(context7_id, topic=topic, mode=mode)
-    return context7_id, content
+    return context7_id, content, "context7"
+
+
+def _fetch_from_llms_txt(library: str, topic: str) -> tuple[str | None, str, str]:
+    client = SyncLlmsTxtClient()
+    source_url, content = client.fetch(library, topic=topic)
+    return source_url, content, "llmstxt"
+
+
+def _fetch_remote_docs(
+    cfg: DocsConfig,
+    library: str,
+    topic: str,
+    mode: str,
+) -> tuple[str | None, str, str]:
+    """Fetch doc body from Context7 with optional llms.txt fallback."""
+    errors: list[str] = []
+    if cfg.context7_api_key:
+        try:
+            return _fetch_from_context7(cfg, library, topic, mode)
+        except Context7Error as exc:
+            errors.append(str(exc))
+            if not cfg.llms_txt_fallback:
+                raise
+    if cfg.llms_txt_fallback:
+        try:
+            return _fetch_from_llms_txt(library, topic)
+        except LlmsTxtError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise Context7Error("; ".join(errors))
+    msg = "CONTEXT7_API_KEY not configured and llms.txt fallback disabled"
+    raise Context7Error(msg)
 
 
 def _stale_snapshot(cached: dict[str, Any] | None) -> tuple[str | None, str | None]:
@@ -341,7 +381,7 @@ def docs_lookup(
 
     stale_content, stale_id = _stale_snapshot(cached)
 
-    if not cfg.context7_api_key:
+    if not cfg.context7_api_key and not cfg.llms_txt_fallback:
         if stale_content:
             return _stale_fallback_response(
                 start=start,
@@ -360,7 +400,12 @@ def docs_lookup(
         )
 
     try:
-        context7_id, content = _fetch_from_context7(cfg, lib_clean, topic_clean, mode)
+        external_id, content, provider_source = _fetch_remote_docs(
+            cfg,
+            lib_clean,
+            topic_clean,
+            mode,
+        )
     except Context7Error as exc:
         if stale_content:
             return _stale_fallback_response(
@@ -386,8 +431,8 @@ def docs_lookup(
         topic=topic_clean,
         mode=mode,
         content=content,
-        context7_id=context7_id,
-        provider_source="context7",
+        context7_id=external_id,
+        provider_source=provider_source,
     )
     return _lookup_response(
         success=True,
@@ -396,8 +441,8 @@ def docs_lookup(
         topic=topic_clean,
         content=content,
         source="api",
-        context7_id=context7_id,
-        provider_source="context7",
+        context7_id=external_id,
+        provider_source=provider_source,
     )
 
 

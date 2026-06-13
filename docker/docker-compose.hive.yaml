@@ -161,6 +161,7 @@ services:
       # ADR-0014 — brain-central doc RAG (Context7 on cache miss).
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
       DOCS_CACHE_TTL: "${DOCS_CACHE_TTL:-86400}"
+      DOCS_LLMS_TXT_FALLBACK: "${DOCS_LLMS_TXT_FALLBACK:-1}"
       TAPPS_BRAIN_DOCS_PROJECT_ID: "${TAPPS_BRAIN_DOCS_PROJECT_ID:-library-docs}"
     volumes:
       # Persist the HuggingFace model cache across container recreations (TAP-2672).

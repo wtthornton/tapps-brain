@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tapps_brain.context7_sync import extract_context7_content
+from tapps_brain.context7_sync import Context7Error, extract_context7_content
 from tapps_brain.docs_import import import_cache_dir
 from tapps_brain.docs_lookup import (
     DocsConfig,
@@ -83,6 +83,7 @@ def test_docs_lookup_missing_library() -> None:
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key="key",
+        llms_txt_fallback=False,
     )
     result = docs_lookup(store, library="   ", config=cfg)
     assert result["success"] is False
@@ -96,6 +97,7 @@ def test_docs_lookup_stale_fallback_without_api_key(monkeypatch: pytest.MonkeyPa
         agent_id="docs-cache",
         cache_ttl_seconds=1,
         context7_api_key=None,
+        llms_txt_fallback=False,
     )
     key = doc_memory_key("httpx", "overview")
     from tapps_brain.docs_lookup import _encode_doc_value
@@ -128,10 +130,12 @@ def test_docs_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TAPPS_BRAIN_DOCS_PROJECT_ID", "custom-docs")
     monkeypatch.setenv("DOCS_CACHE_TTL", "7200")
     monkeypatch.setenv("CONTEXT7_API_KEY", "secret")
+    monkeypatch.setenv("DOCS_LLMS_TXT_FALLBACK", "0")
     cfg = DocsConfig.from_env()
     assert cfg.project_id == "custom-docs"
     assert cfg.cache_ttl_seconds == 7200.0
     assert cfg.context7_api_key == "secret"
+    assert cfg.llms_txt_fallback is False
 
 
 def test_open_docs_store_requires_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,6 +163,7 @@ def test_docs_lookup_cache_hit(monkeypatch: pytest.MonkeyPatch) -> None:
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key=None,
+        llms_txt_fallback=False,
     )
     key = doc_memory_key("pytest", "fixtures")
     from tapps_brain.docs_lookup import _encode_doc_value
@@ -194,6 +199,7 @@ def test_docs_lookup_fetches_context7(
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key="test-key",
+        llms_txt_fallback=False,
     )
     _install_memory_service_fake(monkeypatch, store)
     client = mock_client_cls.return_value
@@ -216,6 +222,7 @@ def test_docs_warm_batch(monkeypatch: pytest.MonkeyPatch) -> None:
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key=None,
+        llms_txt_fallback=False,
     )
     _install_memory_service_fake(monkeypatch, store)
 
@@ -235,6 +242,7 @@ def test_import_cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         agent_id="docs-cache",
         cache_ttl_seconds=3600,
         context7_api_key=None,
+        llms_txt_fallback=False,
     )
     _install_memory_service_fake(monkeypatch, store)
     lib_dir = tmp_path / "httpx"
@@ -257,3 +265,72 @@ def test_import_cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     report2 = import_cache_dir(store, tmp_path, config=cfg, skip_existing=True)
     assert report2.skipped == 1
     assert report2.imported == 0
+
+
+@patch("tapps_brain.docs_lookup._fetch_from_llms_txt")
+@patch("tapps_brain.docs_lookup._fetch_from_context7")
+def test_docs_lookup_falls_back_to_llms_txt(
+    mock_context7: MagicMock,
+    mock_llms: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _MemStore()
+    cfg = DocsConfig(
+        project_id="library-docs",
+        agent_id="docs-cache",
+        cache_ttl_seconds=3600,
+        context7_api_key="test-key",
+        llms_txt_fallback=True,
+    )
+    _install_memory_service_fake(monkeypatch, store)
+    mock_context7.side_effect = Context7Error("Context7 down")
+    mock_llms.return_value = ("https://docs.pytest.org/llms.txt", "# pytest", "llmstxt")
+
+    result = docs_lookup(store, library="pytest", topic="fixtures", config=cfg)
+    assert result["success"] is True
+    assert result["provider_source"] == "llmstxt"
+    assert result["source"] == "api"
+    mock_llms.assert_called_once()
+
+
+def test_persist_doc_entry_uses_hive_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _MemStore()
+    cfg = DocsConfig(
+        project_id="library-docs",
+        agent_id="docs-cache",
+        cache_ttl_seconds=3600,
+        context7_api_key=None,
+        llms_txt_fallback=False,
+    )
+    captured: dict[str, Any] = {}
+
+    def _save(
+        store_obj: Any,
+        project_id: str,
+        agent_id: str,
+        *,
+        key: str,
+        value: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        captured.update(kwargs)
+        store.rows[(project_id, agent_id, key)] = {"key": key, "value": value, "access_count": 0}
+        return {"ok": True, "key": key}
+
+    from tapps_brain.services import memory_service
+
+    monkeypatch.setattr(memory_service, "memory_save", _save)
+    from tapps_brain.docs_lookup import _persist_doc_entry
+
+    _persist_doc_entry(
+        store,
+        cfg,
+        library="pytest",
+        topic="overview",
+        mode="code",
+        content="body",
+        context7_id="/pytest",
+        provider_source="context7",
+    )
+    assert captured.get("agent_scope") == "hive"
+    assert captured.get("group") == "library-docs"
