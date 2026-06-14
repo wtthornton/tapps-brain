@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: a00151eb
 # TappsMCP SubagentStop hook (Epic 36.1)
 # Advises on quality validation when subagent modified Python files.
 # IMPORTANT: SubagentStop does NOT support exit code 2 (advisory only).

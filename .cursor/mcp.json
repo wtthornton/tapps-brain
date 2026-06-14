@@ -14,16 +14,6 @@
         "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}"
       }
     },
-    "tapps-brain": {
-      "type": "http",
-      "url": "http://127.0.0.1:8080/mcp/",
-      "headers": {
-        "Authorization": "Bearer ${TAPPS_BRAIN_AUTH_TOKEN}",
-        "X-Project-Id": "tapps-brain",
-        "X-Agent-Id": "cursor-wtthornton",
-        "X-Brain-Profile": "full"
-      }
-    },
     "docs-mcp": {
       "type": "stdio",
       "command": "docsmcp",

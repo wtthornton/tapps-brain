@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: 9a745264
 # TappsMCP PreToolUse hook — Linear cache-first read gate (TAP-1224)
 # Gates raw mcp__plugin_linear_linear__list_issues calls behind a recent
 # tapps_linear_snapshot_get sentinel for the same (team, project, state,
 # label, limit) slice (within 300s). Mode is baked in at install time:
 # "warn" logs to .cache-gate-violations.jsonl and allows; "block" exits 2.
 # Bypass with TAPPS_LINEAR_SKIP_CACHE_GATE=1 (logged to .bypass-log.jsonl).
-MODE="warn"
+MODE="block"
 INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 if [ -z "$PYBIN" ]; then

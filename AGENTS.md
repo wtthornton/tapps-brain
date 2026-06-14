@@ -1,4 +1,4 @@
-<!-- tapps-agents-version: 3.12.16 -->
+<!-- tapps-agents-version: 3.12.27 -->
 # TappsMCP - instructions for AI assistants
 
 When the **TappsMCP** MCP server is configured, you have access to tools for **code quality, doc lookup, and domain expert advice**. Use them to avoid hallucinated APIs, missed quality steps, and inconsistent output.
@@ -250,8 +250,8 @@ Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wal
 ## Recommended workflow
 
 1. **Session start:** Call `tapps_session_start` (returns server info and project context).
-2. **Check project memory:** Consider calling `tapps_memory(action="search", query="...")` to recall past decisions and project context.
-3. **Record key decisions:** Use `tapps_session_notes(action="save", ...)` for session-local notes. Use `tapps_memory(action="save", ...)` to persist decisions across sessions.
+2. **Check project memory:** Consider `uv run tapps-mcp memory search --query "..."` or read `.tapps-mcp/session-handoff.md`.
+3. **Record key decisions:** Use `tapps_session_notes(action="save", ...)` for session-local notes. Use `uv run tapps-mcp memory save --key ... --tier ... --value "..."` to persist decisions across sessions.
 3. **Before using a library:** Call `tapps_lookup_docs(library=...)` and use the returned content when implementing.
 4. **Before modifying a file's API:** Call `tapps_impact_analysis(file_path=...)` to see what depends on it.
 5. **During edits:** Call `tapps_quick_check(file_path=...)` or `tapps_score_file(file_path=..., quick=True)` after each change.
@@ -297,9 +297,9 @@ The checklist uses this to decide which tools are required vs recommended vs opt
 Your project may have two complementary memory systems:
 
 - **Claude Code auto memory** (`~/.claude/projects/<project>/memory/MEMORY.md`): Build commands, IDE preferences, personal workflow notes. Auto-managed.
-- **TappsMCP shared memory** (`tapps_memory` tool): Architecture decisions, quality patterns, expert findings, cross-agent knowledge. Structured with tiers, confidence decay, contradiction detection, consolidation, and federation.
+- **TappsMCP shared memory** (`tapps-mcp memory` CLI via BrainBridge; `tapps_memory` MCP removed TAP-1994): Architecture decisions, quality patterns, expert findings, cross-agent knowledge. Structured with tiers, confidence decay, contradiction detection, consolidation, and federation.
 
-RECOMMENDED: Use `tapps_memory` for architecture decisions and quality patterns.
+RECOMMENDED: Use `uv run tapps-mcp memory save|get|search` for architecture decisions and quality patterns. Pin always-on scope keys under `memory_hooks.auto_recall.recall_keys` in `.tapps-mcp.yaml`.
 
 ### Memory actions (42 total)
 
@@ -489,7 +489,7 @@ The bare `mcp__tapps-mcp` entry is needed as a reliable fallback - the wildcard 
 Seven rules every agent in this project should follow.
 
 1. **Fix root causes, not symptoms.** No workarounds, no `--no-verify`, no try/except-and-swallow. If you are tempted to bypass a failure, stop and diagnose it.
-2. **When confidence drops below 100%, query tapps-mcp before writing code.** `tapps_lookup_docs` for library APIs, `tapps_memory(action="search")` for prior decisions and patterns. Guessing from memory is the most common source of hallucinated APIs.
+2. **When confidence drops below 100%, query tapps-mcp before writing code.** `tapps_lookup_docs` for library APIs; `uv run tapps-mcp memory search --query "..."` for prior decisions. Guessing from memory is the most common source of hallucinated APIs.
 3. **`tapps_lookup_docs` is a Context7-backed cache — use it freely.** Lookups are local-cache-first; repeat calls are near-zero cost. There is no budget to conserve.
 4. **Be context-window aware — delegate noisy work to subagents.** If a task would dump more than three file reads or large tool output you won't reference again, spawn `Explore` or `general-purpose`. Subagents return summaries; the main thread stays clean.
 5. **Write clean, efficient code.** Clear names, no dead branches, no speculative abstractions, no commented-out code. Every line should justify its presence.

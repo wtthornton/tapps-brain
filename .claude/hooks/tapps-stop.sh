@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: 7e0e81d5
 # TappsMCP Stop hook — TAP-1326 / TAP-1327 (+ completion-gate warn-mode for non-Ralph)
 # Phase 1 (always when transcript exists): scan tool calls, write loop-metrics.jsonl
 #   + write .tapps-mcp/.completion-gate-violations.jsonl when files were edited
@@ -51,9 +52,13 @@ ralph_mode = '$RALPH_MODE' == 'true'
 gate_tools={'tapps_quick_check','tapps_validate_changed','tapps_quality_gate',
             'mcp__tapps-mcp__tapps_quick_check','mcp__tapps-mcp__tapps_validate_changed',
             'mcp__tapps-mcp__tapps_quality_gate','mcp__tapps-quality__tapps_quick_check',
-            'mcp__tapps-quality__tapps_validate_changed','mcp__tapps-quality__tapps_quality_gate'}
-checklist_tools={'tapps_checklist','mcp__tapps-mcp__tapps_checklist','mcp__tapps-quality__tapps_checklist'}
-lookup_tools={'tapps_lookup_docs','mcp__tapps-mcp__tapps_lookup_docs','mcp__tapps-quality__tapps_lookup_docs'}
+            'mcp__tapps-quality__tapps_validate_changed','mcp__tapps-quality__tapps_quality_gate',
+            'mcp__nlt-code-quality__tapps_quick_check','mcp__nlt-code-quality__tapps_validate_changed',
+            'mcp__nlt-code-quality__tapps_quality_gate'}
+checklist_tools={'tapps_checklist','mcp__tapps-mcp__tapps_checklist','mcp__tapps-quality__tapps_checklist',
+                 'mcp__nlt-code-quality__tapps_checklist'}
+lookup_tools={'tapps_lookup_docs','mcp__tapps-mcp__tapps_lookup_docs','mcp__tapps-quality__tapps_lookup_docs',
+              'mcp__nlt-code-quality__tapps_lookup_docs'}
 edit_tools={'Edit','Write','MultiEdit','NotebookEdit'}
 mcp_calls=0
 gate_called=False

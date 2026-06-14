@@ -37,10 +37,10 @@ logger = structlog.get_logger(__name__)
 def _pin_seeds(seed: int = 0) -> None:
     """Pin all random seeds so harness entry-points are deterministic.
 
-    Handles missing optional dependencies (numpy, torch) without raising
-    :class:`ImportError` — catches :class:`ImportError` on each optional
-    import so callers are unaffected when a dep is absent or blocked in
-    ``sys.modules``.
+    Handles missing optional dependency (numpy) without raising
+    :class:`ImportError`.  PyTorch is intentionally **not** seeded here —
+    it is not a declared runtime dependency of tapps-brain (eval harnesses
+    that need torch must pin it in their own optional extra).
 
     Args:
         seed: Integer seed value. Default ``0`` gives stable CI outputs.
@@ -50,12 +50,6 @@ def _pin_seeds(seed: int = 0) -> None:
         import numpy as np
 
         np.random.seed(seed)
-    except ImportError:
-        pass
-    try:
-        import torch
-
-        torch.manual_seed(seed)
     except ImportError:
         pass
 
