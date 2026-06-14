@@ -33,6 +33,15 @@ from pathlib import Path
 
 _MIN_TOKEN_LEN = 3
 
+
+def _question_token_set(question: str) -> set[str]:
+    return {t.lower() for t in question.split() if len(t) >= _MIN_TOKEN_LEN}
+
+
+def _overlap_score(question_tokens: set[str], value: str) -> int:
+    value_tokens = {t.lower() for t in value.split() if len(t) >= _MIN_TOKEN_LEN}
+    return len(question_tokens & value_tokens)
+
 # Ensure package import works when running from a checked-out repo
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
@@ -89,11 +98,10 @@ class _BrainContext:
         self._history = [(key, value) for key, value, _ in item.history]
 
     def retrieve_context(self, item: BenchmarkItem) -> Sequence[str]:
-        q_tokens = {t.lower() for t in item.question.split() if len(t) >= _MIN_TOKEN_LEN}
-        scored: list[tuple[int, str]] = []
-        for _key, value in self._history:
-            tokens = {t.lower() for t in value.split() if len(t) >= _MIN_TOKEN_LEN}
-            scored.append((len(q_tokens & tokens), value))
+        q_tokens = _question_token_set(item.question)
+        scored: list[tuple[int, str]] = [
+            (_overlap_score(q_tokens, value), value) for _key, value in self._history
+        ]
         scored.sort(key=lambda row: row[0], reverse=True)
         return [value for score, value in scored[: self.k] if score > 0][: self.k]
 

@@ -27,6 +27,24 @@
             "command": ".claude/hooks/tapps-session-compact.sh"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-memory-auto-recall.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-memory-auto-recall.sh"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -35,6 +53,14 @@
           {
             "type": "command",
             "command": ".claude/hooks/tapps-stop.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-memory-auto-capture.sh"
           }
         ]
       }
@@ -134,6 +160,24 @@
             "command": ".claude/hooks/tapps-post-linear-list.sh"
           }
         ]
+      },
+      {
+        "matcher": "mcp__nlt-linear-issues__docs_validate_linear_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-docs-validate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__nlt-linear-issues__tapps_linear_snapshot_get",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-linear-snapshot-get.sh"
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -164,6 +208,14 @@
             "command": ".claude/hooks/tapps-pre-compact.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-memory-auto-recall.sh"
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -192,7 +244,17 @@
   "permissions": {
     "allow": [
       "mcp__tapps-mcp",
-      "mcp__tapps-mcp__*"
+      "mcp__tapps-mcp__*",
+      "mcp__nlt-code-quality",
+      "mcp__nlt-code-quality__*",
+      "mcp__nlt-platform-admin",
+      "mcp__nlt-platform-admin__*",
+      "mcp__nlt-linear-issues",
+      "mcp__nlt-linear-issues__*",
+      "mcp__nlt-project-docs",
+      "mcp__nlt-project-docs__*",
+      "mcp__nlt-release-ship",
+      "mcp__nlt-release-ship__*"
     ],
     "deny": [
       "Bash(rm -rf *)",

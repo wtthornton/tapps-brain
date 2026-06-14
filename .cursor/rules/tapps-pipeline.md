@@ -13,7 +13,7 @@ Every tool response includes `next_steps` - consider following them.
 Seven rules every agent in this project should follow.
 
 1. **Fix root causes, not symptoms.** No workarounds, no `--no-verify`, no try/except-and-swallow. If you are tempted to bypass a failure, stop and diagnose it.
-2. **When confidence drops below 100%, query tapps-mcp before writing code.** `tapps_lookup_docs` for library APIs, `tapps_memory(action="search")` for prior decisions and patterns. Guessing from memory is the most common source of hallucinated APIs.
+2. **When confidence drops below 100%, query tapps-mcp before writing code.** `tapps_lookup_docs` for library APIs, `uv run tapps-mcp memory search --query "..."` for prior decisions and patterns. Guessing from memory is the most common source of hallucinated APIs.
 3. **`tapps_lookup_docs` is a Context7-backed cache — use it freely.** Lookups are local-cache-first; repeat calls are near-zero cost. There is no budget to conserve.
 4. **Be context-window aware — delegate noisy work to subagents.** If a task would dump more than three file reads or large tool output you won't reference again, spawn `Explore` or `general-purpose`. Subagents return summaries; the main thread stays clean.
 5. **Write clean, efficient code.** Clear names, no dead branches, no speculative abstractions, no commented-out code. Every line should justify its presence.
@@ -76,11 +76,11 @@ This validates against security and operational best practices.
 
 Recommended order for every code task:
 
-1. **Discover** - `tapps_session_start()`, consider `tapps_memory(action="search")` for project context
+1. **Discover** - `tapps_session_start()`, consider `uv run tapps-mcp memory search --query "..."` for project context
 2. **Research** - `tapps_lookup_docs()` for libraries and domain decisions
 3. **Develop** - `tapps_score_file(file_path, quick=True)` during edit-lint-fix loops
 4. **Validate** - `tapps_quick_check()` per file OR `tapps_validate_changed()` for batch
-5. **Verify** - `tapps_checklist(task_type)`, consider `tapps_memory(action="save")` for learnings
+5. **Verify** - `tapps_checklist(task_type)`, consider `uv run tapps-mcp memory save --key ... --tier ... --value "..."` for learnings
 
 ## Consequences of Skipping
 

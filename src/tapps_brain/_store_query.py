@@ -31,6 +31,30 @@ from tapps_brain.otel_tracer import (
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
+def _filter_memory_entries(
+    entries: list[MemoryEntry],
+    *,
+    tier: str | None = None,
+    scope: str | None = None,
+    tags: list[str] | None = None,
+    memory_group: str | None = None,
+    include_superseded: bool = True,
+) -> list[MemoryEntry]:
+    """Apply optional list filters shared by ``list_all`` and search post-filters."""
+    if tier is not None:
+        entries = [e for e in entries if e.tier == tier]
+    if scope is not None:
+        entries = [e for e in entries if e.scope == scope]
+    if memory_group is not None:
+        entries = [e for e in entries if e.memory_group == memory_group]
+    if tags:
+        tag_set = set(tags)
+        entries = [e for e in entries if tag_set.intersection(e.tags)]
+    if not include_superseded:
+        entries = [e for e in entries if e.is_temporally_valid()]
+    return entries
+
+
 class QueryMixin(_MemoryStoreBase):
     """Read, list, delete, and search methods (TAP-2833)."""
 
@@ -102,19 +126,14 @@ class QueryMixin(_MemoryStoreBase):
         with self._serialized():
             entries = list(self._entries.values())
 
-        if tier is not None:
-            entries = [e for e in entries if e.tier == tier]
-        if scope is not None:
-            entries = [e for e in entries if e.scope == scope]
-        if memory_group is not None:
-            entries = [e for e in entries if e.memory_group == memory_group]
-        if tags:
-            tag_set = set(tags)
-            entries = [e for e in entries if tag_set.intersection(e.tags)]
-        if not include_superseded:
-            entries = [e for e in entries if e.is_temporally_valid()]
-
-        return entries
+        return _filter_memory_entries(
+            entries,
+            tier=tier,
+            scope=scope,
+            tags=tags,
+            memory_group=memory_group,
+            include_superseded=include_superseded,
+        )
 
     def list_memory_groups(self) -> list[str]:
         """Return sorted distinct project-local ``memory_group`` values (GitHub #49)."""

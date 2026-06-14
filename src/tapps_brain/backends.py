@@ -42,6 +42,108 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 _DEFAULT_HIVE_DIR = Path.home() / ".tapps-brain" / "hive"
 
 
+def _apply_hive_profile_scope_rules(
+    agent_scope: str,
+    tier: str,
+    *,
+    auto_propagate_tiers: list[str] | None,
+    private_tiers: list[str] | None,
+    bypass_profile_hive_rules: bool,
+) -> tuple[str, str | None]:
+    """Return ``(effective_scope, rule_applied)`` after profile tier rules."""
+    effective_scope = agent_scope
+    rule_applied: str | None = None
+    if bypass_profile_hive_rules:
+        return effective_scope, rule_applied
+    if private_tiers and tier in private_tiers:
+        return "private", "private_tiers"
+    if (
+        auto_propagate_tiers
+        and tier in auto_propagate_tiers
+        and effective_scope == "private"
+    ):
+        return "domain", "auto_propagate_tiers"
+    return effective_scope, rule_applied
+
+
+def _propagation_private_outcome(
+    *,
+    requested_scope: str,
+    tier: str,
+    key: str,
+    rule_applied: str | None,
+) -> dict[str, Any]:
+    if rule_applied == "private_tiers":
+        decision = "refused_private_tier"
+        would_require: dict[str, Any] | None = {"force": True}
+        reason = "tier is in profile.hive.private_tiers"
+        applied = rule_applied
+    else:
+        decision = "refused_client_scope"
+        applied = "client_scope_private"
+        would_require = None
+        reason = "caller requested agent_scope=private"
+    return {
+        "propagated": False,
+        "decision": decision,
+        "reason": reason,
+        "rule_applied": applied,
+        "requested_scope": requested_scope,
+        "effective_scope": "private",
+        "tier": tier,
+        "key": key,
+        "would_require": would_require,
+    }
+
+
+def _resolve_propagation_namespace(
+    *,
+    effective_scope: str,
+    agent_profile: str,
+    agent_id: str,
+    key: str,
+    requested_scope: str,
+    tier: str,
+    hive_store: HiveBackend,
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Return ``(namespace, refusal_outcome)`` — refusal when group membership fails."""
+    group_ns = hive_group_name_from_scope(effective_scope)
+    if group_ns is not None:
+        if not hive_store.agent_is_group_member(group_ns, agent_id):
+            logger.warning(
+                "hive.propagate.group_denied",
+                group_name=group_ns,
+                agent_id=agent_id,
+                key=key,
+                reason="not_a_member",
+            )
+            return None, {
+                "propagated": False,
+                "decision": "refused_group_not_member",
+                "reason": f"agent '{agent_id}' is not a member of group '{group_ns}'",
+                "rule_applied": "group_not_member",
+                "requested_scope": requested_scope,
+                "effective_scope": "private",
+                "tier": tier,
+                "key": key,
+                "group_name": group_ns,
+                "would_require": {"join_group": group_ns},
+            }
+        return group_ns, None
+    if effective_scope == "hive":
+        return "universal", None
+    if effective_scope == "domain":
+        return agent_profile, None
+    logger.warning(
+        "hive.propagate.unknown_scope",
+        effective_scope=effective_scope,
+        agent_id=agent_id,
+        key=key,
+        fallback="domain",
+    )
+    return agent_profile, None
+
+
 # ---------------------------------------------------------------------------
 # YAML-backed Agent Registry (EPIC-011, moved from hive.py STORY-059.2)
 # ---------------------------------------------------------------------------
@@ -219,79 +321,33 @@ class PropagationEngine:
         (used for CLI/MCP batch push — GitHub #18).
         """
         requested_scope = agent_scope
-        effective_scope = agent_scope
-        rule_applied: str | None = None
-
-        if not bypass_profile_hive_rules:
-            if private_tiers and tier in private_tiers:
-                effective_scope = "private"
-                rule_applied = "private_tiers"
-            elif (
-                auto_propagate_tiers
-                and tier in auto_propagate_tiers
-                and effective_scope == "private"
-            ):
-                effective_scope = "domain"
-                rule_applied = "auto_propagate_tiers"
+        effective_scope, rule_applied = _apply_hive_profile_scope_rules(
+            agent_scope,
+            tier,
+            auto_propagate_tiers=auto_propagate_tiers,
+            private_tiers=private_tiers,
+            bypass_profile_hive_rules=bypass_profile_hive_rules,
+        )
 
         if effective_scope == "private":
-            if rule_applied == "private_tiers":
-                decision = "refused_private_tier"
-                would_require: dict[str, Any] | None = {"force": True}
-                reason = "tier is in profile.hive.private_tiers"
-            else:
-                decision = "refused_client_scope"
-                rule_applied = "client_scope_private"
-                would_require = None
-                reason = "caller requested agent_scope=private"
-            return {
-                "propagated": False,
-                "decision": decision,
-                "reason": reason,
-                "rule_applied": rule_applied,
-                "requested_scope": requested_scope,
-                "effective_scope": "private",
-                "tier": tier,
-                "key": key,
-                "would_require": would_require,
-            }
-
-        group_ns = hive_group_name_from_scope(effective_scope)
-        if group_ns is not None:
-            if not hive_store.agent_is_group_member(group_ns, agent_id):
-                logger.warning(
-                    "hive.propagate.group_denied",
-                    group_name=group_ns,
-                    agent_id=agent_id,
-                    key=key,
-                    reason="not_a_member",
-                )
-                return {
-                    "propagated": False,
-                    "decision": "refused_group_not_member",
-                    "reason": f"agent '{agent_id}' is not a member of group '{group_ns}'",
-                    "rule_applied": "group_not_member",
-                    "requested_scope": requested_scope,
-                    "effective_scope": "private",
-                    "tier": tier,
-                    "key": key,
-                    "group_name": group_ns,
-                    "would_require": {"join_group": group_ns},
-                }
-            namespace = group_ns
-        elif effective_scope == "hive":
-            namespace = "universal"
-        elif effective_scope == "domain":
-            namespace = agent_profile
-        else:
-            logger.warning(
-                "hive.propagate.unknown_scope",
-                effective_scope=effective_scope,
-                agent_id=agent_id,
+            return _propagation_private_outcome(
+                requested_scope=requested_scope,
+                tier=tier,
                 key=key,
-                fallback="domain",
+                rule_applied=rule_applied,
             )
-            namespace = agent_profile
+
+        namespace, refusal = _resolve_propagation_namespace(
+            effective_scope=effective_scope,
+            agent_profile=agent_profile,
+            agent_id=agent_id,
+            key=key,
+            requested_scope=requested_scope,
+            tier=tier,
+            hive_store=hive_store,
+        )
+        if refusal is not None:
+            return refusal
 
         base_outcome: dict[str, Any] = {
             "propagated": True,

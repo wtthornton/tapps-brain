@@ -29,6 +29,25 @@ if TYPE_CHECKING:
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
+def _merge_async_alias_batch_hits(
+    alias_hits: dict[str, list[tuple[str, float]]],
+    result: dict[str, tuple[str, float, str]],
+) -> None:
+    """Apply pass-2 alias hits into *result* (mutates in place)."""
+    for norm, hits in alias_hits.items():
+        if norm in result:
+            continue
+        best_eid, best_conf = hits[0]
+        reason = "ambiguous_alias" if len(hits) > 1 else "alias_match"
+        if len(hits) > 1:
+            logger.warning(
+                "kg.async.batch_resolve.ambiguous_alias",
+                norm=norm,
+                match_count=len(hits),
+            )
+        result[norm] = (best_eid, best_conf, reason)
+
+
 class AsyncPostgresKnowledgeGraphStore:
     """Async PostgreSQL-backed Knowledge Graph store.
 
@@ -349,18 +368,7 @@ class AsyncPostgresKnowledgeGraphStore:
                     norm, entity_id, confidence = str(row[0]), str(row[1]), float(row[2])
                     alias_hits.setdefault(norm, []).append((entity_id, confidence))
 
-                for norm, hits in alias_hits.items():
-                    if norm in result:
-                        continue
-                    best_eid, best_conf = hits[0]
-                    reason = "ambiguous_alias" if len(hits) > 1 else "alias_match"
-                    if len(hits) > 1:
-                        logger.warning(
-                            "kg.async.batch_resolve.ambiguous_alias",
-                            norm=norm,
-                            match_count=len(hits),
-                        )
-                    result[norm] = (best_eid, best_conf, reason)
+                _merge_async_alias_batch_hits(alias_hits, result)
 
         return result
 

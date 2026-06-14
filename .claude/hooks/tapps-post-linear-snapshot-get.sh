@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: b071ddb7
 # TappsMCP PostToolUse hook — Linear cache-gate sentinel writer (TAP-1224)
 # Writes a per-(team, project, state, label, limit) sentinel on BOTH
 # cached=true and cached=false responses from tapps_linear_snapshot_get.
@@ -75,7 +76,7 @@ TOOL=$(echo "$PARSED" | sed -n '1p')
 KEY=$(echo "$PARSED" | sed -n '2p')
 ALIASES=$(echo "$PARSED" | sed -n '5p')
 case "$TOOL" in
-  mcp__tapps-mcp__tapps_linear_snapshot_get|tapps_linear_snapshot_get) ;;
+  mcp__tapps-mcp__tapps_linear_snapshot_get|mcp__nlt-linear-issues__tapps_linear_snapshot_get|tapps_linear_snapshot_get) ;;
   *) exit 0 ;;
 esac
 if [ -z "$KEY" ]; then

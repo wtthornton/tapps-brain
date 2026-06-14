@@ -1,69 +1,33 @@
 ---
 name: tapps-memory
 description: >-
-  Manage shared project memory for cross-session knowledge persistence.
-  42 actions: save, search, federation, profiles, Hive, knowledge graph, batch ops, feedback, native session memory, and more.
-  Use when saving cross-session decisions, searching prior patterns, or managing the project knowledge store.
+  Manage shared project memory via tapps-mcp CLI and session notes.
+  Use when saving cross-session decisions, searching prior patterns, or
+  checking brain bridge health. For chat handoffs use tapps-handoff-session.
 mcp_tools:
-  - tapps_memory
+  - tapps_session_start
   - tapps_session_notes
 ---
 
-Manage shared project memory using TappsMCP. **All calls route through `tapps_memory`** — never wire `tapps-brain` directly into `.mcp.json`. The bridge enforces profile filtering, tier rules, feedback-flywheel auto-emission, content-safety gating, and degraded-payload behaviour.
+`tapps_memory` is **not** an MCP tool (removed v3.12.0, TAP-1994). Consumer repos stay **bridge-only** — never add `tapps-brain` to `.mcp.json`.
 
-## Decide: should I write to memory?
+## Routing guide
 
-```
-Did the user teach a non-obvious rule?              → YES (feedback)
-Was a decision made WITH RATIONALE that isn't       → YES (architectural / pattern)
-  obvious from the code or the PR body?
-Did a debug session reveal a subtle invariant?      → YES (pattern, tag: critical)
-Is this a TODO / next-step / "remember to do X"?    → NO (use TodoWrite)
-Is this re-derivable by reading the repo?           → NO
-Does this duplicate a CHANGELOG / CLAUDE.md entry?  → NO
-```
+| Need | Path |
+|------|------|
+| Cross-chat handoff | `tapps-handoff-session` then `tapps-continue-session` |
+| Session-local notes | `tapps_session_notes(action="save", ...)` |
+| Save / recall / search brain | `uv run tapps-mcp memory <subcommand>` |
+| Brain health | `tapps_session_start()` → `brain_bridge_health` |
 
-## Do NOT save
+## CLI (daily drivers)
 
-- Code patterns / file paths / module layout — derivable by reading the repo
-- Git history, recent diffs, who-changed-what — `git log` / `git blame` are authoritative
-- Ephemeral task state, debug fix recipes — belong in TODOs or the commit message
-- Anything with secrets, tokens, or PII
+`memory save`, `get`, `search`, `list`, `export` — see skill body for examples. Shell auth: `TAPPS_BRAIN_AUTH_TOKEN` or `TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN`.
 
-## Pick a tier (when saving)
+## Tiers
 
-| Tier | Half-life | What it's for |
-|---|---|---|
-| `architectural` | 180d | System decisions, tech-stack choices, infra contracts |
-| `pattern` | 60d | Coding conventions, API shapes, design patterns |
-| `procedural` | 30d | Workflows, build/deploy commands, runbooks |
-| `context` | 14d | Session-scope facts; use sparingly |
+`architectural` (180d), `pattern` (60d), `procedural` (30d), `context` (14d). Tag with `--tags critical,security` when warranted.
 
-Tag important entries with `critical` or `security` for ranking boost.
+## Advanced
 
-## Action surface (42 actions)
-
-**Core CRUD:** save, save_bulk, get, list, delete
-**Search:** search (ranked BM25 with composite scoring)
-**Intelligence:** reinforce, gc, contradictions, reseed
-**Consolidation:** consolidate (merge related entries), unconsolidate (undo)
-**Import/export:** import (JSON), export (JSON or Markdown)
-**Federation:** federate_register, federate_publish, federate_subscribe, federate_sync, federate_search, federate_status
-**Maintenance:** index_session (index session notes), validate (check store integrity), maintain (GC + consolidation + contradiction detection)
-**Security:** safety_check, verify_integrity | **Profiles:** profile_info, profile_list, profile_switch | **Diagnostics:** health
-**Hive / Agent Teams:** hive_status, hive_search, hive_propagate, agent_register
-**Knowledge graph (TAP-1630):** related, relations, neighbors, explain_connection
-**Batch ops (TAP-1631):** recall_many, reinforce_many
-**Feedback flywheel (TAP-1632):** rate (+ auto-emitted feedback_gap on search misses)
-**Native session memory (TAP-1633):** index_session, search_sessions, session_end
-
-Steps:
-1. Determine the action from the list above
-2. For saves, classify tier and scope (project/branch/session/shared) using the tables above
-3. Call `tapps_memory` with the action and parameters
-4. Display results with confidence scores and composite relevance scores
-
-## See also
-
-- [TappsMCP `docs/MEMORY_REFERENCE.md`](https://github.com/wtthornton/TappsMCP/blob/master/docs/MEMORY_REFERENCE.md) — full action reference and brain-health diagnostics
-- [tapps-brain `llm-brain-guide.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/llm-brain-guide.md) — canonical memory model (tiers, when to remember/recall/share, error envelopes)
+Federation, hive, KG: `docs/MEMORY_REFERENCE.md`. Consumer agents use CLI; coordinator agents may use brain MCP directly.

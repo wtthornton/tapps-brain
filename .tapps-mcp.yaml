@@ -12,6 +12,8 @@
 # structural false positive — those names are part of the interface contract and
 # must not be deleted. The first two patterns are the tapps-mcp defaults, kept so
 # this override does not narrow them.
+narrative_path_globs:
+  - "scripts/**"
 dead_code_whitelist_patterns:
   - "test_*"
   - "conftest.py"

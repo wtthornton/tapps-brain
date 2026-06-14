@@ -12,11 +12,11 @@ paths:
 
 Recommended order for every code task:
 
-1. **Discover** - `tapps_session_start()`, consider `tapps_memory(action="search")` for project context
+1. **Discover** - `tapps_session_start()`, consider `uv run tapps-mcp memory search --query "..."` for project context
 2. **Research** - `tapps_lookup_docs()` for libraries and domain decisions
 3. **Develop** - `tapps_score_file(file_path, quick=True)` during edit-lint-fix loops
 4. **Validate** - `tapps_quick_check()` per file OR `tapps_validate_changed()` for batch
-5. **Verify** - `tapps_checklist(task_type)`, consider `tapps_memory(action="save")` for learnings
+5. **Verify** - `tapps_checklist(task_type)`, consider `uv run tapps-mcp memory save --key ... --tier ... --value "..."` for learnings
 
 ## Consequences of Skipping
 

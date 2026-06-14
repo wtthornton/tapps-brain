@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: cf284ef3
 # TappsMCP SessionStart hook (startup/resume)
 # Directs the agent to call tapps_session_start as the first MCP action.
 # TAP-1379: Short-circuits on subsequent fires within the same Claude session
@@ -48,4 +49,15 @@ fi
 echo "REQUIRED: Call tapps_session_start() NOW as your first action."
 echo "This initializes project context for all TappsMCP quality tools."
 echo "Tools called without session_start will have degraded accuracy."
+# TAP-3578: Prior-session pipeline gap reminder from disk telemetry.
+PROJECT="${TAPPS_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-.}}"
+USAGE_HINT=""
+if command -v tapps-mcp >/dev/null 2>&1; then
+  USAGE_HINT=$(tapps-mcp usage-gaps-hint --project-root "$PROJECT" 2>/dev/null || true)
+elif command -v uv >/dev/null 2>&1 && [ -f "$PROJECT/pyproject.toml" ]; then
+  USAGE_HINT=$(cd "$PROJECT" && uv run tapps-mcp usage-gaps-hint 2>/dev/null || true)
+fi
+if [ -n "$USAGE_HINT" ]; then
+  echo "TappsMCP prior-session reminder: $USAGE_HINT"
+fi
 exit 0

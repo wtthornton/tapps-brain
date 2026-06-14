@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.16
+# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-content-sha: cca39db6
 # TappsMCP PostToolUse hook (tapps_validate_changed)
 # Reads the sidecar progress file and echoes a summary to the transcript.
 # This provides a second delivery path for validation results.

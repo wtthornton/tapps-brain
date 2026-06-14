@@ -6,7 +6,7 @@ description: >-
   Look up when to use each TappsMCP tool. Full tool reference with per-tool
   guidance for session start, scoring, validation, checklist, docs, experts, and more.
   Use when you need guidance on which TappsMCP tool to call for a given situation.
-allowed-tools: mcp__tapps-mcp__tapps_server_info
+allowed-tools: mcp__nlt-platform-admin__tapps_server_info
 argument-hint: "[tool-name or 'all']"
 ---
 
@@ -35,10 +35,12 @@ provide the full tool reference from this skill.
 | **tapps_lookup_docs** | Before writing code using an external library |
 
 ## Project & memory
-| Tool | When to use it |
+| Tool / path | When to use it |
 |------|----------------|
-| **tapps_memory** | Session start: search past decisions. Session end: save learnings |
-| **tapps_session_notes** | Key decisions during session - promote to memory for persistence |
+| **`tapps-mcp memory` CLI** | Save/search/get architectural or pattern decisions (`memory save`, `search`, `get`) |
+| **tapps_session_notes** | Session-local notes during the chat |
+| **tapps-handoff-session / tapps-continue-session** | Cross-chat transfer via `.tapps-mcp/session-handoff.md` |
+| **tapps_session_start** | `brain_bridge_health` before memory writes; hooks auto-recall |
 
 ## Validation & analysis
 | Tool | When to use it |
