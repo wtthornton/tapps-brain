@@ -86,10 +86,7 @@ def open_docs_store(
     resolved = cfg or DocsConfig.from_env()
     backend = resolve_private_backend_from_env(resolved.project_id, resolved.agent_id)
     if backend is None:
-        msg = (
-            "Docs store requires TAPPS_BRAIN_DATABASE_URL "
-            "(postgres:// or postgresql:// DSN)."
-        )
+        msg = "Docs store requires TAPPS_BRAIN_DATABASE_URL (postgres:// or postgresql:// DSN)."
         raise ValueError(msg)
     hive_store = resolve_hive_backend_from_env()
     root = (project_root or Path.cwd()).resolve()

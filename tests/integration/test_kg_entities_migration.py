@@ -284,8 +284,7 @@ class TestKgEntitiesCRUD:
             conn.commit()
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT COUNT(*) FROM kg_entities"
-                    " WHERE brain_id = %s AND canonical_name = %s",
+                    "SELECT COUNT(*) FROM kg_entities WHERE brain_id = %s AND canonical_name = %s",
                     (brain, name),
                 )
                 row = cur.fetchone()

@@ -441,7 +441,7 @@ class TestDeferredToolBehavior:
         """Operator profile lists the full callable surface."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 80
+        assert len(all_tool_names) == 82
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -452,14 +452,14 @@ class TestDeferredToolBehavior:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 80
+        assert len(result) == 82
 
     def test_small_profiles_all_eager(self) -> None:
         """coder/reviewer/seeder/agent_brain remain all-eager small profiles."""
         real_registry = ProfileRegistry()
         full_tools = list(real_registry.get("full"))
 
-        expected_counts = {"coder": 21, "reviewer": 9, "seeder": 6, "agent_brain": 15}
+        expected_counts = {"coder": 21, "reviewer": 10, "seeder": 6, "agent_brain": 15}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None
