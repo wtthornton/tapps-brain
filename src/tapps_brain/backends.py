@@ -344,7 +344,9 @@ class PropagationEngine:
         )
         if refusal is not None:
             return refusal
-        assert namespace is not None  # refusal and namespace are mutually exclusive
+        if namespace is None:
+            msg = "propagation namespace missing without refusal outcome"
+            raise RuntimeError(msg)
 
         base_outcome: dict[str, Any] = {
             "propagated": True,
