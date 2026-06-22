@@ -47,7 +47,11 @@ provide the full tool reference from this skill.
 |------|----------------|
 | **tapps_security_scan** | Security-sensitive changes or before security review |
 | **tapps_validate_config** | When adding/changing Dockerfile, docker-compose, infra |
-| **tapps_impact_analysis** | Before modifying a file's public API |
+| **tapps_impact_analysis** | Module-level import blast radius before API or layout changes |
+| **tapps_call_graph** | Before editing a function — `query=callers|callees|chain|all`; stale cache auto-rebuilds on first use |
+| **tapps_impact_analysis** | Module blast radius, or symbol-level with `symbol=` + `granularity=symbol|both` |
+| **tapps_diff_impact** | After Python edits — ranked affected tests for changed files |
+| **tapps_validate_changed** | `include_impact=true` (default) refreshes cache via diff_impact |
 | **tapps_dead_code** | Find unused code during refactoring |
 | **tapps_dependency_scan** | Check for CVEs before releases |
 | **tapps_dependency_graph** | Understand module dependencies, circular imports |
@@ -60,4 +64,4 @@ provide the full tool reference from this skill.
 | **tapps_doctor** | Diagnose configuration issues |
 | **tapps_set_engagement_level** | Change enforcement intensity (high/medium/low) |
 
-Use `tapps_server_info` for the latest recommended workflow string.
+For function-level refactors use `/tapps-refactor`. Call `tapps_server_info` for the latest recommended workflow string.

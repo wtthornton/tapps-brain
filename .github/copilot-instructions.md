@@ -1,4 +1,4 @@
-<!-- tapps-generated: v3.12.42 -->
+<!-- tapps-generated: v3.12.46 -->
 # Copilot Instructions
 
 This project uses **TappsMCP** (Code Quality MCP Server) for automated
@@ -32,7 +32,7 @@ the pipeline below.
 
 ## Memory
 
-**TappsMCP shared memory** — **`uv run tapps-mcp memory`** CLI via BrainBridge (default; do not add direct `tapps-brain` to `.mcp.json`). When **`nlt-memory`** is enabled, `tapps_memory` MCP on that server is a slim facade (TAP-3895). Architecture decisions, quality patterns, cross-agent knowledge. See [docs/MEMORY_REFERENCE.md](../docs/MEMORY_REFERENCE.md) and `/tapps-memory` skill.
+**TappsMCP shared memory** — **`uv run tapps-mcp memory`** CLI via BrainBridge (default; do not add direct `tapps-brain` to `.mcp.json`). When **`nlt-memory`** is enabled, `tapps_memory` MCP on that server is a slim facade (TAP-3895). Architecture decisions, quality patterns, cross-agent knowledge. See [docs/MEMORY_REFERENCE.md](docs/MEMORY_REFERENCE.md) and `/tapps-memory` skill.
 
 ## Code Standards
 
@@ -41,3 +41,17 @@ the pipeline below.
 - `structlog` for logging, `pathlib.Path` for file paths
 - `ruff` for linting and formatting (line length: 100)
 - All file operations through the path validator
+
+## Project Scope (do not break out of this repo/project)
+
+This Copilot instance was configured for THIS repo by `tapps_init` /
+`tapps_upgrade`. Reading docs across projects is fine; **writing** outside
+this repo or the linked tracker project is not. Specifically:
+
+- Do not create, update, comment on, or move issues that belong to a
+  different project than this repo.
+- Do not modify files, branches, or pull requests in any other repository.
+- Read team / project identity from `.tapps-mcp.yaml` or the current git
+  remote, not from arbitrary search results.
+- If a task seems to require a write outside this repo/project, ask the
+  user before proceeding.

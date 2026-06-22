@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.42
-# tapps-mcp-hook-content-sha: 8ac3fe5f
+# tapps-mcp-hook-version: 3.12.46
+# tapps-mcp-hook-content-sha: e92d2dbd
 # TappsMCP afterFileEdit hook (fire-and-forget) — TAP-1330 import parity
 # Detects external imports requiring tapps_lookup_docs. Advisory only.
 INPUT=$(cat)
@@ -49,18 +49,29 @@ try:
         for m in re.finditer(js_import, content, re.M):
             libs.add(m.group(1).split("/")[0])
     print(",".join(sorted(libs)))
+    api = "0"
+    if f.endswith((".py", ".pyi")):
+        if re.search(r"^\s*(?:async\s+)?def\s+\w+|^\s*class\s+\w+", content, re.M):
+            api = "1"
+    print(api)
 except Exception:
+    print("")
     print("")
     print("")
 PYEOF
 )
 FILE=$(echo "$PARSED" | sed -n '1p')
 LIBS=$(echo "$PARSED" | sed -n '2p')
+API=$(echo "$PARSED" | sed -n '3p')
 case "$FILE" in
   *.py|*.pyi|*.ts|*.tsx|*.js|*.jsx|*.go|*.rs)
     echo "Edited: $FILE — run tapps_quick_check after this edit." >&2
     if [ -n "$LIBS" ]; then
       echo "Imports detected ($LIBS) — call tapps_lookup_docs(library=..., topic=...) before using those APIs in this session (TAP-1330)." >&2
+    fi
+    if [ "$API" = "1" ]; then
+      echo "Public API change detected ($FILE) — call docs_check_drift and docs_api_surface on nlt-project-docs when documenting (warn-only)." >&2
+      echo "Blast radius ($FILE) — tapps_call_graph(symbol='...', query='callers') or tapps_impact_analysis(file_path='...', symbol='...', granularity='both') before changing callers (warn-only)." >&2
     fi
     ;;
   *)

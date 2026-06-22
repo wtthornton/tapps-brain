@@ -5,6 +5,7 @@ mcp_tools:
   - tapps_release_update
   - docs_generate_release_update
   - docs_validate_release_update
+  - docs_release_gate
   - linear_save_document
   - tapps_linear_snapshot_invalidate
 ---
@@ -17,6 +18,8 @@ Post a structured Linear project update document when a new version is released.
    - `version` and `prev_version` are required. Parse from the user's prompt or ask once if both are missing.
    - `team` and `project`: read from `.tapps-mcp.yaml` if present (`linear_team`, `linear_project` fields), otherwise pass empty strings.
    - If `dry_run=true` is requested, pass it through — the tool returns the body without requiring validation to pass.
+
+1b. **Docs release gate (required unless dry_run):** Call `docs_release_gate`. Stop on fail.
 
 2. Check the response:
    - If `success=false`: surface the `error.message` and `findings` to the user. Stop — do not post.

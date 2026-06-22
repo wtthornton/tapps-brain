@@ -1,4 +1,4 @@
-<!-- tapps-agents-version: 3.12.42 -->
+<!-- tapps-agents-version: 3.12.46 -->
 # TappsMCP - instructions for AI assistants
 
 When the **TappsMCP** MCP server is configured, you have access to tools for **code quality, doc lookup, and domain expert advice**. Use them to avoid hallucinated APIs, missed quality steps, and inconsistent output.

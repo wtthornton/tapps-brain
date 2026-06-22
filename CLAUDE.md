@@ -1,4 +1,4 @@
-<!-- tapps-claude-version: 3.12.42 -->
+<!-- tapps-claude-version: 3.12.46 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -297,7 +297,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 <!-- END: karpathy-guidelines -->
 
-<!-- BEGIN: tapps-obligations v3.12.42 -->
+<!-- BEGIN: tapps-obligations v3.12.46 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.

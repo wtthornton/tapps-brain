@@ -1,4 +1,5 @@
 cursor_stop_completion_gate: warn
+mcp_transport: http
 dead_code_whitelist_patterns:
 - test_*
 - conftest.py

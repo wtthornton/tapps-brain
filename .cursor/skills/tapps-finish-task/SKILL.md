@@ -15,6 +15,8 @@ Close out the current task end-to-end. Run each step; do NOT skip one that faile
 
 1. **Validate changed files.** Identify files edited this session (git status, edit history). Call `tapps_validate_changed` with explicit `file_paths` (comma-separated). Never call without `file_paths`. If any file fails, list it with the top blocking issue and stop.
 
+   **Call graph:** `include_impact` defaults to true — `tapps_validate_changed` refreshes the cache via `tapps_diff_impact`. Before function-level refactors, call `tapps_call_graph(symbol='...', query='callers')`.
+
 2. **Verify the checklist.** Call `tapps_checklist(task_type=<feature|bugfix|refactor|security|review>)`. Read the inline **`usage_gaps`** block — not only `complete` / `missing_steps`. If `complete: false`, address each entry in `missing_steps` and re-run.
 
 3. **Clear doc-lookup gaps.** When `usage_gaps.gaps` includes `library_uses_without_lookup_docs` or `libraries_without_lookup` is non-empty:
