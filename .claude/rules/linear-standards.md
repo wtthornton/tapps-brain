@@ -8,7 +8,7 @@ All Linear writes in this project — epic creation, story creation, issue updat
 ## Required flow
 
 ### For a new epic
-1. `mcp__docs-mcp__docs_generate_epic(title, purpose_and_intent, goal, motivation, acceptance_criteria, stories, ...)` — produces `docs/epics/EPIC-<N>.md` in the template shape.
+1. `mcp__docs-mcp__docs_generate_epic(title, purpose_and_intent, goal, motivation, acceptance_criteria, stories, ...)` — returns epic markdown inline in `data.content` (default `write_to_disk=false`; Linear is the system of record).
 2. `mcp__docs-mcp__docs_validate_linear_issue(title, description, is_epic=true)` — must return `agent_ready: true` with score 100.
 3. `mcp__plugin_linear_linear__save_issue(..., assignee="<agent-user-id-or-name>")` to push. Default assignee = the agent identity, never the OAuth human (see `autonomy.md`). Do NOT pause to confirm with the user — the original request is the authorization.
 4. Create each child story via the story flow with `parent_id=<epic TAP-id>` (each child also assigned to the agent).

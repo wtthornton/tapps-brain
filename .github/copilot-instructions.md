@@ -1,4 +1,4 @@
-<!-- tapps-generated: v3.12.27 -->
+<!-- tapps-generated: v3.12.42 -->
 # Copilot Instructions
 
 This project uses **TappsMCP** (Code Quality MCP Server) for automated
@@ -9,6 +9,8 @@ the pipeline below.
 
 ### Stage 1: Discover
 - Run `tapps_session_start` at the beginning of each session to initialize context
+- Brain memory is bridge-only: use `uv run tapps-mcp memory search --query "..."` or pinned keys in `.tapps-mcp.yaml` → `memory_hooks.auto_recall.recall_keys`. When `nlt-memory` is enabled, `tapps_memory` MCP is a slim facade on that server.
+- Recall prior decisions: `uv run tapps-mcp memory search --query "..."` or read `.tapps-mcp/session-handoff.md`
 
 ### Stage 2: Research
 - Use `tapps_lookup_docs` to verify library API signatures
@@ -27,6 +29,10 @@ the pipeline below.
 ### Stage 5: Verify
 - Run `tapps_quality_gate` for pass/fail verdict
 - Run `tapps_checklist` to confirm all steps were completed
+
+## Memory
+
+**TappsMCP shared memory** — **`uv run tapps-mcp memory`** CLI via BrainBridge (default; do not add direct `tapps-brain` to `.mcp.json`). When **`nlt-memory`** is enabled, `tapps_memory` MCP on that server is a slim facade (TAP-3895). Architecture decisions, quality patterns, cross-agent knowledge. See [docs/MEMORY_REFERENCE.md](../docs/MEMORY_REFERENCE.md) and `/tapps-memory` skill.
 
 ## Code Standards
 

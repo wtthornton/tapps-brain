@@ -29,7 +29,7 @@ Cross-referenced against the primary source ([platform.claude.com/docs/en/manage
 
 | Concept | Anthropic Managed Agents | tapps-brain today |
 |---------|--------------------------|-------------------|
-| Storage substrate | Filesystem on the agent's container | Postgres ([ADR-007](../adr/ADR-007.md)); in-memory dict + Postgres write-through ([store.py:404-450](../../src/tapps_brain/store.py#L404-L450)) |
+| Storage substrate | Filesystem on the agent's container | Postgres ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)); in-memory dict + Postgres write-through ([store.py:404-450](../../src/tapps_brain/store.py#L404-L450)) |
 | Address | Path string (e.g. `/preferences/formatting.md`) | `(project_id, agent_id, key)` composite ([store.py:409](../../src/tapps_brain/store.py#L409)) |
 | Decay model | Out of scope — the agent curates manually | Tier-based exponential decay: architectural=180d, pattern=60d, procedural=30d, context=14d, ephemeral/session=1d ([decay.py:64-83](../../src/tapps_brain/decay.py#L64-L83)) |
 | Cross-agent sharing | Multiple sessions can attach the same store | Hive (Postgres `hive_*` tables; cross-agent recall with `agent_scope`) |
@@ -124,7 +124,7 @@ Every `MemoryStore.save()` already does: in-memory dict update + Postgres write 
 
 ### 4.2 Cache coherence and source-of-truth ambiguity
 
-Postgres is the source of truth ([ADR-007](../adr/ADR-007.md)). If an operator edits a `.md` file directly on disk (which the layout invites — the whole point is "the filesystem is the API"), the mirror diverges silently. Reconciliation paths multiply: read-only mirror (file edits ignored), bidirectional sync (last-write-wins or conflict-detect), or one-way export (drop the file, regenerate from Postgres). Each has different operator surprises. Mitigation: make the mirror **explicitly read-only** with a `.tapps-brain-mirror-readonly` sentinel file, or — better — ship a one-shot export instead so the question never arises.
+Postgres is the source of truth ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). If an operator edits a `.md` file directly on disk (which the layout invites — the whole point is "the filesystem is the API"), the mirror diverges silently. Reconciliation paths multiply: read-only mirror (file edits ignored), bidirectional sync (last-write-wins or conflict-detect), or one-way export (drop the file, regenerate from Postgres). Each has different operator surprises. Mitigation: make the mirror **explicitly read-only** with a `.tapps-brain-mirror-readonly` sentinel file, or — better — ship a one-shot export instead so the question never arises.
 
 ### 4.3 Secrets in plaintext
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.27
+# tapps-mcp-hook-version: 3.12.42
 # tapps-mcp-hook-content-sha: c69d5615
 # TappsMCP Stop hook - Session Quality Tracker (TAP-1999)
 # Session episodic memory migrated to brain-native memory_index_session.

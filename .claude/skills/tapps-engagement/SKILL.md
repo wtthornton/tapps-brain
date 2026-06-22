@@ -6,14 +6,14 @@ description: >-
   Change the TappsMCP enforcement intensity (high, medium, or low).
   Controls which quality tools are mandatory vs optional. Use when you want
   to switch between strict, balanced, or advisory enforcement modes.
-allowed-tools: mcp__nlt-platform-admin__tapps_set_engagement_level
+allowed-tools: mcp__nlt-setup__tapps_set_engagement_level
 argument-hint: "[high|medium|low]"
 disable-model-invocation: true
 ---
 
 Set the TappsMCP LLM engagement level:
 
-1. Call `mcp__nlt-platform-admin__tapps_set_engagement_level` with the desired level
+1. Call `mcp__nlt-setup__tapps_set_engagement_level` with the desired level
 2. **high** - All quality tools are mandatory; checklist enforces strict compliance
 3. **medium** - Balanced enforcement; core tools required, advanced tools recommended
 4. **low** - Optional guidance; quality tools are suggestions, not requirements

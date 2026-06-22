@@ -1,6 +1,6 @@
 # tapps-brain — Documentation Index
 
-**251 documents** across **7 categories**
+**267 documents** across **8 categories**
 
 ## Overview
 
@@ -8,30 +8,31 @@
 |---|---|
 | API Reference | 5 |
 | Architecture | 19 |
+| Configuration | 1 |
 | Getting Started | 11 |
 | Guides | 52 |
-| Operations | 7 |
+| Operations | 6 |
 | Other | 5 |
-| Planning | 152 |
+| Planning | 168 |
 
 ## API Reference
 
-- [tapps-brain — Documentation Index](DOCUMENTATION_INDEX.md) — **249 documents** across **7 categories** *(updated 2026-05-19)*
-- [`src.tapps_brain`](api-reference.md) — tapps-brain: Persistent cross-session memory system for AI coding assistants. *(updated 2026-05-19)*
-- [Code Inventory and Documentation Gaps](engineering/code-inventory-and-doc-gaps.md) — All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers. *(updated 2026-05-11)*
-- [Data Stores and Schema Reference](engineering/data-stores-and-schema.md) — All durable stores use **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). No SQLite fall... *(updated 2026-05-11)*
+- [tapps-brain — Documentation Index](DOCUMENTATION_INDEX.md) — **251 documents** across **7 categories** *(updated 2026-06-09)*
+- [`src.tapps_brain`](api-reference.md) — tapps-brain: Persistent cross-session memory system for AI coding assistants. *(updated 2026-06-22)*
+- [Code Inventory and Documentation Gaps](engineering/code-inventory-and-doc-gaps.md) — All source modules live in `src/tapps_brain/`. 80+ files organized into 9 layers. *(updated 2026-06-05)*
+- [Data Stores and Schema Reference](engineering/data-stores-and-schema.md) — All durable stores use **PostgreSQL** (ADR-007). No SQLite fallback exists in v3. *(updated 2026-05-11)*
 - [Kubernetes Liveness and Readiness Probes](operations/k8s-probes.md) — tapps-brain's HTTP adapter exposes two dedicated probe endpoints that map *(updated 2026-05-11)*
 ## Architecture
 
-- [tapps-brain — Architecture Diagrams](engineering/diagrams.md) — Code-aligned visual reference. Every diagram below is generated from the current `src/tapps_brain/` tree or hand-auth... *(updated 2026-05-19)*
+- [tapps-brain — Architecture Diagrams](engineering/diagrams.md) — Code-aligned visual reference. Every diagram below is generated from the current `src/tapps_brain/` tree or hand-auth... *(updated 2026-06-09)*
 - [Industry features and technologies (implementation map)](engineering/features-and-technologies.md) — **Audience:** Architecture and product review — what capability areas we cover, which libraries/patterns we use, and ... *(updated 2026-05-11)*
 - [System Architecture (Implementation-Aligned)](engineering/system-architecture.md) — tapps-brain is designed for **many concurrent agents** without shared-DB bottlenecks: *(updated 2026-05-19)*
 - [Configurable Memory Profiles — Design Document](planning/DESIGN-CONFIGURABLE-MEMORY-PROFILES.md) *(updated 2026-05-11)*
 - [ADR-001: Retrieval stack — embedded SQLite-first (defer learned sparse, ColBERT, managed vector DB)](planning/adr/ADR-001-retrieval-stack.md) — **Status:** Accepted *(updated 2026-05-11)*
 - [ADR-002: Freshness — lazy decay + operator GC (defer wall-clock TTL jobs)](planning/adr/ADR-002-freshness-lazy-decay-vs-ttl.md) — **Status:** Accepted *(updated 2026-05-11)*
 - [ADR-003: Correctness — heuristic conflicts + offline review (defer ontology and in-product review queue)](planning/adr/ADR-003-correctness-heuristics-vs-ontology-review-queue.md) — **Status:** Accepted *(updated 2026-05-11)*
-- [ADR-004: Scale — single-node SQLite posture (defer published QPS SLO and service extraction)](planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) — **Status:** Superseded by [ADR-007](./ADR-007-postgres-only-no-sqlite.md) (2026-04-11) — Postgres-backed private memo... *(updated 2026-05-11)*
-- [ADR-005: SQLCipher operations — passphrase runbook + backup verification (defer KMS product integration)](planning/adr/ADR-005-sqlcipher-key-backup-operations.md) — **Status:** Superseded by [ADR-007](./ADR-007-postgres-only-no-sqlite.md) (2026-04-11) — SQLCipher and the `[encrypti... *(updated 2026-05-11)*
+- [ADR-004: Scale — single-node SQLite posture (defer published QPS SLO and service extraction)](planning/adr/ADR-004-scale-single-node-sqlite-defer-service-extraction.md) — **Status:** Superseded by ADR-007 (2026-04-11) — Postgres-backed private memory delivered in STORY-059.4–059.6; SQLit... *(updated 2026-06-05)*
+- [ADR-005: SQLCipher operations — passphrase runbook + backup verification (defer KMS product integration)](planning/adr/ADR-005-sqlcipher-key-backup-operations.md) — **Status:** Superseded by ADR-007 (2026-04-11) — SQLCipher and the `[encryption]` extra were removed along with SQLit... *(updated 2026-05-11)*
 - [ADR-006: Save-path observability — phase histograms + health summary (defer deeper metrics unless trigger (a))](planning/adr/ADR-006-save-path-observability.md) — **Status:** Accepted *(updated 2026-05-11)*
 - [ADR-007: PostgreSQL-only persistence plane (SQLite fully removed)](planning/adr/ADR-007-postgres-only-no-sqlite.md) — Accepted (2026-04-10) *(updated 2026-05-11)*
 - [ADR-008: No new public HTTP routes without MCP + library parity](planning/adr/ADR-008-no-http-without-mcp-library-parity.md) — Accepted (2026-04-10) *(updated 2026-05-11)*
@@ -42,64 +43,70 @@
 - [ADR-013: KG tables inherit the MemoryEntry lifecycle (EPIC-074)](planning/adr/ADR-013-kg-inherits-memory-lifecycle.md) — Accepted (2026-05-07) *(updated 2026-05-11)*
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-05-11)*
 - [Agent memory systems — 2026 knowledge base](research/memory-systems-2026.md) — The agent-memory field in 2025–2026 has split along three axes that were open *(updated 2026-05-11)*
+## Configuration
+
+- [TappsMCP Tool Review — findings for tapps-mcp (2026-06-14)](operations/TAPPS-MCP-TOOL-REVIEW-2026-06-14.md) — **Context:** Quality audit of `tapps-brain` using TappsMCP v3.12.27 MCP tools only. *(updated 2026-06-14)*
 ## Getting Started
 
-- [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — <!-- tapps-generated: v3.10.13 --> *(updated 2026-05-18)*
-- [Ralph setup (retired 2026-06-09)](planning/archive/ralph-retired/RALPH_SETUP_GUIDE.md) — Archived; delivery is Linear-only (EPIC-077).
+- [GitHub Setup Guide](GITHUB_SETUP_GUIDE.md) — <!-- tapps-generated: v3.12.42 --> *(updated 2026-06-16)*
 - [tapps-brain benchmarks](benchmarks/README.md) — End-to-end QA benchmarks for tapps-brain. These are **answer-based** *(updated 2026-05-11)*
 - [tapps-brain case studies](case-studies/README.md) — Production adopter case studies — how real teams run tapps-brain in their *(updated 2026-05-11)*
 - [NLT Labs — Brand Style Sheet & Logo Pack Audit](design/nlt-brand/README.md) — | Item | Location | *(updated 2026-05-11)*
 - [Engineering Documentation Baseline](engineering/README.md) — This folder is the code-aligned engineering reference for tapps-brain runtime behavior. *(updated 2026-05-19)*
-- [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-05-11)*
-- [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-05-11)*
-- [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-05-17)*
-- [Ralph setup guide (retired)](planning/archive/ralph-retired/ralph-setup.md) — Archived EPIC-077; use Linear for delivery.
+- [Optional Features and Runtime Toggle Matrix](engineering/optional-features-matrix.md) — This matrix documents behavior changes from extras, feature checks, and profile-driven toggles. *(updated 2026-06-11)*
+- [Getting Started with tapps-brain](guides/getting-started.md) — tapps-brain ships three first-class interfaces to the same memory engine. Choose the one that fits your workflow. *(updated 2026-06-09)*
+- [Connecting a repo to the deployed tapps-brain via MCP](guides/mcp-client-repo-setup.md) — **Audience:** a human developer wiring Claude Code (or another MCP client) *(updated 2026-06-11)*
+- [Ralph Setup Guide (Windows + WSL)](planning/archive/ralph-retired/RALPH_SETUP_GUIDE.md) — Step-by-step guide for setting up Ralph on a new project. Covers the common pitfalls. *(updated 2026-05-11)*
+- [Ralph documentation archive (retired 2026-06-09)](planning/archive/ralph-retired/README.md) — Ralph autonomous-loop guides moved here during EPIC-077 cleanup. Delivery for *(updated 2026-06-09)*
+- [Ralph setup guide](planning/archive/ralph-retired/ralph-setup.md) — This guide covers the end-to-end setup for running Ralph against the *(updated 2026-06-01)*
 ## Guides
 
-- [Getting Started with tapps-brain](ONBOARDING.md) — - Python >=3.12 *(updated 2026-05-19)*
-- [Agent integration guide](guides/agent-integration.md) — This page is the **operator contract** for AI agents using tapps-brain: the *(updated 2026-05-11)*
+- [Getting Started with tapps-brain](ONBOARDING.md) — - Python >=3.12 *(updated 2026-06-05)*
+- [Agent integration guide](guides/agent-integration.md) — This page is the **operator contract** for AI agents using tapps-brain: the *(updated 2026-06-05)*
 - [Agent.md Wiring Guide](guides/agent-md-wiring.md) — This guide explains how to grant tapps-brain MCP access in an `AGENT.md` file *(updated 2026-05-11)*
-- [Agent Playbook — Getting Full Value from tapps-brain](guides/agent-playbook.md) — **Audience:** AI coding agents (Claude Code, Cursor, Aider, Codex, custom in-process agents) using tapps-brain via MC... *(updated 2026-05-12)*
-- [AgentForge Integration Guide (v3)](guides/agentforge-integration.md) — How any agent host — AgentForge, custom orchestrators, or bare Python scripts — *(updated 2026-05-17)*
+- [Agent Playbook — Getting Full Value from tapps-brain](guides/agent-playbook.md) — **Audience:** AI coding agents (Claude Code, Cursor, Aider, Codex, custom in-process agents) using tapps-brain via MC... *(updated 2026-06-09)*
+- [AgentForge Integration Guide (v3)](guides/agentforge-integration.md) — How any agent host — AgentForge, custom orchestrators, or bare Python scripts — *(updated 2026-06-09)*
 - [Auto-Recall: Pre-Prompt Memory Injection](guides/auto-recall.md) — Auto-recall automatically searches the memory store for relevant context before an agent processes a user message, an... *(updated 2026-05-11)*
-- [brain_export — Managed Agents-layout snapshot exporter](guides/brain-export.md) — **Status:** added 2026-05-18 ([TAP-2099](https://linear.app/tappscodingagents/issue/TAP-2099)). Recommended in §6 of ... *(updated 2026-05-18)*
-- [Claude Code hooks for tapps-brain](guides/claude-code-hooks.md) — **Audience:** a human developer wiring Claude Code in a repo that talks to *(updated 2026-05-11)*
+- [brain_export — Managed Agents-layout snapshot exporter](guides/brain-export.md) — **Status:** added 2026-05-18 (TAP-2099). Recommended in §6 of docs/research/file-backed-memory-mirror.md (TAP-2095 sp... *(updated 2026-05-18)*
+- [Claude Code hooks for tapps-brain](guides/claude-code-hooks.md) — **Audience:** a human developer wiring Claude Code in a repo that talks to *(updated 2026-06-09)*
 - [TappsBrainClient — official Python client](guides/client.md) — `TappsBrainClient` (sync) and `AsyncTappsBrainClient` (async) let you consume a *(updated 2026-05-18)*
 - [Memory decay: power-law vs exponential](guides/decay.md) — This guide explains the two decay models tapps-brain supports, how to choose between them, and the calibration math b... *(updated 2026-05-11)*
-- [tapps-brain Deployment Guide](guides/deployment.md) — This guide covers deploying tapps-brain as a **shared networked service** — *(updated 2026-05-11)*
+- [tapps-brain Deployment Guide](guides/deployment.md) — This guide covers deploying tapps-brain as a **shared networked service** — *(updated 2026-06-02)*
+- [Dev Docker loop — fast local deploy/test cycles](guides/dev-docker-loop.md) — Use this guide when you deploy to the **local unified stack** (`docker/docker-compose.hive.yaml`, project `tapps-brai... *(updated 2026-06-11)*
 - [Pluggable lookup engine for doc validation](guides/doc-validation-lookup-engine.md) — `tapps-brain` validates memory entries against authoritative documentation using a *(updated 2026-05-11)*
 - [Embedding model card (default semantic search)](guides/embedding-model-card.md) — This page documents the **default** dense embedding stack for built-in vector / hybrid retrieval (**EPIC-042** STORY-... *(updated 2026-05-11)*
 - [Error Taxonomy and Retry Semantics](guides/errors.md) — tapps-brain uses a **stable error code vocabulary** so client circuit-breakers and retry policies can be written once... *(updated 2026-05-17)*
 - [Federation Guide](guides/federation.md) — Cross-project memory sharing via a central hub store. *(updated 2026-05-11)*
 - [Fleet Topology: N FastAPI Containers + 1 Brain Sidecar](guides/fleet-topology.md) *(updated 2026-05-11)*
-- [Hive Deployment Guide](guides/hive-deployment.md) — One Postgres, one brain container, one API. Hive rides along automatically because the brain falls back to `TAPPS_BRA... *(updated 2026-05-18)*
+- [Hive Deployment Guide](guides/hive-deployment.md) — One Postgres, one brain container, one API. Hive rides along automatically because the brain falls back to `TAPPS_BRA... *(updated 2026-06-11)*
 - [Hive Operations Guide](guides/hive-operations.md) — Day-to-day operational procedures for the tapps-brain Hive Postgres backend. *(updated 2026-05-11)*
 - [TLS for the Hive Stack (EPIC-067 STORY-067.4)](guides/hive-tls.md) — This guide covers adding HTTPS to the `tapps-visual` dashboard endpoint. *(updated 2026-05-11)*
 - [Hive vs federation — when to use which](guides/hive-vs-federation.md) — Both features move memories across boundaries, but the **boundary** and **mechanics** differ. Use this page first, th... *(updated 2026-05-11)*
 - [Hive Guide: Cross-Agent Memory Sharing](guides/hive.md) — The Hive is tapps-brain's cross-agent memory layer. Agents share knowledge through Hive namespaces (`universal`, per-... *(updated 2026-05-11)*
-- [HTTP Adapter](guides/http-adapter.md) — The tapps-brain HTTP adapter is the language-neutral entrypoint to the brain. It runs alongside the MCP server (or st... *(updated 2026-05-17)*
+- [HTTP Adapter](guides/http-adapter.md) — The tapps-brain HTTP adapter is the language-neutral entrypoint to the brain. It runs alongside the MCP server (or st... *(updated 2026-06-09)*
 - [Idempotency Keys for Write Operations](guides/idempotency.md) — **Feature flag:** `TAPPS_BRAIN_IDEMPOTENCY=1` (default OFF) *(updated 2026-05-11)*
-- [Knowledge Graph — Agent Guide](guides/knowledge-graph.md) — KG + experience MCP tools including `brain_query_events` (v3.24.0+). *(updated 2026-06-09)*
-- [Knowledge-Graph Populate-then-Retrieve Flow](guides/kg-experience-flow.md) — resolve → record → neighbours **or** record → `brain_query_events`. *(updated 2026-06-09)*
+- [Knowledge-Graph Populate-then-Retrieve Flow](guides/kg-experience-flow.md) — The tapps-brain Knowledge Graph (KG) stores entities (named nodes) and edges *(updated 2026-06-09)*
+- [Knowledge Graph — Agent Guide](guides/knowledge-graph.md) — **Audience:** AI coding agents using the `brain_*` knowledge-graph and experience tools on a deployed tapps-brain (EP... *(updated 2026-06-09)*
 - [LangGraph Store Adapter (`@tapps-brain/langgraph`)](guides/langgraph-adapter.md) — **Package:** `@tapps-brain/langgraph` *(updated 2026-05-11)*
-- [Linear automation via a dedicated Claude Agent user](guides/linear-claude-agent.md) — Personal API key poller design (TAP-1845 human step pending). Ralph wrapper retired — see `scripts/archive/ralph/`.
-- [LLM Brain Guide](guides/llm-brain-guide.md) — Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools. *(updated 2026-05-12)*
-- [MCP tools for repo-embedded agents](guides/mcp-tools-for-agents.md) — Complete reference for every tool the deployed tapps-brain exposes over MCP (55 tools, verified live against `tapps-b... *(updated 2026-05-16)*
-- [MCP Server: Using tapps-brain with AI Assistants](guides/mcp.md) — tapps-brain exposes its full API via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), making per... *(updated 2026-05-12)*
+- [Linear automation via a dedicated Claude Agent user](guides/linear-claude-agent.md) — **Status:** Partially Active (as of 2026-06-09) — API key at *(updated 2026-06-09)*
+- [LLM Brain Guide](guides/llm-brain-guide.md) — Instructions for LLMs and AI agents using the tapps-brain simplified MCP tools. *(updated 2026-06-09)*
+- [MCP tools for repo-embedded agents](guides/mcp-tools-for-agents.md) — Complete reference for every tool the deployed tapps-brain exposes over MCP (55 tools, verified live against `tapps-b... *(updated 2026-06-09)*
+- [MCP Server: Using tapps-brain with AI Assistants](guides/mcp.md) — tapps-brain exposes its full API via the Model Context Protocol (MCP), making persistent memory available to Claude C... *(updated 2026-06-09)*
 - [Memory decay and FSRS-style stability](guides/memory-decay-and-fsrs.md) — This document is the **product decision** for **EPIC-042** STORY-042.8: how tapps-brain combines time-based decay wit... *(updated 2026-05-11)*
 - [Memory relay (sub-agent → primary)](guides/memory-relay.md) — Cross-node setups: only the primary host runs tapps-brain. Sub-agents build a **relay** JSON envelope so the primary ... *(updated 2026-05-11)*
 - [Memory scopes: project group vs Hive vs profile (GitHub #49)](guides/memory-scopes.md) — Three concepts are easy to confuse. They are **separate** in tapps-brain. *(updated 2026-05-11)*
 - [Migration Guide: tapps-brain 3.5.x → 3.6](guides/migration-3.5-to-3.6.md) — This guide covers the breaking changes and migration steps required when *(updated 2026-05-11)*
 - [Migration 3.6 → 3.7](guides/migration-3.6-to-3.7.md) — Upgrading an existing v3.6.x deployment to v3.7.x (including v3.7.2). Three concrete changes; the rest is backwards c... *(updated 2026-05-11)*
 - [Migration Rollback Guide](guides/migrations-rollback.md) — Every SQL migration under `src/tapps_brain/migrations/{private,hive,federation}/` has a paired `*.down.sql` sibling t... *(updated 2026-05-16)*
+- [Migrate-sidecar de-privilege cutover (TAP-2686)](guides/migrator-deprivilege-cutover.md) — This runbook covers the **production cutover** that moves the migrate sidecar *(updated 2026-06-01)*
 - [Observability](guides/observability.md) — tapps-brain exposes structured **metrics**, **health**, **audit**, **diagnostics**, and **feedback** surfaces through... *(updated 2026-05-18)*
 - [Postgres Backup and Restore — tapps-brain](guides/postgres-backup.md) — tapps-brain stores **all durable state** in PostgreSQL (ADR-007): private memories, *(updated 2026-05-11)*
-- [Environment Variable Reference](guides/postgres-dsn.md) — This is the **canonical environment variable contract** for tapps-brain v3. *(updated 2026-05-11)*
+- [Environment Variable Reference](guides/postgres-dsn.md) — This is the **canonical environment variable contract** for tapps-brain v3. *(updated 2026-06-09)*
 - [pg_tde Operator Runbook](guides/postgres-tde.md) — **Applies to:** Percona Distribution for PostgreSQL 17 + pg_tde 2.1.2 (released 2026-03-02) *(updated 2026-05-11)*
-- [Profile Catalog](guides/profile-catalog.md) — tapps-brain ships with 6 built-in profiles covering common AI agent use cases. Each profile can be used directly, ext... *(updated 2026-05-11)*
+- [Profile Catalog](guides/profile-catalog.md) — tapps-brain ships with 6 built-in profiles covering common AI agent use cases. Each profile can be used directly, ext... *(updated 2026-06-05)*
 - [Profile Limits: Research and Rationale](guides/profile-limits-rationale.md) — This document explains the evidence behind tapps-brain's built-in profile defaults. *(updated 2026-05-11)*
-- [Memory Profiles: Designing Custom Memory for Any AI Agent](guides/profiles.md) — tapps-brain ships with a configurable profile system that lets you define custom memory layers, decay models, scoring... *(updated 2026-05-17)*
-- [Remote MCP integration (Streamable HTTP)](guides/remote-mcp-integration.md) — This guide describes how remote agents (AgentForge, etc.) connect to *(updated 2026-05-11)*
+- [Memory Profiles: Designing Custom Memory for Any AI Agent](guides/profiles.md) — tapps-brain ships with a configurable profile system that lets you define custom memory layers, decay models, scoring... *(updated 2026-06-11)*
+- [Remote MCP integration (Streamable HTTP)](guides/remote-mcp-integration.md) — This guide describes how remote agents (AgentForge, etc.) connect to *(updated 2026-06-05)*
 - [Save conflicts: offline review and NLI backlog](guides/save-conflict-nli-offline.md) — Save-time conflict detection uses deterministic text similarity (`detect_save_conflicts` in `contradictions.py`) when... *(updated 2026-05-11)*
 - [Scope Audit: agent_scope / Group / Hive — Allowed Namespaces and Operations](guides/scope-audit.md) *(updated 2026-05-11)*
 - [Token rotation & secret recovery](guides/token-rotation.md) — How to rotate the bearer/admin tokens that gate the tapps-brain HTTP adapter, and how to recover them from a running ... *(updated 2026-05-11)*
@@ -110,7 +117,7 @@
 
 - [Partition Retention — `experience_events`](engineering/partition-retention.md) — **Audience:** tapps-brain operators running the deployed `tapps-brain-http` container in production. *(updated 2026-05-17)*
 - [DB Roles Runbook — tapps-brain](operations/db-roles-runbook.md) — **Covers EPIC-063 STORY-063.1 + STORY-063.2: least-privilege Postgres roles.** *(updated 2026-05-11)*
-- [Operator Runbook — tapps-brain Observability](operations/observability-runbook.md) — See [`k8s-probes.md`](k8s-probes.md) for full probe spec. *(updated 2026-05-11)*
+- [Operator Runbook — tapps-brain Observability](operations/observability-runbook.md) *(updated 2026-06-05)*
 - [Postgres Backup Runbook — tapps-brain (Ops On-Call)](operations/postgres-backup-runbook.md) — **Audience:** On-call engineers and SREs. *(updated 2026-05-11)*
 - [Agent memory systems — comparative scorecard (2026-04-17)](research/memory-systems-scorecard.md) *(updated 2026-05-11)*
 - [Story 70.15 -- Docker + docs — one binary, both transports](stories/STORY-070.15-docker-unified.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
@@ -119,29 +126,41 @@
 - [Case study: [Adopter name / project]](case-studies/TEMPLATE.md) — | Parameter | Value | *(updated 2026-05-11)*
 - [Core Call Flows](engineering/call-flows.md) — This document maps the dominant runtime call paths as implemented now. *(updated 2026-05-11)*
 - [tapps-brain v3 Threat Model](engineering/threat-model.md) — **Scope:** tapps-brain v3.0 — Postgres-only persistence plane with private agent memory, *(updated 2026-05-11)*
-- [Hot-Path Scoring Baseline — 2026-05-15](perf/2026-05-15-baseline.md) — Generated for TAP-1844: Score & fix hot files. *(updated 2026-05-16)*
+- [Hot-Path Scoring Baseline — 2026-05-15](perf/2026-05-15-baseline.md) — Generated for TAP-1844: Score & fix hot files. *(updated 2026-06-09)*
 - [Performance Benchmarks](perf/benchmarks.md) — Benchmark suite for tapps-brain HTTP adapter hot paths (TAP-1855). *(updated 2026-05-16)*
 ## Planning
 
-- [LoCoMo benchmark](benchmarks/locomo.md) — - **Paper:** [Maharana et al. 2024, arXiv:2402.17753](https://arxiv.org/abs/2402.17753) *(updated 2026-05-11)*
-- [LongMemEval benchmark](benchmarks/longmemeval.md) — - **Paper:** [Xiao et al. 2024, arXiv:2410.10813](https://arxiv.org/abs/2410.10813) (ICLR 2025) *(updated 2026-05-11)*
+- [LoCoMo benchmark](benchmarks/locomo.md) — - **Paper:** Maharana et al. 2024, arXiv:2402.17753 *(updated 2026-05-11)*
+- [LongMemEval benchmark](benchmarks/longmemeval.md) — - **Paper:** Xiao et al. 2024, arXiv:2410.10813 (ICLR 2025) *(updated 2026-05-11)*
 - [Async-Native Performance: EPIC-072 Benchmark Results](engineering/async-performance.md) — **Stories:** STORY-072.4 (benchmark harness), STORY-072.7 (flag graduation) *(updated 2026-05-11)*
-- [Experience Events — Payload Schema](engineering/experience-events.md) — TAP-1501 STORY-076.4 / EPIC-076. *(updated 2026-05-11)*
-- [v3 Behavioral Parity — What Changed vs v2](engineering/v3-behavioral-parity.md) — **Epic:** [EPIC-059](../planning/epics/EPIC-059.md) — Greenfield v3 Postgres-Only Persistence Plane *(updated 2026-05-11)*
-- [Epic 70: AgentForge Integration — Remote-First Brain as a Shared Service](epics/EPIC-070-agentforge-integration.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
+- [Experience Events — Payload Schema](engineering/experience-events.md) — TAP-1501 STORY-076.4 / EPIC-076. *(updated 2026-06-09)*
+- [v3 Behavioral Parity — What Changed vs v2](engineering/v3-behavioral-parity.md) — **Epic:** EPIC-059 — Greenfield v3 Postgres-Only Persistence Plane *(updated 2026-05-11)*
+- [Epic 70: AgentForge Integration — Remote-First Brain as a Shared Service](epics/EPIC-070-agentforge-integration.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-05)*
+- [Epic 78: AgentForge REST DX — experience edge keys and KG resolve](epics/EPIC-78.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-09)*
+- [Epic 79: Async Postgres Backend Error Propagation](epics/EPIC-79.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-09)*
+- [TappsMCP quality audit remediation (2026-06-14)](epics/EPIC-tappsmcp-quality-audit-remediation-2026-06-14.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-14)*
+- [kg_service.py: brain_query_events MCP and REST](epics/stories/STORY-74.1.md) — Implement query_events in kg_service querying experience_events with RLS. *(updated 2026-06-09)*
+- [020_experience_events.sql: migration 023 query index](epics/stories/STORY-74.2.md) — Add performance index for brain_query_events hot path and integration round-trip test proving tapps-mcp verification ... *(updated 2026-06-09)*
+- [experience.py: EntitySpec type/id shorthand](epics/stories/STORY-74.3.md) — Add type/id coercion to EntitySpec matching tapps-mcp quality_metric entity payloads so KG side-effects are not silen... *(updated 2026-06-09)*
+- [experience-events.md: quality_metric contract docs](epics/stories/STORY-74.4.md) — Document known tapps-mcp event types and provide copy-paste smoke example for integration verification. *(updated 2026-06-09)*
+- [tools_kg.py: brain_get_neighbors entity_refs](epics/stories/STORY-74.5.md) — Optional P2 convenience: auto-resolve canonical names before get_neighbors so tapps-mcp need not pre-call brain_resol... *(updated 2026-06-09)*
+- [migrations: profile_scoped_data table RLS](epics/stories/STORY-75.1.md) — Add Postgres storage for per-project per-profile learned KV separate from private_memories. *(updated 2026-06-09)*
+- [profile_service.py: brain_profile_set and get](epics/stories/STORY-75.2.md) — Service layer and MCP/REST tools for profile-scoped learned data replacing tapps-mcp domain_weights.yaml. *(updated 2026-06-09)*
+- [mcp_profiles.yaml: register profile data tools](epics/stories/STORY-75.3.md) — Wire profile data tools into capability profiles, OpenAPI contract, and integration tests. *(updated 2026-06-09)*
 - [Epic Validation — Regression Runbook](operations/epic-validation-regression.md) — This runbook verifies that the **Epic Validation** CI job (`.github/workflows/epic-validation.yml`) *(updated 2026-05-11)*
 - [Telemetry Policy — Allowed and Forbidden Attributes](operations/telemetry-policy.md) — The following attributes may be set on OTel spans.  All values are **bounded enums *(updated 2026-05-11)*
 - [Agent Feature Governance](planning/AGENT_FEATURE_GOVERNANCE.md) — Last updated: 2026-03-27 *(updated 2026-05-11)*
-- [Feature Feasibility Criteria (Agent Standard)](planning/FEATURE_FEASIBILITY_CRITERIA.md) — Last updated: 2026-03-27 (web-calibrated pass) *(updated 2026-05-11)*
+- [Feature Feasibility Criteria (Agent Standard)](planning/FEATURE_FEASIBILITY_CRITERIA.md) — Last updated: 2026-03-27 (web-calibrated pass) *(updated 2026-06-09)*
 - [Issue triage — saved searches and board setup](planning/ISSUE_TRIAGE_VIEWS.md) — Last updated: 2026-03-27 *(updated 2026-05-11)*
-- [Planning Conventions](planning/PLANNING.md) — This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding ... *(updated 2026-05-11)*
-- [Project status snapshot](planning/STATUS.md) — **Last updated:** 2026-04-20 (America/Los_Angeles) — **v3.10.0** — Security batch (TAP-626–655): per-tenant auth bypa... *(updated 2026-05-11)*
-- [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](planning/archive/ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-05-11)*
+- [Planning Conventions](planning/PLANNING.md) — This document defines how epics, stories, and tasks are structured in this project so that both humans and AI coding ... *(updated 2026-06-09)*
+- [Project status snapshot](planning/STATUS.md) — **Last updated:** 2026-06-09 — **v3.24.0** — Wave-2 consumer APIs shipped (EPIC-074/075). **EPIC-077** (TAP-3198 auto... *(updated 2026-06-09)*
+- [Ralph Bug: Live Mode JSONL Crash in Response Analyzer](planning/archive/ralph-jsonl-crash-bug.md) — **Severity:** Critical (silent loop termination, no error logged) *(updated 2026-05-20)*
+- [Ralph campaign prompt (run + monitor + self-correct)](planning/archive/ralph-retired/ralph-campaign-prompt.md) — A reusable, copy-paste prompt for driving a **Ralph campaign** on tapps-brain *(updated 2026-06-01)*
 - [SQLite to Postgres - Meeting Notes](planning/archive/sqlite-to-postgres-meeting-notes.md) — Status: active discussion *(updated 2026-05-11)*
 - [Implementation plan: dynamic tapps-brain visual identity](planning/brain-visual-implementation-plan.md) — Track progress here for a **modern, per-instance-unique** visual representation of tapps-brain (dashboard, marketing,... *(updated 2026-05-11)*
-- [Phase 2 — Follow-up issues (ready to file)](planning/engineering-doc-phase2-follow-up-issues.md) — **Purpose:** Concrete, prioritized cleanup items derived from `docs/engineering/code-inventory-and-doc-gaps.md` and f... *(updated 2026-05-11)*
+- [Phase 2 — Follow-up issues (ready to file)](planning/engineering-doc-phase2-follow-up-issues.md) — **Purpose:** Concrete, prioritized cleanup items derived from `docs/engineering/code-inventory-and-doc-gaps.md` and f... *(updated 2026-06-05)*
 - [Engineering Documentation Task - System Ground Truth](planning/engineering-documentation-task.md) — Status: in_progress *(updated 2026-05-11)*
-- [Epic #49 — actionable child issues (multi-scope memory)](planning/epic-49-tasks.md) — **Parent:** GitHub **[#49](https://github.com/wtthornton/tapps-brain/issues/49)** — **closed** (v1 complete 2026-03-29). *(updated 2026-05-11)*
+- [Epic #49 — actionable child issues (multi-scope memory)](planning/epic-49-tasks.md) — **Parent:** GitHub **#49** — **closed** (v1 complete 2026-03-29). *(updated 2026-05-11)*
 - [EPIC-001: Test Suite Quality — Raise to A+](planning/epics/EPIC-001.md) — The test suite currently sits at 79% line coverage (521 tests, 13s runtime). A detailed review identified structural ... *(updated 2026-05-11)*
 - [EPIC-002: Integration Wiring — Connect Standalone Modules to the Runtime](planning/epics/EPIC-002.md) — Epic 1 raised test coverage to 96.59% across 792 tests — the codebase is well-tested at the unit level. However, seve... *(updated 2026-05-11)*
 - [EPIC-003: Auto-Recall — Pre-Prompt Memory Injection Hook](planning/epics/EPIC-003.md) — tapps-brain has a complete retrieval engine (BM25 + FTS5 + composite scoring + optional vector search + RRF fusion) a... *(updated 2026-05-11)*
@@ -153,48 +172,48 @@
 - [EPIC-009: Multi-Interface Distribution — Library, CLI, and MCP Packaging](planning/epics/EPIC-009.md) — tapps-brain is becoming a three-interface project: a Python library (`import tapps_brain`), a CLI (`tapps-brain`), an... *(updated 2026-05-11)*
 - [EPIC-010: Configurable Memory Profiles — Pluggable Layers and Scoring](planning/epics/EPIC-010.md) — tapps-brain's memory tiers (architectural/pattern/procedural/context), half-lives (180/60/30/14 days), and scoring we... *(updated 2026-05-11)*
 - [EPIC-011: Hive — Multi-Agent Shared Brain with Domain Namespaces](planning/epics/EPIC-011.md) — tapps-brain currently serves one agent per project. But AI agent setups increasingly involve multiple specialized age... *(updated 2026-05-11)*
-- [EPIC-012: Plugin Integration — ContextEngine Plugin and Skill](planning/epics/EPIC-012.md) — Plugin integration epic (archived). *(updated 2026-05-11)*
-- [EPIC-013: Hive-Aware MCP Surface — Agent Identity, Scope Propagation, and Multi-Agent Wiring](planning/epics/EPIC-013.md) — EPIC-011 built the Hive core (HiveStore, AgentRegistry, PropagationEngine, conflict resolution, namespace isolation) ... *(updated 2026-05-11)*
-- [EPIC-014: Hardening — Input Validation, Interface Parity, Resilience, and Onboarding Docs](planning/epics/EPIC-014.md) — EPICs 001–013 built a complete memory system with profiles, Hive multi-agent sharing, and the MCP server... *(updated 2026-05-11)*
+- [EPIC-012: OpenClaw Integration — ContextEngine Plugin and ClawHub Skill](planning/epics/EPIC-012.md) — tapps-brain can already serve OpenClaw as an MCP server (documented in the OpenClaw guide). But this is a sidecar int... *(updated 2026-06-05)*
+- [EPIC-013: Hive-Aware MCP Surface — Agent Identity, Scope Propagation, and OpenClaw Multi-Agent Wiring](planning/epics/EPIC-013.md) — EPIC-011 built the Hive core (HiveStore, AgentRegistry, PropagationEngine, conflict resolution, namespace isolation) ... *(updated 2026-06-05)*
+- [EPIC-014: Hardening — Input Validation, Interface Parity, Resilience, and Onboarding Docs](planning/epics/EPIC-014.md) — EPICs 001–013 built a complete memory system with profiles, Hive multi-agent sharing, MCP server, OpenClaw integratio... *(updated 2026-06-09)*
 - [EPIC-015: Analytics & Operational Surface](planning/epics/EPIC-015.md) — The tapps-brain library layer has ~36 public methods on `MemoryStore`, but 7 are not exposed via MCP or CLI. The know... *(updated 2026-05-11)*
-- [EPIC-016: Test Suite Hardening](planning/epics/EPIC-016.md) — A coverage and quality audit of the 1641-test suite (95.54% coverage) revealed four categories of gaps: *(updated 2026-05-11)*
-- [EPIC-017: Code Review — Storage & Data Model](planning/epics/EPIC-017.md) — With all 16 feature epics complete and BUG-001/BUG-002 fixes queued, the codebase is ready for systematic code review... *(updated 2026-05-11)*
-- [EPIC-018: Code Review — Retrieval & Scoring](planning/epics/EPIC-018.md) — Full code review of all retrieval, scoring, ranking, and search files. The retrieval layer is where the source_trust ... *(updated 2026-05-11)*
-- [EPIC-019: Code Review — Memory Lifecycle](planning/epics/EPIC-019.md) — Full code review of memory lifecycle management: decay, consolidation, GC, promotion, reinforcement. The consolidatio... *(updated 2026-05-11)*
-- [EPIC-020: Code Review — Safety & Validation](planning/epics/EPIC-020.md) — Full code review of safety, injection detection, validation, and contradiction handling. These are security-critical ... *(updated 2026-05-11)*
-- [EPIC-021: Code Review — Federation, Hive & Relations](planning/epics/EPIC-021.md) — Full code review of cross-project and cross-agent sharing systems. The HiveStore connection leak (BUG-001-C) and exce... *(updated 2026-05-11)*
-- [EPIC-022: Code Review — Interfaces (MCP, CLI, IO)](planning/epics/EPIC-022.md) — Full code review of all user-facing interfaces: MCP server (54 tools), CLI (41 commands), IO, and markdown import. *(updated 2026-05-11)*
-- [EPIC-023: Code Review — Config, Profiles & Observability](planning/epics/EPIC-023.md) — Full code review of configuration, profiles, metrics, and observability. *(updated 2026-05-11)*
-- [EPIC-024: Code Review — Unit Tests (Part 1)](planning/epics/EPIC-024.md) — Review all unit test files for: test quality, missing edge cases, flaky test patterns, proper isolation, assertion co... *(updated 2026-05-11)*
-- [EPIC-025: Code Review — Integration Tests, Benchmarks & TypeScript](planning/epics/EPIC-025.md) — Review all integration tests, benchmarks, test infrastructure, TypeScript plugin code, and configuration files. Final... *(updated 2026-05-11)*
-- [EPIC-026: Memory Replacement — Replace memory-core with tapps-brain](planning/epics/EPIC-026.md) — EPIC-012 delivered a ContextEngine plugin that adds auto-recall and auto-capture hooks. *(updated 2026-05-11)*
-- [EPIC-027: Full Feature Surface — Expose All 41 MCP Tools as Native Tools](planning/epics/EPIC-027.md) — **Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.1. Cou... *(updated 2026-05-11)*
-- [EPIC-028: Plugin Hardening — Stability, Tests, and Compatibility](planning/epics/EPIC-028.md) — The ContextEngine plugin (EPIC-012) and memory replacement (EPIC-026) provide the *(updated 2026-05-11)*
+- [EPIC-016: Test Suite Hardening](planning/epics/EPIC-016.md) — A coverage and quality audit of the 1641-test suite (95.54% coverage) revealed four categories of gaps: *(updated 2026-06-09)*
+- [EPIC-017: Code Review — Storage & Data Model](planning/epics/EPIC-017.md) — With all 16 feature epics complete and BUG-001/BUG-002 fixes queued, the codebase is ready for systematic code review... *(updated 2026-06-09)*
+- [EPIC-018: Code Review — Retrieval & Scoring](planning/epics/EPIC-018.md) — Full code review of all retrieval, scoring, ranking, and search files. The retrieval layer is where the source_trust ... *(updated 2026-06-09)*
+- [EPIC-019: Code Review — Memory Lifecycle](planning/epics/EPIC-019.md) — Full code review of memory lifecycle management: decay, consolidation, GC, promotion, reinforcement. The consolidatio... *(updated 2026-06-09)*
+- [EPIC-020: Code Review — Safety & Validation](planning/epics/EPIC-020.md) — Full code review of safety, injection detection, validation, and contradiction handling. These are security-critical ... *(updated 2026-06-09)*
+- [EPIC-021: Code Review — Federation, Hive & Relations](planning/epics/EPIC-021.md) — Full code review of cross-project and cross-agent sharing systems. The HiveStore connection leak (BUG-001-C) and exce... *(updated 2026-06-09)*
+- [EPIC-022: Code Review — Interfaces (MCP, CLI, IO)](planning/epics/EPIC-022.md) — Full code review of all user-facing interfaces: MCP server (54 tools), CLI (41 commands), IO, and markdown import. *(updated 2026-06-09)*
+- [EPIC-023: Code Review — Config, Profiles & Observability](planning/epics/EPIC-023.md) — Full code review of configuration, profiles, metrics, and observability. *(updated 2026-06-09)*
+- [EPIC-024: Code Review — Unit Tests (Part 1)](planning/epics/EPIC-024.md) — Review all unit test files for: test quality, missing edge cases, flaky test patterns, proper isolation, assertion co... *(updated 2026-06-09)*
+- [EPIC-025: Code Review — Integration Tests, Benchmarks & TypeScript](planning/epics/EPIC-025.md) — Review all integration tests, benchmarks, test infrastructure, TypeScript plugin code, and configuration files. Final... *(updated 2026-06-09)*
+- [EPIC-026: OpenClaw Memory Replacement — Replace memory-core with tapps-brain](planning/epics/EPIC-026.md) — EPIC-012 delivered a ContextEngine plugin that adds auto-recall and auto-capture hooks. *(updated 2026-05-11)*
+- [EPIC-027: OpenClaw Full Feature Surface — Expose All 41 MCP Tools as Native Tools](planning/epics/EPIC-027.md) — **Note:** This epic was written against a **41-tool** MCP surface; tapps-brain exposes **54** tools as of v1.3.1. Cou... *(updated 2026-06-05)*
+- [EPIC-028: OpenClaw Plugin Hardening — Stability, Tests, and Compatibility](planning/epics/EPIC-028.md) — The ContextEngine plugin (EPIC-012) and memory replacement (EPIC-026) provide the *(updated 2026-06-05)*
 - [EPIC-029: Feedback Collection — LLM and Project Quality Signals](planning/epics/EPIC-029.md) — tapps-brain has strong observability (EPIC-007: metrics, audit trail, health checks) but no mechanism for consumers —... *(updated 2026-05-11)*
 - [EPIC-030: Diagnostics & Self-Monitoring — Quality Scorecard and Anomaly Detection](planning/epics/EPIC-030.md) — EPIC-007 gave tapps-brain operational observability: metrics (counters, histograms), audit trail, and health checks. ... *(updated 2026-05-11)*
 - [EPIC-031: Continuous Improvement Flywheel — Feedback-Driven Quality Loop](planning/epics/EPIC-031.md) — EPIC-029 collects feedback signals. EPIC-030 assesses quality and detects anomalies. This epic closes the loop: it tu... *(updated 2026-05-11)*
-- [EPIC-032: OTel GenAI Semantic Conventions — Standardized Telemetry Export](planning/epics/EPIC-032.md) — Upgrade tapps-brain's optional OpenTelemetry exporter to comply with the OpenTelemetry GenAI and MCP semantic convent... *(updated 2026-05-19)*
-- [EPIC-033: Plugin SDK Alignment — Fix API Type Drift and Runtime Bugs](planning/epics/EPIC-033.md) — Plugin SDK alignment epic (archived). *(updated 2026-05-11)*
+- [EPIC-032: OTel GenAI Semantic Conventions — Standardized Telemetry Export](planning/epics/EPIC-032.md) — Upgrade tapps-brain's optional OpenTelemetry exporter to comply with the OpenTelemetry GenAI and MCP semantic convent... *(updated 2026-06-09)*
+- [EPIC-033: OpenClaw Plugin SDK Alignment — Fix API Type Drift and Runtime Bugs](planning/epics/EPIC-033.md) — The OpenClaw plugin (`openclaw-plugin/src/index.ts`) defines a custom `OpenClawPluginApi` interface (lines 184-202) i... *(updated 2026-05-11)*
 - [EPIC-034: Production Readiness QA Remediation - Lint, Format, Typing, Test Stability](planning/epics/EPIC-034.md) — The production-readiness review found hard blockers: failing Ruff checks, formatting drift, and unstable plugin test ... *(updated 2026-05-11)*
-- [EPIC-035: Install and Upgrade UX Consistency](planning/epics/EPIC-035.md) — The readiness review found documentation and command inconsistencies that can cause failed installs, failed upgrades,... *(updated 2026-05-11)*
-- [EPIC-036: Release Gate Hardening for Production-Ready Distribution](planning/epics/EPIC-036.md) — Readiness is currently assessed manually and can regress between releases. To keep production readiness durable, the ... *(updated 2026-05-11)*
-- [EPIC-037: Plugin SDK Realignment — Fix API Contract to Match Real SDK](planning/epics/EPIC-037.md) — Plugin SDK realignment epic (archived). *(updated 2026-05-11)*
-- [EPIC-038: Plugin Simplification — Remove Dead Compat Layers and Streamline](planning/epics/EPIC-038.md) — Plugin simplification epic (archived). *(updated 2026-05-11)*
-- [EPIC-039: Replace Custom MCP Client with Official @modelcontextprotocol/sdk](planning/epics/EPIC-039.md) — The plugin's `mcp_client.ts` is a hand-rolled JSON-RPC 2.0 client (~466 lines) that implements Content-Lengt... *(updated 2026-05-11)*
-- [EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades](planning/epics/EPIC-040.md) — Done; story checklist in epic file (autonomous fix_plan retired EPIC-077).
-- [EPIC-041: Federation hub + Hive groups + operator docs](planning/epics/EPIC-041.md) — Post–**#49** (v1 project-local `memory_group`) work queued on GitHub and in [`open-issues-roadmap.md`](../open-issues... *(updated 2026-05-11)*
-- [Improvement program: `features-and-technologies.md` (index)](planning/epics/EPIC-042-feature-tech-index.md) — **Source map:** [`docs/engineering/features-and-technologies.md`](../../engineering/features-and-technologies.md) *(updated 2026-05-11)*
-- [EPIC-042: Retrieval and ranking (RAG-style memory)](planning/epics/EPIC-042.md) — Maps to **§1** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Core product valu... *(updated 2026-05-11)*
-- [EPIC-043: Storage, persistence, and schema](planning/epics/EPIC-043.md) — Maps to **§2** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Ground truth: `pe... *(updated 2026-05-11)*
-- [EPIC-044: Ingestion, deduplication, and lifecycle](planning/epics/EPIC-044.md) — Maps to **§3** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). *(updated 2026-05-11)*
-- [EPIC-045: Multi-tenant, sharing, and sync models](planning/epics/EPIC-045.md) — Maps to **§4** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Overlaps shipped ... *(updated 2026-05-11)*
-- [EPIC-046: Agent / tool integration](planning/epics/EPIC-046.md) — Maps to **§5** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). *(updated 2026-05-11)*
-- [EPIC-047: Quality loop, observability, and ops](planning/epics/EPIC-047.md) — Maps to **§6** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). Relates to **EPIC... *(updated 2026-05-11)*
-- [EPIC-048: Optional / auxiliary capabilities](planning/epics/EPIC-048.md) — Maps to **§7** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md). *(updated 2026-05-11)*
-- [EPIC-049: Dependency extras (install surface)](planning/epics/EPIC-049.md) — Maps to **§8** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md) and `pyproject.tom... *(updated 2026-05-11)*
-- [EPIC-050: Concurrency and runtime model](planning/epics/EPIC-050.md) — Maps to **§9** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md) and roadmap backlo... *(updated 2026-05-11)*
-- [EPIC-051: Cross-cutting review (§10 checklist)](planning/epics/EPIC-051.md) — Maps to **§10** of [`features-and-technologies.md`](../../engineering/features-and-technologies.md) — meta items that... *(updated 2026-05-11)*
-- [EPIC-052: Full Codebase Code Review — 2026-Q2 Sweep](planning/epics/EPIC-052.md) — The last full code-review sweep completed on 2026-03-23 across **EPIC-017 → EPIC-025**. Since then, substantial code ... *(updated 2026-05-11)*
+- [EPIC-035: OpenClaw Install and Upgrade UX Consistency](planning/epics/EPIC-035.md) — The readiness review found documentation and command inconsistencies that can cause failed installs, failed upgrades,... *(updated 2026-06-05)*
+- [EPIC-036: Release Gate Hardening for Production-Ready OpenClaw Distribution](planning/epics/EPIC-036.md) — Readiness is currently assessed manually and can regress between releases. To keep production readiness durable, the ... *(updated 2026-06-05)*
+- [EPIC-037: OpenClaw Plugin SDK Realignment — Fix API Contract to Match Real SDK](planning/epics/EPIC-037.md) — The OpenClaw plugin ships a hand-written `openclaw-sdk.d.ts` (ambient type declarations) that diverges from the real ... *(updated 2026-06-09)*
+- [EPIC-038: OpenClaw Plugin Simplification — Remove Dead Compat Layers and Streamline](planning/epics/EPIC-038.md) — After EPIC-037 aligns the plugin with the real OpenClaw SDK, a significant amount of dead weight remains in the codeb... *(updated 2026-05-11)*
+- [EPIC-039: Replace Custom MCP Client with Official @modelcontextprotocol/sdk](planning/epics/EPIC-039.md) — The OpenClaw plugin's `mcp_client.ts` is a hand-rolled JSON-RPC 2.0 client (~466 lines) that implements Content-Lengt... *(updated 2026-05-11)*
+- [EPIC-040: tapps-brain v2.0 — Research-Driven Upgrades](planning/epics/EPIC-040.md) — Per-story checkboxes, phases, and GitHub issue mapping (**#24–#44**) tracked in this epic file (autonomous fix_plan r... *(updated 2026-06-09)*
+- [EPIC-041: Federation hub + Hive groups + operator docs](planning/epics/EPIC-041.md) — Post–**#49** (v1 project-local `memory_group`) work queued on GitHub and in `open-issues-roadmap.md`: federation hub ... *(updated 2026-05-11)*
+- [Improvement program: `features-and-technologies.md` (index)](planning/epics/EPIC-042-feature-tech-index.md) — **Source map:** `docs/engineering/features-and-technologies.md` *(updated 2026-05-11)*
+- [EPIC-042: Retrieval and ranking (RAG-style memory)](planning/epics/EPIC-042.md) — Maps to **§1** of `features-and-technologies.md`. Core product value is **retrieving the right memories** under **bou... *(updated 2026-05-11)*
+- [EPIC-043: Storage, persistence, and schema](planning/epics/EPIC-043.md) — Maps to **§2** of `features-and-technologies.md`. Ground truth: `persistence.py`, `data-stores-and-schema.md`. *(updated 2026-05-11)*
+- [EPIC-044: Ingestion, deduplication, and lifecycle](planning/epics/EPIC-044.md) — Maps to **§3** of `features-and-technologies.md`. *(updated 2026-05-11)*
+- [EPIC-045: Multi-tenant, sharing, and sync models](planning/epics/EPIC-045.md) — Maps to **§4** of `features-and-technologies.md`. Overlaps shipped **#51**, **#52** — this epic is **forward improvem... *(updated 2026-05-11)*
+- [EPIC-046: Agent / tool integration](planning/epics/EPIC-046.md) — Maps to **§5** of `features-and-technologies.md`. *(updated 2026-06-05)*
+- [EPIC-047: Quality loop, observability, and ops](planning/epics/EPIC-047.md) — Maps to **§6** of `features-and-technologies.md`. Relates to **EPIC-032** (OTel GenAI conventions) for overlap — cros... *(updated 2026-05-11)*
+- [EPIC-048: Optional / auxiliary capabilities](planning/epics/EPIC-048.md) — Maps to **§7** of `features-and-technologies.md`. *(updated 2026-05-11)*
+- [EPIC-049: Dependency extras (install surface)](planning/epics/EPIC-049.md) — Maps to **§8** of `features-and-technologies.md` and `pyproject.toml` optional-dependencies. *(updated 2026-05-11)*
+- [EPIC-050: Concurrency and runtime model](planning/epics/EPIC-050.md) — Maps to **§9** of `features-and-technologies.md` and roadmap backlog **“Concurrency documentation”**. *(updated 2026-06-05)*
+- [EPIC-051: Cross-cutting review (§10 checklist)](planning/epics/EPIC-051.md) — Maps to **§10** of `features-and-technologies.md` — meta items that span multiple subsystems. Individual spikes may s... *(updated 2026-05-11)*
+- [EPIC-052: Full Codebase Code Review — 2026-Q2 Sweep](planning/epics/EPIC-052.md) — The last full code-review sweep completed on 2026-03-23 across **EPIC-017 → EPIC-025**. Since then, substantial code ... *(updated 2026-06-09)*
 - [EPIC-053: Per-Agent Brain Identity](planning/epics/EPIC-053.md) — Today `agent_id` defaults to `"unknown"` across all of tapps-brain. The MCP server accepts `--agent-id` but most call... *(updated 2026-05-11)*
 - [EPIC-054: Hive Backend Abstraction Layer](planning/epics/EPIC-054.md) — `HiveStore` and `FederatedStore` are tightly coupled to SQLite. Every method directly executes SQL against a local `.... *(updated 2026-05-11)*
 - [EPIC-055: PostgreSQL Hive & Federation Backend](planning/epics/EPIC-055.md) — EPIC-054 introduced backend protocols for `HiveBackend` and `FederationBackend` with SQLite adapters. This epic imple... *(updated 2026-05-11)*
@@ -206,17 +225,21 @@
 - [EPIC-061: Greenfield v3 — Observability-First Product (Simple & Complete)](planning/epics/EPIC-061.md) — Make **OpenTelemetry** traces and metrics the default observability path for save/recall/hive operations, with health... *(updated 2026-05-11)*
 - [EPIC-062: Greenfield v3 — MCP-Primary Integration & Environment Contract](planning/epics/EPIC-062.md) — Make **MCP** the primary IDE/agent integration, wiring the MCP server to the **same Postgres-backed** Hive and config... *(updated 2026-05-11)*
 - [EPIC-063: Greenfield v3 — Trust Boundaries & Postgres Enforcement](planning/epics/EPIC-063.md) — Enforce **least-privilege Postgres roles**, document an **RLS vs app-layer** decision, and publish a **threat model**... *(updated 2026-05-11)*
-- [EPIC-064: Product surface — narrative motion, deep insight, NLT brand fidelity](planning/epics/EPIC-064.md) — The **greenfield v3** epics created the same day ([EPIC-059](EPIC-059.md)–[EPIC-063](EPIC-063.md)) are infrastructure... *(updated 2026-05-11)*
+- [EPIC-064: Product surface — narrative motion, deep insight, NLT brand fidelity](planning/epics/EPIC-064.md) — The **greenfield v3** epics created the same day (EPIC-059–EPIC-063) are infrastructure-heavy by design. The main **p... *(updated 2026-06-09)*
 - [Epic 65: Live Always-On Dashboard — Real-Time tapps-brain and Hive Monitoring](planning/epics/EPIC-065.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-19)*
 - [Epic 66: Postgres-Only Persistence Plane — Production Readiness](planning/epics/EPIC-066.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
 - [Epic 67: Docker Hive Stack — Production Completeness](planning/epics/EPIC-067.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
 - [Epic 68: Multi-page brain-visual dashboard — hash-routed navigation](planning/epics/EPIC-068.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
 - [EPIC-069 — next-session resumption prompt](planning/epics/EPIC-069-next-session-prompt.md) — Drop this into a fresh Claude Code session to pick up where 2026-04-14 left off. *(updated 2026-05-11)*
 - [Epic 69: Multi-tenant project registration and profile delivery over MCP](planning/epics/EPIC-069.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
-- [Epic 70: HTTP/MCP transport parity — Streamable HTTP + service-layer refactor](planning/epics/EPIC-070.md) — <!-- docsmcp:start:metadata --> *(updated 2026-05-11)*
-- [EPIC-071: TappsBrainClient & AsyncTappsBrainClient — SDK Hardening and Documentation](planning/epics/EPIC-071.md) — Harden the `TappsBrainClient` and `AsyncTappsBrainClient` HTTP clients shipped in v3.6.0 with proper error classifica... *(updated 2026-05-19)*
-- [EPIC-072: Async-Native Postgres Core — psycopg3 AsyncConnection Upgrade](planning/epics/EPIC-072.md) — Replace the `asyncio.to_thread()` shim in `AsyncMemoryStore` with native `psycopg3` async connections (`psycopg.Async... *(updated 2026-05-19)*
-- [EPIC-073: Per-profile MCP tool filtering](planning/epics/EPIC-073.md) — Today tapps-brain exposes **55 MCP tools** on `tapps-brain-mcp` and 68 on *(updated 2026-05-11)*
+- [Epic 70: HTTP/MCP transport parity — Streamable HTTP + service-layer refactor](planning/epics/EPIC-070.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-09)*
+- [EPIC-071: TappsBrainClient & AsyncTappsBrainClient — SDK Hardening and Documentation](planning/epics/EPIC-071.md) — Harden the `TappsBrainClient` and `AsyncTappsBrainClient` HTTP clients shipped in v3.6.0 with proper error classifica... *(updated 2026-06-09)*
+- [EPIC-072: Async-Native Postgres Core — psycopg3 AsyncConnection Upgrade](planning/epics/EPIC-072.md) — Replace the `asyncio.to_thread()` shim in `AsyncMemoryStore` with native `psycopg3` async connections (`psycopg.Async... *(updated 2026-06-09)*
+- [EPIC-073: Per-profile MCP tool filtering](planning/epics/EPIC-073.md) — Today tapps-brain exposes **55 MCP tools** on `tapps-brain-mcp` and 68 on *(updated 2026-06-09)*
+- [Epic 74: Experience event query API — unblock tapps-mcp metrics migration](planning/epics/EPIC-074.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-09)*
+- [Epic 75: Profile-scoped learned data KV — unblock tapps-mcp domain weights](planning/epics/EPIC-075.md) — <!-- docsmcp:start:metadata --> *(updated 2026-06-09)*
+- [EPIC-076: Dev/deploy stack isolation and brain-ops hardening](planning/epics/EPIC-076.md) — **Incident (2026-06-09):** Dev quick-start Postgres hijacked the `tapps-brain-db` *(updated 2026-06-09)*
+- [EPIC-077: Retire Ralph autonomous loop from tapps-brain](planning/epics/EPIC-077.md) — Team confirmed Ralph is no longer the delivery mechanism (2026-06-09). Linear + *(updated 2026-06-09)*
 - [Story 65.1 -- GET /snapshot live endpoint on HttpAdapter](planning/epics/stories/STORY-065.1.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 65.2 -- Dashboard live polling mode](planning/epics/stories/STORY-065.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 65.3 -- Purge stale and privacy-gated components](planning/epics/stories/STORY-065.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
@@ -233,7 +256,7 @@
 - [Story 66.2 -- Bi-temporal as_of filter on PostgresPrivateBackend.search](planning/epics/stories/STORY-066.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.3 -- GC archive Postgres table (migration 006)](planning/epics/stories/STORY-066.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.4 -- MCP tool registration audit and fix](planning/epics/stories/STORY-066.4.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 66.5 -- Version consistency unblock for skill](planning/epics/stories/STORY-066.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
+- [Story 66.5 -- Version consistency unblock for openclaw-skill](planning/epics/stories/STORY-066.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.6 -- CI workflow with ephemeral Postgres service container](planning/epics/stories/STORY-066.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.7 -- Connection pool tuning and health JSON pool fields](planning/epics/stories/STORY-066.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 66.8 -- Auto-migrate on startup gate](planning/epics/stories/STORY-066.8.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
@@ -243,14 +266,14 @@
 - [Story 67.3 -- Default-credential guard in make hive-deploy](planning/epics/stories/STORY-067.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 67.4 -- TLS documentation and nginx SSL config for the visual endpoint](planning/epics/stories/STORY-067.4.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 67.5 -- make hive-smoke end-to-end stack smoke test](planning/epics/stories/STORY-067.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.1 -- Hash router and persistent side-nav shell](planning/epics/stories/STORY-068.1.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.2 -- Overview page — decision strip and health summary](planning/epics/stories/STORY-068.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.3 -- Health page — scorecard with filter bar and issue workflow](planning/epics/stories/STORY-068.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.4 -- Memory page — pulse, groups, tags, histograms](planning/epics/stories/STORY-068.4.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.5 -- Retrieval page — mode, latency histogram, vector stats](planning/epics/stories/STORY-068.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.6 -- Agents and Hive page — SVG topology diagram and registry](planning/epics/stories/STORY-068.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.7 -- Integrity and Export page — checks, privacy tiers, export workflow](planning/epics/stories/STORY-068.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Story 68.8 -- Quality sweep — docs-mcp, tapps-mcp, Lighthouse, accessibility audit](planning/epics/stories/STORY-068.8.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
+- [Story 68.1 -- Hash router and persistent side-nav shell](planning/epics/stories/STORY-068.1.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.2 -- Overview page — decision strip and health summary](planning/epics/stories/STORY-068.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.3 -- Health page — scorecard with filter bar and issue workflow](planning/epics/stories/STORY-068.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.4 -- Memory page — pulse, groups, tags, histograms](planning/epics/stories/STORY-068.4.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.5 -- Retrieval page — mode, latency histogram, vector stats](planning/epics/stories/STORY-068.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.6 -- Agents and Hive page — SVG topology diagram and registry](planning/epics/stories/STORY-068.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.7 -- Integrity and Export page — checks, privacy tiers, export workflow](planning/epics/stories/STORY-068.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
+- [Story 68.8 -- Quality sweep — docs-mcp, tapps-mcp, Lighthouse, accessibility audit](planning/epics/stories/STORY-068.8.md) — <!-- docsmcp:start:user-story --> *(updated 2026-06-09)*
 - [Story 70.1 -- Extract pure service layer from MCP tool bodies](planning/epics/stories/STORY-070.1.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.2 -- Adopt FastMCP and Streamable HTTP transport](planning/epics/stories/STORY-070.2.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.3 -- Replace stdlib http_adapter with FastAPI app](planning/epics/stories/STORY-070.3.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
@@ -258,8 +281,8 @@
 - [Story 70.5 -- Parity test — MCP tool registry versus HTTP route manifest](planning/epics/stories/STORY-070.5.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.6 -- Update Docker image and compose for unified HTTP/MCP surface](planning/epics/stories/STORY-070.6.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.7 -- AgentForge integration spike and remote-MCP migration guide](planning/epics/stories/STORY-070.7.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
-- [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy into a new chat as the **user message** (Linear-driven delivery).
-- [Open Issues Roadmap — retired](planning/open-issues-roadmap.md) — **Status:** retired 2026-04-21. This file is no longer the canonical delivery queue. *(updated 2026-05-11)*
+- [Next session — agent handoff prompt](planning/next-session-prompt.md) — Copy everything below the line into a new chat as the **user message**. *(updated 2026-06-09)*
+- [Open Issues Roadmap — retired](planning/open-issues-roadmap.md) — **Status:** retired 2026-04-21. This file is no longer the canonical delivery queue. *(updated 2026-06-09)*
 - [File-backed memory mirror — feasibility report (TAP-2095)](research/file-backed-memory-mirror.md) — **Status:** spike complete · **Recommendation:** **build narrower** — ship a one-shot `brain_export --layout=managed-... *(updated 2026-05-18)*
 - [Story 70.1 -- Streamable-HTTP MCP transport](stories/STORY-070.1-streamable-http-mcp-transport.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*
 - [Story 70.10 -- Native async parity](stories/STORY-070.10-async-parity.md) — <!-- docsmcp:start:user-story --> *(updated 2026-05-11)*

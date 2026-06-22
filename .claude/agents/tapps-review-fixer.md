@@ -11,9 +11,8 @@ permissionMode: acceptEdits
 memory: project
 isolation: worktree
 skills:
-  - tapps-score
-  - tapps-gate
-  - tapps-validate
+  - tapps-review-pipeline
+  - tapps-finish-task
 mcpServers:
   tapps-mcp: {}
 ---

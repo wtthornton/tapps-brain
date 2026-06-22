@@ -9,7 +9,8 @@ This project uses the TAPPS MCP server for code quality enforcement.
 ## Session Start (REQUIRED)
 
 Call `tapps_session_start()` as the FIRST action in every session.
-Then call `tapps_memory(action="search", query="...")` to recall past decisions.
+Brain memory is bridge-only: use `uv run tapps-mcp memory search --query "..."` or pinned keys in `.tapps-mcp.yaml` → `memory_hooks.auto_recall.recall_keys`. When `nlt-memory` is enabled, `tapps_memory` MCP is a slim facade on that server.
+Read `.tapps-mcp/session-handoff.md` when continuing work.
 
 ## After Editing Python Files (REQUIRED)
 
@@ -17,6 +18,7 @@ Call `tapps_quick_check(file_path)` after editing any Python file.
 
 ## Before Declaring Work Complete (BLOCKING)
 
+Invoke `/tapps-finish-task` (or run `tapps_validate_changed` then `tapps_checklist` sequentially) before ending any session with code edits.
 Call `tapps_validate_changed(file_paths="file1.py,file2.py")` with explicit paths to batch-validate changed files. **Never call without `file_paths`** - auto-detect scans all git-changed files and can be very slow. Default is quick mode; only use `quick=false` as a last resort.
 The quality gate MUST pass before work is declared complete.
 Call `tapps_checklist(task_type)` as the FINAL verification step.

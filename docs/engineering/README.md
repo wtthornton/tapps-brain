@@ -12,7 +12,7 @@ If planning docs or guides disagree with this folder, treat this folder as the i
 - [`architecture-report.html`](architecture-report.html) — full HTML architecture report with SVG flows, per-package descriptions, dependency graph, API surface. Open in a browser.
 - [`system-architecture.md`](system-architecture.md) — components, boundaries, and runtime interfaces (narrative)
 - [`call-flows.md`](call-flows.md) — save, recall, Hive, federation, and maintenance execution flows (text walkthrough)
-- [`data-stores-and-schema.md`](data-stores-and-schema.md) — Postgres store schemas, private migration history (001–006), indexes, FTS
+- [`data-stores-and-schema.md`](data-stores-and-schema.md) — Postgres store schemas, private migration history (001–024), indexes, FTS
 - [`experience-events.md`](experience-events.md) — atomic single-TX KG write API ([`ExperienceEventRecorder`](../../src/tapps_brain/experience.py))
 - [`partition-retention.md`](partition-retention.md) — partition + retention strategy for audit/session tables (pg_partman optional)
 - [`optional-features-matrix.md`](optional-features-matrix.md) — extras, feature flags, profile toggles, fallbacks

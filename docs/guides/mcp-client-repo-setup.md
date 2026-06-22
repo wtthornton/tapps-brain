@@ -214,7 +214,7 @@ VSCode Copilot → `.github/copilot-instructions.md`.
 This repo is wired to the deployed tapps-brain at
 `http://127.0.0.1:8080/mcp/` as `project_id=<slug>`, agent
 `claude-code-<user>`. See
-[`docs/guides/mcp-client-repo-setup.md`](docs/guides/mcp-client-repo-setup.md)
+[`docs/guides/mcp-client-repo-setup.md`](mcp-client-repo-setup.md)
 for the wiring.
 
 **Call `brain_recall` when:**

@@ -15,7 +15,7 @@ Work with Linear issues for AI-agent consumption. Infer intent from the user's p
 
 **Create an epic** (prompt names multiple stories, or "epic", or spans a cross-cutting initiative):
 1. Call `mcp__nlt-linear-issues__docs_generate_epic` with the user's ask. Required: `title`, `purpose_and_intent` ("We are doing this so that ..."), `goal`, `motivation`, `acceptance_criteria`, `stories` (JSON array). Optional: `priority`, `estimated_loe`, `references`, `non_goals`.
-2. The tool writes `docs/epics/EPIC-<N>.md` to the project. Read it back.
+2. Use `data.content` from the generator response (default `write_to_disk=false` — no repo file). Do NOT read epic markdown from disk.
 3. Build the Linear-body markdown following the 5-to-7 section epic shape: `## Purpose & Intent`, `## Goal`, `## Motivation`, `## Acceptance Criteria`, `## Stories`, `## Out of Scope`, `## Refs`.
 4. Validate via `mcp__nlt-linear-issues__docs_validate_linear_issue(title, description, priority, is_epic=true)`. Target score 100 / `agent_ready=true`.
 5. Call `mcp__nlt-linear-issues__docs_save_linear_issue(title=<title>, description=<description>)` as the server-side pre-save gate (TAP-2009). If `data.ok: true`, call `mcp__plugin_linear_linear__save_issue(team, project, title, description, priority, assignee="<agent-user-id-or-name>", ...)` without `id`. If `data.ok: false`, re-validate per the refusal envelope's `use`/`args` fields then retry this step.

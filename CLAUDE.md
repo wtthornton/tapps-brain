@@ -1,4 +1,4 @@
-<!-- tapps-claude-version: 3.12.27 -->
+<!-- tapps-claude-version: 3.12.42 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -297,7 +297,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 <!-- END: karpathy-guidelines -->
 
-<!-- BEGIN: tapps-obligations v3.12.27 -->
+<!-- BEGIN: tapps-obligations v3.12.42 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.
@@ -351,7 +351,9 @@ You should call `tapps_lookup_docs(library, topic)` when you need domain-specifi
 ### Refactoring or Deleting Files
 
 You should call `tapps_impact_analysis(file_path)` before refactoring or deleting any file.
-This maps the blast radius via import graph analysis.
+For **function/method** refactors use `tapps_call_graph(symbol=...)` or `tapps_impact_analysis` with
+`symbol` and `granularity="symbol"|"both"`. For changed files use `tapps_diff_impact` or
+`tapps_validate_changed(include_impact=true)` for ranked `affected_tests` (Epic 114 / ADR-0017).
 
 ### Infrastructure Config Changes
 

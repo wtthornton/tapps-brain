@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.27
-# tapps-mcp-hook-content-sha: 4c63a4bf
+# tapps-mcp-hook-version: 3.12.42
+# tapps-mcp-hook-content-sha: 192f834b
 # TappsMCP PostToolUse hook (Edit/Write) — TAP-1326 / TAP-1330
-# Records edited gate-tracked files to .ralph/.edits_this_loop and detects
-# new external imports requiring tapps_lookup_docs. Advisory only here; the
-# Stop hook enforces the gate.
+# Detects new external imports requiring tapps_lookup_docs. Advisory only;
+# the Stop hook enforces the completion gate.
 INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 PARSED=$(TAPPS_HOOK_INPUT="$INPUT" "$PYBIN" - <<'PYEOF' 2>/dev/null
@@ -32,16 +31,9 @@ FILE=$(echo "$PARSED" | sed -n '1p')
 LIBS=$(echo "$PARSED" | sed -n '2p')
 case "$FILE" in
   *.py|*.pyi|*.ts|*.tsx|*.js|*.jsx|*.go|*.rs)
-    ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-    mkdir -p "$ROOT/.ralph" 2>/dev/null
-    LOOP_FILE="$ROOT/.ralph/.edits_this_loop"
-    touch "$LOOP_FILE"
-    if ! grep -Fxq "$FILE" "$LOOP_FILE" 2>/dev/null; then
-      echo "$FILE" >> "$LOOP_FILE"
-    fi
-    echo "Edited: $FILE — run tapps_quick_check before EXIT_SIGNAL." >&2
+    echo "Edited: $FILE — run tapps_quick_check after this edit." >&2
     if [ -n "$LIBS" ]; then
-      echo "New imports detected ($LIBS) — call tapps_lookup_docs(library=...) before declaring complete (TAP-1330)." >&2
+      echo "Imports detected ($LIBS) — call tapps_lookup_docs(library=..., topic=...) before using those APIs in this session (TAP-1330)." >&2
     fi
     ;;
 esac

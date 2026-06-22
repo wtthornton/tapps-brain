@@ -49,7 +49,6 @@
 - `docs/DOCUMENTATION_INDEX.md`
 - `docs/GITHUB_SETUP_GUIDE.md`
 - `docs/ONBOARDING.md`
-- `docs/RALPH_SETUP_GUIDE.md`
 - `docs/api-reference.md`
 - `docs/benchmarks/README.md`
 - `docs/benchmarks/locomo.md`
@@ -67,4 +66,5 @@
 - `docs/engineering/features-and-technologies.md`
 - `docs/engineering/optional-features-matrix.md`
 - `docs/engineering/partition-retention.md`
-- ... and 228 more
+- `docs/engineering/system-architecture.md`
+- ... and 246 more

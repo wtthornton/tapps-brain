@@ -6,7 +6,7 @@ alwaysApply: true
 
 # tapps-brain
 
-Persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), SQLite-backed knowledge store with BM25 ranking, exponential decay, automatic consolidation, cross-project federation, and pluggable vector search.
+Persistent cross-session memory system for AI coding assistants. Fully deterministic (no LLM calls), **PostgreSQL-only** persistence (private memory, Hive, Federation), pgvector HNSW + tsvector hybrid retrieval, BM25 ranking, exponential decay, automatic consolidation, cross-project federation.
 
 ## Build & Development Commands
 
@@ -14,8 +14,7 @@ Persistent cross-session memory system for AI coding assistants. Fully determini
 # Install dependencies (uses uv package manager)
 uv sync --group dev
 
-# Optional extras (see pyproject.toml): cli, mcp, reranker, encryption, otel, visual, all
-# uv sync --group dev --extra encryption
+# Optional extras (see pyproject.toml): cli, mcp, reranker, otel, visual, all
 
 # Run all tests (CI-style: exclude benchmarks)
 pytest tests/ -v --tb=short -m "not benchmark" --cov=tapps_brain --cov-report=term-missing --cov-fail-under=95
@@ -46,22 +45,23 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + SQLite write-through, thread-safe via `threading.Lock`. `health()` returns `StoreHealthReport` (includes `profile_seed_version` when `profile.seeding.seed_version` is set). `persistence.py` handles SQLite with WAL mode, FTS5 full-text search, and schema migrations (**v1–v17**; v16 = `memory_group`, v17 = `embedding_model_id`; full timeline in `docs/planning/STATUS.md`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + Postgres write-through, thread-safe via `threading.Lock`. Per-agent isolation via `(project_id, agent_id)` on every private row (EPIC-053). `health()` returns `StoreHealthReport` (includes `profile_seed_version` when `profile.seeding.seed_version` is set). `postgres_private.py` handles the private memory backend; schema migrations live in `src/tapps_brain/migrations/private/` (currently v1–024; max version **024** = `profile_scoped_data`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 
 **Retrieval** — `retrieval.py` uses composite scoring: relevance 40%, confidence 30%, recency 15%, frequency 15%. `bm25.py` provides Okapi BM25. `fusion.py` implements Reciprocal Rank Fusion for hybrid search. Optional `profile.hybrid_fusion` (`HybridFusionConfig`) tunes per-channel top-k and RRF *k*; used by `inject_memories` → `MemoryRetriever`.
 
-**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives stale memories to `archive.jsonl` (dry-run + metrics, EPIC-044.5). Max-entry eviction: `docs/engineering/data-stores-and-schema.md` (optional `limits.max_entries_per_group`, STORY-044.7). `evaluation.run_consolidation_threshold_sweep` + CLI `maintenance consolidation-threshold-sweep`; merge undo `MemoryStore.undo_consolidation_merge` + CLI `maintenance consolidation-merge-undo` (EPIC-044.4). `MemoryProfile.seeding.seed_version` → `profile_seed_version` on health/stats (EPIC-044.6).
+**Memory lifecycle** — `decay.py` applies exponential decay with tier-specific half-lives. `consolidation.py` + `auto_consolidation.py` merge memories deterministically using Jaccard + TF-IDF similarity (no LLM). `gc.py` archives stale memories to Postgres `gc_archive` (dry-run + metrics, EPIC-044.5). Max-entry eviction: `docs/engineering/data-stores-and-schema.md` (optional `limits.max_entries_per_group`, STORY-044.7). `evaluation.run_consolidation_threshold_sweep` + CLI `maintenance consolidation-threshold-sweep`; merge undo `MemoryStore.undo_consolidation_merge` + CLI `maintenance consolidation-merge-undo` (EPIC-044.4). `MemoryProfile.seeding.seed_version` → `profile_seed_version` on health/stats (EPIC-044.6).
 
 **Safety** — `safety.py` detects prompt injection patterns and sanitizes/blocks RAG content.
 
-**Federation** — `federation.py` enables cross-project memory sharing via hub at `~/.tapps-brain/memory/federated.db`.
+**Federation** — `postgres_federation.py` enables cross-project memory sharing via PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`).
 
 ### Key design decisions
 
+- **Postgres-only persistence** (ADR-007) — no SQLite or in-process fallback
 - **Synchronous by design** — no async/await in core code
-- **Write-through cache** — all mutations update both in-memory dict and SQLite
+- **Write-through cache** — all mutations update both in-memory dict and Postgres
 - **Lazy decay** — exponential decay computed on read, not via background tasks
 - **Deterministic merging** — consolidation uses similarity thresholds, never LLM calls
 - **Max 5,000 entries per project** (default; profile-configurable) — enforced in MemoryStore
@@ -90,12 +90,8 @@ When upgrading tapps-brain on the **local unified stack** (`docker-compose.hive.
 ## Cursor (IDE)
 
 - **Quick pointers:** `AGENTS.md` — setup, tests, doc links. **VS Code/Cursor:** `.vscode/settings.json` (Python/Ruff/mypy, 100-char ruler), `.vscode/extensions.json` (recommended extensions), `.vscode/tasks.json` (pytest, ruff, mypy, `release-ready.sh`). **Indexing:** `.cursorignore` excludes `.venv/` and caches.
-- **Project MCP config:** `.cursor/mcp.json` wires the same MCP servers as Claude Code where possible:
-  - **tapps-mcp** — `tapps-mcp serve --transport` stdio; `TAPPS_MCP_MEMORY_BRAIN_*` env points the memory bridge at the deployed brain (`project_id=tapps-brain`).
-  - **tapps-brain** — Streamable HTTP at `http://127.0.0.1:8080/mcp/` with `X-Brain-Profile: coder` (~18 tools vs 59 on `full`). Requires `TAPPS_BRAIN_AUTH_TOKEN` in the environment (see `docs/guides/mcp-client-repo-setup.md`). Claude Code uses the same headers in root `.mcp.json`.
-  - **docs-mcp** — `uv run --directory …/tapps-mcp/packages/docs-mcp docsmcp serve` (same as `claude mcp list`). Uses `${workspaceFolder}/../tapps-mcp/...` so it works when this repo and [tapps-mcp](https://github.com/tapps-mcp/tapps-mcp) are sibling clones (e.g. `~/code/tapps-brain` + `~/code/tapps-mcp`). If your layout differs, edit the `--directory` path to your local `packages/docs-mcp` checkout.
-  - **playwright** — `npx @playwright/mcp@latest` (same pattern as Claude / Playwright docs). If Cursor already lists **Plugin MCP → playwright**, remove the `playwright` block from `.cursor/mcp.json` to avoid duplicate browser tools.
-- Ensure **PATH** includes `~/.local/bin` (uv tools) and Node/`npx` if you use Playwright via `npx`. Run `make brain-healthcheck` after wiring changes.
+- **Project MCP config:** `.cursor/mcp.json` wires NLT MCP servers (`nlt-build`, `nlt-memory`, `nlt-project-docs`, etc.) via streamable HTTP on ports 8760–8765. Consumer repos use tapps-mcp BrainBridge — see `docs/operations/CONSUMER-REPO-BRAIN-WIRING.md`. Direct `tapps-brain` HTTP MCP at `http://127.0.0.1:8080/mcp/` is for brain development and coordinator agents.
+- Ensure **PATH** includes `~/.local/bin` (uv tools). Run `make brain-healthcheck` after wiring changes.
 
 ## Pre-publish
 

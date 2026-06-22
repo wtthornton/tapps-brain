@@ -7,27 +7,25 @@ description: >-
   lifecycle so the next chat can continue without a long paste. Use when
   ending a session, handing off to a fresh chat, or the user says hand
   off, save session state, or continue next time.
-allowed-tools: mcp__nlt-platform-admin__tapps_session_end Bash
+allowed-tools: mcp__nlt-memory__tapps_handoff_save mcp__nlt-build__tapps_session_start Bash
 argument-hint: "[optional Linear issue id e.g. TAP-1234]"
 disable-model-invocation: true
 ---
 
 End the session with a durable handoff the next chat can load via `/tapps-continue-session`.
 
+0. **Session bootstrap (if needed).** If `tapps_session_start()` was not called this session, call it now (cached is fine) so flywheel scope and checker context are correct. Skip when already called.
+
 1. **Draft handoff (5–10 bullets).** From this session's work, write:
    - **Done** — what shipped or was verified
    - **Open** — in-progress or untested
-   - **Next (P0)** — one concrete next action (prefer a Linear id if known)
-   - **Blockers** — or `none`
+   - **Next (P0)** — one concrete next action (plain prose)
+   - **Blockers** — `- none` when clear
+   - **Changed files** — optional; top paths from `git status --short`
    - **Verify** — commands to run first in the next session
    - **Success criterion** — one line
 
-**P0 gate.** Before writing the file: when **Open** has real items (not `none` / `- ...` placeholders), **Next (P0)** must name one concrete next action (prefer a Linear id). If P0 is missing, ask the user once — do not persist an incomplete handoff.
-
-2. **Persist (file is canonical).** Write or overwrite `.tapps-mcp/session-handoff.md` using this shape:
-   - Set **Updated** to the real current UTC time: run `date -u +%Y-%m-%dT%H:%M:%SZ` and paste the output — never use a placeholder like `T00:00:00Z`.
-   - Optionally add **Git:** `<short-sha>` when inside a git repo (`git rev-parse --short HEAD`).
-   - Claude Code (Bash-only): `mkdir -p .tapps-mcp && cat > .tapps-mcp/session-handoff.md <<'EOF'` … `EOF`.
+**P0 gate.** Before persisting: when **Open** has real items (not `none` / `- ...` placeholders), **Next (P0)** must name one concrete next action. Set **Linear P0:** to the TAP id when known. If P0 is missing, ask the user once — do not persist an incomplete handoff.
 
 ```markdown
 # Session handoff
@@ -42,10 +40,13 @@ End the session with a durable handoff the next chat can load via `/tapps-contin
 - ...
 
 ## Next (P0)
-- ...
+- ... (plain prose; put TAP-#### in **Linear P0** above)
 
 ## Blockers
-- ...
+- none
+
+## Changed files
+- ... (optional; top paths from git status when multi-file)
 
 ## Verify
 - ...
@@ -54,18 +55,22 @@ End the session with a durable handoff the next chat can load via `/tapps-contin
 - ...
 ```
 
-3. **Persist (brain mirror, best-effort).** The markdown file from step 2 is always canonical. `tapps_memory` is not an MCP tool (removed v3.12.0, TAP-1994) — use CLI only:
+2. **Persist (one atomic call when MCP is available).** Do **not** write the file separately before MCP — `tapps_handoff_save` writes `.tapps-mcp/session-handoff.md`, lints, mirrors to brain, and can close the session lifecycle.
+
+   Draft the full markdown in memory using the shape above:
+   - **Updated:** run `date -u +%Y-%m-%dT%H:%M:%SZ` — never a placeholder like `T00:00:00Z`
+   - **Git:** `git rev-parse --short HEAD` when inside a git repo
+   - **Linear P0:** TAP-#### when known (preferred retrieval key for brain session search)
+   - **Blockers:** `- none` alone when clear — put user actions under **Verify** or **Next (P0)**, not Blockers
+   - **Changed files:** optional bullets from `git status --short` when the session touched many files
 
    | Priority | When | How |
    |----------|------|-----|
-   | 1 (MCP) | TappsMCP tools available | `tapps_handoff_save(markdown=...)` with full handoff body; set `session_end=true` to close the flywheel |
-   | 2 (CLI atomic) | Shell auth available; no MCP write | `uv run tapps-mcp handoff write --file .tapps-mcp/session-handoff.md` (lint + full-body brain mirror + optional `--session-end`) |
-   | 3 (manual) | Brain HTTP reachable; atomic paths unavailable | `uv run tapps-mcp memory save --key session-handoff --tier context --tags handoff,cross-session --value "$(cat .tapps-mcp/session-handoff.md)"` — mirror the **full markdown body**, not a one-line agent summary |
-   | 4 (skip) | Brain offline or auth missing | Skip silently — `.tapps-mcp/session-handoff.md` is enough |
+   | 1 (MCP) | `nlt-memory` available | `tapps_handoff_save(markdown=..., session_end=true)` — single call; do **not** also call `tapps_session_end` |
+   | 2 (CLI atomic) | Shell auth; no MCP write | `uv run tapps-mcp handoff write --file .tapps-mcp/session-handoff.md --session-end` after writing the file locally |
+   | 3 (manual) | Brain HTTP only | `uv run tapps-mcp memory save --key session-handoff --tier context --tags handoff,cross-session --value "$(cat .tapps-mcp/session-handoff.md)"` — full markdown body |
+   | 4 (skip) | Brain offline | File-only via Bash heredoc: `mkdir -p .tapps-mcp && cat > .tapps-mcp/session-handoff.md <<'EOF'` … `EOF` |
 
-4. **Close lifecycle.** Best-effort session closure:
-   - **Preferred:** `mcp__nlt-platform-admin__tapps_session_end()`
-   - **CLI fallback** (MCP unavailable): `uv run tapps-mcp session-end` (requires same shell auth as step 3 row 1)
-   Do not fail the handoff if either degrades.
+   Handoff **Updated** older than 7 days: pass `allow_lint_warnings=true` on `tapps_handoff_save` if lint warns on age.
 
-5. **Report.** One line: `Handoff written: .tapps-mcp/session-handoff.md. Linear P0: <id|none>. brain_mirror: ok|skipped. session_end: ok|skipped. Next session: invoke /tapps-continue-session`
+3. **Report.** One line: `Handoff written: .tapps-mcp/session-handoff.md. Linear P0: <id|none>. brain_mirror: ok|skipped. session_end: ok|skipped. Next session: invoke /tapps-continue-session`

@@ -26,6 +26,28 @@ Schema managed by `PostgresPrivateBackend` via migration files in `src/tapps_bra
 | 004 | `004_diagnostics_history.sql` | `diagnostics_history` table |
 | 005 | `005_audit_log.sql` | `audit_log` table (indexed on `project_id, agent_id, timestamp DESC`) |
 | 006 | `006_gc_archive.sql` | `gc_archive` table (indexed on `project_id, agent_id, archived_at DESC`) |
+| 007 | `007_flywheel_meta.sql` | `flywheel_meta` key-value table (per-tenant flywheel cursor metadata) |
+| 008 | `008_project_profiles.sql` | `project_profiles` — per-project `MemoryProfile` registry (EPIC-069) |
+| 009 | `009_project_rls.sql` | Row Level Security on tenanted private tables |
+| 010 | `010_idempotency_keys.sql` | `idempotency_keys` for HTTP write retries (EPIC-070) |
+| 011 | `011_per_tenant_auth.sql` | Per-project bearer tokens on `project_profiles` (EPIC-070) |
+| 012 | `012_rls_force.sql` | `FORCE ROW LEVEL SECURITY` on tenanted tables (TAP-512) |
+| 013 | `013_temporal_sensitivity.sql` | `temporal_sensitivity` column on `private_memories` (TAP-735) |
+| 014 | `014_failed_approaches.sql` | `failed_approaches` JSONB column on `private_memories` (TAP-731) |
+| 015 | `015_integrity_hash_version.sql` | `integrity_hash_v` column (TAP-710) |
+| 015 | `015_memory_status.sql` | `status` lifecycle column on `private_memories` (TAP-732) |
+| 015 | `015_memory_class.sql` | `memory_class` column on `private_memories` (TAP-733) |
+| 016 | `016_kg_entities.sql` | `kg_entities` knowledge-graph entity table (EPIC-074) |
+| 017 | `017_kg_edges.sql` | `kg_edges` knowledge-graph edge table |
+| 018 | `018_kg_evidence.sql` | `kg_evidence` trust anchors for edges/entities |
+| 019 | `019_kg_aliases.sql` | `kg_aliases` reversible entity name aliases |
+| 020 | `020_experience_events.sql` | `experience_events` RANGE-partitioned append-only events |
+| 021 | `021_kg_edges_confidence_history.sql` | `confidence_history` on `kg_edges` |
+| 022 | `022_partman_experience_events.sql` | Optional pg_partman registration for `experience_events` |
+| 023 | `023_experience_events_query_index.sql` | Btree index for experience query path |
+| 024 | `024_profile_scoped_data.sql` | `profile_scoped_data` learned KV per `(project_id, profile_name)` |
+
+Current max private migration version: **024**.
 
 ### Core tables
 
@@ -35,6 +57,12 @@ Schema managed by `PostgresPrivateBackend` via migration files in `src/tapps_bra
 - `diagnostics_history` — periodic EWMA health snapshots (migration 004)
 - `audit_log` — immutable append-only mutation log (migration 005)
 - `gc_archive` — GC'd entries (never deleted; migration 006)
+- `flywheel_meta` — per-tenant flywheel pipeline metadata (migration 007)
+- `project_profiles` — registered project profiles + optional per-tenant auth (migrations 008, 011)
+- `idempotency_keys` — HTTP write idempotency (migration 010)
+- `kg_entities`, `kg_edges`, `kg_evidence`, `kg_aliases` — knowledge graph (migrations 016–019, 021)
+- `experience_events` — partitioned workflow events (migrations 020–023)
+- `profile_scoped_data` — profile-scoped learned KV (migration 024)
 - `private_schema_version` — tracks applied migration versions
 
 ### Full-text search

@@ -6,7 +6,7 @@ description: >-
   Look up when to use each TappsMCP tool. Full tool reference with per-tool
   guidance for session start, scoring, validation, checklist, docs, experts, and more.
   Use when you need guidance on which TappsMCP tool to call for a given situation.
-allowed-tools: mcp__nlt-platform-admin__tapps_server_info
+allowed-tools: mcp__nlt-setup__tapps_server_info
 argument-hint: "[tool-name or 'all']"
 ---
 

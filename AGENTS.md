@@ -1,4 +1,4 @@
-<!-- tapps-agents-version: 3.12.27 -->
+<!-- tapps-agents-version: 3.12.42 -->
 # TappsMCP - instructions for AI assistants
 
 When the **TappsMCP** MCP server is configured, you have access to tools for **code quality, doc lookup, and domain expert advice**. Use them to avoid hallucinated APIs, missed quality steps, and inconsistent output.
@@ -205,7 +205,7 @@ Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wal
 | **tapps_usage** | When you want to see what you missed this session - per-session `gaps` + concrete `recommendations`. Inlined as `usage_gaps` on every `tapps_checklist` response. |
 | **tapps_quality_gate** | Before declaring work complete - ensures file passes preset |
 
-**For full tool reference** (32 tools with per-tool guidance), invoke the **tapps-tool-reference** skill when the user asks "what tools does TappsMCP have?", "when do I use tapps_score_file?", etc.
+**For full tool reference** (42 tools with per-tool guidance), invoke the **tapps-tool-reference** skill when the user asks "what tools does TappsMCP have?", "when do I use tapps_score_file?", etc.
 
 ---
 
@@ -297,9 +297,11 @@ The checklist uses this to decide which tools are required vs recommended vs opt
 Your project may have two complementary memory systems:
 
 - **Claude Code auto memory** (`~/.claude/projects/<project>/memory/MEMORY.md`): Build commands, IDE preferences, personal workflow notes. Auto-managed.
-- **TappsMCP shared memory** (`tapps-mcp memory` CLI via BrainBridge; `tapps_memory` MCP removed TAP-1994): Architecture decisions, quality patterns, expert findings, cross-agent knowledge. Structured with tiers, confidence decay, contradiction detection, consolidation, and federation.
+- **TappsMCP shared memory** — **`uv run tapps-mcp memory`** CLI via BrainBridge (default; do not add direct `tapps-brain` to `.mcp.json`). When **`nlt-memory`** is enabled, `tapps_memory` MCP on that server is a slim facade (TAP-3895). Architecture decisions, quality patterns, cross-agent knowledge. See [docs/MEMORY_REFERENCE.md](docs/MEMORY_REFERENCE.md) and `/tapps-memory` skill.
 
 RECOMMENDED: Use `uv run tapps-mcp memory save|get|search` for architecture decisions and quality patterns. Pin always-on scope keys under `memory_hooks.auto_recall.recall_keys` in `.tapps-mcp.yaml`.
+
+**Access:** Prefer `uv run tapps-mcp memory <subcommand>` (CLI). With `nlt-memory` enabled, `tapps_memory(action=...)` on that server exposes the same actions (TAP-3895). Not on default `nlt-build` alone (TAP-1994).
 
 ### Memory actions (42 total)
 
@@ -403,10 +405,7 @@ Four agent definitions per platform in `.claude/agents/` or `.cursor/agents/`:
 
 ### Skills (auto-generated)
 
-Thirteen core tapps-* SKILL.md files per platform in `.claude/skills/` or `.cursor/skills/` (plus linear-* and optional continuous-learning-v2):
-- **tapps-score** - Score a Python file across 7 quality categories
-- **tapps-gate** - Run a quality gate check and report pass/fail
-- **tapps-validate** - Validate all changed files before declaring work complete
+Sixteen core tapps-* SKILL.md files per platform in `.claude/skills/` or `.cursor/skills/` (plus linear-* and optional continuous-learning-v2):
 - **tapps-finish-task** - End-of-task pipeline: validate_changed + checklist + optional memory save
 - **tapps-handoff-session** - Write `.tapps-mcp/session-handoff.md` and call `tapps_session_end` before ending a chat
 - **tapps-continue-session** - Bootstrap a fresh chat from the last handoff + optional Linear issue
@@ -414,14 +413,13 @@ Thirteen core tapps-* SKILL.md files per platform in `.claude/skills/` or `.curs
 - **tapps-research** - Look up library documentation and research best practices
 - **tapps-security** - Run a comprehensive security audit with vulnerability scanning
 - **tapps-memory** - Manage shared project memory (42 actions, cross-session)
-- **tapps-report** - Generate quality reports across changed Python files
 - **tapps-tool-reference** - Full per-tool reference and when-to-use guidance
 - **tapps-init** - Bootstrap TappsMCP scaffolding in a project
 - **tapps-upgrade** - Reinstall global CLIs from latest source, restart MCP, run `tapps-mcp upgrade` + doctor + checklist
 - **tapps-engagement** - Switch enforcement intensity (high/medium/low)
 - **tapps-apply-files** - Apply content-return file operations (Docker fallback)
 
-> **DEPRECATED (removal in v3.12.0):** `tapps-score`, `tapps-gate`, `tapps-validate`, `tapps-report` are thin wrappers around single MCP tools. Prefer the direct tool calls or `/tapps-finish-task` for the end-of-task bundle.
+> **Removed in v3.12.0:** `tapps-score`, `tapps-gate`, `tapps-validate`, and `tapps-report` wrapper skills were deleted. Prefer direct MCP tool calls or `/tapps-finish-task` for the end-of-task bundle.
 
 ### Agent Teams (opt-in, Claude Code only)
 

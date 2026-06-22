@@ -9,7 +9,7 @@ mcp_tools:
   - tapps_session_notes
 ---
 
-`tapps_memory` is **not** an MCP tool (removed v3.12.0, TAP-1994). Consumer repos stay **bridge-only** — never add `tapps-brain` to `.mcp.json`.
+`tapps_memory` on the **`nlt-memory`** MCP server is a slim facade (TAP-3895). Default consumer path is **`uv run tapps-mcp memory`** (bridge-only — never add direct `tapps-brain` to `.mcp.json`).
 
 ## Routing guide
 

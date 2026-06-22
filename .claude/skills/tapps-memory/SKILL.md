@@ -6,20 +6,20 @@ description: >-
   Manage shared project memory via tapps-mcp CLI and session notes.
   Use when saving cross-session decisions, searching prior patterns, or
   checking brain bridge health. For chat handoffs use tapps-handoff-session.
-allowed-tools: mcp__nlt-code-quality__tapps_session_start mcp__nlt-platform-admin__tapps_session_notes Bash
+allowed-tools: mcp__nlt-build__tapps_session_start mcp__nlt-memory__tapps_session_notes Bash
 argument-hint: "[save|search|get] [key]"
 ---
 
-`tapps_memory` is **not** an MCP tool (removed v3.12.0, TAP-1994). Consumer repos stay **bridge-only** — never add `tapps-brain` to `.mcp.json`.
+`tapps_memory` on the **`nlt-memory`** MCP server is a slim facade (TAP-3895). Default consumer path is **`uv run tapps-mcp memory`** (bridge-only — never add direct `tapps-brain` to `.mcp.json`).
 
 ## Routing guide
 
 | Need | Path |
 |------|------|
 | Cross-chat handoff | `/tapps-handoff-session` then `/tapps-continue-session` (`.tapps-mcp/session-handoff.md` is canonical) |
-| Session-local notes | `mcp__nlt-platform-admin__tapps_session_notes(action="save", ...)` |
+| Session-local notes | `mcp__nlt-memory__tapps_session_notes(action="save", ...)` |
 | Save / recall / search brain | `uv run tapps-mcp memory <subcommand>` (CLI via BrainBridge) |
-| Brain health before writes | `mcp__nlt-code-quality__tapps_session_start()` → `data.brain_bridge_health` |
+| Brain health before writes | `mcp__nlt-build__tapps_session_start()` → `data.brain_bridge_health` |
 | Auto-recall at session start | Hooks run `tapps-mcp memory recall` — usually no manual step |
 
 ## Shell auth (CLI memory)
@@ -70,7 +70,7 @@ uv run tapps-mcp memory export --file memories.json
 
 ## Advanced surface
 
-Federation, hive, knowledge graph, and batch ops: see `docs/MEMORY_REFERENCE.md`. Ralph coordinator agents may call tapps-brain MCP tools directly; **consumer repo agents use CLI + docs**.
+Federation, hive, knowledge graph, and batch ops: see `docs/MEMORY_REFERENCE.md`. **Consumer repo agents use CLI + docs**.
 
 ## See also
 

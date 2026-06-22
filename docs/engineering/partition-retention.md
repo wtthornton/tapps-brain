@@ -181,5 +181,5 @@ Note: re-attached old partitions will be re-dropped on the next `run_maintenance
 - [Migration 020 — partitioned table DDL](../../src/tapps_brain/migrations/private/020_experience_events.sql)
 - [Migration 022 — optional `pg_partman` registration](../../src/tapps_brain/migrations/private/022_partman_experience_events.sql)
 - [experience-events.md](experience-events.md) — payload schema, `event_type` catalogue
-- [ADR-007 — Postgres-only persistence](../../docs/adrs/) for the reasoning behind the no-SQLite fallback
+- [ADR-007 — Postgres-only persistence](../planning/adr/ADR-007-postgres-only-no-sqlite.md) for the reasoning behind the no-SQLite fallback
 - [TAP-1818](https://linear.app/tappscodingagents/issue/TAP-1818) — migration rollback contract every `*.up.sql` must satisfy

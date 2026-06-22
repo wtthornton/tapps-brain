@@ -100,7 +100,7 @@ Three callouts the [feasibility spike](../research/file-backed-memory-mirror.md)
 
 1. **Hot-path cost** — the export touches disk only when you run it, never on `MemoryStore.save()` / decay / consolidation.
 2. **Cache coherence** — there is no live mirror to diverge from. The `READ-ONLY` banner + `exported_at` timestamp in `manifest.json` make it obvious the folder is a frozen view.
-3. **Source of truth** — Postgres remains authoritative ([ADR-007](../adr/ADR-007.md)). Edits to the markdown files are ignored by the next export (the directory must be empty or a fresh path).
+3. **Source of truth** — Postgres remains authoritative ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)). Edits to the markdown files are ignored by the next export (the directory must be empty or a fresh path).
 
 ## Related
 

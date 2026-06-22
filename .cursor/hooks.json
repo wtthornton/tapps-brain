@@ -19,6 +19,11 @@
       {
         "command": ".cursor/hooks/tapps-memory-auto-recall.sh"
       }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/tapps-stop.sh"
+      }
     ]
   },
   "version": 1

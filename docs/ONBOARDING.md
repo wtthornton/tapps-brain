@@ -186,6 +186,6 @@ pytest
 
 ## Next Steps
 
-- Read the [Contributing Guide](CONTRIBUTING.md) to learn how to contribute
-- Browse the [documentation](docs/) for detailed guides
-- See the [Changelog](CHANGELOG.md) for recent changes
+- Read the [Contributing Guide](../CONTRIBUTING.md) to learn how to contribute
+- Browse the [documentation](./) for detailed guides
+- See the [Changelog](../CHANGELOG.md) for recent changes

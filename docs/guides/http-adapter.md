@@ -222,7 +222,7 @@ Common `error` codes: `bad_request` (400), `unauthorized` (401), `forbidden` (40
 
 ## Admin routes (admin Bearer token)
 
-Project registration / approval / token rotation. See [`docs/guides/onboarding.md`](onboarding.md) and the OpenAPI spec for shapes.
+Project registration / approval / token rotation. See [`docs/ONBOARDING.md`](../ONBOARDING.md) and the OpenAPI spec for shapes.
 
 ## Migrating from the wheel to HTTP-only
 

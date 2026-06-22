@@ -1,30 +1,113 @@
 {
   "mcpServers": {
-    "tapps-mcp": {
-      "type": "stdio",
-      "command": "tapps-mcp",
-      "args": [
-        "serve"
-      ],
-      "env": {
-        "TAPPS_MCP_PROJECT_ROOT": ".",
-        "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://127.0.0.1:8080",
-        "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
-        "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain",
-        "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}"
+    "nlt-build": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/tapps-mcp",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-build"
+        ],
+        "env": {
+          "TAPPS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+          "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+          "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain",
+          "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+          "TAPPS_BRAIN_PROFILE": "full",
+          "TAPPS_METRICS_STORAGE": "dual"
+        },
+        "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
       },
-      "instructions": "TRIGGER POINTS — call these proactively, not reactively: (1) session start → tapps_session_start; (2) before using an unfamiliar library API → tapps_lookup_docs(library); (3) after editing any Python file → tapps_quick_check(file_path); (4) before declaring work complete → tapps_validate_changed(file_paths=...); (5) before refactor/delete → tapps_impact_analysis(file_path); (6) final verification → tapps_checklist(task_type). Memory goes through tapps_memory on this server (bridge-only — no direct tapps-brain MCP entry)."
-    },
-    "docs-mcp": {
-      "type": "stdio",
-      "command": "docsmcp",
-      "args": [
-        "serve"
-      ],
-      "env": {
-        "DOCS_MCP_PROJECT_ROOT": "."
+      "nlt-memory": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/tapps-mcp",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-memory"
+        ],
+        "env": {
+          "TAPPS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+          "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+          "TAPPS_BRAIN_PROFILE": "full",
+          "TAPPS_METRICS_STORAGE": "dual",
+          "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+          "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+        },
+        "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
       },
-      "instructions": "Documentation MCP: epic/story generators, Linear issue validation, and planning helpers for Markdown docs in this repo."
-    }
+      "nlt-setup": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/tapps-mcp",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-setup"
+        ],
+        "env": {
+          "TAPPS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+          "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+          "TAPPS_BRAIN_PROFILE": "full",
+          "TAPPS_METRICS_STORAGE": "dual",
+          "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+          "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+        },
+        "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
+      },
+      "nlt-linear-issues": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/tapps-platform",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-linear-issues"
+        ],
+        "env": {
+          "TAPPS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+          "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+          "TAPPS_BRAIN_PROFILE": "full",
+          "TAPPS_METRICS_STORAGE": "dual",
+          "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+          "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+        },
+        "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
+      },
+      "nlt-project-docs": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/docsmcp",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-project-docs"
+        ],
+        "env": {
+          "DOCS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_BRAIN_PROFILE": "agent_brain"
+        },
+        "instructions": "Documentation MCP: epic/story/prompt generators, artifact validation, and planning helpers for Markdown docs in this repo."
+      },
+      "nlt-release-ship": {
+        "type": "stdio",
+        "command": "/home/wtthornton/.local/bin/tapps-platform",
+        "args": [
+          "serve",
+          "--profile",
+          "nlt-release-ship"
+        ],
+        "env": {
+          "TAPPS_MCP_PROJECT_ROOT": ".",
+          "TAPPS_MCP_MEMORY_BRAIN_HTTP_URL": "http://localhost:8080",
+          "TAPPS_MCP_MEMORY_BRAIN_AUTH_TOKEN": "${TAPPS_BRAIN_AUTH_TOKEN}",
+          "TAPPS_BRAIN_PROFILE": "full",
+          "TAPPS_METRICS_STORAGE": "dual",
+          "TAPPS_MCP_CONTEXT7_API_KEY": "${TAPPS_MCP_CONTEXT7_API_KEY}",
+          "TAPPS_MCP_MEMORY_BRAIN_PROJECT_ID": "tapps-brain"
+        },
+        "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
+      }
   }
 }
