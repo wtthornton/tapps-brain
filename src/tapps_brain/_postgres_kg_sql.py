@@ -28,7 +28,7 @@ INSERT INTO kg_entities (
     aliases, metadata,
     confidence, source, source_agent
 ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
-ON CONFLICT (brain_id, entity_type, canonical_name_norm) DO UPDATE SET
+ON CONFLICT (tenant_id, brain_id, entity_type, canonical_name_norm) DO UPDATE SET
     aliases      = EXCLUDED.aliases,
     metadata     = EXCLUDED.metadata,
     confidence   = GREATEST(kg_entities.confidence, EXCLUDED.confidence),

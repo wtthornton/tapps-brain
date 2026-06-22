@@ -425,13 +425,22 @@ class TestKGMigrationDiscovery:
         versions = [v for v, _, _ in migrations]
         assert versions == sorted(versions)
 
-    def test_max_private_version_is_at_least_20(self) -> None:
-        """Max bundled private migration version must be >= 20 after EPIC-074."""
+    def test_max_private_version_is_at_least_25(self) -> None:
+        """Max bundled private migration version must be >= 25 after TAP-4274."""
         from tapps_brain.postgres_migrations import discover_private_migrations
 
         migrations = discover_private_migrations()
         max_v = max(v for v, _, _ in migrations)
-        assert max_v >= 20, f"Expected max version >= 20, got {max_v}"
+        assert max_v >= 25, f"Expected max version >= 25, got {max_v}"
+
+    def test_kg_entities_tenant_unique_migration_content(self) -> None:
+        """Migration 025 must scope kg_entities UNIQUE by tenant_id."""
+        from tapps_brain.postgres_migrations import discover_private_migrations
+
+        migrations = discover_private_migrations()
+        sql_025 = next(sql for v, _, sql in migrations if v == 25)
+        assert "kg_entities_tenant_brain_type_name_key" in sql_025
+        assert "tenant_id, brain_id, entity_type, canonical_name_norm" in sql_025
 
 
 # ---------------------------------------------------------------------------

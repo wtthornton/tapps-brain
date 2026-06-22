@@ -35,8 +35,11 @@ _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
 
 # Runtime DSN: same host/db but connects as tapps_runtime (non-superuser, RLS
-# is enforced because FORCE ROW LEVEL SECURITY is set).
-_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
+# is enforced because FORCE ROW LEVEL SECURITY is set). Override via
+# TAPPS_TEST_POSTGRES_RUNTIME_DSN when the runtime role uses a different password.
+_RUNTIME_DSN = os.environ.get("TAPPS_TEST_POSTGRES_RUNTIME_DSN") or (
+    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
+)
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -96,8 +99,10 @@ def _insert_entity(
 
 def _set_project_id(conn: object, project_id: str) -> None:
     """Set the app.project_id session variable for RLS."""
+    from psycopg import sql
+
     with conn.cursor() as cur:  # type: ignore[union-attr]
-        cur.execute("SET LOCAL app.project_id = %s", (project_id,))
+        cur.execute(sql.SQL("SET LOCAL app.project_id = {}").format(sql.Literal(project_id)))
 
 
 def _count_entities(conn: object, brain_id: str) -> int:
@@ -244,7 +249,7 @@ class TestKgEntitiesCRUD:
             conn.commit()
 
     def test_unique_constraint_active_entity(self) -> None:
-        """Inserting a duplicate (brain_id, entity_type, canonical_name_norm) raises."""
+        """Duplicate (tenant_id, brain_id, entity_type, canonical_name_norm) raises."""
         import psycopg
 
         tid = f"proj-{_uid()}"
@@ -261,6 +266,32 @@ class TestKgEntitiesCRUD:
             # Cleanup
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM kg_entities WHERE brain_id = %s", (bid,))
+            conn.commit()
+
+    def test_cross_tenant_same_name_allowed(self) -> None:
+        """Same (brain_id, type, name) under different tenants must not violate UNIQUE."""
+        tenant_a = f"proj-a-{_uid()}"
+        tenant_b = f"proj-b-{_uid()}"
+        brain = "tapps-brain"
+        name = f"SharedEntity-{_uid()}"
+        with _owner_conn() as conn:
+            _insert_entity(
+                conn, tenant_id=tenant_a, brain_id=brain, project_id=tenant_a, canonical_name=name
+            )
+            _insert_entity(
+                conn, tenant_id=tenant_b, brain_id=brain, project_id=tenant_b, canonical_name=name
+            )
+            conn.commit()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM kg_entities"
+                    " WHERE brain_id = %s AND canonical_name = %s",
+                    (brain, name),
+                )
+                row = cur.fetchone()
+            assert row is not None and int(row[0]) == 2
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM kg_entities WHERE brain_id = %s", (brain,))
             conn.commit()
 
     def test_status_check_constraint(self) -> None:
@@ -347,3 +378,87 @@ class TestKgEntitiesRLS:
                         )
             finally:
                 conn.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Tests: TAP-4274 cross-tenant upsert isolation
+# ---------------------------------------------------------------------------
+
+
+class TestKgEntitiesCrossTenantUpsert:
+    """UPSERT_ENTITY_SQL must not raise RLS errors when tenants share brain_id."""
+
+    def test_upsert_entity_sql_shared_brain_id(self) -> None:
+        from tapps_brain._postgres_kg_sql import UPSERT_ENTITY_SQL
+
+        tenant_a = f"proj-a-{_uid()}"
+        tenant_b = f"proj-b-{_uid()}"
+        brain = "tapps-brain"
+        name = f"CollisionEntity-{_uid()}"
+        params = (
+            None,  # tenant_id filled per connection
+            brain,
+            None,  # project_id filled per connection
+            "concept",
+            name,
+            "[]",
+            "{}",
+            0.6,
+            "agent",
+            "test-agent",
+        )
+
+        def _upsert(conn: object, tenant_id: str) -> str:
+            with conn.cursor() as cur:  # type: ignore[union-attr]
+                cur.execute(
+                    UPSERT_ENTITY_SQL,
+                    (tenant_id, brain, tenant_id, *params[3:]),
+                )
+                row = cur.fetchone()
+                assert row is not None
+                return str(row[0])
+
+        try:
+            with _runtime_conn() as conn:
+                _set_project_id(conn, tenant_a)
+                eid_a = _upsert(conn, tenant_a)
+                conn.commit()
+
+            with _runtime_conn() as conn:
+                _set_project_id(conn, tenant_b)
+                eid_b = _upsert(conn, tenant_b)
+                conn.commit()
+
+            assert eid_a != eid_b
+
+            with _runtime_conn() as conn:
+                _set_project_id(conn, tenant_a)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id::text FROM kg_entities"
+                        " WHERE brain_id = %s AND canonical_name = %s",
+                        (brain, name),
+                    )
+                    visible_a = {row[0] for row in cur.fetchall()}
+                conn.rollback()
+            assert visible_a == {eid_a}
+
+            with _runtime_conn() as conn:
+                _set_project_id(conn, tenant_b)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id::text FROM kg_entities"
+                        " WHERE brain_id = %s AND canonical_name = %s",
+                        (brain, name),
+                    )
+                    visible_b = {row[0] for row in cur.fetchall()}
+                conn.rollback()
+            assert visible_b == {eid_b}
+        finally:
+            with _owner_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM kg_entities WHERE brain_id = %s AND canonical_name = %s",
+                        (brain, name),
+                    )
+                conn.commit()

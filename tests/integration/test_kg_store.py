@@ -30,7 +30,9 @@ import pytest
 _PG_DSN = os.environ.get("TAPPS_TEST_POSTGRES_DSN", "")
 _SKIP_PG = not _PG_DSN
 
-_RUNTIME_DSN = _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
+_RUNTIME_DSN = os.environ.get("TAPPS_TEST_POSTGRES_RUNTIME_DSN") or (
+    _PG_DSN.replace("tapps:tapps@", "tapps_runtime:tapps_runtime@", 1) if _PG_DSN else ""
+)
 
 pytestmark = pytest.mark.skipif(_SKIP_PG, reason="TAPPS_TEST_POSTGRES_DSN not set")
 
@@ -457,9 +459,17 @@ class TestRLSIsolation:
         self._pid_b = "tenant_b_" + suffix
         self._bid = "brain_shared_" + suffix
 
+    def _runtime_store(self, project_id: str, brain_id: str) -> PostgresKnowledgeGraphStore:
+        return _make_sync_store(
+            project_id,
+            brain_id,
+            evidence_required=False,
+            dsn=_RUNTIME_DSN,
+        )
+
     def test_entity_invisible_across_tenants(self) -> None:
-        store_a = _make_sync_store(self._pid_a, self._bid, evidence_required=False)
-        store_b = _make_sync_store(self._pid_b, self._bid, evidence_required=False)
+        store_a = self._runtime_store(self._pid_a, self._bid)
+        store_b = self._runtime_store(self._pid_b, self._bid)
 
         # Tenant A writes an entity.
         name = "PrivateEntity_" + _uid()
@@ -470,9 +480,28 @@ class TestRLSIsolation:
         assert resolved_id is None
         assert reason == "not_found"
 
+    def test_cross_tenant_upsert_same_name_shared_brain_id(self) -> None:
+        """TAP-4274: shared brain_id + identical entity name must not raise RLS errors."""
+        shared_brain = "tapps-brain"
+        store_a = self._runtime_store(self._pid_a, shared_brain)
+        store_b = self._runtime_store(self._pid_b, shared_brain)
+
+        name = "CollisionEntity_" + _uid()
+        eid_a = store_a.upsert_entity(entity_type="concept", canonical_name=name)
+        eid_b = store_b.upsert_entity(entity_type="concept", canonical_name=name)
+
+        assert eid_a != eid_b
+        resolved_a, _, _ = store_a.resolve_entity("concept", name)
+        resolved_b, _, _ = store_b.resolve_entity("concept", name)
+        assert resolved_a == eid_a
+        assert resolved_b == eid_b
+
+        store_a.close()
+        store_b.close()
+
     def test_neighbors_scoped_to_tenant(self) -> None:
-        store_a = _make_sync_store(self._pid_a, self._bid, evidence_required=False)
-        store_b = _make_sync_store(self._pid_b, self._bid, evidence_required=False)
+        store_a = self._runtime_store(self._pid_a, self._bid)
+        store_b = self._runtime_store(self._pid_b, self._bid)
 
         subj_a = store_a.upsert_entity(entity_type="x", canonical_name="X_" + _uid())
         obj_a = store_a.upsert_entity(entity_type="y", canonical_name="Y_" + _uid())

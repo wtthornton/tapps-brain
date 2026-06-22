@@ -120,10 +120,8 @@ services:
       # process environment.
       TAPPS_BRAIN_METRICS_TOKEN: "${TAPPS_BRAIN_METRICS_TOKEN:-}"
       TAPPS_BRAIN_METRICS_TOKEN_FILE: "${TAPPS_BRAIN_METRICS_TOKEN_FILE:-}"
-      # HuggingFace Hub token — when unset, model-cache misses (cold container,
-      # cache eviction) hit the unauthenticated rate limit and the embedding
-      # provider stalls until the limit window resets.  Required for any
-      # production deployment with cache-rebuild risk.
+      # HuggingFace Hub token — optional when MODEL_OFFLINE=1 (default); the http
+      # image bakes BAAI/bge-small-en-v1.5 at /opt/tapps-brain/hf-cache.
       HF_TOKEN: "${HF_TOKEN:-}"
       # TAP-2672 — embedding provider config.  sentence-transformers is a core
       # dep and the brain auto-loads BAAI/bge-small-en-v1.5 (384-dim) at startup,
@@ -131,10 +129,11 @@ services:
       # makes the brain refuse to start if the provider can't load, so the
       # "semantic recall silently degraded to BM25" drift the 2026-05-28 audit
       # found can never recur.  Set to 0 only to intentionally run lexical-only.
-      # MODEL_OFFLINE=1 forces HF_HUB_OFFLINE so the model loads from the local
-      # cache with no Hub contact (pair with a warmed model cache volume).
+      # MODEL_OFFLINE=1 forces HF_HUB_OFFLINE so the model loads from the baked
+      # image cache (/opt/tapps-brain/hf-cache) with no Hub contact.
       TAPPS_BRAIN_EMBEDDING_REQUIRED: "${TAPPS_BRAIN_EMBEDDING_REQUIRED:-1}"
-      TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE: "${TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE:-0}"
+      TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE: "${TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE:-1}"
+      HF_HOME: /opt/tapps-brain/hf-cache
       # TAP-2677 — connection-pool sizing.  The brain opens one pool per backend
       # (private / hive / federation / KG / auth / …), so without a cap the
       # single-replica deployment held 64 idle of Postgres's 100 max_connections
@@ -163,14 +162,6 @@ services:
       DOCS_CACHE_TTL: "${DOCS_CACHE_TTL:-86400}"
       DOCS_LLMS_TXT_FALLBACK: "${DOCS_LLMS_TXT_FALLBACK:-1}"
       TAPPS_BRAIN_DOCS_PROJECT_ID: "${TAPPS_BRAIN_DOCS_PROJECT_ID:-library-docs}"
-    volumes:
-      # Persist the HuggingFace model cache across container recreations (TAP-2672).
-      # The embedding model (~130MB) is downloaded on first start; without this
-      # volume every redeploy re-downloads it, and with EMBEDDING_REQUIRED=1 a
-      # cold-download failure (HF outage / rate limit, no HF_TOKEN) becomes a hard
-      # startup failure. A persistent, pre-warmable cache makes the deploy robust;
-      # pair with EMBEDDING_MODEL_OFFLINE=1 once warmed to skip Hub contact entirely.
-      - tapps-brain-hfcache:/root/.cache/huggingface
     ports:
       - "${TAPPS_HTTP_PORT:-8080}:8080"
       # Operator MCP bound to loopback by default (TAP-551).
@@ -212,6 +203,3 @@ services:
 
 volumes:
   tapps-brain-pgdata:
-  # HuggingFace embedding-model cache (TAP-2672) — see the tapps-brain-http
-  # volume mount. Pre-warm before a REQUIRED=1 deploy to avoid a cold download.
-  tapps-brain-hfcache:

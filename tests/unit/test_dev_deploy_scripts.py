@@ -58,3 +58,10 @@ class TestMigrationsChangedScript:
             content = (_REPO_ROOT / "docker" / name).read_text()
             assert "# syntax=docker/dockerfile:1" in content
             assert "mount=type=cache,target=/root/.cache/pip" in content
+
+    def test_dockerfile_http_bakes_embedding_model(self) -> None:
+        content = (_REPO_ROOT / "docker" / "Dockerfile.http").read_text()
+        assert "BAAI/bge-small-en-v1.5" in content
+        assert "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a" in content
+        assert "HF_HOME=/opt/tapps-brain/hf-cache" in content
+        assert "TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE=1" in content

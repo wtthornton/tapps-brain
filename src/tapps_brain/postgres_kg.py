@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid as _uuid_mod
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -47,11 +48,22 @@ _INFERRED_CONFIDENCE_CAP = 0.4
 # ---------------------------------------------------------------------------
 
 
+def json_safe_kg_value(value: Any) -> Any:
+    """Coerce psycopg row scalars to JSON-serializable primitives (TAP-4275)."""
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, _uuid_mod.UUID):
+        return str(value)
+    return value
+
+
 def _row_to_dict(row: Any, description: Any) -> dict[str, Any]:
     """Convert a psycopg row + cursor.description to a plain dict."""
     if row is None:
         return {}
-    return {desc.name: row[i] for i, desc in enumerate(description)}
+    return {desc.name: json_safe_kg_value(row[i]) for i, desc in enumerate(description)}
 
 
 def _is_uuid(value: str) -> bool:
