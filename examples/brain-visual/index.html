@@ -7,6 +7,7 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0e13" />
   <meta name="tapps-snapshot-url" content="/snapshot" />
   <title>tapps-brain · NLT visual snapshot</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -14,15 +15,15 @@
     rel="stylesheet"
   />
   <style>
-    /* NLT Labs tokens — BRAND-STYLE-GUIDE.md §2, §3, §4, §5 (amber-only accent; light-leading) */
+    /* NLT Labs tokens — NLTWeb BRAND-STYLE-GUIDE v3.2 §2 (bespoke amber v3.1) */
     :root {
       color-scheme: light;
-      --nlt-accent-primary: #d97706;
-      --nlt-accent-secondary: #f59e0b;
-      --nlt-accent-dim: #b45309;
-      --nlt-gradient: linear-gradient(135deg, #d97706, #f59e0b);
-      --nlt-gradient-text: linear-gradient(135deg, #f59e0b, #d97706);
-      --nlt-focus-ring: #f59e0b;
+      --nlt-accent-primary: #bd6510;
+      --nlt-accent-secondary: #e8941f;
+      --nlt-accent-dim: #98500e;
+      --nlt-gradient: linear-gradient(135deg, #bd6510, #e8941f);
+      --nlt-gradient-text: linear-gradient(135deg, #e8941f, #bd6510);
+      --nlt-focus-ring: #e8941f;
       --nlt-focus-ring-offset: 2px;
       --font-display: "Fraunces", Georgia, "Times New Roman", serif;
       --font-body: Inter, system-ui, "Segoe UI", sans-serif;
@@ -98,9 +99,9 @@
       color: var(--fg);
       background-color: var(--bg);
       background-image:
-        radial-gradient(ellipse 60% 50% at 50% 40%, rgba(217, 119, 6, 0.1), transparent),
-        radial-gradient(ellipse 40% 40% at 70% 60%, rgba(245, 158, 11, 0.06), transparent),
-        linear-gradient(var(--flow-ambient), rgba(217, 119, 6, 0.04), transparent 55%),
+        radial-gradient(ellipse 60% 50% at 50% 40%, rgba(189, 101, 16, 0.1), transparent),
+        radial-gradient(ellipse 40% 40% at 70% 60%, rgba(232, 148, 31, 0.06), transparent),
+        linear-gradient(var(--flow-ambient), rgba(189, 101, 16, 0.04), transparent 55%),
         linear-gradient(to bottom, transparent 55%, var(--bg));
     }
 
@@ -125,68 +126,48 @@
       gap: 1rem;
     }
 
-    .brand-lockup {
-      display: flex;
+    /* Production header lockup — NLTWeb BRAND-STYLE-GUIDE §Logo (do not reconstruct wordmark in HTML) */
+    .brand-lockup.logo--lockup {
+      display: inline-flex;
       align-items: center;
-      gap: 12px;
+      line-height: 0;
       text-decoration: none;
       color: inherit;
-    }
-
-    .brand-mark,
-    svg.brand-mark {
-      width: 40px;
-      height: 40px;
       flex-shrink: 0;
+    }
+
+    .logo-lockup-img {
       display: block;
-      /* Solid fill via currentColor: avoids empty renders when url(#gradient) fails in some WebViews */
-      color: var(--nlt-accent-primary);
+      height: 56px;
+      width: auto;
+      max-width: min(220px, 42vw);
     }
 
-    .brand-text {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .logo-lockup-img--dark {
+      display: none;
     }
 
-    .brand-wordmark {
-      display: inline-flex;
-      align-items: baseline;
-      gap: 0.4rem; /* clear “NLT” + “labs” read; avoids “NLTlabs” */
-      font-size: 1.625rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.1;
+    .logo-lockup-img--light {
+      display: block;
     }
 
-    .brand-wordmark .nlt {
-      color: var(--fg);
-      letter-spacing: -0.015em;
+    html[data-theme="dark"] .logo-lockup-img--dark {
+      display: block;
     }
 
-    .brand-wordmark .labs {
-      color: var(--nlt-accent-primary);
-      font-weight: 600; /* slightly lighter than NLT; reads as second beat */
-      letter-spacing: 0.01em;
+    html[data-theme="dark"] .logo-lockup-img--light {
+      display: none;
     }
 
-    .brand-subtitle {
-      margin: 0;
-      font-size: 0.5625rem; /* ~9px; 7px was below comfortable reading */
-      line-height: 1.15;
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: var(--fg-dim);
-      font-weight: 600;
+    @media (min-width: 768px) {
+      .logo-lockup-img {
+        height: 70px;
+      }
     }
 
     @media (max-width: 480px) {
-      .brand-subtitle {
-        display: none;
-      }
-      .brand-mark {
-        width: 32px;
-        height: 32px;
+      .logo-lockup-img {
+        height: 48px;
       }
     }
 
@@ -204,7 +185,7 @@
     }
 
     .theme-toggle:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
       transform: translateY(-1px);
     }
 
@@ -279,7 +260,7 @@
     .hs-badge:hover,
     .hs-badge:focus-visible {
       border-color: var(--nlt-accent-primary);
-      background: rgba(217, 119, 6, 0.07);
+      background: rgba(189, 101, 16, 0.07);
     }
 
     .hs-badge:focus-visible {
@@ -330,7 +311,7 @@
     .qnav-tile:hover,
     .qnav-tile:focus-visible {
       border-color: var(--nlt-accent-primary);
-      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+      box-shadow: 0 0 0 3px rgba(189, 101, 16, 0.1);
     }
 
     .qnav-tile:focus-visible {
@@ -440,13 +421,13 @@
     .side-nav a:hover,
     .side-nav a:focus-visible {
       color: var(--fg);
-      background: rgba(217, 119, 6, 0.06);
+      background: rgba(189, 101, 16, 0.06);
     }
 
     .side-nav a[aria-current="page"] {
       color: var(--nlt-accent-primary);
       border-left-color: var(--nlt-accent-primary);
-      background: rgba(217, 119, 6, 0.08);
+      background: rgba(189, 101, 16, 0.08);
       font-weight: 600;
     }
 
@@ -664,7 +645,7 @@
     }
 
     .btn-ghost:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .kpi-strip-outer {
@@ -766,7 +747,7 @@
     .section-nav a:hover,
     .section-nav a:focus-visible {
       color: var(--nlt-accent-dim);
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .dash-section {
@@ -1196,8 +1177,8 @@
 
     .help-pill:hover,
     .help-pill:focus-visible {
-      border-color: rgba(217, 119, 6, 0.45);
-      background: rgba(217, 119, 6, 0.08);
+      border-color: rgba(189, 101, 16, 0.45);
+      background: rgba(189, 101, 16, 0.08);
       outline: none;
     }
 
@@ -1273,7 +1254,7 @@
     }
 
     .help-drawer-close:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .help-drawer-body {
@@ -1342,14 +1323,14 @@
       color: #fff;
       background: var(--nlt-gradient);
       border: none;
-      box-shadow: 0 4px 20px rgba(217, 119, 6, 0.2);
+      box-shadow: 0 4px 20px rgba(189, 101, 16, 0.2);
       transition: opacity var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
     }
 
     .btn-load:hover {
       opacity: 0.92;
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(217, 119, 6, 0.35);
+      box-shadow: 0 8px 30px rgba(189, 101, 16, 0.35);
     }
 
     /* Visually hidden but focusable; label[for] opens picker reliably across browsers */
@@ -1377,14 +1358,14 @@
       border-radius: 999px;
       font-size: 0.8125rem;
       font-weight: 500;
-      background: rgba(217, 119, 6, 0.1);
+      background: rgba(189, 101, 16, 0.1);
       color: var(--nlt-accent-dim);
-      border: 1px solid rgba(217, 119, 6, 0.22);
+      border: 1px solid rgba(189, 101, 16, 0.22);
     }
 
     html[data-theme="dark"] .status-pill {
       color: var(--nlt-accent-secondary);
-      background: rgba(217, 119, 6, 0.12);
+      background: rgba(189, 101, 16, 0.12);
     }
 
     /* Bento — BRAND-STYLE-GUIDE §4 */
@@ -1434,12 +1415,12 @@
 
     .tile:hover {
       transform: translateY(-4px);
-      border-color: rgba(217, 119, 6, 0.3);
-      box-shadow: 0 12px 40px rgba(217, 119, 6, 0.08);
+      border-color: rgba(189, 101, 16, 0.3);
+      box-shadow: 0 12px 40px rgba(189, 101, 16, 0.08);
     }
 
     html[data-theme="dark"] .tile:hover {
-      box-shadow: 0 20px 60px rgba(217, 119, 6, 0.1);
+      box-shadow: 0 20px 60px rgba(189, 101, 16, 0.1);
     }
 
     .hero {
@@ -1696,8 +1677,8 @@
     }
 
     .circuit-badge.circuit-half {
-      background: rgba(217, 119, 6, 0.07);
-      border-color: rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.07);
+      border-color: rgba(189, 101, 16, 0.3);
       color: var(--nlt-accent-dim);
     }
 
@@ -1754,8 +1735,8 @@
     }
 
     .hive-badge.hive-degraded {
-      background: rgba(217, 119, 6, 0.07);
-      border-color: rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.07);
+      border-color: rgba(189, 101, 16, 0.3);
       color: var(--nlt-accent-dim);
     }
 
@@ -1784,14 +1765,14 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     }
     .hive-badge-prominent.hive-connected {
-      background: linear-gradient(135deg, rgba(217, 119, 6, 0.18), rgba(245, 158, 11, 0.08));
-      border-color: rgba(217, 119, 6, 0.45);
+      background: linear-gradient(135deg, rgba(189, 101, 16, 0.18), rgba(232, 148, 31, 0.08));
+      border-color: rgba(189, 101, 16, 0.45);
       color: #92400e;
     }
     html[data-theme="dark"] .hive-badge-prominent.hive-connected {
       color: #fbbf24;
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.08));
-      border-color: rgba(245, 158, 11, 0.45);
+      background: linear-gradient(135deg, rgba(232, 148, 31, 0.22), rgba(189, 101, 16, 0.08));
+      border-color: rgba(232, 148, 31, 0.45);
     }
     .hive-badge-prominent.hive-offline,
     .hive-badge-prominent.hive-degraded {
@@ -1814,8 +1795,8 @@
       border-radius: 10px;
     }
     .agent-topology .topo-hub {
-      fill: rgba(217, 119, 6, 0.15);
-      stroke: rgba(217, 119, 6, 0.8);
+      fill: rgba(189, 101, 16, 0.15);
+      stroke: rgba(189, 101, 16, 0.8);
       stroke-width: 1.5;
     }
     .agent-topology .topo-ns {
@@ -1825,18 +1806,18 @@
     }
     .agent-topology .topo-edge {
       fill: none;
-      stroke: rgba(217, 119, 6, 0.4);
+      stroke: rgba(189, 101, 16, 0.4);
       stroke-width: 1;
     }
     .agent-topology .topo-agent {
-      fill: rgba(217, 119, 6, 0.55);
-      stroke: rgba(217, 119, 6, 0.9);
+      fill: rgba(189, 101, 16, 0.55);
+      stroke: rgba(189, 101, 16, 0.9);
       stroke-width: 1;
       cursor: pointer;
     }
     .agent-topology .topo-agent:hover,
     .agent-topology .topo-agent:focus {
-      fill: rgba(217, 119, 6, 0.85);
+      fill: rgba(189, 101, 16, 0.85);
       outline: none;
     }
     .agent-topology text {
@@ -1874,14 +1855,14 @@
       word-break: break-all;
     }
     #agents-tbody tr { cursor: pointer; }
-    #agents-tbody tr:focus { outline: 2px solid rgba(217, 119, 6, 0.55); outline-offset: -2px; }
+    #agents-tbody tr:focus { outline: 2px solid rgba(189, 101, 16, 0.55); outline-offset: -2px; }
 
     /* ── Agent registry table row states ──────────────────────────────────── */
     .agent-row-amber td {
-      background: rgba(217, 119, 6, 0.06);
+      background: rgba(189, 101, 16, 0.06);
     }
     html[data-theme="dark"] .agent-row-amber td {
-      background: rgba(217, 119, 6, 0.10);
+      background: rgba(189, 101, 16, 0.10);
     }
     .agent-row-grey td {
       color: var(--fg-dim);
@@ -1932,7 +1913,7 @@
     .score-dim-fill {
       height: 100%;
       border-radius: 999px;
-      background: rgba(217, 119, 6, 0.55);
+      background: rgba(189, 101, 16, 0.55);
       width: 0%;
       transition: width var(--dur-slow) var(--ease-decel);
     }
@@ -2065,7 +2046,7 @@
     }
 
     .fmt-btn[aria-checked="true"] {
-      background: rgba(217, 119, 6, 0.12);
+      background: rgba(189, 101, 16, 0.12);
       border-color: var(--nlt-accent-primary);
       color: var(--nlt-accent-dim);
     }
@@ -2088,8 +2069,8 @@
       gap: 0.5rem;
       padding: 0.4rem 0.75rem;
       border-radius: 8px;
-      background: rgba(217, 119, 6, 0.12);
-      border: 1px solid rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.12);
+      border: 1px solid rgba(189, 101, 16, 0.3);
       font-size: 0.8125rem;
       color: var(--nlt-accent-dim);
       margin-top: 0.75rem;
@@ -2119,13 +2100,13 @@
       background: rgba(34, 197, 94, 0.15);
     }
     .live-badge[data-state="stale"] {
-      background: rgba(245, 158, 11, 0.12);
+      background: rgba(232, 148, 31, 0.12);
       color: var(--nlt-accent-dim);
-      border-color: rgba(245, 158, 11, 0.3);
+      border-color: rgba(232, 148, 31, 0.3);
     }
     html[data-theme="dark"] .live-badge[data-state="stale"] {
       color: var(--nlt-accent-secondary);
-      background: rgba(245, 158, 11, 0.12);
+      background: rgba(232, 148, 31, 0.12);
     }
     .live-badge[data-state="error"] {
       background: rgba(239, 68, 68, 0.12);
@@ -2239,32 +2220,30 @@
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
-  <header
-    class="site-header"
-    aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual."
-  >
+  <header class="site-header" aria-label="NLT Labs tapps-brain visual dashboard">
     <div class="header-inner">
-      <div class="brand-lockup" aria-label="NLT Labs wordmark and AN mark">
-        <svg
-          class="brand-mark"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 128 128"
-          width="40"
-          height="40"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            fill="currentColor"
-            d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
-          />
-        </svg>
-        <div class="brand-text">
-          <span class="brand-wordmark" translate="no">
-            <span class="nlt">NLT</span><span class="labs">labs</span>
-          </span>
-          <p class="brand-subtitle">New Logic Tech Labs</p>
-        </div>
+      <div
+        class="brand-lockup logo--lockup"
+        aria-label="NLT Labs home"
+        title="AI built for what comes after the demo."
+      >
+        <img
+          class="logo-lockup-img logo-lockup-img--light"
+          src="assets/logo-pack/svg/nltlabs-lockup-fullcolor.svg"
+          alt=""
+          width="117"
+          height="60"
+          decoding="async"
+          fetchpriority="high"
+        />
+        <img
+          class="logo-lockup-img logo-lockup-img--dark"
+          src="assets/logo-pack/svg/nltlabs-lockup-fullcolor-on-dark.svg"
+          alt=""
+          width="117"
+          height="60"
+          decoding="async"
+        />
       </div>
       <div class="header-controls">
         <div class="interval-selector">
@@ -2439,7 +2418,7 @@
           <svg
             class="hero-mark"
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 128 128"
+            viewBox="0 0 551 746"
             width="72"
             height="72"
             aria-hidden="true"
@@ -2447,7 +2426,8 @@
           >
             <path
               fill="currentColor"
-              d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
+              fill-rule="evenodd"
+              d="M 51 51 L 51 225 L 322 495 L 322 324 L 206 206 Z M 52 298 L 51 298 L 51 694 L 194 443 L 194 441 L 95 343 Z M 334 173 L 334 512 L 499 342 Z"
             />
           </svg>
           <div class="section-tag-row">

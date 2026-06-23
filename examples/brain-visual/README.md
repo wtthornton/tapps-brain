@@ -96,7 +96,7 @@ Snapshot **schema_version** `2` includes retrieval mode, Hive hub stats, access 
 
 ## Brand
 
-CSS tokens, typography, and logo usage follow the **NLT Labs** design language. The canonical brand style sheet is an internal NLT Labs asset (not redistributed here). A gap matrix and redistribution notes are at [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
+CSS tokens, typography, and logo usage follow **NLTWeb** `docs/BRAND-STYLE-GUIDE.md` (v3.2). Shipped lockup SVGs live under [`assets/logo-pack/`](assets/logo-pack/README.md); the header uses theme-aware full lockups (not HTML-reconstructed wordmarks). Gap matrix: [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
 
 ## Motion system — manual test checklist
 

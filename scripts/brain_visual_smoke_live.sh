@@ -202,6 +202,10 @@ status, html, _ = fetch(VISUAL, "/", auth=False, timeout=15.0)
 if status == 200 and "tapps-snapshot-url" in html:
     ok(f"GET {VISUAL}/ contains tapps-snapshot-url meta")
     visual_root_ok = True
+    if "logo-lockup-img--light" in html and "nltlabs-lockup-fullcolor.svg" in html:
+        ok(f"GET {VISUAL}/ contains NLTWeb lockup markup")
+    else:
+        fail(f"GET {VISUAL}/ missing NLTWeb logo-lockup assets in HTML")
 elif status == 200:
     fail(f"GET {VISUAL}/ missing tapps-snapshot-url meta tag")
 else:
@@ -221,6 +225,18 @@ if hz_status == 200:
         fail(f"GET {VISUAL}/healthz unexpected body: {hz_body!r}")
 else:
     fail(f"GET {VISUAL}/healthz expected HTTP 200, got {hz_status}: {hz_raw[:120]}")
+
+# --- Brand assets (NLTWeb logo pack) ---
+for asset_path in (
+    "/favicon.svg",
+    "/assets/logo-pack/svg/nltlabs-lockup-fullcolor.svg",
+    "/assets/logo-pack/svg/nltlabs-lockup-fullcolor-on-dark.svg",
+):
+    ast_status, _, _ = fetch(VISUAL, asset_path, auth=False, timeout=10.0)
+    if ast_status == 200:
+        ok(f"GET {VISUAL}{asset_path} ok")
+    else:
+        fail(f"GET {VISUAL}{asset_path} expected HTTP 200, got {ast_status}")
 
 # --- Proxied snapshot via tapps-visual nginx ---
 status, raw, elapsed = fetch(VISUAL, "/snapshot", auth=False, timeout=MAX_SNAPSHOT_SEC + 5)

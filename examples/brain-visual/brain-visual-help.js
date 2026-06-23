@@ -455,7 +455,7 @@
             "live data from the tapps-brain <code>/snapshot</code> HTTP endpoint.</p>" +
             "<ul>" +
             "<li><strong style='color:#15803d'>LIVE</strong> — last successful fetch within 90 seconds; timestamp shown.</li>" +
-            "<li><strong style='color:#b45309'>STALE</strong> — last fetch was more than 90 seconds ago, or no fetch yet (OFFLINE).</li>" +
+            "<li><strong style='color:#98500e'>STALE</strong> — last fetch was more than 90 seconds ago, or no fetch yet (OFFLINE).</li>" +
             "<li><strong style='color:#b91c1c'>ERROR</strong> — 3 consecutive fetch failures; error message shown.</li>" +
             "</ul>",
         },
@@ -1157,7 +1157,7 @@
           html:
             "<ul>" +
             "<li><strong style='color:#047857'>● Connected</strong> — Hive is reachable and the table reflects live data.</li>" +
-            "<li><strong style='color:#b45309'>⚠ Degraded</strong> — Hive returned an error but was previously reachable.</li>" +
+            "<li><strong style='color:#98500e'>⚠ Degraded</strong> — Hive returned an error but was previously reachable.</li>" +
             "<li><strong style='color:#b91c1c'>● Offline</strong> — Hive is not reachable from this host or DSN is unset.</li>" +
             "</ul>",
         },

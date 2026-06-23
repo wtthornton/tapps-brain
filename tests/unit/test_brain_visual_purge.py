@@ -62,6 +62,16 @@ def test_brain_visual_index_purged_stale_sections() -> None:
         assert fn not in html, f"stale JS reference {fn!r} still present"
 
 
+def test_brain_visual_index_uses_nltweb_lockup() -> None:
+    """Header uses NLTWeb logo pack lockups — no HTML-reconstructed wordmark."""
+    html = _INDEX.read_text(encoding="utf-8")
+    assert "nltlabs-lockup-fullcolor.svg" in html
+    assert "nltlabs-lockup-fullcolor-on-dark.svg" in html
+    assert "logo-lockup-img--light" in html
+    assert 'class="brand-wordmark"' not in html
+    assert "nlt-an-mark-sm.svg" not in html
+
+
 def test_nginx_visual_healthz_location() -> None:
     """STORY-078.5: /healthz is served by nginx without proxying to brain-http."""
     conf = _NGINX_VISUAL.read_text(encoding="utf-8")
