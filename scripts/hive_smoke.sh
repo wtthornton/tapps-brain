@@ -130,6 +130,12 @@ TAPPS_BRAIN_RUNTIME_PASSWORD=${SMOKE_RUNTIME_PASSWORD}
 TAPPS_BRAIN_MIGRATOR_PASSWORD=${SMOKE_MIGRATOR_PASSWORD}
 TAPPS_BRAIN_AUTH_TOKEN=${SMOKE_AUTH_TOKEN}
 TAPPS_BRAIN_ADMIN_TOKEN=${SMOKE_ADMIN_TOKEN}
+# Mirror the deployed stack (docker/.env, it13.env) which runs with per-tenant
+# auth OFF and a single global token.  The compose default is :-1; without this
+# override the smoke would enable per-tenant auth, but the smoke client only
+# holds the global token (no per-tenant tokens are issued), so /snapshot calls
+# carrying X-Project-Id would fail the per-tenant verify path.
+TAPPS_BRAIN_PER_TENANT_AUTH=0
 TAPPS_BRAIN_ALLOWED_ORIGINS=http://localhost:${TAPPS_VISUAL_PORT}
 TAPPS_HTTP_PORT=${ADAPTER_PORT}
 TAPPS_VISUAL_PORT=${TAPPS_VISUAL_PORT}
