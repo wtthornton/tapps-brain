@@ -5,7 +5,8 @@ FROM nginx:alpine
 COPY examples/brain-visual/index.html /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-help.js /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-router.js /usr/share/nginx/html/
-COPY examples/brain-visual/nlt-an-mark-sm.svg /usr/share/nginx/html/
+COPY examples/brain-visual/favicon.svg /usr/share/nginx/html/
+COPY examples/brain-visual/assets/ /usr/share/nginx/html/assets/
 COPY examples/brain-visual/README.md /usr/share/nginx/html/
 
 # Copy custom nginx config (adds /snapshot proxy with Authorization injection)

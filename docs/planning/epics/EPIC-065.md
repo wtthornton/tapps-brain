@@ -1,7 +1,7 @@
 # Epic 65: Live Always-On Dashboard — Real-Time tapps-brain and Hive Monitoring
 
 <!-- docsmcp:start:metadata -->
-**Status:** In Progress
+**Status:** Done
 **Priority:** P1 - High
 **Estimated LOE:** ~3-4 weeks (1 developer)
 **Dependencies:** EPIC-060 (HttpAdapter foundation — done), EPIC-048 (visual_snapshot v2 schema — done), EPIC-030 (diagnostics composite score — done)
@@ -39,10 +39,10 @@ tapps-brain 3.3.0 is now fully Docker-deployed and always-on. The visual dashboa
 - [ ] Dashboard polls /snapshot at a configurable interval (default 30s) and updates all panels without page reload
 - [ ] Connection status indicator shows live/stale/error with last-refresh timestamp
 - [ ] Demo brain-visual.json is no longer loaded as the default data source — the live endpoint is tried first
-- [ ] Tags section and Memory Groups section are removed from the default dashboard layout
-- [ ] Static retrieval pipeline step-flow diagram is replaced by a live metrics panel showing query counts and mode
+- [x] Tags section and Memory Groups section are removed from the default dashboard layout
+- [x] Static retrieval pipeline step-flow diagram is replaced by a live metrics panel showing query counts and mode
 - [ ] Hive hub panel shows per-namespace entry counts in a table not just a comma-separated string
-- [ ] Agent registry panel shows each registered agent with last-write timestamp and namespace
+- [x] Agent registry panel shows each registered agent with last-write timestamp and namespace
 - [ ] Memory velocity panel shows write and recall counts over the last 1h and 24h windows
 - [ ] All panels that previously required a snapshot file to be manually exported work automatically in Docker
 - [ ] No demo or contributor data appears on first load — panels show real system state or a clear empty state
@@ -102,9 +102,9 @@ Replace static brain-visual.json fetch with setInterval poll against /snapshot. 
 Delete Tags section, Memory Groups section, static pipeline step-flow diagram, and scorecard-derive.js. Replace privacy footer with dynamic badge. Ship empty brain-visual.json stub.
 
 **Tasks:**
-- [ ] Implement purge stale and privacy-gated components
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement purge stale and privacy-gated components *(STORY-078.9)*
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Purge stale and privacy-gated components is implemented, tests pass, and documentation is updated.
 
@@ -116,10 +116,12 @@ Delete Tags section, Memory Groups section, static pipeline step-flow diagram, a
 
 Extend HiveHealthSummary with per-namespace entry counts and last_write_at. Render as a structured table in the dashboard replacing the prose string.
 
+**Status:** Complete (STORY-078.10)
+
 **Tasks:**
-- [ ] Implement hive hub deep monitoring panel
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement hive hub deep monitoring panel
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Hive hub deep monitoring panel is implemented, tests pass, and documentation is updated.
 
@@ -132,9 +134,9 @@ Extend HiveHealthSummary with per-namespace entry counts and last_write_at. Rend
 Add agent_registry list to VisualSnapshot from AgentRegistry.list_agents(). Render sortable table with last-write delta, silence highlighting, and empty state.
 
 **Tasks:**
-- [ ] Implement agent registry live table
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement agent registry live table
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Agent registry live table is implemented, tests pass, and documentation is updated.
 
@@ -147,9 +149,9 @@ Add agent_registry list to VisualSnapshot from AgentRegistry.list_agents(). Rend
 Add MemoryVelocity (writes_1h, recalls_1h, writes_24h, recalls_24h) to VisualSnapshot via COUNT queries. Render 2x2 stat grid with delta arrows.
 
 **Tasks:**
-- [ ] Implement memory velocity panel
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement memory velocity panel
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Memory velocity panel is implemented, tests pass, and documentation is updated.
 
@@ -161,10 +163,12 @@ Add MemoryVelocity (writes_1h, recalls_1h, writes_24h, recalls_24h) to VisualSna
 
 Add RetrievalMetrics from OTel in-process counters to VisualSnapshot. Replace static step-flow diagram with 5-tile metrics panel (queries, BM25 hits, vector hits, RRF fusions, avg latency).
 
+**Status:** Complete (STORY-078.13)
+
 **Tasks:**
-- [ ] Implement retrieval pipeline live metrics panel
-- [ ] Write unit tests
-- [ ] Update documentation
+- [x] Implement retrieval pipeline live metrics panel
+- [x] Write unit tests
+- [x] Update documentation
 
 **Definition of Done:** Retrieval pipeline live metrics panel is implemented, tests pass, and documentation is updated.
 

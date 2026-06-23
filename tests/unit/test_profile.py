@@ -538,7 +538,7 @@ class TestBuiltinProfiles:
 
     def test_repo_brain_limits_defaults(self) -> None:
         profile = get_builtin_profile("repo-brain")
-        assert profile.limits.max_entries == 5000
+        assert profile.limits.max_entries == 10000
 
 
 # ---------------------------------------------------------------------------

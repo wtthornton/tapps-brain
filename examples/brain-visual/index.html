@@ -7,6 +7,7 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0e13" />
   <meta name="tapps-snapshot-url" content="/snapshot" />
   <title>tapps-brain · NLT visual snapshot</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -14,15 +15,15 @@
     rel="stylesheet"
   />
   <style>
-    /* NLT Labs tokens — BRAND-STYLE-GUIDE.md §2, §3, §4, §5 (amber-only accent; light-leading) */
+    /* NLT Labs tokens — NLTWeb BRAND-STYLE-GUIDE v3.2 §2 (bespoke amber v3.1) */
     :root {
       color-scheme: light;
-      --nlt-accent-primary: #d97706;
-      --nlt-accent-secondary: #f59e0b;
-      --nlt-accent-dim: #b45309;
-      --nlt-gradient: linear-gradient(135deg, #d97706, #f59e0b);
-      --nlt-gradient-text: linear-gradient(135deg, #f59e0b, #d97706);
-      --nlt-focus-ring: #f59e0b;
+      --nlt-accent-primary: #bd6510;
+      --nlt-accent-secondary: #e8941f;
+      --nlt-accent-dim: #98500e;
+      --nlt-gradient: linear-gradient(135deg, #bd6510, #e8941f);
+      --nlt-gradient-text: linear-gradient(135deg, #e8941f, #bd6510);
+      --nlt-focus-ring: #e8941f;
       --nlt-focus-ring-offset: 2px;
       --font-display: "Fraunces", Georgia, "Times New Roman", serif;
       --font-body: Inter, system-ui, "Segoe UI", sans-serif;
@@ -98,9 +99,9 @@
       color: var(--fg);
       background-color: var(--bg);
       background-image:
-        radial-gradient(ellipse 60% 50% at 50% 40%, rgba(217, 119, 6, 0.1), transparent),
-        radial-gradient(ellipse 40% 40% at 70% 60%, rgba(245, 158, 11, 0.06), transparent),
-        linear-gradient(var(--flow-ambient), rgba(217, 119, 6, 0.04), transparent 55%),
+        radial-gradient(ellipse 60% 50% at 50% 40%, rgba(189, 101, 16, 0.1), transparent),
+        radial-gradient(ellipse 40% 40% at 70% 60%, rgba(232, 148, 31, 0.06), transparent),
+        linear-gradient(var(--flow-ambient), rgba(189, 101, 16, 0.04), transparent 55%),
         linear-gradient(to bottom, transparent 55%, var(--bg));
     }
 
@@ -125,68 +126,48 @@
       gap: 1rem;
     }
 
-    .brand-lockup {
-      display: flex;
+    /* Production header lockup — NLTWeb BRAND-STYLE-GUIDE §Logo (do not reconstruct wordmark in HTML) */
+    .brand-lockup.logo--lockup {
+      display: inline-flex;
       align-items: center;
-      gap: 12px;
+      line-height: 0;
       text-decoration: none;
       color: inherit;
-    }
-
-    .brand-mark,
-    svg.brand-mark {
-      width: 40px;
-      height: 40px;
       flex-shrink: 0;
+    }
+
+    .logo-lockup-img {
       display: block;
-      /* Solid fill via currentColor: avoids empty renders when url(#gradient) fails in some WebViews */
-      color: var(--nlt-accent-primary);
+      height: 56px;
+      width: auto;
+      max-width: min(220px, 42vw);
     }
 
-    .brand-text {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .logo-lockup-img--dark {
+      display: none;
     }
 
-    .brand-wordmark {
-      display: inline-flex;
-      align-items: baseline;
-      gap: 0.4rem; /* clear “NLT” + “labs” read; avoids “NLTlabs” */
-      font-size: 1.625rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.1;
+    .logo-lockup-img--light {
+      display: block;
     }
 
-    .brand-wordmark .nlt {
-      color: var(--fg);
-      letter-spacing: -0.015em;
+    html[data-theme="dark"] .logo-lockup-img--dark {
+      display: block;
     }
 
-    .brand-wordmark .labs {
-      color: var(--nlt-accent-primary);
-      font-weight: 600; /* slightly lighter than NLT; reads as second beat */
-      letter-spacing: 0.01em;
+    html[data-theme="dark"] .logo-lockup-img--light {
+      display: none;
     }
 
-    .brand-subtitle {
-      margin: 0;
-      font-size: 0.5625rem; /* ~9px; 7px was below comfortable reading */
-      line-height: 1.15;
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: var(--fg-dim);
-      font-weight: 600;
+    @media (min-width: 768px) {
+      .logo-lockup-img {
+        height: 70px;
+      }
     }
 
     @media (max-width: 480px) {
-      .brand-subtitle {
-        display: none;
-      }
-      .brand-mark {
-        width: 32px;
-        height: 32px;
+      .logo-lockup-img {
+        height: 48px;
       }
     }
 
@@ -204,7 +185,7 @@
     }
 
     .theme-toggle:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
       transform: translateY(-1px);
     }
 
@@ -279,7 +260,7 @@
     .hs-badge:hover,
     .hs-badge:focus-visible {
       border-color: var(--nlt-accent-primary);
-      background: rgba(217, 119, 6, 0.07);
+      background: rgba(189, 101, 16, 0.07);
     }
 
     .hs-badge:focus-visible {
@@ -330,7 +311,7 @@
     .qnav-tile:hover,
     .qnav-tile:focus-visible {
       border-color: var(--nlt-accent-primary);
-      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+      box-shadow: 0 0 0 3px rgba(189, 101, 16, 0.1);
     }
 
     .qnav-tile:focus-visible {
@@ -440,13 +421,13 @@
     .side-nav a:hover,
     .side-nav a:focus-visible {
       color: var(--fg);
-      background: rgba(217, 119, 6, 0.06);
+      background: rgba(189, 101, 16, 0.06);
     }
 
     .side-nav a[aria-current="page"] {
       color: var(--nlt-accent-primary);
       border-left-color: var(--nlt-accent-primary);
-      background: rgba(217, 119, 6, 0.08);
+      background: rgba(189, 101, 16, 0.08);
       font-weight: 600;
     }
 
@@ -664,7 +645,7 @@
     }
 
     .btn-ghost:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .kpi-strip-outer {
@@ -766,7 +747,7 @@
     .section-nav a:hover,
     .section-nav a:focus-visible {
       color: var(--nlt-accent-dim);
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .dash-section {
@@ -816,6 +797,7 @@
       }
       .memory-col-left { grid-column: 1; }
       .memory-col-right { grid-column: 2; }
+      .memory-col-full { grid-column: 1 / -1; }
     }
 
     .pulse-callouts {
@@ -850,36 +832,6 @@
       font-size: 0.75rem;
       color: var(--fg-dim);
     }
-
-    .tag-cloud {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-    }
-
-    .tag-chip {
-      display: inline-flex;
-      align-items: baseline;
-      gap: 0.35rem;
-      padding: 0.25rem 0.6rem;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--fg);
-      font-size: 0.8125rem;
-      line-height: 1.2;
-    }
-
-    .tag-chip-count {
-      font-size: 0.7rem;
-      font-variant-numeric: tabular-nums;
-      color: var(--fg-dim);
-    }
-
-    .tag-chip[data-weight="xl"] { font-size: 1rem; font-weight: 700; }
-    .tag-chip[data-weight="lg"] { font-size: 0.9rem; font-weight: 600; }
-    .tag-chip[data-weight="md"] { font-size: 0.8125rem; }
-    .tag-chip[data-weight="sm"] { font-size: 0.75rem; color: var(--fg-dim); }
 
     .bar-row {
       display: grid;
@@ -928,6 +880,30 @@
       font-size: 0.7rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+    }
+
+    .data-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .data-table th.sortable:hover {
+      color: var(--fg);
+    }
+
+    .data-table th.sortable.sort-asc::after,
+    .data-table th.sortable.sort-desc::after {
+      margin-left: 0.35rem;
+      font-size: 0.65rem;
+      opacity: 0.75;
+    }
+
+    .data-table th.sortable.sort-asc::after {
+      content: "▲";
+    }
+
+    .data-table th.sortable.sort-desc::after {
+      content: "▼";
     }
 
     .mono-small {
@@ -1201,8 +1177,8 @@
 
     .help-pill:hover,
     .help-pill:focus-visible {
-      border-color: rgba(217, 119, 6, 0.45);
-      background: rgba(217, 119, 6, 0.08);
+      border-color: rgba(189, 101, 16, 0.45);
+      background: rgba(189, 101, 16, 0.08);
       outline: none;
     }
 
@@ -1278,7 +1254,7 @@
     }
 
     .help-drawer-close:hover {
-      border-color: rgba(217, 119, 6, 0.35);
+      border-color: rgba(189, 101, 16, 0.35);
     }
 
     .help-drawer-body {
@@ -1347,14 +1323,14 @@
       color: #fff;
       background: var(--nlt-gradient);
       border: none;
-      box-shadow: 0 4px 20px rgba(217, 119, 6, 0.2);
+      box-shadow: 0 4px 20px rgba(189, 101, 16, 0.2);
       transition: opacity var(--dur-base) var(--ease-standard), transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
     }
 
     .btn-load:hover {
       opacity: 0.92;
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(217, 119, 6, 0.35);
+      box-shadow: 0 8px 30px rgba(189, 101, 16, 0.35);
     }
 
     /* Visually hidden but focusable; label[for] opens picker reliably across browsers */
@@ -1382,14 +1358,14 @@
       border-radius: 999px;
       font-size: 0.8125rem;
       font-weight: 500;
-      background: rgba(217, 119, 6, 0.1);
+      background: rgba(189, 101, 16, 0.1);
       color: var(--nlt-accent-dim);
-      border: 1px solid rgba(217, 119, 6, 0.22);
+      border: 1px solid rgba(189, 101, 16, 0.22);
     }
 
     html[data-theme="dark"] .status-pill {
       color: var(--nlt-accent-secondary);
-      background: rgba(217, 119, 6, 0.12);
+      background: rgba(189, 101, 16, 0.12);
     }
 
     /* Bento — BRAND-STYLE-GUIDE §4 */
@@ -1439,12 +1415,12 @@
 
     .tile:hover {
       transform: translateY(-4px);
-      border-color: rgba(217, 119, 6, 0.3);
-      box-shadow: 0 12px 40px rgba(217, 119, 6, 0.08);
+      border-color: rgba(189, 101, 16, 0.3);
+      box-shadow: 0 12px 40px rgba(189, 101, 16, 0.08);
     }
 
     html[data-theme="dark"] .tile:hover {
-      box-shadow: 0 20px 60px rgba(217, 119, 6, 0.1);
+      box-shadow: 0 20px 60px rgba(189, 101, 16, 0.1);
     }
 
     .hero {
@@ -1626,118 +1602,6 @@
       padding: 1rem 1.25rem 1.25rem;
     }
 
-    /* ── Retrieval step-flow ─────────────────────────────────────────────── */
-    .step-flow {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      gap: 0;
-      margin-bottom: 0.5rem;
-    }
-
-    .step-node {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      min-width: 72px;
-      flex: 1;
-      opacity: 0.32;
-      transition:
-        opacity var(--dur-base) var(--ease-standard);
-    }
-
-    .step-node.step-active {
-      opacity: 1;
-    }
-
-    .step-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      border: 2px solid var(--border);
-      background: var(--surface);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.9rem;
-      margin-bottom: 0.4rem;
-      transition:
-        border-color var(--dur-base) var(--ease-standard),
-        background var(--dur-base) var(--ease-standard);
-    }
-
-    .step-node.step-active .step-icon {
-      border-color: var(--nlt-accent-primary);
-      background: rgba(217, 119, 6, 0.08);
-    }
-
-    .step-label {
-      font-size: 0.6875rem;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      color: var(--fg-dim);
-      line-height: 1.25;
-    }
-
-    .step-node.step-active .step-label {
-      color: var(--fg);
-    }
-
-    .step-detail-note {
-      font-size: 0.6rem;
-      color: var(--fg-dim);
-      line-height: 1.3;
-      margin-top: 3px;
-      max-width: 72px;
-    }
-
-    .step-node.step-active .step-detail-note {
-      color: var(--nlt-accent-dim);
-    }
-
-    .step-arrow {
-      display: flex;
-      align-items: center;
-      padding: 0 2px;
-      padding-bottom: 1.5rem;
-      color: var(--fg-dim);
-      font-size: 0.75rem;
-      opacity: 0.45;
-      flex-shrink: 0;
-    }
-
-    .step-mode-desc {
-      margin-top: 0.6rem;
-      font-size: 0.8125rem;
-      color: var(--fg-dim);
-      line-height: 1.5;
-      max-width: 58ch;
-    }
-
-    @media (max-width: 540px) {
-      .step-flow {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .step-node {
-        flex-direction: row;
-        align-items: center;
-        text-align: left;
-        gap: 0.6rem;
-        min-width: auto;
-      }
-      .step-arrow {
-        transform: rotate(90deg);
-        padding: 2px 0;
-        padding-left: 1.25rem;
-      }
-      .step-detail-note {
-        max-width: none;
-        margin-top: 0;
-      }
-    }
-
     /* ── Composite score bar ─────────────────────────────────────────────── */
     .score-bar-wrap {
       margin-top: 0.75rem;
@@ -1813,8 +1677,8 @@
     }
 
     .circuit-badge.circuit-half {
-      background: rgba(217, 119, 6, 0.07);
-      border-color: rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.07);
+      border-color: rgba(189, 101, 16, 0.3);
       color: var(--nlt-accent-dim);
     }
 
@@ -1871,8 +1735,8 @@
     }
 
     .hive-badge.hive-degraded {
-      background: rgba(217, 119, 6, 0.07);
-      border-color: rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.07);
+      border-color: rgba(189, 101, 16, 0.3);
       color: var(--nlt-accent-dim);
     }
 
@@ -1901,14 +1765,14 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     }
     .hive-badge-prominent.hive-connected {
-      background: linear-gradient(135deg, rgba(217, 119, 6, 0.18), rgba(245, 158, 11, 0.08));
-      border-color: rgba(217, 119, 6, 0.45);
+      background: linear-gradient(135deg, rgba(189, 101, 16, 0.18), rgba(232, 148, 31, 0.08));
+      border-color: rgba(189, 101, 16, 0.45);
       color: #92400e;
     }
     html[data-theme="dark"] .hive-badge-prominent.hive-connected {
       color: #fbbf24;
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.08));
-      border-color: rgba(245, 158, 11, 0.45);
+      background: linear-gradient(135deg, rgba(232, 148, 31, 0.22), rgba(189, 101, 16, 0.08));
+      border-color: rgba(232, 148, 31, 0.45);
     }
     .hive-badge-prominent.hive-offline,
     .hive-badge-prominent.hive-degraded {
@@ -1931,8 +1795,8 @@
       border-radius: 10px;
     }
     .agent-topology .topo-hub {
-      fill: rgba(217, 119, 6, 0.15);
-      stroke: rgba(217, 119, 6, 0.8);
+      fill: rgba(189, 101, 16, 0.15);
+      stroke: rgba(189, 101, 16, 0.8);
       stroke-width: 1.5;
     }
     .agent-topology .topo-ns {
@@ -1942,18 +1806,18 @@
     }
     .agent-topology .topo-edge {
       fill: none;
-      stroke: rgba(217, 119, 6, 0.4);
+      stroke: rgba(189, 101, 16, 0.4);
       stroke-width: 1;
     }
     .agent-topology .topo-agent {
-      fill: rgba(217, 119, 6, 0.55);
-      stroke: rgba(217, 119, 6, 0.9);
+      fill: rgba(189, 101, 16, 0.55);
+      stroke: rgba(189, 101, 16, 0.9);
       stroke-width: 1;
       cursor: pointer;
     }
     .agent-topology .topo-agent:hover,
     .agent-topology .topo-agent:focus {
-      fill: rgba(217, 119, 6, 0.85);
+      fill: rgba(189, 101, 16, 0.85);
       outline: none;
     }
     .agent-topology text {
@@ -1991,14 +1855,14 @@
       word-break: break-all;
     }
     #agents-tbody tr { cursor: pointer; }
-    #agents-tbody tr:focus { outline: 2px solid rgba(217, 119, 6, 0.55); outline-offset: -2px; }
+    #agents-tbody tr:focus { outline: 2px solid rgba(189, 101, 16, 0.55); outline-offset: -2px; }
 
     /* ── Agent registry table row states ──────────────────────────────────── */
     .agent-row-amber td {
-      background: rgba(217, 119, 6, 0.06);
+      background: rgba(189, 101, 16, 0.06);
     }
     html[data-theme="dark"] .agent-row-amber td {
-      background: rgba(217, 119, 6, 0.10);
+      background: rgba(189, 101, 16, 0.10);
     }
     .agent-row-grey td {
       color: var(--fg-dim);
@@ -2049,7 +1913,7 @@
     .score-dim-fill {
       height: 100%;
       border-radius: 999px;
-      background: rgba(217, 119, 6, 0.55);
+      background: rgba(189, 101, 16, 0.55);
       width: 0%;
       transition: width var(--dur-slow) var(--ease-decel);
     }
@@ -2064,50 +1928,28 @@
       color: var(--fg-dim);
     }
 
-    /* ── Privacy bullets ─────────────────────────────────────────────────── */
-    .privacy-bullets {
-      list-style: none;
-      padding: 0;
-      margin: 1rem 0 0;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-
-    .privacy-bullet {
-      flex: 1;
-      min-width: 160px;
-      padding: 0.85rem 1rem;
-      border-radius: 10px;
+    /* ── Privacy tier badge (STORY-065.3) ──────────────────────────────────── */
+    .privacy-tier-badge {
+      display: inline-block;
+      margin-top: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
       border: 1px solid var(--border);
       background: var(--surface);
-    }
-
-    .content-shell .privacy-bullet {
-      background: var(--bg);
-    }
-
-    .privacy-bullet-icon {
-      font-size: 1.2rem;
-      margin-bottom: 0.35rem;
-      display: block;
-      line-height: 1;
-    }
-
-    .privacy-bullet-title {
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--nlt-accent-primary);
-      margin: 0 0 0.25rem;
-    }
-
-    .privacy-bullet-desc {
-      margin: 0;
       font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--fg);
+    }
+
+    .privacy-tier-badge[data-tier="local"] {
+      border-color: var(--nlt-accent-primary);
+      color: var(--nlt-accent-primary);
+    }
+
+    .privacy-tier-badge[data-tier="strict"] {
       color: var(--fg-dim);
-      line-height: 1.45;
     }
 
     /* ── Privacy tier selector (STORY-068.7) ───────────────────────────────── */
@@ -2204,7 +2046,7 @@
     }
 
     .fmt-btn[aria-checked="true"] {
-      background: rgba(217, 119, 6, 0.12);
+      background: rgba(189, 101, 16, 0.12);
       border-color: var(--nlt-accent-primary);
       color: var(--nlt-accent-dim);
     }
@@ -2227,8 +2069,8 @@
       gap: 0.5rem;
       padding: 0.4rem 0.75rem;
       border-radius: 8px;
-      background: rgba(217, 119, 6, 0.12);
-      border: 1px solid rgba(217, 119, 6, 0.3);
+      background: rgba(189, 101, 16, 0.12);
+      border: 1px solid rgba(189, 101, 16, 0.3);
       font-size: 0.8125rem;
       color: var(--nlt-accent-dim);
       margin-top: 0.75rem;
@@ -2258,13 +2100,13 @@
       background: rgba(34, 197, 94, 0.15);
     }
     .live-badge[data-state="stale"] {
-      background: rgba(245, 158, 11, 0.12);
+      background: rgba(232, 148, 31, 0.12);
       color: var(--nlt-accent-dim);
-      border-color: rgba(245, 158, 11, 0.3);
+      border-color: rgba(232, 148, 31, 0.3);
     }
     html[data-theme="dark"] .live-badge[data-state="stale"] {
       color: var(--nlt-accent-secondary);
-      background: rgba(245, 158, 11, 0.12);
+      background: rgba(232, 148, 31, 0.12);
     }
     .live-badge[data-state="error"] {
       background: rgba(239, 68, 68, 0.12);
@@ -2354,36 +2196,54 @@
       text-align: left;
       white-space: pre;
     }
+    .empty-state-details {
+      max-width: 520px;
+      margin: 1.25rem auto 0;
+      text-align: left;
+    }
+    .empty-state-detail-pre {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--fg-dim);
+    }
+    .empty-state-help {
+      margin: 1rem 0 0;
+      font-size: 0.8125rem;
+    }
+    .empty-state-help a {
+      color: var(--nlt-accent-dim);
+    }
   </style>
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
-  <header
-    class="site-header"
-    aria-label="NLT Labs. AN mark: orienting star and steady reference; tapps-brain visual."
-  >
+  <header class="site-header" aria-label="NLT Labs tapps-brain visual dashboard">
     <div class="header-inner">
-      <div class="brand-lockup" aria-label="NLT Labs wordmark and AN mark">
-        <svg
-          class="brand-mark"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 128 128"
-          width="40"
-          height="40"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            fill="currentColor"
-            d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
-          />
-        </svg>
-        <div class="brand-text">
-          <span class="brand-wordmark" translate="no">
-            <span class="nlt">NLT</span><span class="labs">labs</span>
-          </span>
-          <p class="brand-subtitle">New Logic Tech Labs</p>
-        </div>
+      <div
+        class="brand-lockup logo--lockup"
+        aria-label="NLT Labs home"
+        title="AI built for what comes after the demo."
+      >
+        <img
+          class="logo-lockup-img logo-lockup-img--light"
+          src="assets/logo-pack/svg/nltlabs-lockup-fullcolor.svg"
+          alt=""
+          width="117"
+          height="60"
+          decoding="async"
+          fetchpriority="high"
+        />
+        <img
+          class="logo-lockup-img logo-lockup-img--dark"
+          src="assets/logo-pack/svg/nltlabs-lockup-fullcolor-on-dark.svg"
+          alt=""
+          width="117"
+          height="60"
+          decoding="async"
+        />
       </div>
       <div class="header-controls">
         <div class="interval-selector">
@@ -2401,7 +2261,10 @@
             <option value="0">Manual</option>
           </select>
         </div>
-        <span class="live-badge" id="live-badge" data-state="stale" aria-live="polite" aria-atomic="true">
+        <button type="button" class="theme-toggle" id="poll-refresh-now" aria-label="Refresh snapshot now">
+          Refresh now
+        </button>
+        <span class="live-badge" id="live-badge" data-state="stale" aria-live="polite" aria-atomic="true" aria-label="Snapshot endpoint offline, no data received yet">
           <span class="live-badge-dot" aria-hidden="true"></span>
           <span id="live-badge-label">OFFLINE</span>
         </span>
@@ -2514,13 +2377,27 @@
 
       <div class="empty-state" id="empty-state" role="status" aria-label="No snapshot available">
         <div class="empty-state-icon" aria-hidden="true">📡</div>
-        <h2 class="empty-state-title">Live endpoint unreachable</h2>
-        <p class="empty-state-body">
+        <h2 class="empty-state-title" id="empty-state-title">Live endpoint unreachable</h2>
+        <p class="empty-state-body" id="empty-state-body">
           The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter
           to enable live polling.
         </p>
-        <code class="empty-state-code">tapps-brain mcp start --http
+        <code class="empty-state-code" id="empty-state-remediation">tapps-brain mcp start --http
 # or: docker compose up tapps-brain-mcp</code>
+        <details class="dev-details empty-state-details" id="empty-state-details" hidden>
+          <summary>Last error details</summary>
+          <div class="dev-body">
+            <pre id="empty-state-detail-text" class="empty-state-detail-pre"></pre>
+          </div>
+        </details>
+        <p class="empty-state-help">
+          <a
+            id="empty-state-troubleshoot"
+            href="https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/hive-deployment.md#visual-dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Visual dashboard troubleshooting</a>
+        </p>
       </div>
 
       <div class="kpi-strip-outer" aria-label="Key metrics">
@@ -2541,7 +2418,7 @@
           <svg
             class="hero-mark"
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 128 128"
+            viewBox="0 0 551 746"
             width="72"
             height="72"
             aria-hidden="true"
@@ -2549,7 +2426,8 @@
           >
             <path
               fill="currentColor"
-              d="M60.4622641509434 114Q60.4622641509434 102.56132075471699 60.049528301886795 92.30188679245283Q59.63679245283019 82.04245283018868 58.929245283018865 72.9622641509434Q51.735849056603776 82.27830188679245 46.54716981132076 90.29716981132074Q41.35849056603774 98.31603773584905 37.70283018867924 104.68396226415095Q31.21698113207547 94.18867924528303 19.660377358490567 86.64150943396227Q26.028301886792452 82.98584905660377 33.988207547169814 77.79716981132076Q41.94811320754717 72.60849056603774 51.382075471698116 65.41509433962264Q39.70754716981132 66.94811320754717 30.391509433962263 68.89386792452831Q21.07547169811321 70.83962264150944 14 72.84433962264151Q15.415094339622641 66.12264150943396 15.415094339622641 59.75471698113208Q15.415094339622641 53.386792452830186 14 47.37264150943396Q20.25 49.14150943396226 28.150943396226417 50.85141509433962Q36.051886792452834 52.56132075471698 45.721698113207545 53.97641509433962Q38.056603773584904 48.31603773584906 31.3938679245283 44.07075471698113Q24.7311320754717 39.825471698113205 19.18867924528302 36.64150943396227Q30.745283018867923 28.97641509433963 37.2311320754717 18.59905660377359Q40.533018867924525 24.37735849056604 45.19103773584905 31.629716981132077Q49.84905660377358 38.882075471698116 56.09905660377358 47.25471698113208Q54.56603773584906 36.99528301886792 52.79716981132076 28.740566037735846Q51.028301886792455 20.48584905660377 49.259433962264154 14Q55.27358490566038 15.415094339622641 61.64150943396226 15.415094339622641Q68.00943396226415 15.415094339622641 74.7311320754717 14Q72.72641509433963 21.311320754716974 70.78066037735849 30.92216981132075Q68.83490566037736 40.533018867924525 67.18396226415095 52.679245283018865Q74.37735849056604 46.66509433962264 82.16037735849056 39.471698113207545Q89.94339622641509 32.27830188679245 98.31603773584905 23.905660377358487L100.43867924528303 26.02830188679245Q92.06603773584905 34.40094339622641 84.99056603773585 42.125Q77.91509433962264 49.84905660377358 71.78301886792453 57.04245283018868Q81.09905660377359 57.75 91.65330188679246 58.1627358490566Q102.20754716981132 58.575471698113205 114 58.575471698113205V61.64150943396226Q101.26415094339623 61.64150943396226 90.00235849056604 62.11320754716981Q78.74056603773585 62.58490566037736 68.95283018867924 63.528301886792455Q75.32075471698113 71.19339622641509 83.04481132075472 79.68396226415095Q90.76886792452831 88.1745283018868 99.96698113207547 97.25471698113208L97.84433962264151 99.37735849056604Q89 90.65094339622641 80.86320754716982 83.1627358490566Q72.72641509433963 75.6745283018868 65.29716981132076 69.4245283018868Q64.47169811320754 79.09433962264151 64 90.23820754716982Q63.528301886792455 101.38207547169812 63.528301886792455 114Z"
+              fill-rule="evenodd"
+              d="M 51 51 L 51 225 L 322 495 L 322 324 L 206 206 Z M 52 298 L 51 298 L 51 694 L 194 443 L 194 441 L 95 343 Z M 334 173 L 334 512 L 499 342 Z"
             />
           </svg>
           <div class="section-tag-row">
@@ -2680,7 +2558,7 @@
         </a>
         <a href="#memory" class="qnav-tile">
           <p class="qnav-title">Memory</p>
-          <p class="qnav-desc">Tier distribution, groups, tags, and access patterns</p>
+          <p class="qnav-desc">Tier distribution, velocity, groups, tags, and access patterns</p>
           <span class="qnav-metric" id="qnav-memory-metric">—</span>
         </a>
         <a href="#retrieval" class="qnav-tile">
@@ -2695,7 +2573,7 @@
         </a>
         <a href="#integrity" class="qnav-tile">
           <p class="qnav-title">Integrity</p>
-          <p class="qnav-desc">Data checks, privacy tier, velocity, and export workflow</p>
+          <p class="qnav-desc">Data checks, privacy tier, and export workflow</p>
           <span class="qnav-metric" id="qnav-integrity-metric">—</span>
         </a>
       </nav>
@@ -2834,45 +2712,33 @@
         </div>
       </section>
 
-      <section class="dash-section reveal-on-scroll memory-col-right" id="memory-groups">
+      <section class="dash-section reveal-on-scroll memory-col-full" id="velocity">
         <div class="dash-h2-row">
-          <h2>Memory groups</h2>
+          <h2>Velocity</h2>
           <button
             type="button"
             class="help-pill"
-            data-help="concept:memory_groups"
-            aria-label="Explain memory groups"
+            data-help="concept:memory_velocity"
+            aria-label="Explain memory velocity"
           >
             ?
           </button>
         </div>
-        <p class="prose-small">Named groups and their entry counts (privacy tier permitting).</p>
+        <p class="prose-small">Write and recall rate over the last 1 h and 24 h — derived from Postgres timestamps, no extra instrumentation required.</p>
         <div class="tile tile-wide" style="min-height: auto">
           <div class="section-tag-row">
-            <p class="section-tag">Groups</p>
+            <p class="section-tag">Write / recall rate</p>
+            <button
+              type="button"
+              class="help-pill"
+              data-help="concept:memory_velocity"
+              aria-label="Explain memory velocity"
+            >
+              ?
+            </button>
           </div>
-          <div id="memory-groups-body"><p class="prose-small" style="margin:0">—</p></div>
-        </div>
-      </section>
-
-      <section class="dash-section reveal-on-scroll memory-col-right" id="tag-cloud">
-        <div class="dash-h2-row">
-          <h2>Tag cloud</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:tag_cloud"
-            aria-label="Explain tag cloud"
-          >
-            ?
-          </button>
-        </div>
-        <p class="prose-small">Top tags by frequency — local privacy tier only.</p>
-        <div class="tile tile-wide" style="min-height: auto">
-          <div class="section-tag-row">
-            <p class="section-tag">Frequencies</p>
-          </div>
-          <div id="tag-cloud-body"><p class="prose-small" style="margin:0">—</p></div>
+          <div id="velocity-grid" class="kpi-strip" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;padding:0;"></div>
+          <p class="sub" id="velocity-meta">—</p>
         </div>
       </section>
 
@@ -3103,10 +2969,10 @@
           <table id="hive-ns-table" class="data-table" aria-label="Hive namespace details">
             <thead>
               <tr>
-                <th>Namespace</th>
-                <th>Entries</th>
-                <th>Last Write</th>
-                <th>
+                <th class="sortable" data-sort-col="name" scope="col">Namespace</th>
+                <th class="sortable" data-sort-col="entry_count" scope="col">Entries</th>
+                <th class="sortable" data-sort-col="last_write_at" scope="col">Last Write</th>
+                <th scope="col">
                   <button
                     type="button"
                     class="help-pill"
@@ -3162,6 +3028,7 @@
               <tr><td colspan="4" class="agents-empty">No agents registered.</td></tr>
             </tbody>
           </table>
+          <p id="agents-registry-note" class="agent-topology-note" hidden></p>
         </div>
       </section>
       </div>
@@ -3188,9 +3055,9 @@
             <p class="kpi-sub">hashes match</p>
           </div>
           <div class="kpi" id="integrity-kpi-tampered">
-            <p class="kpi-lbl">Tampered</p>
+            <p class="kpi-lbl" id="integ-tampered-lbl">Tampered</p>
             <p class="kpi-val" id="integ-tampered">—</p>
-            <p class="kpi-sub">hash mismatch</p>
+            <p class="kpi-sub" id="integ-tampered-sub">hash mismatch</p>
           </div>
           <div class="kpi" id="integrity-kpi-nohash">
             <p class="kpi-lbl">No hash</p>
@@ -3211,36 +3078,6 @@
           </span>
         </div>
         <div id="integrity-body" class="prose-small" style="margin-top:0.5rem">—</div>
-      </section>
-
-      <section class="dash-section reveal-on-scroll" id="velocity">
-        <div class="dash-h2-row">
-          <h2>Velocity</h2>
-          <button
-            type="button"
-            class="help-pill"
-            data-help="concept:memory_velocity"
-            aria-label="Explain memory velocity"
-          >
-            ?
-          </button>
-        </div>
-        <p class="prose-small">Write and recall rate over the last 1 h and 24 h — derived from Postgres timestamps, no extra instrumentation required.</p>
-        <div class="tile tile-wide" style="min-height: auto">
-          <div class="section-tag-row">
-            <p class="section-tag">Write / recall rate</p>
-            <button
-              type="button"
-              class="help-pill"
-              data-help="concept:memory_velocity"
-              aria-label="Explain memory velocity"
-            >
-              ?
-            </button>
-          </div>
-          <div id="velocity-grid" class="kpi-strip" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;padding:0;"></div>
-          <p class="sub" id="velocity-meta">—</p>
-        </div>
       </section>
 
       <section class="dash-section reveal-on-scroll" id="diagnostics">
@@ -3378,8 +3215,7 @@
             <p class="pt-tile-desc">Adds tag names, memory group names, and tampered key list.</p>
           </button>
         </div>
-        <p class="sub" id="privacy-text" style="max-width: 65ch; line-height: 1.55"></p>
-        <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite" hidden>—</span>
+        <span id="privacy-tier-badge" class="privacy-tier-badge" aria-live="polite">—</span>
 
         <!-- Export format chooser (STORY-068.7) -->
         <p class="sub" style="margin-bottom: 0.4rem; margin-top: 1rem; font-weight: 600">Export format</p>
@@ -3396,25 +3232,6 @@
           Copy export to clipboard
         </button>
         <p class="sub" id="copy-snapshot-status" style="margin-top: 0.5rem"></p>
-
-        <!-- Three-bullet privacy footer (STORY-068.7) -->
-        <ul class="privacy-bullets" aria-label="What this export contains">
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">🚫</span>
-            <p class="privacy-bullet-title">Always excluded</p>
-            <p class="privacy-bullet-desc">Raw memory text, PII patterns, and any fields marked <code>private</code> in your profile.</p>
-          </li>
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">📊</span>
-            <p class="privacy-bullet-title">Aggregated only</p>
-            <p class="privacy-bullet-desc">Entry counts, tier distribution, retrieval mode, schema versions, and health scores.</p>
-          </li>
-          <li class="privacy-bullet">
-            <span class="privacy-bullet-icon" aria-hidden="true">🔍</span>
-            <p class="privacy-bullet-title">Local verbose adds</p>
-            <p class="privacy-bullet-desc">Tag names, memory group names, and the tampered key list. Use only for local debug sessions.</p>
-          </li>
-        </ul>
       </section>
       </div>
     </div>
@@ -3974,6 +3791,16 @@
           '<span class="circuit-badge ' + badgeClass + '">' + badgeText + "</span>";
         if (descEl) descEl.innerHTML = desc;
       }
+
+      /* TAP-4332: show when this diagnostics row was last recorded. */
+      if (descEl && diag.recorded_at) {
+        const tsLine = document.createElement("div");
+        tsLine.className = "muted";
+        tsLine.style.marginTop = "8px";
+        tsLine.style.fontSize = "0.85em";
+        tsLine.textContent = "Last recorded: " + String(diag.recorded_at);
+        descEl.appendChild(tsLine);
+      }
     }
 
     /* STORY-068.4 — Memory page renderers */
@@ -4008,107 +3835,6 @@
         } else {
           sizeTile.setAttribute("hidden", "");
         }
-      }
-    }
-
-    function renderMemoryGroups(data) {
-      const body = el("memory-groups-body");
-      if (!body) return;
-      const counts = data && data.memory_group_counts && typeof data.memory_group_counts === "object"
-        ? data.memory_group_counts : null;
-      body.replaceChildren();
-      if (!counts || !Object.keys(counts).length) {
-        const tier = data && data.privacy_tier ? String(data.privacy_tier) : null;
-        const msg = tier === "local"
-          ? "No named memory groups in this snapshot."
-          : tier
-            ? "Memory group names hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal."
-            : "Memory group counts not reported by this snapshot.";
-        const p = document.createElement("p");
-        p.className = "prose-small";
-        p.style.margin = "0";
-        p.textContent = msg;
-        body.appendChild(p);
-        return;
-      }
-      const rows = Object.keys(counts)
-        .map((k) => ({ name: k, count: Number(counts[k]) || 0 }))
-        .sort((a, b) => b.count - a.count);
-      const table = document.createElement("table");
-      table.className = "data-table";
-      const thead = document.createElement("thead");
-      const headRow = document.createElement("tr");
-      ["Group", "Entries"].forEach((h) => {
-        const th = document.createElement("th");
-        th.setAttribute("scope", "col");
-        th.textContent = h;
-        headRow.appendChild(th);
-      });
-      thead.appendChild(headRow);
-      table.appendChild(thead);
-      const tbody = document.createElement("tbody");
-      rows.forEach((r) => {
-        const tr = document.createElement("tr");
-        const tdName = document.createElement("td");
-        tdName.textContent = r.name;
-        const tdCount = document.createElement("td");
-        tdCount.textContent = String(r.count);
-        tr.appendChild(tdName);
-        tr.appendChild(tdCount);
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      body.appendChild(table);
-    }
-
-    function renderTagCloud(data) {
-      const body = el("tag-cloud-body");
-      if (!body) return;
-      body.replaceChildren();
-      const tier = data && data.privacy_tier ? String(data.privacy_tier) : null;
-      const stats = data && Array.isArray(data.tag_stats) ? data.tag_stats : null;
-      if (!stats || !stats.length) {
-        const p = document.createElement("p");
-        p.className = "prose-small";
-        p.style.margin = "0";
-        p.textContent = tier === "local"
-          ? "No tag frequencies in this snapshot."
-          : tier
-            ? "Tag frequencies hidden at privacy tier " + tier + ". Re-export with --privacy local to reveal."
-            : "Tag frequencies not reported by this snapshot.";
-        body.appendChild(p);
-        return;
-      }
-      const top = stats.slice(0, 40);
-      const max = Math.max(1, ...top.map((t) => Number(t.count) || 0));
-      const cloud = document.createElement("div");
-      cloud.className = "tag-cloud";
-      top.forEach((t) => {
-        const count = Number(t.count) || 0;
-        const ratio = count / max;
-        let weight = "sm";
-        if (ratio >= 0.75) weight = "xl";
-        else if (ratio >= 0.5) weight = "lg";
-        else if (ratio >= 0.25) weight = "md";
-        const chip = document.createElement("span");
-        chip.className = "tag-chip";
-        chip.setAttribute("data-weight", weight);
-        const name = document.createElement("span");
-        name.textContent = String(t.tag || "");
-        const cnt = document.createElement("span");
-        cnt.className = "tag-chip-count";
-        cnt.textContent = String(count);
-        chip.appendChild(name);
-        chip.appendChild(cnt);
-        cloud.appendChild(chip);
-      });
-      body.appendChild(cloud);
-      if (stats.length > 40) {
-        const more = document.createElement("p");
-        more.className = "sub";
-        more.style.marginTop = "0.5rem";
-        more.textContent = "Showing top 40 of " + stats.length + " tags.";
-        body.appendChild(more);
       }
     }
 
@@ -4154,7 +3880,7 @@
         const p = document.createElement("p");
         p.className = "prose-small";
         p.style.margin = "0";
-        p.textContent = "Latency histogram not captured in this snapshot. P50/P95/P99 tiles above show percentiles when available.";
+        p.textContent = "Latency histogram not available — no recall samples since process start.";
         histBody.appendChild(p);
         if (histMeta) histMeta.textContent = "—";
       }
@@ -4261,6 +3987,12 @@
       }
 
       const fmt = (n) => (n === null ? "N/A" : String(n));
+      const allZero =
+        hasVelocity &&
+        w1h === 0 &&
+        r1h === 0 &&
+        w24h === 0 &&
+        r24h === 0;
       const tiles = [
         { lbl: "Writes 1 h",  val: fmt(w1h),  arrow: arrow(w1h,  w24h), cls: arrowClass(w1h,  w24h) },
         { lbl: "Recalls 1 h", val: fmt(r1h),  arrow: arrow(r1h,  r24h), cls: arrowClass(r1h,  r24h) },
@@ -4281,12 +4013,17 @@
       }).join("");
 
       if (meta) {
-        meta.textContent = hasVelocity
-          ? "writes_1h=" + fmt(w1h) +
+        if (!hasVelocity) {
+          meta.textContent = "velocity block not reported by this snapshot.";
+        } else if (allZero) {
+          meta.textContent = "No recent activity";
+        } else {
+          meta.textContent =
+            "writes_1h=" + fmt(w1h) +
             " · writes_24h=" + fmt(w24h) +
             " · recalls_1h=" + fmt(r1h) +
-            " · recalls_24h=" + fmt(r24h)
-          : "velocity block not reported by this snapshot.";
+            " · recalls_24h=" + fmt(r24h);
+        }
       }
     }
 
@@ -4346,13 +4083,14 @@
       var scopeCounts = (data && data.agent_scope_counts) ? data.agent_scope_counts : {};
       var totalScopes = Object.keys(scopeCounts).reduce(function (n, k) { return n + Number(scopeCounts[k] || 0); }, 0);
       var tampered = health.integrity_tampered !== undefined ? Number(health.integrity_tampered) : 0;
+      var keyMismatchNav = health.integrity_likely_key_mismatch === true;
 
       var metrics = {
         "qnav-health-metric":    fail > 0 ? fail + " fail" : warn > 0 ? warn + " warn" : "All pass",
         "qnav-memory-metric":    health.entry_count !== undefined ? String(health.entry_count) + " entries" : "—",
         "qnav-retrieval-metric": data && data.retrieval_effective_mode ? String(data.retrieval_effective_mode) : "—",
         "qnav-agents-metric":    totalScopes > 0 ? totalScopes + " scopes" : "—",
-        "qnav-integrity-metric": tampered > 0 ? tampered + " tampered" : "Clean"
+        "qnav-integrity-metric": keyMismatchNav ? "key mismatch" : (tampered > 0 ? tampered + " tampered" : "Clean")
       };
       Object.keys(metrics).forEach(function (id) {
         var el = document.getElementById(id);
@@ -4437,9 +4175,6 @@
         snapVer +
         (idv !== undefined && idv !== null ? " · identity payload v" + idv : "");
 
-      el("privacy-text").textContent =
-        typeof data.privacy === "string" ? data.privacy : "";
-
       /* KPI strip */
       const kpi = el("kpi-strip");
       if (kpi) {
@@ -4502,8 +4237,6 @@
 
       /* STORY-068.4 — Memory page extras */
       renderPulseCallouts(health, entryCount);
-      renderMemoryGroups(data);
-      renderTagCloud(data);
 
       /* Retrieval */
       const rsum = el("retrieval-summary");
@@ -4558,12 +4291,14 @@
             : "N/A");
       })(data.retrieval_metrics);
 
-      /* Hive hub detail — structured table */
+      /* Hive hub detail — structured sortable table (STORY-078.10) */
       (function renderHiveHub() {
         const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
         const badgeEl = el("hive-badge");
         const metaEl = el("hive-meta");
         const tbody = el("hive-ns-tbody");
+        const tableEl = el("hive-ns-table");
+        let hiveNsSort = { col: "name", dir: "asc" };
 
         /** Format an ISO timestamp as a relative time string (e.g. '5m ago'). */
         function relTimeAgo(isoStr) {
@@ -4579,6 +4314,71 @@
           return Math.floor(hrs / 24) + "d ago";
         }
 
+        function normalizeNamespaceRows(source) {
+          if (!source || !Array.isArray(source.namespaces)) return [];
+          return source.namespaces.map(function (row) {
+            if (typeof row === "string") {
+              return { name: row, entry_count: 0, last_write_at: null };
+            }
+            if (!row || typeof row !== "object") return null;
+            return {
+              name: row.name || row.namespace || "—",
+              entry_count: Number(row.entry_count) || 0,
+              last_write_at: row.last_write_at || null,
+            };
+          }).filter(Boolean);
+        }
+
+        function sortNamespaceRows(rows, col, dir) {
+          const mul = dir === "asc" ? 1 : -1;
+          return rows.slice().sort(function (a, b) {
+            if (col === "name") {
+              return mul * String(a.name || "").localeCompare(String(b.name || ""));
+            }
+            if (col === "entry_count") {
+              return mul * ((Number(a.entry_count) || 0) - (Number(b.entry_count) || 0));
+            }
+            if (col === "last_write_at") {
+              const ta = a.last_write_at ? new Date(a.last_write_at).getTime() : 0;
+              const tb = b.last_write_at ? new Date(b.last_write_at).getTime() : 0;
+              return mul * (ta - tb);
+            }
+            return 0;
+          });
+        }
+
+        function updateSortHeaders() {
+          if (!tableEl) return;
+          tableEl.querySelectorAll("th.sortable").forEach(function (th) {
+            const col = th.getAttribute("data-sort-col");
+            th.classList.remove("sort-asc", "sort-desc");
+            if (col === hiveNsSort.col) {
+              th.classList.add(hiveNsSort.dir === "asc" ? "sort-asc" : "sort-desc");
+            }
+          });
+        }
+
+        function renderNamespaceTable(rows) {
+          if (!tbody) return;
+          if (rows.length === 0) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
+            return;
+          }
+          const sorted = sortNamespaceRows(rows, hiveNsSort.col, hiveNsSort.dir);
+          tbody.innerHTML = sorted.map(function (row) {
+            return (
+              "<tr>" +
+              "<td>" + (row.name || "—") + "</td>" +
+              "<td>" + (Number(row.entry_count) || 0) + "</td>" +
+              "<td>" + relTimeAgo(row.last_write_at) + "</td>" +
+              "<td></td>" +
+              "</tr>"
+            );
+          }).join("");
+          updateSortHeaders();
+        }
+
         if (hh && hh.connected) {
           const totalEntries = Number(hh.entries) || 0;
           const totalAgents = Number(hh.agents) || 0;
@@ -4591,24 +4391,7 @@
               totalEntries + " entr" + (totalEntries === 1 ? "y" : "ies") +
               " · " + totalAgents + " agent" + (totalAgents === 1 ? "" : "s");
           }
-          if (tbody) {
-            const details = Array.isArray(hh.namespace_detail) ? hh.namespace_detail : [];
-            if (details.length === 0) {
-              tbody.innerHTML =
-                '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
-            } else {
-              tbody.innerHTML = details.map(function (row) {
-                return (
-                  "<tr>" +
-                  "<td>" + (row.namespace || "—") + "</td>" +
-                  "<td>" + (Number(row.entry_count) || 0) + "</td>" +
-                  "<td>" + relTimeAgo(row.last_write_at) + "</td>" +
-                  "<td></td>" +
-                  "</tr>"
-                );
-              }).join("");
-            }
-          }
+          renderNamespaceTable(normalizeNamespaceRows(hh));
         } else {
           const injected = data.hive_attached ? "yes" : "no";
           const isWarn = hh && hh.status === "warn";
@@ -4621,37 +4404,106 @@
           }
           if (tbody) {
             tbody.innerHTML =
-              '<tr><td colspan="4" class="hive-ns-empty">No namespaces — Hive has no data yet.</td></tr>';
+              '<tr><td colspan="4" class="hive-ns-empty">Hive unreachable — namespace data unavailable.</td></tr>';
           }
+        }
+
+        if (tableEl && !tableEl.dataset.sortBound) {
+          tableEl.dataset.sortBound = "1";
+          tableEl.querySelectorAll("th.sortable").forEach(function (th) {
+            th.addEventListener("click", function () {
+              if (!hh || !hh.connected) return;
+              const col = th.getAttribute("data-sort-col") || "name";
+              if (hiveNsSort.col === col) {
+                hiveNsSort.dir = hiveNsSort.dir === "asc" ? "desc" : "asc";
+              } else {
+                hiveNsSort.col = col;
+                hiveNsSort.dir = col === "name" ? "asc" : "desc";
+              }
+              renderNamespaceTable(normalizeNamespaceRows(hh));
+            });
+          });
         }
       })();
 
-      /* Agent registry */
+      /* Agent registry + topology share cap/sort (STORY-065.5 / STORY-078.11) */
+      const AGENT_REGISTRY_CAP = 50;
+
+      function agentLastWriteMs(a) {
+        if (!a || !a.last_write_at) return null;
+        const ms = new Date(a.last_write_at).getTime();
+        return isNaN(ms) ? null : ms;
+      }
+
+      function prepareAgentRegistry(data) {
+        const raw = Array.isArray(data.agent_registry) ? data.agent_registry.slice() : [];
+        raw.sort(function (a, b) {
+          const ta = agentLastWriteMs(a);
+          const tb = agentLastWriteMs(b);
+          if (ta === null && tb === null) {
+            return String(a && a.agent_id || "").localeCompare(String(b && b.agent_id || ""));
+          }
+          if (ta === null) return 1;
+          if (tb === null) return -1;
+          return tb - ta;
+        });
+        const total = raw.length;
+        const truncated = total > AGENT_REGISTRY_CAP;
+        const shown = truncated ? raw.slice(0, AGENT_REGISTRY_CAP) : raw;
+        return { all: raw, shown, total, truncated, cap: AGENT_REGISTRY_CAP };
+      }
+
+      /** Format an ISO timestamp as a relative time string (e.g. '5m ago'). */
+      function agentRelTime(isoStr) {
+        if (!isoStr) return "—";
+        const ms = Date.now() - new Date(isoStr).getTime();
+        if (isNaN(ms) || ms < 0) return "—";
+        const secs = Math.floor(ms / 1000);
+        if (secs < 60) return secs + "s ago";
+        const mins = Math.floor(secs / 60);
+        if (mins < 60) return mins + "m ago";
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return hrs + "h ago";
+        return Math.floor(hrs / 24) + "d ago";
+      }
+
+      const agentRegistryPrep = prepareAgentRegistry(data);
+      const allAgents = agentRegistryPrep.all;
+      const shownAgents = agentRegistryPrep.shown;
+      const agentsTruncated = agentRegistryPrep.truncated;
+      const agentRegistryTotal = agentRegistryPrep.total;
+
+      /* Agent registry table */
       (function renderAgentRegistry() {
         const tbody = el("agents-tbody");
+        const registryNote = el("agents-registry-note");
         if (!tbody) return;
-        const agents = Array.isArray(data.agent_registry) ? data.agent_registry : [];
-        if (agents.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" class="agents-empty">No agents registered.</td></tr>';
+        const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
+        const hiveAgentCount =
+          hh && hh.connected && typeof hh.agents === "number" ? hh.agents : null;
+
+        if (allAgents.length === 0) {
+          if (hiveAgentCount !== null && hiveAgentCount > 0) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="agents-empty">Hive reports ' + hiveAgentCount +
+              " agent" + (hiveAgentCount === 1 ? "" : "s") +
+              " but agent_registry is empty — per-agent detail not available.</td></tr>";
+            if (registryNote) {
+              registryNote.hidden = false;
+              registryNote.textContent =
+                "Hive reports " + hiveAgentCount + " agent" + (hiveAgentCount === 1 ? "" : "s") +
+                " but agent_registry is empty — per-agent placement not rendered.";
+            }
+          } else {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="agents-empty">No agents registered.</td></tr>';
+            if (registryNote) registryNote.hidden = true;
+          }
           return;
         }
 
-        /** Format an ISO timestamp as a relative time string (e.g. '5m ago'). */
-        function agentRelTime(isoStr) {
-          if (!isoStr) return "—";
-          const ms = Date.now() - new Date(isoStr).getTime();
-          if (isNaN(ms) || ms < 0) return "—";
-          const secs = Math.floor(ms / 1000);
-          if (secs < 60) return secs + "s ago";
-          const mins = Math.floor(secs / 60);
-          if (mins < 60) return mins + "m ago";
-          const hrs = Math.floor(mins / 60);
-          if (hrs < 24) return hrs + "h ago";
-          return Math.floor(hrs / 24) + "d ago";
-        }
-
         const _24h = 24 * 60 * 60 * 1000;
-        tbody.innerHTML = agents.map(function (a, idx) {
+        tbody.innerHTML = shownAgents.map(function (a, idx) {
           const lw = a.last_write_at || null;
           let rowClass = "";
           if (!lw) {
@@ -4670,11 +4522,21 @@
           );
         }).join("");
 
+        if (agentsTruncated && registryNote) {
+          const moreN = agentRegistryTotal - AGENT_REGISTRY_CAP;
+          registryNote.hidden = false;
+          registryNote.textContent =
+            "Showing " + AGENT_REGISTRY_CAP + " of " + agentRegistryTotal + " agents (" +
+            moreN + " more not shown).";
+        } else if (registryNote) {
+          registryNote.hidden = true;
+        }
+
         function openRowDrawer(ev) {
           const tr = ev.target && ev.target.closest ? ev.target.closest("tr[data-agent-idx]") : null;
           if (!tr) return;
           const i = Number(tr.getAttribute("data-agent-idx"));
-          const a = agents[i];
+          const a = shownAgents[i];
           if (a) openAgentDetailDrawer(a, tr);
         }
         tbody.addEventListener("click", openRowDrawer);
@@ -4689,8 +4551,12 @@
         const note = el("agent-topology-note");
         if (!host) return;
         const hh = data.hive_health && typeof data.hive_health === "object" ? data.hive_health : null;
-        const allAgents = Array.isArray(data.agent_registry) ? data.agent_registry.slice() : [];
-        const nsFromHh = hh && Array.isArray(hh.namespaces) ? hh.namespaces.slice() : [];
+        const nsFromHh = hh && Array.isArray(hh.namespaces)
+          ? hh.namespaces.map(function (row) {
+              if (typeof row === "string") return row;
+              return row && (row.name || row.namespace) ? (row.name || row.namespace) : "";
+            }).filter(Boolean)
+          : [];
         const nsSet = new Set(nsFromHh);
         allAgents.forEach(function (a) { if (a && a.namespace) nsSet.add(a.namespace); });
         let namespaces = Array.from(nsSet);
@@ -4701,12 +4567,9 @@
         }
         if (namespaces.length === 0) namespaces = ["(default)"];
 
-        const CAP = 50;
-        const totalAgents = allAgents.length || (hh && Number(hh.agents)) || 0;
-        const agentsTruncated = allAgents.length > CAP;
-        const shownAgents = agentsTruncated ? allAgents.slice(0, CAP) : allAgents;
+        const totalAgents = agentRegistryTotal || (hh && Number(hh.agents)) || 0;
         if (agentsTruncated) {
-          console.info("[topology] truncated at " + CAP + " of " + allAgents.length + " agents");
+          console.info("[topology] truncated at " + AGENT_REGISTRY_CAP + " of " + allAgents.length + " agents");
         }
 
         // Layout
@@ -4832,11 +4695,13 @@
         svg.appendChild(mkText(hubCx, hubCy + 4, "Hive", { anchor: "middle", size: "12", cls: "topo-hub-label" }));
 
         if (agentsTruncated) {
-          const moreN = allAgents.length - CAP;
+          const moreN = agentRegistryTotal - AGENT_REGISTRY_CAP;
           svg.appendChild(mkText(W - 12, H - 10, "+ " + moreN + " more", { anchor: "end", size: "11" }));
           if (note) {
             note.hidden = false;
-            note.textContent = "Showing 50 of " + allAgents.length + " agents (" + moreN + " more not drawn).";
+            note.textContent =
+              "Showing " + AGENT_REGISTRY_CAP + " of " + agentRegistryTotal + " agents (" +
+              moreN + " more not drawn).";
           }
         } else if (unregisteredCount > 0) {
           svg.appendChild(mkText(hubCx, H - 14,
@@ -4971,6 +4836,18 @@
           tamperedKpi.removeAttribute("data-warn");
         }
       }
+      /* TAP-4331: when every hashed row fails, it is a signing-key mismatch
+         (data restored under a different key), not tampering — relabel the tile. */
+      const keyMismatch = health.integrity_likely_key_mismatch === true;
+      const tLbl = el("integ-tampered-lbl");
+      const tSub = el("integ-tampered-sub");
+      if (keyMismatch) {
+        if (tLbl) tLbl.textContent = "Key mismatch";
+        if (tSub) tSub.textContent = "re-sign to clear (not tampering)";
+      } else {
+        if (tLbl) tLbl.textContent = "Tampered";
+        if (tSub) tSub.textContent = "hash mismatch";
+      }
       /* Schema version warning (STORY-068.7) */
       const schemaVerEl = el("integrity-schema-ver");
       const schemaWarnEl = el("integrity-schema-warn");
@@ -5011,10 +4888,10 @@
       const snapshotTier = isV2 && data.privacy_tier ? String(data.privacy_tier) : null;
       if (ptBadge) {
         if (snapshotTier) {
-          ptBadge.textContent = "Privacy tier: " + snapshotTier;
+          ptBadge.textContent = snapshotTier;
           ptBadge.setAttribute("data-tier", snapshotTier);
         } else {
-          ptBadge.textContent = "Privacy tier: N/A";
+          ptBadge.textContent = "N/A";
           ptBadge.removeAttribute("data-tier");
         }
       }
@@ -5100,15 +4977,6 @@
         if (!btn) return;
         selectedPrivacyTier = btn.getAttribute("data-tier") || "standard";
         applyPrivacyTierSelector(selectedPrivacyTier);
-        const ptText = el("privacy-text");
-        if (ptText) {
-          ptText.textContent =
-            selectedPrivacyTier === "local"
-              ? "Local tier: tag names, group names, and tampered key list are included."
-              : selectedPrivacyTier === "strict"
-              ? "Strict tier: counts only — no tag names, no group names, no tampered key list."
-              : "Standard tier: aggregates and schema versions — no raw memory text or PII.";
-        }
       });
       selector.addEventListener("keydown", function (e) {
         const btns = Array.from(selector.querySelectorAll(".pt-tile"));
@@ -5208,13 +5076,145 @@
     // ── Live polling ──────────────────────────────────────────────────────────
     let _liveHasData = false;
 
+    const TROUBLESHOOTING_DOC =
+      "https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting";
+
+    function _sanitizeErrorDetail(text) {
+      return String(text)
+        .replace(/Bearer\s+[A-Za-z0-9._\-+/=]+/gi, "Bearer [redacted]")
+        .replace(/authorization:\s*\S+/gi, "authorization: [redacted]")
+        .slice(0, 480);
+    }
+
+    function classifySnapshotFailure(httpStatus, err, responseBody) {
+      const status = typeof httpStatus === "number" ? httpStatus : null;
+      const errText = _sanitizeErrorDetail(String(err && err.message ? err.message : err));
+      const detailLines = [];
+      if (status !== null) detailLines.push("HTTP status: " + status);
+      if (errText) detailLines.push("Fetch error: " + errText);
+      if (responseBody && typeof responseBody === "object") {
+        const safe = {};
+        for (const key of ["error", "upstream", "detail", "message"]) {
+          if (responseBody[key] != null) safe[key] = _sanitizeErrorDetail(String(responseBody[key]));
+        }
+        if (Object.keys(safe).length) {
+          detailLines.push("Response body: " + JSON.stringify(safe));
+        }
+      }
+
+      if (status === 504) {
+        return {
+          kind: "timeout",
+          title: "Brain snapshot timed out",
+          body:
+            "The nginx proxy gave up waiting for tapps-brain-http. Check brain-http health and snapshot build latency.",
+          badgeLabel: "ERROR · timeout",
+          badgeAria: "Snapshot endpoint error: gateway timeout after 504",
+          statusLine: "Brain snapshot timed out — check tapps-brain-http logs",
+          remediation:
+            "docker logs tapps-brain-http --tail 50\ncurl -sS http://localhost:8080/healthz",
+          detailLines,
+        };
+      }
+      if (status === 401 || status === 403) {
+        return {
+          kind: "auth",
+          title: "Auth token mismatch",
+          body:
+            "Auth token mismatch between visual nginx and brain-http. Sync TAPPS_BRAIN_AUTH_TOKEN in docker/.env and restart tapps-visual.",
+          badgeLabel: "ERROR · auth",
+          badgeAria: "Snapshot endpoint error: authentication failed with HTTP " + status,
+          statusLine: "Auth token mismatch between visual nginx and brain-http",
+          remediation:
+            "# Align token in docker/.env, then:\ndocker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --force-recreate tapps-visual tapps-brain-http",
+          detailLines,
+        };
+      }
+      if (status === 503) {
+        return {
+          kind: "no-store",
+          title: "No MemoryStore configured",
+          body:
+            "tapps-brain-http responded but no MemoryStore is configured. Verify TAPPS_BRAIN_DATABASE_URL and brain-http startup logs.",
+          badgeLabel: "ERROR · no store",
+          badgeAria: "Snapshot endpoint error: no MemoryStore configured (HTTP 503)",
+          statusLine: "No MemoryStore configured",
+          remediation:
+            "docker logs tapps-brain-http --tail 50\ncurl -sS http://localhost:8080/healthz",
+          detailLines,
+        };
+      }
+      if (status === null && /failed to fetch|networkerror|load failed/i.test(errText)) {
+        return {
+          kind: "offline",
+          title: "Network offline or endpoint unreachable",
+          body:
+            "The browser could not reach the snapshot URL. Confirm tapps-visual is running and the proxy path is correct.",
+          badgeLabel: "ERROR · offline",
+          badgeAria: "Snapshot endpoint error: network offline or unreachable",
+          statusLine: "Live endpoint unreachable: network error",
+          remediation:
+            "docker ps --filter name=tapps-visual\ncurl -sS -o /dev/null -w '%{http_code}' http://localhost:8088/snapshot",
+          detailLines,
+        };
+      }
+      const genericStatus = status !== null ? "HTTP " + status : errText.slice(0, 48) || "unknown";
+      return {
+        kind: "generic",
+        title: "Live endpoint unreachable",
+        body:
+          "The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter to enable live polling.",
+        badgeLabel: "ERROR · " + genericStatus,
+        badgeAria: "Snapshot endpoint error: " + genericStatus,
+        statusLine: "Live endpoint unreachable: " + genericStatus,
+        remediation: "tapps-brain mcp start --http\n# or: docker compose up tapps-brain-mcp",
+        detailLines,
+      };
+    }
+
+    function _liveApplyEmptyState(errorInfo) {
+      const titleEl = document.getElementById("empty-state-title");
+      const bodyEl = document.getElementById("empty-state-body");
+      const remediationEl = document.getElementById("empty-state-remediation");
+      const detailsEl = document.getElementById("empty-state-details");
+      const detailTextEl = document.getElementById("empty-state-detail-text");
+      const emptyEl = document.getElementById("empty-state");
+      const troubleshootEl = document.getElementById("empty-state-troubleshoot");
+      const info = errorInfo || classifySnapshotFailure(null, "not started", null);
+
+      if (titleEl) titleEl.textContent = info.title;
+      if (bodyEl) {
+        bodyEl.innerHTML = info.body.includes("<code>")
+          ? info.body
+          : info.body.replace(/`([^`]+)`/g, "<code>$1</code>");
+      }
+      if (remediationEl) remediationEl.textContent = info.remediation;
+      if (troubleshootEl) troubleshootEl.href = TROUBLESHOOTING_DOC;
+      if (emptyEl) {
+        emptyEl.setAttribute("aria-label", info.title + " — see troubleshooting link");
+      }
+      const detailText = (info.detailLines || []).join("\n");
+      if (detailsEl && detailTextEl) {
+        if (detailText) {
+          detailTextEl.textContent = detailText;
+          detailsEl.hidden = false;
+        } else {
+          detailTextEl.textContent = "";
+          detailsEl.hidden = true;
+          detailsEl.open = false;
+        }
+      }
+      return info;
+    }
+
     function _liveHideEmpty() {
       const el = document.getElementById("empty-state");
       if (el) el.classList.remove("is-visible");
       _liveHasData = true;
     }
 
-    function _liveShowEmpty() {
+    function _liveShowEmpty(errorInfo) {
+      _liveApplyEmptyState(errorInfo);
       const el = document.getElementById("empty-state");
       if (el) el.classList.add("is-visible");
     }
@@ -5260,45 +5260,126 @@
       const badge = document.getElementById("live-badge");
       const badgeLabel = document.getElementById("live-badge-label");
       const intervalSelect = document.getElementById("poll-interval");
+      const refreshBtn = document.getElementById("poll-refresh-now");
 
       let consecutiveErrors = 0;
       let lastSuccessMs = null;
       let pollTimer = null;
+      let badgeTimer = null;
+      let fetchInFlight = false;
+      let pendingPollGen = null;
+      let pollGen = 0;
+      let baseIntervalMs = 30_000;
       const STALE_THRESHOLD_MS = 90_000;
       const ERROR_THRESHOLD = 3;
+      const BACKOFF_MS = [30_000, 60_000, 120_000];
 
-      function setBadgeState(state, label) {
-        if (badge) badge.dataset.state = state;
+      function setBadgeState(state, label, ariaLabel) {
+        if (badge) {
+          badge.dataset.state = state;
+          badge.setAttribute("aria-label", ariaLabel || label);
+        }
         if (badgeLabel) badgeLabel.textContent = label;
       }
 
       function updateBadge() {
         if (consecutiveErrors >= ERROR_THRESHOLD) return; // already set in fetchSnapshot
-        if (!lastSuccessMs) { setBadgeState("stale", "OFFLINE"); return; }
+        if (!lastSuccessMs) {
+          setBadgeState("stale", "OFFLINE", "Snapshot endpoint offline, no data received yet");
+          return;
+        }
         const ageMs = Date.now() - lastSuccessMs;
         if (ageMs > STALE_THRESHOLD_MS) {
           const s = Math.round(ageMs / 1000);
-          setBadgeState("stale", "STALE · " + (s < 60 ? s + "s ago" : Math.round(s / 60) + "m ago"));
+          const label = "STALE · " + (s < 60 ? s + "s ago" : Math.round(s / 60) + "m ago");
+          setBadgeState(
+            "stale",
+            label,
+            "Snapshot stale, last received " + (s < 60 ? s + " seconds ago" : Math.round(s / 60) + " minutes ago")
+          );
         } else {
-          setBadgeState("live", "LIVE · " + new Date(lastSuccessMs).toLocaleTimeString());
+          const ts = new Date(lastSuccessMs).toLocaleTimeString();
+          setBadgeState("live", "LIVE · " + ts, "Connection live, snapshot received at " + ts);
         }
       }
 
-      async function fetchSnapshot() {
+      function getPollDelayMs() {
+        if (baseIntervalMs === 0) return 0;
+        if (consecutiveErrors === 0) return baseIntervalMs;
+        const idx = Math.min(consecutiveErrors - 1, BACKOFF_MS.length - 1);
+        return BACKOFF_MS[idx];
+      }
+
+      function clearPollTimer() {
+        if (pollTimer) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function clearBadgeTimer() {
+        if (badgeTimer) {
+          clearInterval(badgeTimer);
+          badgeTimer = null;
+        }
+      }
+
+      function schedulePoll(gen) {
+        clearPollTimer();
+        const delay = getPollDelayMs();
+        if (delay > 0 && gen === pollGen) {
+          pollTimer = setTimeout(() => {
+            if (gen !== pollGen) return;
+            fetchSnapshot(gen);
+          }, delay);
+        }
+      }
+
+      async function fetchSnapshot(gen) {
+        if (fetchInFlight) {
+          if (gen === pollGen) pendingPollGen = gen;
+          return;
+        }
+        if (gen === undefined) gen = pollGen;
+        fetchInFlight = true;
         const url = getSnapshotUrl();
         let data;
+        let httpStatus = null;
+        let responseBody = null;
         try {
           const resp = await fetch(url, { cache: "no-store" });
-          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          httpStatus = resp.status;
+          if (!resp.ok) {
+            const ct = (resp.headers.get("content-type") || "").toLowerCase();
+            if (ct.includes("application/json")) {
+              try {
+                responseBody = await resp.json();
+              } catch (_parseErr) {
+                responseBody = null;
+              }
+            } else {
+              const text = await resp.text();
+              responseBody = { raw: _sanitizeErrorDetail(text.slice(0, 200)) };
+            }
+            throw new Error("HTTP " + resp.status);
+          }
           data = await resp.json();
         } catch (err) {
-          consecutiveErrors = Math.min(consecutiveErrors + 1, ERROR_THRESHOLD);
+          consecutiveErrors = Math.min(consecutiveErrors + 1, BACKOFF_MS.length);
+          const classified = classifySnapshotFailure(httpStatus, err, responseBody);
           if (consecutiveErrors >= ERROR_THRESHOLD) {
-            const msg = String(err).replace(/^Error:\s*/, "").slice(0, 48);
-            setBadgeState("error", "ERROR · " + msg);
-            setStatus("Live endpoint unreachable: " + msg, false);
+            setBadgeState("error", classified.badgeLabel, classified.badgeAria);
+            setStatus(classified.statusLine, false);
           }
-          if (!_liveHasData) _liveShowEmpty();
+          if (!_liveHasData) _liveShowEmpty(classified);
+          fetchInFlight = false;
+          if (pendingPollGen !== null) {
+            const pg = pendingPollGen;
+            pendingPollGen = null;
+            fetchSnapshot(pg);
+            return;
+          }
+          if (gen === pollGen) schedulePoll(gen);
           return;
         }
         consecutiveErrors = 0;
@@ -5307,22 +5388,42 @@
         _updateProjectFilterOptions(data);
         applySnapshot(data);
         updateBadge();
+        fetchInFlight = false;
+        if (pendingPollGen !== null) {
+          const pg = pendingPollGen;
+          pendingPollGen = null;
+          fetchSnapshot(pg);
+          return;
+        }
+        if (gen === pollGen) schedulePoll(gen);
       }
 
       function startPolling(intervalMs) {
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        fetchSnapshot();
+        pollGen += 1;
+        const gen = pollGen;
+        baseIntervalMs = intervalMs;
+        pendingPollGen = null;
+        clearPollTimer();
+        clearBadgeTimer();
+        fetchSnapshot(gen);
         if (intervalMs > 0) {
-          pollTimer = setInterval(fetchSnapshot, intervalMs);
-          // Tick badge every 10 s to keep stale timer current
-          setInterval(updateBadge, 10_000);
+          badgeTimer = setInterval(updateBadge, 10_000);
         }
+      }
+
+      function manualRefresh() {
+        clearPollTimer();
+        fetchSnapshot(pollGen);
       }
 
       if (intervalSelect) {
         intervalSelect.addEventListener("change", () => {
           startPolling(parseInt(intervalSelect.value, 10));
         });
+      }
+
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", manualRefresh);
       }
 
       // STORY-069.7: project filter change → immediate refetch at current interval.

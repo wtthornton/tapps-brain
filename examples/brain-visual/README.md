@@ -21,6 +21,38 @@ A static HTML/JS dashboard that polls the live tapps-brain `/snapshot` endpoint.
 
 3. Open `http://localhost:8090/index.html`. The page polls `/snapshot` every 30 s by default (configurable via the interval selector). Status: **LIVE · hh:mm:ss** when fresh, **STALE · Ns ago** after 90 s, **OFFLINE / ERROR** after 3 consecutive failures.
 
+### Degraded-mode error copy (STORY-078.7)
+
+After three consecutive poll failures the badge switches to **ERROR** and the empty state shows operator-specific remediation. HTTP status codes map to distinct copy:
+
+| Simulated status | Expected badge | Expected empty-state title |
+|------------------|----------------|----------------------------|
+| **504** | `ERROR · timeout` | Brain snapshot timed out |
+| **401** / **403** | `ERROR · auth` | Auth token mismatch |
+| **503** | `ERROR · no store` | No MemoryStore configured |
+| Network failure | `ERROR · offline` | Network offline or endpoint unreachable |
+
+**Manual test: simulated 504**
+
+1. Serve the dashboard: `cd examples/brain-visual && python3 -m http.server 8090`
+2. In DevTools → **Network** → enable **Request blocking** (or use a local mock server) and block `/snapshot`, **or** inject a Service Worker that returns `504` for `/snapshot`.
+3. Reload the page and wait for three failed polls (~90 s with default backoff, or set poll interval to **15 s** and wait ~45 s).
+4. Confirm badge reads **ERROR · timeout**, status line mentions **check tapps-brain-http logs**, and **Last error details** expands with `HTTP status: 504` (no Bearer tokens).
+5. Tab to **Last error details** — `<summary>` must be focusable and toggle with Enter/Space.
+
+**Manual test: simulated 401**
+
+1. Point meta `tapps-snapshot-url` at a mock endpoint returning `401` with JSON `{"error":"unauthorized"}` (e.g. `npx serve` + small handler, or DevTools **Override** response).
+2. After three failures, confirm badge **ERROR · auth** and body mentions **TAPPS_BRAIN_AUTH_TOKEN**.
+3. Open the troubleshooting link — it should land on `docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting`.
+
+**Manual test: keyboard accessibility**
+
+1. With empty state visible, press **Tab** until **Last error details** summary is focused.
+2. Press **Enter** — details panel expands; **Tab** moves into the `<pre>` content without trapping focus.
+
+Troubleshooting runbook: [`docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting`](../../docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting).
+
 ### Pointing at a different endpoint
 
 Set a `<meta name="tapps-snapshot-url" content="https://your-host/snapshot">` in `index.html` to override the default `/snapshot` URL.
@@ -64,7 +96,7 @@ Snapshot **schema_version** `2` includes retrieval mode, Hive hub stats, access 
 
 ## Brand
 
-CSS tokens, typography, and logo usage follow the **NLT Labs** design language. The canonical brand style sheet is an internal NLT Labs asset (not redistributed here). A gap matrix and redistribution notes are at [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
+CSS tokens, typography, and logo usage follow **NLTWeb** `docs/BRAND-STYLE-GUIDE.md` (v3.2). Shipped lockup SVGs live under [`assets/logo-pack/`](assets/logo-pack/README.md); the header uses theme-aware full lockups (not HTML-reconstructed wordmarks). Gap matrix: [`docs/design/nlt-brand/README.md`](../../docs/design/nlt-brand/README.md).
 
 ## Motion system — manual test checklist
 

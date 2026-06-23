@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.relations import RelationEntry
+    from tapps_brain.visual_snapshot import SnapshotAggregates
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -404,6 +405,92 @@ class PostgresPrivateBackend:
             cur.execute(_sql.VECTOR_ROW_COUNT_SQL, (self._project_id, self._agent_id))
             row = cur.fetchone()
         return int(row[0]) if row else 0
+
+    def snapshot_aggregates(self, project_id: str) -> SnapshotAggregates:
+        """Return visual-snapshot rollups without hydrating full memory rows."""
+        from tapps_brain.visual_snapshot import (
+            _TOP_TAGS_LIMIT,
+            AccessBucket,
+            AccessStats,
+            SnapshotAggregates,
+        )
+
+        if project_id != self._project_id:
+            msg = (
+                f"snapshot_aggregates project_id mismatch: "
+                f"expected {self._project_id!r}, got {project_id!r}"
+            )
+            raise ValueError(msg)
+
+        scope = (self._project_id, self._agent_id)
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.SNAPSHOT_ACCESS_STATS_SQL, scope)
+            access_row = cur.fetchone()
+
+            cur.execute(_sql.SNAPSHOT_TIER_COUNTS_SQL, scope)
+            tier_rows = cur.fetchall()
+
+            cur.execute(_sql.SNAPSHOT_AGENT_SCOPE_COUNTS_SQL, scope)
+            scope_rows = cur.fetchall()
+
+            cur.execute(_sql.SNAPSHOT_MEMORY_GROUP_COUNTS_SQL, scope)
+            group_rows = cur.fetchall()
+
+            cur.execute(_sql.SNAPSHOT_TAG_COUNTS_SQL, (*scope, _TOP_TAGS_LIMIT))
+            tag_rows = cur.fetchall()
+
+        if access_row is None:
+            access_stats = AccessStats(
+                sum_access_count=0,
+                mean_access_count=0.0,
+                entries_with_access=0,
+                sum_total_access_count=0,
+                sum_useful_access_count=0,
+                buckets=[
+                    AccessBucket(label="0", count=0),
+                    AccessBucket(label="1-5", count=0),
+                    AccessBucket(label="6-20", count=0),
+                    AccessBucket(label="21+", count=0),
+                ],
+            )
+        else:
+            sum_ac = int(access_row[0] or 0)
+            sum_total = int(access_row[1] or 0)
+            sum_useful = int(access_row[2] or 0)
+            with_access = int(access_row[3] or 0)
+            b0 = int(access_row[4] or 0)
+            b1 = int(access_row[5] or 0)
+            b2 = int(access_row[6] or 0)
+            b3 = int(access_row[7] or 0)
+            total = int(access_row[8] or 0)
+            access_stats = AccessStats(
+                sum_access_count=sum_ac,
+                mean_access_count=round(sum_ac / total, 4) if total else 0.0,
+                entries_with_access=with_access,
+                sum_total_access_count=sum_total,
+                sum_useful_access_count=sum_useful,
+                buckets=[
+                    AccessBucket(label="0", count=b0),
+                    AccessBucket(label="1-5", count=b1),
+                    AccessBucket(label="6-20", count=b2),
+                    AccessBucket(label="21+", count=b3),
+                ],
+            )
+
+        tier_distribution = {str(row[0]): int(row[1]) for row in tier_rows}
+        agent_scope_counts = {
+            (str(row[0]) if row[0] is not None else "private"): int(row[1]) for row in scope_rows
+        }
+        memory_group_counts = {str(row[0]): int(row[1]) for row in group_rows}
+        tag_counts = {str(row[0]): int(row[1]) for row in tag_rows}
+
+        return SnapshotAggregates(
+            tier_distribution=dict(sorted(tier_distribution.items())),
+            agent_scope_counts=dict(sorted(agent_scope_counts.items())),
+            access_stats=access_stats,
+            memory_group_counts=memory_group_counts,
+            tag_counts=tag_counts,
+        )
 
     # ------------------------------------------------------------------
     # Startup index sanity check (TAP-655)

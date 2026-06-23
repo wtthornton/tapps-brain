@@ -257,7 +257,11 @@ def _completeness(store: MemoryStore) -> DimensionScore:
 
 
 def _duplication(store: MemoryStore) -> DimensionScore:
-    rep = store.health()
+    # TAP-4332: reuse the cached consolidation gauge instead of triggering the
+    # O(n^2) find_consolidation_groups scan on every diagnostics run. Without
+    # this, store.diagnostics() was multi-minute on large stores (and ran the
+    # scan twice — once here, once in _staleness).
+    rep = store.health(skip_consolidation_scan=True)
     n = max(1, rep.entry_count)
     ratio = min(1.0, rep.consolidation_candidates / n)
     return DimensionScore(
@@ -268,7 +272,9 @@ def _duplication(store: MemoryStore) -> DimensionScore:
 
 
 def _staleness(store: MemoryStore) -> DimensionScore:
-    rep = store.health()
+    # TAP-4332: staleness only needs gc_candidates; skip the O(n^2) consolidation
+    # scan that store.health() would otherwise run.
+    rep = store.health(skip_consolidation_scan=True)
     n = max(1, rep.entry_count)
     ratio = min(1.0, rep.gc_candidates / n)
     return DimensionScore(

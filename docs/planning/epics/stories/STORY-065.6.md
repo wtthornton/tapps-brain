@@ -38,47 +38,44 @@ Add a MemoryVelocity dataclass to visual_snapshot.py with fields: writes_1h, rec
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Add MemoryVelocity dataclass: writes_1h, recalls_1h, writes_24h, recalls_24h (int fields, default 0) (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add _collect_velocity(store) helper: runs 4 COUNT queries (writes 1h, writes 24h, recalls 1h, recalls 24h) against the store backend (`src/tapps_brain/visual_snapshot.py`)
-- [ ] For Postgres backend use WHERE created_at > NOW() - INTERVAL '1 hour'; for SQLite use WHERE created_at > datetime('now','-1 hour') (`src/tapps_brain/visual_snapshot.py`)
-- [ ] recalls are approximated by last_accessed > NOW() - INTERVAL '1 hour' AND last_accessed != created_at (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add velocity: MemoryVelocity to VisualSnapshot model (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add Velocity panel HTML to index.html: section#velocity with 2x2 stat grid (writes-1h, recalls-1h, writes-24h, recalls-24h tiles) (`examples/brain-visual/index.html`)
-- [ ] Add renderVelocity(velocity) JS function with delta arrow logic: up-arrow if 1h rate > 24h hourly average, down-arrow otherwise (`examples/brain-visual/index.html`)
-- [ ] Add Velocity link to section nav (`examples/brain-visual/index.html`)
-- [ ] Add velocity help entry to brain-visual-help.js — explain what writes vs recalls mean, caveat that recalls approximation uses last_accessed (`examples/brain-visual/brain-visual-help.js`)
-- [ ] Add unit tests for _collect_velocity against mock store with known timestamps (`tests/unit/test_visual_snapshot.py`)
+- [x] Add MemoryVelocity dataclass: writes_1h, recalls_1h, writes_24h, recalls_24h (int fields, default 0) (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add _collect_velocity(store) helper: runs 4 COUNT queries (writes 1h, writes 24h, recalls 1h, recalls 24h) against the store backend (`src/tapps_brain/visual_snapshot.py`)
+- [x] For Postgres backend use WHERE created_at > NOW() - INTERVAL '1 hour'; for SQLite use WHERE created_at > datetime('now','-1 hour') (`src/tapps_brain/visual_snapshot.py`)
+- [x] recalls are approximated by last_accessed > NOW() - INTERVAL '1 hour' AND last_accessed != created_at (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add velocity: MemoryVelocity to VisualSnapshot model (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add Velocity panel HTML to index.html: section#velocity with 2x2 stat grid (writes-1h, recalls-1h, writes-24h, recalls-24h tiles) (`examples/brain-visual/index.html`)
+- [x] Add renderVelocity(velocity) JS function with delta arrow logic: up-arrow if 1h rate > 24h hourly average, down-arrow otherwise (`examples/brain-visual/index.html`)
+- [x] Add Velocity link to section nav (`examples/brain-visual/index.html`)
+- [x] Add velocity help entry to brain-visual-help.js — explain what writes vs recalls mean, caveat that recalls approximation uses last_accessed (`examples/brain-visual/brain-visual-help.js`)
+- [x] Add unit tests for _collect_velocity against mock store with known timestamps (`tests/unit/test_visual_snapshot.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] velocity field present in /snapshot response with writes_1h
-- [ ] recalls_1h
-- [ ] writes_24h
-- [ ] recalls_24h
-- [ ] counts match direct COUNT queries run against the same database at the same time (±1 for race)
-- [ ] Velocity panel renders 4 stat tiles with correct values
-- [ ] Up arrow shown when 1h write rate > 24h hourly average (writes_1h > writes_24h / 24)
-- [ ] Down arrow shown otherwise
-- [ ] Zero counts display as '0' not blank
-- [ ] Panel renders correctly on fresh deployment with all-zero velocity
-- [ ] _collect_velocity returns MemoryVelocity(0
-- [ ] 0
-- [ ] 0
-- [ ] 0) without exception when store has no entries
+- [x] velocity field present in /snapshot response with writes_1h
+- [x] recalls_1h
+- [x] writes_24h
+- [x] recalls_24h
+- [x] counts match direct COUNT queries run against the same database at the same time (±1 for race)
+- [x] Velocity panel renders 4 stat tiles with correct values
+- [x] Up arrow shown when 1h write rate > 24h hourly average (writes_1h > writes_24h / 24)
+- [x] Down arrow shown otherwise
+- [x] Zero counts display as '0' not blank
+- [x] Panel renders correctly on fresh deployment with all-zero velocity
+- [x] _collect_velocity returns MemoryVelocity(0, 0, 0, 0) without exception when store has no entries
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Memory velocity panel code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Memory velocity panel code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

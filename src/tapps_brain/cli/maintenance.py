@@ -641,6 +641,62 @@ def maintenance_verify_integrity(
         store.close()
 
 
+@maintenance_app.command("resign-integrity")
+def maintenance_resign_integrity(
+    project_dir: ProjectDir = None,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip confirmation prompt (also: TAPPS_BRAIN_CONFIRM_YES=1 env var).",
+        ),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Re-sign all entries' integrity hashes under the CURRENT signing key (TAP-4331).
+
+    Remediation for a signing-key mismatch — e.g. a database restored under a host
+    whose ``~/.tapps-brain/integrity.key`` differs from the key that wrote the rows,
+    so ``verify-integrity`` reports every row as tampered.
+
+    WARNING: this assumes the stored content is authentic and overwrites every
+    ``integrity_hash``, destroying the prior tamper-audit trail. Only run when the
+    data is trusted. Pass ``--yes`` (or set TAPPS_BRAIN_CONFIRM_YES=1) in scripts.
+    """
+    auto_yes = yes or os.environ.get("TAPPS_BRAIN_CONFIRM_YES") == "1"
+
+    store = _get_store(project_dir)
+    try:
+        if not auto_yes:
+            if sys.stdin.isatty():
+                report = store.verify_integrity()
+                typer.confirm(
+                    f"Re-sign {report['tampered']} of {report['total']} entries under the "
+                    f"current key? This overwrites integrity hashes and cannot be undone.",
+                    abort=True,
+                    default=False,
+                )
+            else:
+                typer.echo(
+                    "Non-interactive mode: pass --yes or set TAPPS_BRAIN_CONFIRM_YES=1 "
+                    "to confirm this destructive operation.",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+        result = store.resign_integrity()
+        if as_json:
+            _output(result, as_json=True)
+        else:
+            typer.echo(
+                f"Re-signed {result['resigned']} entries "
+                f"({result['skipped_no_change']} already current)."
+            )
+    finally:
+        store.close()
+
+
 # NOTE: the legacy `maintenance split-by-agent` command was removed in
 # ADR-007 — it operated on per-agent SQLite memory.db files.  Under the
 # Postgres-only persistence plane every agent already has an isolated

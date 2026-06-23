@@ -39,42 +39,43 @@ Add a RetrievalMetrics dataclass to visual_snapshot.py collecting in-process OTe
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Add RetrievalMetrics dataclass: total_queries int, bm25_hits int, vector_hits int, rrf_fusions int, mean_latency_ms float (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add _collect_retrieval_metrics() helper that reads OTel counter values from the in-process meter — instrument names: tapps_brain.recall.total, tapps_brain.bm25.candidates, tapps_brain.vector.candidates, tapps_brain.rrf.fusions, tapps_brain.recall.latency_ms (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Fall back to RetrievalMetrics(0,0,0,0,0.0) gracefully if OTel SDK not installed or no observations yet (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Verify OTel instruments exist in otel_tracer.py — add any missing counters/histograms for bm25_hits, vector_hits, rrf_fusions (`src/tapps_brain/otel_tracer.py`)
-- [ ] Add retrieval_metrics: RetrievalMetrics to VisualSnapshot model (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add Retrieval Metrics stat tiles to index.html retrieval section: 5 tiles below the existing mode badge, ids: rm-queries, rm-bm25, rm-vector, rm-rrf, rm-latency (`examples/brain-visual/index.html`)
-- [ ] Add renderRetrievalMetrics(metrics) JS function populating the 5 tiles; format mean_latency_ms to 1 decimal place with 'ms' suffix (`examples/brain-visual/index.html`)
-- [ ] Add retrieval_metrics help entry to brain-visual-help.js explaining what each counter means and the zero-on-restart caveat (`examples/brain-visual/brain-visual-help.js`)
-- [ ] Add unit tests for _collect_retrieval_metrics with OTel SDK present and absent (`tests/unit/test_visual_snapshot.py`)
+- [x] Add RetrievalMetrics dataclass: total_queries int, bm25_hits int, vector_hits int, rrf_fusions int, mean_latency_ms float (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add _collect_retrieval_metrics() helper that reads OTel counter values from the in-process meter — instrument names: tapps_brain.recall.total, tapps_brain.bm25.candidates, tapps_brain.vector.candidates, tapps_brain.rrf.fusions, tapps_brain.recall.latency_ms (`src/tapps_brain/visual_snapshot.py`)
+- [x] Fall back to RetrievalMetrics(0,0,0,0,0.0) gracefully if OTel SDK not installed or no observations yet (`src/tapps_brain/visual_snapshot.py`)
+- [x] Verify OTel instruments exist in otel_tracer.py — add any missing counters/histograms for bm25_hits, vector_hits, rrf_fusions (`src/tapps_brain/otel_tracer.py`)
+- [x] Add retrieval_metrics: RetrievalMetrics to VisualSnapshot model (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add Retrieval Metrics stat tiles to index.html retrieval section: 5 tiles below the existing mode badge, ids: rm-queries, rm-bm25, rm-vector, rm-rrf, rm-latency (`examples/brain-visual/index.html`)
+- [x] Add renderRetrievalMetrics(metrics) JS function populating the 5 tiles; format mean_latency_ms to 1 decimal place with 'ms' suffix (`examples/brain-visual/index.html`)
+- [x] Add retrieval_metrics help entry to brain-visual-help.js explaining what each counter means and the zero-on-restart caveat (`examples/brain-visual/brain-visual-help.js`)
+- [x] Add unit tests for _collect_retrieval_metrics with OTel SDK present and absent (`tests/unit/test_visual_snapshot.py`)
+- [x] Add `retrieval` snapshot block with latency percentiles and histogram (`src/tapps_brain/visual_snapshot.py`, `src/tapps_brain/otel_tracer.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] retrieval_metrics in /snapshot payload with all 5 fields present
-- [ ] total_queries increments by 1 after each store.recall() or store.search() call
-- [ ] bm25_hits reflects cumulative BM25 candidate count across all queries
-- [ ] vector_hits reflects cumulative vector candidate count (0 when mode is bm25_only)
-- [ ] rrf_fusions increments only when both legs returned candidates
-- [ ] mean_latency_ms is a running mean of recall latency in milliseconds
-- [ ] All metrics are 0 when no queries have been run since process start
-- [ ] _collect_retrieval_metrics returns zeros without exception when OTel SDK is not installed
-- [ ] Retrieval Metrics panel renders 5 tiles with correct values from live /snapshot
-- [ ] Mode badge still shows above the metrics tiles unchanged
+- [x] retrieval_metrics in /snapshot payload with all 5 fields present
+- [x] total_queries increments by 1 after each store.recall() or store.search() call
+- [x] bm25_hits reflects cumulative BM25 candidate count across all queries
+- [x] vector_hits reflects cumulative vector candidate count (0 when mode is bm25_only)
+- [x] rrf_fusions increments only when both legs returned candidates
+- [x] mean_latency_ms is a running mean of recall latency in milliseconds
+- [x] All metrics are 0 when no queries have been run since process start
+- [x] _collect_retrieval_metrics returns zeros without exception when OTel SDK is not installed
+- [x] Retrieval Metrics panel renders 5 tiles with correct values from live /snapshot
+- [x] Mode badge still shows above the metrics tiles unchanged
 
 <!-- docsmcp:end:acceptance-criteria -->
 
 <!-- docsmcp:start:definition-of-done -->
 ## Definition of Done
 
-- [ ] All tasks completed
-- [ ] Retrieval pipeline live metrics panel code reviewed and approved
-- [ ] Tests passing (unit + integration)
-- [ ] Documentation updated
-- [ ] No regressions introduced
+- [x] All tasks completed
+- [x] Retrieval pipeline live metrics panel code reviewed and approved
+- [x] Tests passing (unit + integration)
+- [x] Documentation updated
+- [x] No regressions introduced
 
 <!-- docsmcp:end:definition-of-done -->
 

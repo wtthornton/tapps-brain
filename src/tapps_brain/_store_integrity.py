@@ -19,6 +19,12 @@ from tapps_brain._store_base import _MemoryStoreBase
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+#: TAP-4331: fraction of hashed entries that must fail verification before we call
+#: it a signing-key mismatch (vs selective tampering). High enough that a few
+#: correctly-signed rows alongside a restored-under-a-different-key bulk still
+#: reads as a key mismatch.
+_KEY_MISMATCH_RATIO = 0.95
+
 
 class IntegrityMixin(_MemoryStoreBase):
     """HMAC integrity verification + v1->v2 rehash shim (TAP-2833)."""
@@ -87,11 +93,33 @@ class IntegrityMixin(_MemoryStoreBase):
                     "hash_version": str(hash_version),
                 }
             )
+
+        # TAP-4331: when (almost) every hashed entry fails verification, the cause
+        # is overwhelmingly a signing-key mismatch (e.g. data restored under a
+        # different ~/.tapps-brain/integrity.key), not selective tampering. Use a
+        # ratio so a handful of freshly, correctly-signed rows don't flip a
+        # wholesale key mismatch back to a "tampered" verdict.
+        _hashed = verified + len(tampered)
+        likely_key_mismatch = _hashed > 0 and (len(tampered) / _hashed) >= _KEY_MISMATCH_RATIO
+
+        # TAP-4331: emit ONE aggregated summary instead of a per-entry warning
+        # storm (5000 rows -> 5000 log lines on every store load drowned out
+        # real signal).  tampered_details still carries the per-row evidence.
+        if tampered:
             logger.warning(
-                "integrity_verification_failed",
-                key=entry.key,
-                tier=tier_str,
-                hash_version=hash_version,
+                "integrity_verification_summary",
+                total=total,
+                verified=verified,
+                tampered=len(tampered),
+                no_hash=len(missing_hash_keys),
+                likely_key_mismatch=likely_key_mismatch,
+                sample_tampered_keys=tampered[:5],
+                hint=(
+                    "all entries failed — likely signing-key mismatch, not tampering; "
+                    "run `tapps-brain maintenance resign-integrity` if the data is trusted"
+                    if likely_key_mismatch
+                    else "some entries failed integrity verification"
+                ),
             )
 
         return {
@@ -102,6 +130,7 @@ class IntegrityMixin(_MemoryStoreBase):
             "tampered_keys": tampered,
             "missing_hash_keys": missing_hash_keys,
             "tampered_details": tampered_details,
+            "likely_key_mismatch": likely_key_mismatch,
         }
 
     def rehash_integrity_v1(self) -> dict[str, int]:
@@ -206,3 +235,72 @@ class IntegrityMixin(_MemoryStoreBase):
             "skipped_no_hash": skipped_no_hash,
             "already_v2": already_v2,
         }
+
+    def resign_integrity(self) -> dict[str, int]:
+        """Re-sign every entry's integrity hash under the CURRENT signing key (TAP-4331).
+
+        Operator remediation for a signing-key mismatch — e.g. a database volume
+        restored under a host whose ``~/.tapps-brain/integrity.key`` (or
+        ``TAPPS_BRAIN_INTEGRITY_KEY`` env) differs from the key that originally
+        wrote the rows, so :meth:`verify_integrity` reports every row as tampered.
+
+        This **assumes the stored content is authentic** and overwrites
+        ``integrity_hash`` + ``integrity_hash_v`` with a fresh v2 hash, destroying
+        the prior tamper-audit trail.  Only run with explicit operator intent and
+        only when the data is trusted (see ``maintenance resign-integrity``).
+
+        Returns:
+            Dict with ``resigned`` and ``skipped_no_change`` counts.
+        """
+        from tapps_brain.integrity import (
+            INTEGRITY_HASH_VERSION as _HASH_V,
+        )
+        from tapps_brain.integrity import (
+            compute_integrity_hash,
+        )
+
+        with self._serialized():
+            keys = list(self._entries.keys())
+
+        resigned = 0
+        skipped_no_change = 0
+
+        for key in keys:
+            with self._serialized():
+                entry = self._entries.get(key)
+            if entry is None:
+                continue
+
+            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            new_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
+
+            if (
+                getattr(entry, "integrity_hash", None) == new_hash
+                and getattr(entry, "integrity_hash_v", 1) == _HASH_V
+            ):
+                skipped_no_change += 1
+                continue
+
+            resigned_entry = entry.model_copy(
+                update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
+            )
+            with self._lock:
+                self._entries[key] = resigned_entry
+
+            if self._hive_store is not None:
+                with contextlib.suppress(Exception):
+                    self._hive_store.save(resigned_entry)  # type: ignore[call-arg,arg-type,misc]
+
+            with contextlib.suppress(Exception):
+                self._persistence.save(resigned_entry)
+
+            resigned += 1
+
+        logger.warning(
+            "resign_integrity.complete",
+            resigned=resigned,
+            skipped_no_change=skipped_no_change,
+            hint="integrity hashes rewritten under the current signing key",
+        )
+        return {"resigned": resigned, "skipped_no_change": skipped_no_change}

@@ -5,6 +5,9 @@
 # .env.example is the committed template.
 .env
 .env.local
+# Local secret backups (smoke-test artifacts) — never commit.
+.env.smoke-*
+*.env.*.bak
 
 __pycache__/
 *.egg-info/

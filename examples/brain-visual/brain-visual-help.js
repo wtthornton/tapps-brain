@@ -455,7 +455,7 @@
             "live data from the tapps-brain <code>/snapshot</code> HTTP endpoint.</p>" +
             "<ul>" +
             "<li><strong style='color:#15803d'>LIVE</strong> — last successful fetch within 90 seconds; timestamp shown.</li>" +
-            "<li><strong style='color:#b45309'>STALE</strong> — last fetch was more than 90 seconds ago, or no fetch yet (OFFLINE).</li>" +
+            "<li><strong style='color:#98500e'>STALE</strong> — last fetch was more than 90 seconds ago, or no fetch yet (OFFLINE).</li>" +
             "<li><strong style='color:#b91c1c'>ERROR</strong> — 3 consecutive fetch failures; error message shown.</li>" +
             "</ul>",
         },
@@ -598,49 +598,8 @@
       reference: "Code: <code>models.py</code> · <code>decay.py</code>",
     },
 
-    memory_groups: {
-      title: "Memory groups",
-      sections: [
-        {
-          heading: "What it is",
-          html:
-            "<p>Named groupings of related entries (e.g. <code>auth-flows</code>, <code>deployment</code>). Each row shows group name + entry count.</p>",
-        },
-        {
-          heading: "Privacy",
-          html:
-            "<p>Group names are included only at privacy tier <code>local</code>. At <code>standard</code> / <code>strict</code> only the aggregate <code>memory_group_count</code> is exposed.</p>",
-        },
-        {
-          heading: "Why it matters",
-          html:
-            "<p>Helps you see where memories cluster without scanning individual entries; high-count groups are good candidates for consolidation review.</p>",
-        },
-      ],
-      reference: "Code: <code>visual_snapshot.py</code> · <code>memory_group_counts</code>",
-    },
-
-    tag_cloud: {
-      title: "Tag cloud",
-      sections: [
-        {
-          heading: "What it is",
-          html:
-            "<p>Top tags across the store, sized by frequency. Local privacy tier only; up to 40 tags are shown.</p>",
-        },
-        {
-          heading: "Privacy",
-          html:
-            "<p>Tag names are only exported when <code>privacy_tier=local</code>. At other tiers the tag cloud is empty by design.</p>",
-        },
-        {
-          heading: "Why it matters",
-          html:
-            "<p>Fast visual check that your tagging vocabulary matches your project; outliers or typos become obvious.</p>",
-        },
-      ],
-      reference: "Code: <code>visual_snapshot.py</code> · <code>_tag_stats_local</code>",
-    },
+    /* memory_groups: archived — section removed from dashboard (STORY-065.3, privacy-gated) */
+    /* tag_cloud: archived — section removed from dashboard (STORY-065.3, privacy-gated) */
 
     latency_percentiles: {
       title: "Latency percentiles",
@@ -930,10 +889,10 @@
         {
           heading: "What tapps-brain does",
           html:
-            "<p>Python emits authoritative rows; <code>scorecard-derive.js</code> reproduces them for older JSON files.</p>",
+            "<p>Python emits authoritative rows embedded in each v2 snapshot <code>scorecard[]</code> array.</p>",
         },
       ],
-      reference: "Code: <code>visual_snapshot._build_scorecard</code> · <code>scorecard-derive.js</code>",
+      reference: "Code: <code>visual_snapshot._build_scorecard</code>",
     },
 
     issue_ticket_draft: {
@@ -1044,7 +1003,7 @@
         {
           heading: "What tapps-brain does",
           html:
-            "<p>Python builds <code>scorecard[]</code>; the browser can re-derive from older files via <code>scorecard-derive.js</code>.</p>",
+            "<p>Python builds <code>scorecard[]</code> in every v2 snapshot; the dashboard renders embedded rows only.</p>",
         },
       ],
       reference: "Code: <code>visual_snapshot.py</code> · <code>ScorecardCheck</code>",
@@ -1198,7 +1157,7 @@
           html:
             "<ul>" +
             "<li><strong style='color:#047857'>● Connected</strong> — Hive is reachable and the table reflects live data.</li>" +
-            "<li><strong style='color:#b45309'>⚠ Degraded</strong> — Hive returned an error but was previously reachable.</li>" +
+            "<li><strong style='color:#98500e'>⚠ Degraded</strong> — Hive returned an error but was previously reachable.</li>" +
             "<li><strong style='color:#b91c1c'>● Offline</strong> — Hive is not reachable from this host or DSN is unset.</li>" +
             "</ul>",
         },
@@ -1217,8 +1176,8 @@
         },
       ],
       reference:
-        "Code: <code>visual_snapshot.py: HiveHealthSummary.namespace_detail</code> · " +
-        "<code>postgres_hive.py: namespace_detail_list()</code> · STORY-065.4",
+        "Code: <code>visual_snapshot.py: HiveHealthSummary.namespaces</code> · " +
+        "<code>postgres_hive.py: namespace_detail_list()</code> · STORY-078.10",
     },
 
     agent_topology: {
@@ -1236,7 +1195,7 @@
           html:
             "<ul>" +
             "<li><strong>Hub octagon</strong> — the shared Hive store; colored amber when online, muted when offline.</li>" +
-            "<li><strong>Namespace rectangle</strong> — one per namespace visible in <code>hive_health.namespaces</code>.</li>" +
+            "<li><strong>Namespace rectangle</strong> — one per namespace in <code>hive_health.namespaces[]</code>.</li>" +
             "<li><strong>Agent circle</strong> — one per registered agent (click to open detail drawer).</li>" +
             "</ul>",
         },

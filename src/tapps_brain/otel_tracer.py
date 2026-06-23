@@ -780,6 +780,19 @@ _rm_vector_candidates: int = 0
 _rm_rrf_fusions: int = 0
 _rm_latency_sum_ms: float = 0.0
 _rm_latency_count: int = 0
+_rm_latency_samples: list[float] = []
+_RM_LATENCY_MAX_SAMPLES: int = 512
+_RM_LATENCY_BUCKET_BOUNDS_MS: tuple[float, ...] = (
+    0.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    float("inf"),
+)
 
 
 def rm_increment_recall_total() -> None:
@@ -816,12 +829,15 @@ def rm_increment_rrf_fusions() -> None:
 
 def rm_add_recall_latency_ms(ms: float) -> None:
     """Record one recall latency observation (milliseconds)."""
-    global _rm_latency_sum_ms, _rm_latency_count
+    global _rm_latency_sum_ms, _rm_latency_count, _rm_latency_samples
     if ms < 0:
         return
     with _rm_lock:
         _rm_latency_sum_ms += ms
         _rm_latency_count += 1
+        _rm_latency_samples.append(ms)
+        if len(_rm_latency_samples) > _RM_LATENCY_MAX_SAMPLES:
+            _rm_latency_samples.pop(0)
 
 
 def get_retrieval_meter_snapshot() -> dict[str, int | float]:
@@ -856,3 +872,60 @@ def get_retrieval_meter_snapshot() -> dict[str, int | float]:
             "rrf_fusions": 0,
             "mean_latency_ms": 0.0,
         }
+
+
+def _latency_bucket_label(lower_ms: float, upper_ms: float) -> str:
+    if upper_ms == float("inf"):
+        return f"{int(lower_ms)}+ms"
+    lo = int(lower_ms)
+    hi = int(upper_ms)
+    return f"{lo}-{hi}ms"
+
+
+def _percentile_from_sorted(sorted_samples: list[float], pct: float) -> float:
+    n = len(sorted_samples)
+    if n == 0:
+        return 0.0
+    idx = min(int(n * pct / 100.0), n - 1)
+    return sorted_samples[idx]
+
+
+def get_retrieval_latency_detail() -> dict[str, object]:
+    """Return recall latency percentiles and histogram buckets for /snapshot.
+
+    Percentiles and buckets are derived from in-process samples recorded by
+    :func:`rm_add_recall_latency_ms`.  When no samples exist, percentile fields
+    and ``latency_histogram`` are ``None``.  This function never raises.
+    """
+    empty: dict[str, object] = {
+        "latency_p50_ms": None,
+        "latency_p95_ms": None,
+        "latency_p99_ms": None,
+        "latency_histogram": None,
+    }
+    try:
+        with _rm_lock:
+            samples = list(_rm_latency_samples)
+        if not samples:
+            return empty
+        sorted_samples = sorted(samples)
+        bounds = _RM_LATENCY_BUCKET_BOUNDS_MS
+        counts = [0] * (len(bounds) - 1)
+        for value in samples:
+            for idx in range(len(bounds) - 1):
+                if bounds[idx] <= value < bounds[idx + 1]:
+                    counts[idx] += 1
+                    break
+        histogram = [
+            {"label": _latency_bucket_label(bounds[i], bounds[i + 1]), "count": counts[i]}
+            for i in range(len(counts))
+            if counts[i] > 0
+        ]
+        return {
+            "latency_p50_ms": _percentile_from_sorted(sorted_samples, 50.0),
+            "latency_p95_ms": _percentile_from_sorted(sorted_samples, 95.0),
+            "latency_p99_ms": _percentile_from_sorted(sorted_samples, 99.0),
+            "latency_histogram": histogram or None,
+        }
+    except Exception:
+        return empty

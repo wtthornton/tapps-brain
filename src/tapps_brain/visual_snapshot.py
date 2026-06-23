@@ -11,10 +11,11 @@ The :func:`build_visual_snapshot` function assembles the full
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +51,14 @@ _SCORE_OK_MIN = 0.7
 _SCORE_WARN_MIN = 0.55
 _CAP_WARN_RATIO = 0.8
 _CAP_FAIL_RATIO = 0.95
+#: TAP-4332: run the live consolidation gauge scan inline only for stores at or
+#: below this size; larger stores reuse the cached gauge so /snapshot never
+#: stalls on the O(n^2) similarity scan (TAP-4330).
+_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES = 2000
+#: TAP-4332: refresh the persisted diagnostics row at most once per this many
+#: seconds on the snapshot path, so the dashboard stays current without running
+#: diagnostics on every poll.
+_DIAG_REFRESH_TTL_SEC = 300.0
 _MAINT_BACKLOG_WARN = 200
 
 
@@ -93,10 +102,10 @@ class VisualThemeTokens(BaseModel):
     )
 
 
-class NamespaceDetail(BaseModel):
+class HiveNamespaceRow(BaseModel):
     """Per-namespace entry count and last write timestamp (no memory text)."""
 
-    namespace: str
+    name: str
     entry_count: int = Field(default=0, ge=0)
     last_write_at: str | None = Field(
         default=None,
@@ -104,15 +113,18 @@ class NamespaceDetail(BaseModel):
     )
 
 
+# Backward-compatible alias (STORY-065.4); prefer HiveNamespaceRow in new code.
+NamespaceDetail = HiveNamespaceRow
+
+
 class HiveHealthSummary(BaseModel):
     """Hive hub telemetry (no memory text)."""
 
     connected: bool = False
     status: str = Field(default="ok", description="ok | warn")
-    namespaces: list[str] = Field(default_factory=list)
     entries: int = 0
     agents: int = 0
-    namespace_detail: list[NamespaceDetail] = Field(
+    namespaces: list[HiveNamespaceRow] = Field(
         default_factory=list,
         description="Per-namespace entry count and last write; populated when connected.",
     )
@@ -141,6 +153,16 @@ class TagStat(BaseModel):
 
     tag: str
     count: int = Field(ge=1)
+
+
+class SnapshotAggregates(BaseModel):
+    """Pre-computed snapshot rollups (no memory bodies or keys)."""
+
+    tier_distribution: dict[str, int] = Field(default_factory=dict)
+    agent_scope_counts: dict[str, int] = Field(default_factory=dict)
+    access_stats: AccessStats
+    memory_group_counts: dict[str, int] = Field(default_factory=dict)
+    tag_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class MemoryVelocity(BaseModel):
@@ -193,6 +215,35 @@ class RetrievalMetrics(BaseModel):
     )
 
 
+class LatencyHistogramBucket(BaseModel):
+    """One bar in the recall latency histogram."""
+
+    label: str
+    count: int = Field(ge=0)
+
+
+class RetrievalDetail(BaseModel):
+    """Latency percentiles and histogram for the retrieval dashboard panel."""
+
+    latency_p50_ms: float | None = Field(
+        default=None, description="Median recall latency (ms) from in-process samples."
+    )
+    latency_p95_ms: float | None = Field(default=None, description="95th-pct recall latency (ms).")
+    latency_p99_ms: float | None = Field(default=None, description="99th-pct recall latency (ms).")
+    latency_histogram: list[LatencyHistogramBucket] | None = Field(
+        default=None,
+        description="Fixed-bucket histogram of recall latencies; null when no samples yet.",
+    )
+    embedding_model: str | None = Field(
+        default=None,
+        description="Active embedding model id when an embedding provider is configured.",
+    )
+    cache_hit_ratio: float | None = Field(
+        default=None,
+        description="Optional recall cache hit ratio (not yet instrumented).",
+    )
+
+
 class VisualSnapshot(BaseModel):
     """``brain-visual.json`` contract (schema version 2)."""
 
@@ -238,6 +289,10 @@ class VisualSnapshot(BaseModel):
     retrieval_metrics: RetrievalMetrics = Field(
         default_factory=RetrievalMetrics,
         description="In-process BM25/vector/RRF counters and mean latency since last restart.",
+    )
+    retrieval: RetrievalDetail | None = Field(
+        default=None,
+        description="Latency percentiles and histogram from in-process recall observations.",
     )
     diagnostics: DiagnosticsSummary | None = None
     scorecard: list[ScorecardCheck] = Field(
@@ -310,13 +365,32 @@ def _hive_attached(store: MemoryStore) -> bool:
     return getattr(store, "_hive_store", None) is not None
 
 
-def _agent_scope_counts(store: MemoryStore) -> dict[str, int]:
-    entries = store.list_all()
+def _empty_access_stats() -> AccessStats:
+    return AccessStats(
+        sum_access_count=0,
+        mean_access_count=0.0,
+        entries_with_access=0,
+        sum_total_access_count=0,
+        sum_useful_access_count=0,
+        buckets=[
+            AccessBucket(label="0", count=0),
+            AccessBucket(label="1-5", count=0),
+            AccessBucket(label="6-20", count=0),
+            AccessBucket(label="21+", count=0),
+        ],
+    )
+
+
+def _agent_scope_counts_from_entries(entries: list[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for e in entries:
         scope = getattr(e, "agent_scope", None) or "private"
         counts[scope] = counts.get(scope, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _agent_scope_counts_from_aggregates(aggregates: SnapshotAggregates) -> dict[str, int]:
+    return dict(sorted(aggregates.agent_scope_counts.items()))
 
 
 def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
@@ -331,30 +405,29 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
             # Single GROUP BY query — prefer namespace_detail_list() when available.
             if hasattr(hive, "namespace_detail_list"):
                 raw_details = hive.namespace_detail_list()
-                ns_detail = [
-                    NamespaceDetail(
-                        namespace=row["namespace"],
+                ns_rows = [
+                    HiveNamespaceRow(
+                        name=str(row["namespace"]),
                         entry_count=int(row.get("entry_count", 0)),
                         last_write_at=row.get("last_write_at"),
                     )
                     for row in raw_details
                 ]
-                ns_detail_sorted = sorted(ns_detail, key=lambda d: d.namespace)
-                total_entries = sum(d.entry_count for d in ns_detail_sorted)
-                namespaces = [d.namespace for d in ns_detail_sorted]
             else:
                 ns_counts = hive.count_by_namespace()
-                ns_detail_sorted = []
-                total_entries = int(sum(ns_counts.values()))
-                namespaces = sorted(ns_counts.keys())
+                ns_rows = [
+                    HiveNamespaceRow(name=str(ns), entry_count=int(count), last_write_at=None)
+                    for ns, count in ns_counts.items()
+                ]
+            ns_rows_sorted = sorted(ns_rows, key=lambda d: d.name)
+            total_entries = sum(d.entry_count for d in ns_rows_sorted)
             registry = AgentRegistry()
             return HiveHealthSummary(
                 connected=True,
                 status="ok",
-                namespaces=namespaces,
+                namespaces=ns_rows_sorted,
                 entries=total_entries,
                 agents=len(registry.list_agents()),
-                namespace_detail=ns_detail_sorted,
             )
         finally:
             hive.close()
@@ -418,16 +491,33 @@ def _collect_agent_registry(
         return []
 
 
-def _memory_group_stats(
-    entries: list[Any],
-    *,
-    privacy: PrivacyTier,
-) -> tuple[int, dict[str, int] | None]:
+def _memory_group_counts_from_entries(entries: list[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for e in entries:
         mg = getattr(e, "memory_group", None)
         if mg:
             counts[mg] = counts.get(mg, 0) + 1
+    return counts
+
+
+def _memory_group_stats(
+    entries: list[Any],
+    *,
+    privacy: PrivacyTier,
+) -> tuple[int, dict[str, int] | None]:
+    counts = _memory_group_counts_from_entries(entries)
+    n = len(counts)
+    if privacy == "local":
+        return n, dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return n, None
+
+
+def _memory_group_stats_from_aggregates(
+    aggregates: SnapshotAggregates,
+    *,
+    privacy: PrivacyTier,
+) -> tuple[int, dict[str, int] | None]:
+    counts = aggregates.memory_group_counts
     n = len(counts)
     if privacy == "local":
         return n, dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
@@ -440,19 +530,7 @@ _ACCESS_HI = 20
 
 def _access_stats_from_entries(entries: list[Any]) -> AccessStats:
     if not entries:
-        return AccessStats(
-            sum_access_count=0,
-            mean_access_count=0.0,
-            entries_with_access=0,
-            sum_total_access_count=0,
-            sum_useful_access_count=0,
-            buckets=[
-                AccessBucket(label="0", count=0),
-                AccessBucket(label="1-5", count=0),
-                AccessBucket(label="6-20", count=0),
-                AccessBucket(label="21+", count=0),
-            ],
-        )
+        return _empty_access_stats()
     b0 = b1 = b2 = b3 = 0
     sum_ac = 0
     sum_total = 0
@@ -489,14 +567,63 @@ def _access_stats_from_entries(entries: list[Any]) -> AccessStats:
     )
 
 
-def _tag_stats_local(entries: list[Any], *, limit: int) -> list[TagStat]:
+def _tag_counts_from_entries(entries: list[Any]) -> dict[str, int]:
     freq: dict[str, int] = {}
     for e in entries:
         for t in getattr(e, "tags", None) or []:
             if isinstance(t, str) and t.strip():
                 freq[t] = freq.get(t, 0) + 1
-    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
+    return freq
+
+
+def _tag_stats_local(entries: list[Any], *, limit: int) -> list[TagStat]:
+    ranked = sorted(_tag_counts_from_entries(entries).items(), key=lambda kv: (-kv[1], kv[0]))
     return [TagStat(tag=k, count=v) for k, v in ranked[:limit]]
+
+
+def _tag_stats_from_counts(tag_counts: dict[str, int], *, limit: int) -> list[TagStat]:
+    ranked = sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [TagStat(tag=k, count=v) for k, v in ranked[:limit]]
+
+
+def _snapshot_aggregates_from_entries(entries: list[Any]) -> SnapshotAggregates:
+    """Reference rollup used by in-memory stores and golden parity tests."""
+    return SnapshotAggregates(
+        tier_distribution=_tier_distribution_from_entries(entries),
+        agent_scope_counts=_agent_scope_counts_from_entries(entries),
+        access_stats=_access_stats_from_entries(entries),
+        memory_group_counts=_memory_group_counts_from_entries(entries),
+        tag_counts=_tag_counts_from_entries(entries),
+    )
+
+
+def _tier_distribution_from_entries(entries: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for e in entries:
+        tier = getattr(e, "tier", None)
+        if tier is None:
+            key = "pattern"
+        elif hasattr(tier, "value"):
+            key = str(tier.value)
+        else:
+            key = str(tier)
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _try_load_snapshot_aggregates(store: MemoryStore) -> SnapshotAggregates | None:
+    """Return backend SQL aggregates when supported; otherwise ``None``."""
+    backend = store._persistence
+    # Unit-test MagicMock stores auto-vivify attributes; never treat them as SQL backends.
+    if type(backend).__module__ == "unittest.mock":
+        return None
+    agg_fn = getattr(backend, "snapshot_aggregates", None)
+    if not callable(agg_fn):
+        return None
+    project_id = getattr(store, "_project_id", None) or getattr(backend, "_project_id", None)
+    if project_id is None:
+        return None
+    return cast("SnapshotAggregates", agg_fn(project_id))
 
 
 def _redact_health(hdump: dict[str, Any], privacy: PrivacyTier) -> dict[str, Any]:
@@ -550,7 +677,7 @@ def _build_scorecard(
             )
         )
 
-    if skip_diagnostics or diagnostics is None:
+    if skip_diagnostics:
         checks.append(
             ScorecardCheck(
                 id="diagnostics_data",
@@ -558,6 +685,17 @@ def _build_scorecard(
                 status="unknown",
                 detail="Diagnostics omitted (export used --skip-diagnostics).",
                 ticket_hint="Re-export without --skip-diagnostics for circuit/score signals.",
+            )
+        )
+    elif diagnostics is None:
+        # TAP-4332: not skipped — there is simply no recorded diagnostics row yet.
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_data",
+                title="Diagnostics data",
+                status="unknown",
+                detail="No recent diagnostics recorded yet.",
+                ticket_hint="Run `tapps-brain diagnostics health` to record the first snapshot.",
             )
         )
     else:
@@ -618,6 +756,24 @@ def _build_scorecard(
                 status="ok",
                 detail="No tampered integrity hashes reported.",
                 ticket_hint="",
+            )
+        )
+    elif bool(getattr(report, "integrity_likely_key_mismatch", False)):
+        # TAP-4331: every hashed entry failed -> signing-key mismatch (data
+        # restored under a different ~/.tapps-brain/integrity.key), not tampering.
+        checks.append(
+            ScorecardCheck(
+                id="integrity_tampered",
+                title="Integrity (key mismatch)",
+                status="warn",
+                detail=(
+                    f"All {tampered} entr(y/ies) failed verification — likely a signing-key "
+                    "mismatch (data restored under a different integrity key), not tampering."
+                ),
+                ticket_hint=(
+                    "If the data is trusted, re-sign under the current key: "
+                    "`tapps-brain maintenance resign-integrity`."
+                ),
             )
         )
     else:
@@ -814,9 +970,10 @@ def _collect_velocity(store: MemoryStore) -> MemoryVelocity:
     Postgres connection manager (e.g. the in-process unit-test backend).
     """
     try:
-        cm = getattr(store._persistence, "_cm", None)
-        project_id = getattr(store._persistence, "_project_id", None)
-        agent_id = getattr(store._persistence, "_agent_id", None)
+        backend = store._persistence
+        cm = getattr(backend, "_cm", None)
+        project_id = getattr(backend, "_project_id", None)
+        agent_id = getattr(backend, "_agent_id", None)
         if cm is None or project_id is None or agent_id is None:
             return MemoryVelocity()
         with cm.get_connection() as conn, conn.cursor() as cur:
@@ -876,6 +1033,73 @@ def _collect_retrieval_metrics() -> RetrievalMetrics:
         return RetrievalMetrics()
 
 
+def _collect_retrieval_detail(store: MemoryStore) -> RetrievalDetail:
+    """Build latency percentiles/histogram and optional embedding model id."""
+    detail = RetrievalDetail()
+    try:
+        from tapps_brain.otel_tracer import get_retrieval_latency_detail
+
+        lat = get_retrieval_latency_detail()
+        p50 = lat.get("latency_p50_ms")
+        p95 = lat.get("latency_p95_ms")
+        p99 = lat.get("latency_p99_ms")
+        detail.latency_p50_ms = float(p50) if isinstance(p50, (int, float)) else None
+        detail.latency_p95_ms = float(p95) if isinstance(p95, (int, float)) else None
+        detail.latency_p99_ms = float(p99) if isinstance(p99, (int, float)) else None
+        raw_hist = lat.get("latency_histogram")
+        if isinstance(raw_hist, list) and raw_hist:
+            detail.latency_histogram = [
+                LatencyHistogramBucket(
+                    label=str(row.get("label", "")),
+                    count=int(row.get("count", 0)),
+                )
+                for row in raw_hist
+                if isinstance(row, dict)
+            ] or None
+    except Exception:
+        pass
+
+    try:
+        provider = getattr(store, "_embedding_provider", None)
+        model_id = getattr(provider, "model_id", None) if provider is not None else None
+        if model_id:
+            detail.embedding_model = str(model_id)
+    except Exception:
+        pass
+
+    return detail
+
+
+def _maybe_refresh_diagnostics(store: MemoryStore) -> None:
+    """Throttled diagnostics refresh for the dashboard (TAP-4332).
+
+    Records a fresh diagnostics row at most once per :data:`_DIAG_REFRESH_TTL_SEC`
+    so the dashboard's composite score / circuit state stay current without running
+    diagnostics on every poll.  Cheap now that the duplication/staleness dimensions
+    skip the O(n^2) consolidation scan.  Best-effort — never raises on the snapshot
+    path.  ``run_remediation=False`` keeps this read-driven refresh from triggering
+    remediation side effects.
+    """
+    try:
+        latest = store.diagnostics_history(limit=1)
+    except Exception:
+        return
+    if latest:
+        raw = str(latest[0].get("recorded_at") or "")
+        try:
+            recorded = datetime.fromisoformat(raw)
+        except ValueError:
+            recorded = None
+        if recorded is not None:
+            if recorded.tzinfo is None:
+                recorded = recorded.replace(tzinfo=UTC)
+            age = (datetime.now(UTC) - recorded).total_seconds()
+            if age < _DIAG_REFRESH_TTL_SEC:
+                return
+    with contextlib.suppress(Exception):
+        store.diagnostics(record_history=True, run_remediation=False)
+
+
 def build_visual_snapshot(
     store: MemoryStore,
     *,
@@ -885,12 +1109,29 @@ def build_visual_snapshot(
     """Build a versioned visual snapshot from an open store."""
     from tapps_brain.health_check import retrieval_health_slice
 
-    report = store.health()
+    # EPIC-078 / TAP-4330+4332: the O(n^2) consolidation similarity scan in
+    # health() can take minutes on a full store (thousands of entries) and 504 the
+    # /snapshot endpoint.  Run the live gauge scan inline only for normal-sized
+    # stores; above the cap reuse the cached gauge so the request never stalls.
+    report = store.health(consolidation_scan_max_entries=_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES)
     hdump = _redact_health(report.model_dump(mode="json"), privacy)
-    entries = store.list_all()
-    agent_scopes = _agent_scope_counts(store)
+    aggregates = _try_load_snapshot_aggregates(store)
+    if aggregates is not None:
+        agent_scopes = _agent_scope_counts_from_aggregates(aggregates)
+        mg_count, mg_counts = _memory_group_stats_from_aggregates(aggregates, privacy=privacy)
+        access_stats = aggregates.access_stats
+        tag_stats: list[TagStat] | None = (
+            _tag_stats_from_counts(aggregates.tag_counts, limit=_TOP_TAGS_LIMIT)
+            if privacy == "local"
+            else None
+        )
+    else:
+        entries = store.list_all()
+        agent_scopes = _agent_scope_counts_from_entries(entries)
+        mg_count, mg_counts = _memory_group_stats(entries, privacy=privacy)
+        access_stats = _access_stats_from_entries(entries)
+        tag_stats = _tag_stats_local(entries, limit=_TOP_TAGS_LIMIT) if privacy == "local" else None
     hive_on = _hive_attached(store)
-    mg_count, mg_counts = _memory_group_stats(entries, privacy=privacy)
 
     mode, summary = retrieval_health_slice(store)
     _raw_n = getattr(store, "vector_row_count", 0)
@@ -911,19 +1152,27 @@ def build_visual_snapshot(
     fingerprint = compute_fingerprint_hex(identity)
     theme = theme_from_fingerprint(fingerprint)
 
+    # EPIC-078: do NOT recompute diagnostics on every /snapshot request.  A live
+    # run used to execute the O(n^2) consolidation scan (the duplication + staleness
+    # dimensions each called store.health()).  TAP-4332 made those dimensions skip
+    # the scan, so a refresh is now O(n); we throttle it to once per TTL and read
+    # the persisted row.  Stays None until the first row is recorded.
     diagnostics: DiagnosticsSummary | None = None
     if not skip_diagnostics:
-        diag = store.diagnostics(record_history=False)
-        diagnostics = DiagnosticsSummary(
-            composite_score=diag.composite_score,
-            circuit_state=diag.circuit_state,
-            recorded_at=diag.recorded_at,
-        )
+        _maybe_refresh_diagnostics(store)
+        try:
+            _latest_diag = store.diagnostics_history(limit=1)
+        except Exception:
+            _latest_diag = []
+        if _latest_diag:
+            _drow = _latest_diag[0]
+            score = float(_drow.get("composite_score") or 0.0)
+            diagnostics = DiagnosticsSummary(
+                composite_score=min(1.0, max(0.0, score)),
+                circuit_state=str(_drow.get("circuit_state") or "closed"),
+                recorded_at=str(_drow.get("recorded_at") or ""),
+            )
 
-    access_stats = _access_stats_from_entries(entries)
-    tag_stats: list[TagStat] | None = (
-        _tag_stats_local(entries, limit=_TOP_TAGS_LIMIT) if privacy == "local" else None
-    )
     velocity = _collect_velocity(store)
 
     hive_health = _collect_hive_health(store)
@@ -990,6 +1239,7 @@ def build_visual_snapshot(
         retrieval_effective_mode=mode,
         retrieval_summary=summary,
         retrieval_metrics=_collect_retrieval_metrics(),
+        retrieval=_collect_retrieval_detail(store),
         vector_index_enabled=True,
         vector_index_rows=sv_n,
         memory_group_count=mg_count,

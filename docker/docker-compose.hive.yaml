@@ -97,6 +97,12 @@ services:
       TAPPS_BRAIN_MCP_HOST: "0.0.0.0"
       TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
       TAPPS_BRAIN_ADMIN_TOKEN: ${TAPPS_BRAIN_ADMIN_TOKEN:?set TAPPS_BRAIN_ADMIN_TOKEN in docker/.env}
+      # HMAC integrity signing key (TAP-4331).  MUST be a stable, persistent
+      # value: without it the brain generates a fresh per-container key on every
+      # image rebuild, so all prior rows fail integrity verification ("key
+      # mismatch").  Set a base64/hex 32-byte value in docker/.env; clients
+      # (AgentForge, agents) never set this — signing is server-side only.
+      TAPPS_BRAIN_INTEGRITY_KEY: "${TAPPS_BRAIN_INTEGRITY_KEY:-}"
       TAPPS_BRAIN_ALLOWED_ORIGINS: "${TAPPS_BRAIN_ALLOWED_ORIGINS:-}"
       # mcp SDK 1.27.0 enables DNS-rebinding protection by default with an
       # empty allow-list, so any Host header (including the Docker service
@@ -199,6 +205,13 @@ services:
     depends_on:
       tapps-brain-http:
         condition: service_healthy
+    healthcheck:
+      # STORY-078.5: nginx liveness only — does not probe tapps-brain-http.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/healthz | grep -q tapps-visual"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

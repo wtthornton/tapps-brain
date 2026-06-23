@@ -38,33 +38,33 @@ Add an agent_registry: list[AgentEntry] field to VisualSnapshot (populated only 
 <!-- docsmcp:start:tasks -->
 ## Tasks
 
-- [ ] Add AgentEntry TypedDict with fields: agent_id, namespace, scope, registered_at, last_write_at (nullable) (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add agent_registry: list[AgentEntry] to VisualSnapshot model, populated from AgentRegistry.list_agents() when hive connected (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add _collect_agent_registry(hive_backend) helper that calls AgentRegistry(hive_backend).list_agents() and maps to AgentEntry list (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Guard _collect_agent_registry with try/except — return [] if AgentRegistry table does not exist (pre-migration schema) (`src/tapps_brain/visual_snapshot.py`)
-- [ ] Add Agents section HTML to index.html after Hive hub section — table with id='agents-table', columns: Agent ID, Namespace, Scope, Last Write (`examples/brain-visual/index.html`)
-- [ ] Add renderAgentRegistry(agents) JS function that populates #agents-table, sorts by last_write_at desc, applies amber highlight for >24h silent, grey for null last_write_at (`examples/brain-visual/index.html`)
-- [ ] Add Agents link to section nav (`examples/brain-visual/index.html`)
-- [ ] Add agent_registry help entry to brain-visual-help.js explaining scope types and last-write interpretation (`examples/brain-visual/brain-visual-help.js`)
-- [ ] Add unit tests for _collect_agent_registry with mock AgentRegistry returning known rows (`tests/unit/test_visual_snapshot.py`)
+- [x] Add AgentEntry TypedDict with fields: agent_id, namespace, scope, registered_at, last_write_at (nullable) (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add agent_registry: list[AgentEntry] to VisualSnapshot model, populated from AgentRegistry.list_agents() when hive connected (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add _collect_agent_registry(hive_backend) helper that calls AgentRegistry(hive_backend).list_agents() and maps to AgentEntry list (`src/tapps_brain/visual_snapshot.py`)
+- [x] Guard _collect_agent_registry with try/except — return [] if AgentRegistry table does not exist (pre-migration schema) (`src/tapps_brain/visual_snapshot.py`)
+- [x] Add Agents section HTML to index.html after Hive hub section — table with id='agents-table', columns: Agent ID, Namespace, Scope, Last Write (`examples/brain-visual/index.html`)
+- [x] Add renderAgentRegistry(agents) JS function that populates #agents-table, sorts by last_write_at desc, applies amber highlight for >24h silent, grey for null last_write_at (`examples/brain-visual/index.html`)
+- [x] Add Agents link to section nav (`examples/brain-visual/index.html`)
+- [x] Add agent_registry help entry to brain-visual-help.js explaining scope types and last-write interpretation (`examples/brain-visual/brain-visual-help.js`)
+- [x] Add unit tests for _collect_agent_registry with mock AgentRegistry returning known rows (`tests/unit/test_visual_snapshot.py`)
 
 <!-- docsmcp:end:tasks -->
 
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] agent_registry in /snapshot payload contains one entry per row in AgentRegistry table
-- [ ] AgentEntry fields agent_id
-- [ ] namespace
-- [ ] scope
-- [ ] registered_at
-- [ ] last_write_at are all populated
-- [ ] Table renders with correct row count matching AgentRegistry
-- [ ] Rows sorted by last_write_at descending on render
-- [ ] Agents with last_write_at > 24h ago have amber row class
-- [ ] Agents with last_write_at == null have grey row class
-- [ ] Empty state shown when agent_registry is [] with message 'No agents registered'
-- [ ] _collect_agent_registry returns [] without exception when AgentRegistry table does not exist
+- [x] agent_registry in /snapshot payload contains one entry per row in AgentRegistry table
+- [x] AgentEntry fields agent_id
+- [x] namespace
+- [x] scope
+- [x] registered_at
+- [x] last_write_at are all populated
+- [x] Table renders with correct row count matching AgentRegistry
+- [x] Rows sorted by last_write_at descending on render
+- [x] Agents with last_write_at > 24h ago have amber row class
+- [x] Agents with last_write_at == null have grey row class
+- [x] Empty state shown when agent_registry is [] with message 'No agents registered'
+- [x] _collect_agent_registry returns [] without exception when AgentRegistry table does not exist
 
 <!-- docsmcp:end:acceptance-criteria -->
 
