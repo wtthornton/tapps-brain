@@ -113,7 +113,7 @@ profile:
     min_confidence: 0.1
 
   limits:
-    max_entries: 5000
+    max_entries: 10000
     max_key_length: 128
     max_value_length: 4096
     max_tags: 10
