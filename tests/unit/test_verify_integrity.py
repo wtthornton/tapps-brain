@@ -229,6 +229,21 @@ class TestKeyMismatch:
         assert result["tampered"] == 2
         assert result["likely_key_mismatch"] is True
 
+    def test_bulk_failure_with_one_verified_still_key_mismatch(
+        self, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A few correctly-signed rows must not flip a wholesale key mismatch to 'tampered'."""
+        for i in range(40):
+            store.save(f"old-{i}", f"v{i}", tier="pattern", source="agent")
+        _swap_signing_key(monkeypatch)
+        # One row written AFTER the key swap verifies under the current key.
+        store.save("fresh", "new value", tier="pattern", source="agent")
+
+        result = store.verify_integrity()
+        assert result["verified"] == 1
+        assert result["tampered"] == 40
+        assert result["likely_key_mismatch"] is True
+
     def test_partial_failure_is_not_key_mismatch(self, store: MemoryStore) -> None:
         store.save("ok", "valid value", tier="pattern", source="agent")
         store.save("bad", "original", tier="pattern", source="agent")

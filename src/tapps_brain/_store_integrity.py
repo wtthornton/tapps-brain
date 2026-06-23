@@ -19,6 +19,12 @@ from tapps_brain._store_base import _MemoryStoreBase
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+#: TAP-4331: fraction of hashed entries that must fail verification before we call
+#: it a signing-key mismatch (vs selective tampering). High enough that a few
+#: correctly-signed rows alongside a restored-under-a-different-key bulk still
+#: reads as a key mismatch.
+_KEY_MISMATCH_RATIO = 0.95
+
 
 class IntegrityMixin(_MemoryStoreBase):
     """HMAC integrity verification + v1->v2 rehash shim (TAP-2833)."""
@@ -88,10 +94,13 @@ class IntegrityMixin(_MemoryStoreBase):
                 }
             )
 
-        # TAP-4331: when every hashed entry fails verification, the cause is
-        # almost certainly a signing-key mismatch (e.g. data restored under a
-        # different ~/.tapps-brain/integrity.key), not selective tampering.
-        likely_key_mismatch = verified == 0 and len(tampered) > 0
+        # TAP-4331: when (almost) every hashed entry fails verification, the cause
+        # is overwhelmingly a signing-key mismatch (e.g. data restored under a
+        # different ~/.tapps-brain/integrity.key), not selective tampering. Use a
+        # ratio so a handful of freshly, correctly-signed rows don't flip a
+        # wholesale key mismatch back to a "tampered" verdict.
+        _hashed = verified + len(tampered)
+        likely_key_mismatch = _hashed > 0 and (len(tampered) / _hashed) >= _KEY_MISMATCH_RATIO
 
         # TAP-4331: emit ONE aggregated summary instead of a per-entry warning
         # storm (5000 rows -> 5000 log lines on every store load drowned out
