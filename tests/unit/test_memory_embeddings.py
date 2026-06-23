@@ -189,7 +189,9 @@ class TestEmbeddingProviderSingleton:
             for _ in range(5):
                 get_embedding_provider()
         loaded_calls = [
-            c for c in mock_logger.info.call_args_list if c.args and c.args[0] == "embedding_model_loaded"
+            c
+            for c in mock_logger.info.call_args_list
+            if c.args and c.args[0] == "embedding_model_loaded"
         ]
         assert len(loaded_calls) == 1
 

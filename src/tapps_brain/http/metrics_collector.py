@@ -488,9 +488,7 @@ def _emit_snapshot_metrics(lines: list[str]) -> None:
         return
 
     metric_name = "tapps_brain_snapshot_build_duration_seconds"
-    lines.append(
-        f"# HELP {metric_name} Wall-clock seconds for cold build_visual_snapshot calls."
-    )
+    lines.append(f"# HELP {metric_name} Wall-clock seconds for cold build_visual_snapshot calls.")
     lines.append(f"# TYPE {metric_name} histogram")
     buckets: tuple[float, ...] = build_snap.get("buckets", ())  # type: ignore[assignment]
     bucket_counts: list[int] = build_snap.get("bucket_counts", [])  # type: ignore[assignment]

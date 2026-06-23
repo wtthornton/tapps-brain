@@ -206,7 +206,7 @@ class TestStoreCommands:
     def test_stats(self, project_dir):
         result = runner.invoke(app, ["store", "stats", "--project-dir", project_dir])
         assert result.exit_code == 0
-        assert "Entries: 3 / 5000" in result.stdout
+        assert "Entries: 3 / 10000" in result.stdout
         assert "Schema: v" in result.stdout  # version number varies by backend
 
     def test_stats_json(self, project_dir):

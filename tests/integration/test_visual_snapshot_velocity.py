@@ -50,9 +50,7 @@ def _migrate() -> None:
 
 
 class TestVisualSnapshotVelocityPostgres:
-    def test_collect_velocity_non_zero_after_recent_writes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_collect_velocity_non_zero_after_recent_writes(self, tmp_path: Path) -> None:
         """Recent saves produce non-zero writes_1h and writes_24h from Postgres."""
         from tapps_brain.visual_snapshot import _collect_velocity
 
@@ -69,9 +67,7 @@ class TestVisualSnapshotVelocityPostgres:
         assert vel.recalls_1h == 0
         assert vel.recalls_24h == 0
 
-    def test_build_visual_snapshot_velocity_matches_collect(
-        self, tmp_path: Path
-    ) -> None:
+    def test_build_visual_snapshot_velocity_matches_collect(self, tmp_path: Path) -> None:
         """build_visual_snapshot velocity block matches _collect_velocity on Postgres."""
         from tapps_brain.visual_snapshot import _collect_velocity, build_visual_snapshot
 
