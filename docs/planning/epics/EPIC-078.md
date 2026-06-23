@@ -1,7 +1,7 @@
 # Epic 78: Brain Visual Dashboard — Operational Recovery
 
 <!-- docsmcp:start:metadata -->
-**Status:** Proposed
+**Status:** Complete — all stories shipped; `make brain-visual-smoke-live` 12/12 pass (2026-06-23); TAP-4331/TAP-4332 follow-ups in branch
 **Priority:** P0 — Blocker
 **Estimated LOE:** ~3 weeks (1 developer)
 **Dependencies:** EPIC-065 (partial), EPIC-067 (compose wiring), EPIC-068 (multi-page UI shell)
@@ -15,7 +15,7 @@
 
 The brain-visual dashboard at `http://localhost:8088/` is the primary operator surface for a Docker-deployed tapps-brain stack, but it is **fully non-functional** in the live deployment: static HTML/CSS/JS loads while every data panel remains empty because `GET /snapshot` returns **504 Gateway Timeout** and `tapps-brain-http` is **unhealthy** (`/healthz` times out).
 
-Investigation on **2026-06-22** confirmed a multi-layer failure chain spanning backend event-loop blocking, O(n) snapshot builds, nginx proxy timeouts, missing smoke coverage for the `:8088` path, and incomplete EPIC-065 live-monitoring panels. EPIC-067 is marked Complete but `/snapshot` acceptance criteria were never met on the running stack. EPIC-065 stories **65.3–65.7** remain open.
+Investigation on **2026-06-22** confirmed a multi-layer failure chain spanning backend event-loop blocking, O(n) snapshot builds, nginx proxy timeouts, missing smoke coverage for the `:8088` path, and incomplete EPIC-065 live-monitoring panels. Recovery shipped **2026-06-23**: async snapshot build, SQL aggregates, embedding singleton, nginx hardening, smoke gates, EPIC-065 panels (078.9–078.13), and performance follow-ups (consolidation scan cap, diagnostics throttle, integrity key-mismatch UX).
 
 This epic restores end-to-end operability and hardens the dashboard/API contract so operators can trust the LIVE badge.
 <!-- docsmcp:end:purpose-intent -->
@@ -86,14 +86,14 @@ build_visual_snapshot (visual_snapshot.py)
 <!-- docsmcp:start:acceptance-criteria -->
 ## Acceptance Criteria
 
-- [ ] `GET http://localhost:8088/snapshot` returns HTTP 200 with valid VisualSnapshot JSON (`schema_version` 2) via nginx proxy within 10s cold / 2s warm
-- [ ] `tapps-brain-http` Docker healthcheck (`/healthz`) passes consistently after stack boot
-- [ ] Dashboard at `:8088` shows **LIVE** badge and populated panels (KPI strip, scorecard, tier chart) within one poll cycle
-- [ ] `make brain-visual-smoke-live` passes against running stack (new target)
-- [ ] `brain_smoke_live.sh` extended to assert `/snapshot` latency and schema
-- [ ] Degraded-mode UI distinguishes **504 timeout** vs **401 auth** vs **503 no-store** with operator-action copy
-- [ ] EPIC-065 stories **65.3–65.7** acceptance criteria met or explicitly descoped with rationale in EPIC-065
-- [ ] Ops runbook documents OFFLINE triage path in `docs/guides/visual-snapshot.md` or `docs/guides/hive-deployment.md`
+- [x] `GET http://localhost:8088/snapshot` returns HTTP 200 with valid VisualSnapshot JSON (`schema_version` 2) via nginx proxy within 10s cold / 2s warm (~0.3s warm observed)
+- [x] `tapps-brain-http` Docker healthcheck (`/healthz`) passes consistently after stack boot
+- [x] Dashboard at `:8088` shows **LIVE** badge and populated panels (KPI strip, scorecard, tier chart) within one poll cycle
+- [x] `make brain-visual-smoke-live` passes against running stack (new target)
+- [x] `brain_smoke_live.sh` extended to assert `/snapshot` latency and schema
+- [x] Degraded-mode UI distinguishes **504 timeout** vs **401 auth** vs **503 no-store** with operator-action copy
+- [x] EPIC-065 stories **65.3–65.7** acceptance criteria met via 078.9–078.13
+- [x] Ops runbook documents OFFLINE triage path in `docs/guides/visual-snapshot.md` and `docs/guides/hive-deployment.md`
 
 <!-- docsmcp:end:acceptance-criteria -->
 
@@ -125,9 +125,9 @@ build_visual_snapshot (visual_snapshot.py)
 <!-- docsmcp:start:technical-notes -->
 ## Technical Notes
 
-- Snapshot route: `src/tapps_brain/http_adapter.py:1607-1641` — sync `build_visual_snapshot()` under `cfg.snapshot_lock`, 15s TTL
-- Snapshot builder: `src/tapps_brain/visual_snapshot.py:879-1006` — `list_all()`, hive agent registry, diagnostics history (100 rows), feedback (200 rows)
-- nginx proxy: `docker/nginx-visual.conf:13-24` — `proxy_read_timeout 10s`, Bearer + `X-Project-Id` placeholders
+- Snapshot route: `src/tapps_brain/http_adapter.py` — `asyncio.to_thread(build_visual_snapshot)` + build lock, 15s TTL cache
+- Snapshot builder: `src/tapps_brain/visual_snapshot.py` — SQL `snapshot_aggregates()` (no full `list_all` on Postgres), throttled diagnostics refresh (300s), consolidation scan cap (2000 entries), hive/agent/retrieval panels
+- nginx proxy: `docker/nginx-visual.conf` — `proxy_read_timeout 30s`, JSON 502/504 bodies, `:8088/healthz`
 - UI polling: `examples/brain-visual/index.html:5259-5339` — 30s interval, STALE at 90s, ERROR at 3 failures
 - Related epics: EPIC-065 (live dashboard, incomplete), EPIC-067 (compose, marked complete), EPIC-068 (UI shell, done)
 
@@ -171,8 +171,8 @@ build_visual_snapshot (visual_snapshot.py)
 <!-- docsmcp:start:related-epics -->
 ## Related Epics
 
-- **EPIC-065** — Live dashboard (65.1–65.2 done; 65.3–65.7 open)
-- **EPIC-067** — Docker Hive stack completeness (marked Complete; live `/snapshot` still failing)
+- **EPIC-065** — Live dashboard (65.1–65.7 complete via EPIC-078)
+- **EPIC-067** — Docker Hive stack completeness (Complete; `/snapshot` now verified live)
 - **EPIC-068** — Multi-page hash router (Done)
 
 <!-- docsmcp:end:related-epics -->

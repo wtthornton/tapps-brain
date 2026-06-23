@@ -3075,9 +3075,9 @@
             <p class="kpi-sub">hashes match</p>
           </div>
           <div class="kpi" id="integrity-kpi-tampered">
-            <p class="kpi-lbl">Tampered</p>
+            <p class="kpi-lbl" id="integ-tampered-lbl">Tampered</p>
             <p class="kpi-val" id="integ-tampered">—</p>
-            <p class="kpi-sub">hash mismatch</p>
+            <p class="kpi-sub" id="integ-tampered-sub">hash mismatch</p>
           </div>
           <div class="kpi" id="integrity-kpi-nohash">
             <p class="kpi-lbl">No hash</p>
@@ -3811,6 +3811,16 @@
           '<span class="circuit-badge ' + badgeClass + '">' + badgeText + "</span>";
         if (descEl) descEl.innerHTML = desc;
       }
+
+      /* TAP-4332: show when this diagnostics row was last recorded. */
+      if (descEl && diag.recorded_at) {
+        const tsLine = document.createElement("div");
+        tsLine.className = "muted";
+        tsLine.style.marginTop = "8px";
+        tsLine.style.fontSize = "0.85em";
+        tsLine.textContent = "Last recorded: " + String(diag.recorded_at);
+        descEl.appendChild(tsLine);
+      }
     }
 
     /* STORY-068.4 — Memory page renderers */
@@ -4093,13 +4103,14 @@
       var scopeCounts = (data && data.agent_scope_counts) ? data.agent_scope_counts : {};
       var totalScopes = Object.keys(scopeCounts).reduce(function (n, k) { return n + Number(scopeCounts[k] || 0); }, 0);
       var tampered = health.integrity_tampered !== undefined ? Number(health.integrity_tampered) : 0;
+      var keyMismatchNav = health.integrity_likely_key_mismatch === true;
 
       var metrics = {
         "qnav-health-metric":    fail > 0 ? fail + " fail" : warn > 0 ? warn + " warn" : "All pass",
         "qnav-memory-metric":    health.entry_count !== undefined ? String(health.entry_count) + " entries" : "—",
         "qnav-retrieval-metric": data && data.retrieval_effective_mode ? String(data.retrieval_effective_mode) : "—",
         "qnav-agents-metric":    totalScopes > 0 ? totalScopes + " scopes" : "—",
-        "qnav-integrity-metric": tampered > 0 ? tampered + " tampered" : "Clean"
+        "qnav-integrity-metric": keyMismatchNav ? "key mismatch" : (tampered > 0 ? tampered + " tampered" : "Clean")
       };
       Object.keys(metrics).forEach(function (id) {
         var el = document.getElementById(id);
@@ -4844,6 +4855,18 @@
         } else {
           tamperedKpi.removeAttribute("data-warn");
         }
+      }
+      /* TAP-4331: when every hashed row fails, it is a signing-key mismatch
+         (data restored under a different key), not tampering — relabel the tile. */
+      const keyMismatch = health.integrity_likely_key_mismatch === true;
+      const tLbl = el("integ-tampered-lbl");
+      const tSub = el("integ-tampered-sub");
+      if (keyMismatch) {
+        if (tLbl) tLbl.textContent = "Key mismatch";
+        if (tSub) tSub.textContent = "re-sign to clear (not tampering)";
+      } else {
+        if (tLbl) tLbl.textContent = "Tampered";
+        if (tSub) tSub.textContent = "hash mismatch";
       }
       /* Schema version warning (STORY-068.7) */
       const schemaVerEl = el("integrity-schema-ver");

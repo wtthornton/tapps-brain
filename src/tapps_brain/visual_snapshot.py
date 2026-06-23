@@ -11,6 +11,7 @@ The :func:`build_visual_snapshot` function assembles the full
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -50,6 +51,14 @@ _SCORE_OK_MIN = 0.7
 _SCORE_WARN_MIN = 0.55
 _CAP_WARN_RATIO = 0.8
 _CAP_FAIL_RATIO = 0.95
+#: TAP-4332: run the live consolidation gauge scan inline only for stores at or
+#: below this size; larger stores reuse the cached gauge so /snapshot never
+#: stalls on the O(n^2) similarity scan (TAP-4330).
+_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES = 2000
+#: TAP-4332: refresh the persisted diagnostics row at most once per this many
+#: seconds on the snapshot path, so the dashboard stays current without running
+#: diagnostics on every poll.
+_DIAG_REFRESH_TTL_SEC = 300.0
 _MAINT_BACKLOG_WARN = 200
 
 
@@ -668,7 +677,7 @@ def _build_scorecard(
             )
         )
 
-    if skip_diagnostics or diagnostics is None:
+    if skip_diagnostics:
         checks.append(
             ScorecardCheck(
                 id="diagnostics_data",
@@ -676,6 +685,17 @@ def _build_scorecard(
                 status="unknown",
                 detail="Diagnostics omitted (export used --skip-diagnostics).",
                 ticket_hint="Re-export without --skip-diagnostics for circuit/score signals.",
+            )
+        )
+    elif diagnostics is None:
+        # TAP-4332: not skipped — there is simply no recorded diagnostics row yet.
+        checks.append(
+            ScorecardCheck(
+                id="diagnostics_data",
+                title="Diagnostics data",
+                status="unknown",
+                detail="No recent diagnostics recorded yet.",
+                ticket_hint="Run `tapps-brain diagnostics health` to record the first snapshot.",
             )
         )
     else:
@@ -736,6 +756,24 @@ def _build_scorecard(
                 status="ok",
                 detail="No tampered integrity hashes reported.",
                 ticket_hint="",
+            )
+        )
+    elif bool(getattr(report, "integrity_likely_key_mismatch", False)):
+        # TAP-4331: every hashed entry failed -> signing-key mismatch (data
+        # restored under a different ~/.tapps-brain/integrity.key), not tampering.
+        checks.append(
+            ScorecardCheck(
+                id="integrity_tampered",
+                title="Integrity (key mismatch)",
+                status="warn",
+                detail=(
+                    f"All {tampered} entr(y/ies) failed verification — likely a signing-key "
+                    "mismatch (data restored under a different integrity key), not tampering."
+                ),
+                ticket_hint=(
+                    "If the data is trusted, re-sign under the current key: "
+                    "`tapps-brain maintenance resign-integrity`."
+                ),
             )
         )
     else:
@@ -1032,6 +1070,36 @@ def _collect_retrieval_detail(store: MemoryStore) -> RetrievalDetail:
     return detail
 
 
+def _maybe_refresh_diagnostics(store: MemoryStore) -> None:
+    """Throttled diagnostics refresh for the dashboard (TAP-4332).
+
+    Records a fresh diagnostics row at most once per :data:`_DIAG_REFRESH_TTL_SEC`
+    so the dashboard's composite score / circuit state stay current without running
+    diagnostics on every poll.  Cheap now that the duplication/staleness dimensions
+    skip the O(n^2) consolidation scan.  Best-effort — never raises on the snapshot
+    path.  ``run_remediation=False`` keeps this read-driven refresh from triggering
+    remediation side effects.
+    """
+    try:
+        latest = store.diagnostics_history(limit=1)
+    except Exception:
+        return
+    if latest:
+        raw = str(latest[0].get("recorded_at") or "")
+        try:
+            recorded = datetime.fromisoformat(raw)
+        except ValueError:
+            recorded = None
+        if recorded is not None:
+            if recorded.tzinfo is None:
+                recorded = recorded.replace(tzinfo=UTC)
+            age = (datetime.now(UTC) - recorded).total_seconds()
+            if age < _DIAG_REFRESH_TTL_SEC:
+                return
+    with contextlib.suppress(Exception):
+        store.diagnostics(record_history=True, run_remediation=False)
+
+
 def build_visual_snapshot(
     store: MemoryStore,
     *,
@@ -1041,10 +1109,11 @@ def build_visual_snapshot(
     """Build a versioned visual snapshot from an open store."""
     from tapps_brain.health_check import retrieval_health_slice
 
-    # EPIC-078: skip the O(n^2) consolidation similarity scan in health() — at
-    # request time on a full store (thousands of entries) it can take minutes and
-    # 504 the /snapshot endpoint.  The dashboard only needs the cached gauge.
-    report = store.health(skip_consolidation_scan=True)
+    # EPIC-078 / TAP-4330+4332: the O(n^2) consolidation similarity scan in
+    # health() can take minutes on a full store (thousands of entries) and 504 the
+    # /snapshot endpoint.  Run the live gauge scan inline only for normal-sized
+    # stores; above the cap reuse the cached gauge so the request never stalls.
+    report = store.health(consolidation_scan_max_entries=_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES)
     hdump = _redact_health(report.model_dump(mode="json"), privacy)
     aggregates = _try_load_snapshot_aggregates(store)
     if aggregates is not None:
@@ -1083,13 +1152,14 @@ def build_visual_snapshot(
     fingerprint = compute_fingerprint_hex(identity)
     theme = theme_from_fingerprint(fingerprint)
 
-    # EPIC-078: do NOT recompute diagnostics at /snapshot request time.  A live
-    # run executes the O(n^2) consolidation scan (the duplication + staleness
-    # dimensions each call store.health()) and mutates the circuit breaker — both
-    # unacceptable for a read-only dashboard poll.  Reuse the most recent persisted
-    # diagnostics row instead; stays None until one has been recorded.
+    # EPIC-078: do NOT recompute diagnostics on every /snapshot request.  A live
+    # run used to execute the O(n^2) consolidation scan (the duplication + staleness
+    # dimensions each called store.health()).  TAP-4332 made those dimensions skip
+    # the scan, so a refresh is now O(n); we throttle it to once per TTL and read
+    # the persisted row.  Stays None until the first row is recorded.
     diagnostics: DiagnosticsSummary | None = None
     if not skip_diagnostics:
+        _maybe_refresh_diagnostics(store)
         try:
             _latest_diag = store.diagnostics_history(limit=1)
         except Exception:

@@ -185,8 +185,8 @@ def test_health_skip_consolidation_scan_reuses_cached_gauge(tmp_path: Path) -> N
         store.close()
 
 
-def test_build_snapshot_skips_consolidation_scan(tmp_path: Path) -> None:
-    """EPIC-078: /snapshot must call health() with the consolidation scan disabled."""
+def test_build_snapshot_size_guards_consolidation_scan(tmp_path: Path) -> None:
+    """EPIC-078/TAP-4332: /snapshot must size-guard the O(n^2) consolidation scan."""
     store = MemoryStore(tmp_path)
     captured: dict[str, Any] = {}
     real_health = store.health
@@ -198,9 +198,88 @@ def test_build_snapshot_skips_consolidation_scan(tmp_path: Path) -> None:
     try:
         with patch.object(store, "health", _spy):
             build_visual_snapshot(store, skip_diagnostics=True, privacy="standard")
-        assert captured.get("skip_consolidation_scan") is True
+        assert captured.get("consolidation_scan_max_entries") is not None
     finally:
         store.close()
+
+
+def test_health_consolidation_scan_max_entries_caps_scan(tmp_path: Path) -> None:
+    """TAP-4332: over the entry cap, health() reuses the cached gauge (no scan)."""
+    store = MemoryStore(tmp_path)
+    try:
+        store.save("k1", "v1")
+        store.save("k2", "v2")
+        store._last_consolidation_candidates = 42
+        with patch("tapps_brain.similarity.find_consolidation_groups") as mock_groups:
+            report = store.health(consolidation_scan_max_entries=1)
+        mock_groups.assert_not_called()
+        assert report.consolidation_candidates == 42
+    finally:
+        store.close()
+
+
+def test_health_consolidation_scan_max_entries_runs_when_small(tmp_path: Path) -> None:
+    """TAP-4332: at/under the cap, health() runs the live scan and refreshes the gauge."""
+    store = MemoryStore(tmp_path)
+    try:
+        store.save("k1", "v1")
+        report = store.health(consolidation_scan_max_entries=1000)
+        # Live scan ran: gauge reflects the freshly computed value (0 for unique entries).
+        assert report.consolidation_candidates == store._last_consolidation_candidates
+    finally:
+        store.close()
+
+
+def test_maybe_refresh_diagnostics_throttled(tmp_path: Path) -> None:
+    """TAP-4332: a fresh diagnostics row within the TTL is not re-recorded."""
+    from datetime import UTC, datetime
+
+    from tapps_brain.visual_snapshot import _maybe_refresh_diagnostics
+
+    store = MemoryStore(tmp_path)
+    try:
+        recent = {"recorded_at": datetime.now(UTC).isoformat(), "composite_score": 0.9}
+        with (
+            patch.object(store, "diagnostics_history", return_value=[recent]),
+            patch.object(store, "diagnostics") as mock_diag,
+        ):
+            _maybe_refresh_diagnostics(store)
+        mock_diag.assert_not_called()
+    finally:
+        store.close()
+
+
+def test_maybe_refresh_diagnostics_records_when_stale(tmp_path: Path) -> None:
+    """TAP-4332: a stale (or missing) diagnostics row triggers a fresh record."""
+    from tapps_brain.visual_snapshot import _maybe_refresh_diagnostics
+
+    store = MemoryStore(tmp_path)
+    try:
+        with (
+            patch.object(store, "diagnostics_history", return_value=[]),
+            patch.object(store, "diagnostics") as mock_diag,
+        ):
+            _maybe_refresh_diagnostics(store)
+        mock_diag.assert_called_once()
+        assert mock_diag.call_args.kwargs.get("run_remediation") is False
+    finally:
+        store.close()
+
+
+def test_scorecard_reports_no_recent_diagnostics(tmp_path: Path) -> None:
+    """TAP-4332: empty diagnostics (not skipped) says 'no recent', not --skip-diagnostics."""
+    store = MemoryStore(tmp_path)
+    store.save("k", "v")
+    try:
+        with (
+            patch.object(store, "diagnostics_history", return_value=[]),
+            patch.object(store, "diagnostics"),
+        ):
+            snap = build_visual_snapshot(store, skip_diagnostics=False)
+    finally:
+        store.close()
+    checks = {c.id: c for c in snap.scorecard}
+    assert "No recent diagnostics recorded yet" in checks["diagnostics_data"].detail
 
 
 def test_privacy_local_includes_tags_and_groups(tmp_path: Path) -> None:
@@ -427,6 +506,25 @@ def test_scorecard_integrity_tampered() -> None:
         )
     )
     assert checks["integrity_tampered"].status == "fail"
+
+
+def test_scorecard_integrity_key_mismatch_warn() -> None:
+    """TAP-4331: all hashed entries failing -> warn + resign hint, not fail."""
+    report = _make_report(integrity_tampered=4402, integrity_likely_key_mismatch=True)
+    checks = _scorecard_ids(
+        _build_scorecard(
+            report,
+            diagnostics=None,
+            hive_attached=False,
+            hive_health=HiveHealthSummary(),
+            retrieval_mode="bm25_only",
+            skip_diagnostics=True,
+        )
+    )
+    check = checks["integrity_tampered"]
+    assert check.status == "warn"
+    assert check.title == "Integrity (key mismatch)"
+    assert "resign-integrity" in check.ticket_hint
 
 
 def test_scorecard_integrity_no_hash_warn() -> None:

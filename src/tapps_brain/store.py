@@ -2822,7 +2822,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return "Memory quality recovering — diagnostic probes in progress."
         return None
 
-    def health(self, *, skip_consolidation_scan: bool = False) -> StoreHealthReport:
+    def health(
+        self,
+        *,
+        skip_consolidation_scan: bool = False,
+        consolidation_scan_max_entries: int | None = None,
+    ) -> StoreHealthReport:
         """Return a structured health report for this store.
 
         Parameters
@@ -2834,6 +2839,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             computed consolidation gauge is not worth a multi-minute, request-time
             scan over thousands of entries.  Defaults to ``False`` so all other
             callers keep the exact behaviour.
+        consolidation_scan_max_entries:
+            TAP-4332 size guard.  When set, run the live consolidation scan only
+            if the store holds at most this many entries; above the cap, reuse the
+            cached gauge (same as ``skip_consolidation_scan``).  Lets the snapshot
+            keep a fresh consolidation gauge on normal-sized stores while never
+            stalling the request path on pathologically large ones.  Ignored when
+            ``skip_consolidation_scan`` is ``True``.
         """
         from datetime import UTC, datetime
 
@@ -2854,7 +2866,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         )
         gc_candidates = gc.identify_candidates(entries)
 
-        if skip_consolidation_scan:
+        _over_scan_cap = (
+            consolidation_scan_max_entries is not None
+            and len(entries) > consolidation_scan_max_entries
+        )
+        if skip_consolidation_scan or _over_scan_cap:
             consolidation_candidates = self._last_consolidation_candidates
         else:
             groups = find_consolidation_groups(
@@ -2908,6 +2924,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             integrity_tampered=integrity["tampered"],
             integrity_no_hash=integrity["no_hash"],
             integrity_tampered_keys=integrity["tampered_keys"][:20],
+            integrity_likely_key_mismatch=bool(integrity.get("likely_key_mismatch", False)),
             rate_limit_minute_anomalies=rl_stats.minute_anomalies,
             rate_limit_lifetime_anomalies=rl_stats.lifetime_anomalies,
             rate_limit_total_writes=rl_stats.total_writes,

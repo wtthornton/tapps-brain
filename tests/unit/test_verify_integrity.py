@@ -201,3 +201,85 @@ class TestRehashIntegrityV1:
         result = store.rehash_integrity_v1()
         assert result["upgraded"] == 0
         assert result["already_v2"] == 1
+
+
+def _swap_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the integrity module at a fresh key so existing hashes mismatch."""
+    import base64
+
+    from tapps_brain.integrity import reset_key_cache
+
+    monkeypatch.setenv("TAPPS_BRAIN_INTEGRITY_KEY", base64.b64encode(b"B" * 32).decode())
+    reset_key_cache()
+
+
+class TestKeyMismatch:
+    """TAP-4331: distinguish a signing-key mismatch from selective tampering."""
+
+    def test_all_failed_flags_likely_key_mismatch(
+        self, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store.save("a", "v1", tier="pattern", source="agent")
+        store.save("b", "v2", tier="pattern", source="agent")
+        _swap_signing_key(monkeypatch)
+
+        result = store.verify_integrity()
+        assert result["total"] == 2
+        assert result["verified"] == 0
+        assert result["tampered"] == 2
+        assert result["likely_key_mismatch"] is True
+
+    def test_partial_failure_is_not_key_mismatch(self, store: MemoryStore) -> None:
+        store.save("ok", "valid value", tier="pattern", source="agent")
+        store.save("bad", "original", tier="pattern", source="agent")
+        with store._lock:
+            cached = store._entries["bad"]
+            store._entries["bad"] = cached.model_copy(update={"value": "TAMPERED"})
+
+        result = store.verify_integrity()
+        assert result["verified"] == 1
+        assert result["tampered"] == 1
+        assert result["likely_key_mismatch"] is False
+
+    def test_empty_store_is_not_key_mismatch(self, store: MemoryStore) -> None:
+        result = store.verify_integrity()
+        assert result["likely_key_mismatch"] is False
+
+
+class TestResignIntegrity:
+    """TAP-4331: re-signing rows under the current key clears a key mismatch."""
+
+    def test_resign_fixes_key_mismatch(
+        self, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store.save("a", "v1", tier="pattern", source="agent")
+        store.save("b", "v2", tier="pattern", source="agent")
+        _swap_signing_key(monkeypatch)
+        assert store.verify_integrity()["tampered"] == 2
+
+        out = store.resign_integrity()
+        assert out["resigned"] == 2
+
+        after = store.verify_integrity()
+        assert after["verified"] == 2
+        assert after["tampered"] == 0
+        assert after["likely_key_mismatch"] is False
+
+    def test_resign_persists_to_backend(
+        self, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import patch
+
+        store.save("a", "v1", tier="pattern", source="agent")
+        _swap_signing_key(monkeypatch)
+        backend = store._persistence
+        with patch.object(backend, "save", wraps=backend.save) as spy:
+            store.resign_integrity()
+        assert spy.call_count >= 1
+
+    def test_resign_noop_when_already_current(self, store: MemoryStore) -> None:
+        store.save("a", "v1", tier="pattern", source="agent")
+        out = store.resign_integrity()
+        # Hash already matches the current key -> nothing rewritten.
+        assert out["resigned"] == 0
+        assert out["skipped_no_change"] == 1

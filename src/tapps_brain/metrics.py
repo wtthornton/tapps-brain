@@ -117,6 +117,10 @@ class StoreHealthReport(BaseModel):
     integrity_tampered: int = 0
     integrity_no_hash: int = 0
     integrity_tampered_keys: list[str] = Field(default_factory=list)
+    #: TAP-4331: True when every hashed entry failed verification — points to a
+    #: signing-key mismatch (restored data under a different key) rather than
+    #: selective tampering.
+    integrity_likely_key_mismatch: bool = False
     # Rate limiter anomaly counts (H6c)
     rate_limit_minute_anomalies: int = 0
     rate_limit_lifetime_anomalies: int = 0
