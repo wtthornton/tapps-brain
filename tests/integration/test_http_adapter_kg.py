@@ -172,6 +172,49 @@ class TestKgNeighborsUuidValidation:
         assert resp.json().get("field") == "entity_ids[1]"
 
 
+class TestKgNeighborsDatetimeSerialization:
+    """TAP-4275: /v1/kg/neighbors must JSON-encode timestamp fields."""
+
+    @pytest.mark.asyncio
+    async def test_neighbors_with_datetime_fields_returns_200(self) -> None:
+        from datetime import UTC, datetime
+        from uuid import UUID
+
+        from tapps_brain.services import kg_service
+
+        ts = datetime(2026, 6, 22, 12, 30, 0, tzinfo=UTC)
+        kg = type("KG", (), {})()
+        kg.get_neighbors_multi = lambda *a, **k: [
+            {
+                "edge_id": UUID(_EDGE_UUID),
+                "predicate": "uses",
+                "last_reinforced": ts,
+                "edge_updated_at": ts,
+                "neighbor_id": UUID(_ENTITY_UUID),
+                "hop": 1,
+            }
+        ]
+        kg.close = lambda: None
+
+        with (
+            patch(
+                "tapps_brain.services.kg_service._get_or_create_cm",
+                return_value=MagicMock(),
+            ),
+            patch.object(kg_service, "_kg_store", return_value=kg),
+        ):
+            resp = await _post(
+                "/v1/kg/neighbors",
+                {"entity_ids": [_ENTITY_UUID], "hops": 1},
+            )
+
+        assert resp.status_code == 200, resp.text
+        neighbor = resp.json()["neighbors"][0]
+        assert neighbor["last_reinforced"] == "2026-06-22T12:30:00+00:00"
+        assert neighbor["edge_updated_at"] == "2026-06-22T12:30:00+00:00"
+        assert neighbor["edge_id"] == _EDGE_UUID
+
+
 # ---------------------------------------------------------------------------
 # Populate-then-retrieve flow (TAP-2723 / TAP-2727)
 # ---------------------------------------------------------------------------

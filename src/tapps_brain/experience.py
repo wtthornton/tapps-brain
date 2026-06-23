@@ -156,6 +156,15 @@ def _edge_resolution_warning(index: int, field: str, msg: str) -> dict[str, Any]
     }
 
 
+def _entity_upsert_warning(index: int, msg: str) -> dict[str, Any]:
+    """Structured warning when a KG entity upsert fails without aborting the batch (TAP-4274)."""
+    return {
+        "kind": "entity",
+        "index": index,
+        "errors": [{"field": "canonical_name", "msg": msg, "type": "upsert_failed"}],
+    }
+
+
 class EdgeSpec(BaseModel):
     """Spec for one KG edge to upsert atomically with the event.
 
@@ -343,7 +352,7 @@ class ExperienceResult(BaseModel):
     )
     warnings: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Non-fatal edge resolution warnings (TAP-3248), merged at HTTP layer.",
+        description="Non-fatal entity/edge warnings (TAP-3248, TAP-4274), merged at HTTP layer.",
     )
 
 
@@ -565,6 +574,44 @@ class ExperienceEventRecorder:
 
         return edge_ids, warnings
 
+    def _upsert_entities(
+        self,
+        cur: Any,  # noqa: ANN401 — psycopg cursor
+        entities: list[EntitySpec],
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """Upsert KG entities; isolate failures via savepoints (TAP-4274)."""
+        entity_ids: list[str] = []
+        warnings: list[dict[str, Any]] = []
+
+        for index, entity_spec in enumerate(entities):
+            savepoint = f"upsert_entity_{index}"
+            cur.execute(f"SAVEPOINT {savepoint}")
+            try:
+                cur.execute(
+                    _kg_sql.UPSERT_ENTITY_SQL,
+                    (
+                        self._project_id,
+                        self._brain_id,
+                        self._project_id,
+                        entity_spec.entity_type,
+                        entity_spec.canonical_name,
+                        json.dumps(entity_spec.aliases),
+                        json.dumps(entity_spec.metadata),
+                        entity_spec.confidence,
+                        entity_spec.source,
+                        self._agent_id,
+                    ),
+                )
+                row = cur.fetchone()
+                if row:
+                    entity_ids.append(str(row[0]))
+                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            except Exception as exc:
+                cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                warnings.append(_entity_upsert_warning(index, str(exc)))
+
+        return entity_ids, warnings
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -596,6 +643,7 @@ class ExperienceEventRecorder:
         evidence_ids: list[str] = []
         memory_key: str | None = None
         edge_warnings: list[dict[str, Any]] = []
+        entity_warnings: list[dict[str, Any]] = []
 
         log = logger.bind(event_type=event.event_type, event_id=event_id)
 
@@ -648,25 +696,7 @@ class ExperienceEventRecorder:
                 memory_key = str(row[0]) if row else mem.key
 
             # Step 3 — upsert KG entities.
-            for entity_spec in event.entities:
-                cur.execute(
-                    _kg_sql.UPSERT_ENTITY_SQL,
-                    (
-                        self._project_id,  # tenant_id
-                        self._brain_id,
-                        self._project_id,
-                        entity_spec.entity_type,
-                        entity_spec.canonical_name,
-                        json.dumps(entity_spec.aliases),
-                        json.dumps(entity_spec.metadata),
-                        entity_spec.confidence,
-                        entity_spec.source,
-                        self._agent_id,
-                    ),
-                )
-                row = cur.fetchone()
-                if row:
-                    entity_ids.append(str(row[0]))
+            entity_ids, entity_warnings = self._upsert_entities(cur, event.entities)
 
             # Step 4 — upsert KG edges (resolve key/ref endpoints from step 3).
             edge_ids, edge_warnings = self._upsert_edges(
@@ -723,7 +753,7 @@ class ExperienceEventRecorder:
             entity_ids=entity_ids,
             edge_ids=edge_ids,
             evidence_ids=evidence_ids,
-            warnings=edge_warnings,
+            warnings=edge_warnings + entity_warnings,
         )
 
     def record_many(self, events: list[ExperienceEvent]) -> list[ExperienceResult]:
@@ -772,6 +802,7 @@ class ExperienceEventRecorder:
                 evidence_ids: list[str] = []
                 memory_key: str | None = None
                 edge_warnings: list[dict[str, Any]] = []
+                entity_warnings: list[dict[str, Any]] = []
 
                 # Insert the event row.
                 cur.execute(
@@ -814,25 +845,7 @@ class ExperienceEventRecorder:
                     memory_key = str(row[0]) if row else mem.key
 
                 # Entities → edges → evidence (identical to record()).
-                for entity_spec in event.entities:
-                    cur.execute(
-                        _kg_sql.UPSERT_ENTITY_SQL,
-                        (
-                            self._project_id,
-                            self._brain_id,
-                            self._project_id,
-                            entity_spec.entity_type,
-                            entity_spec.canonical_name,
-                            json.dumps(entity_spec.aliases),
-                            json.dumps(entity_spec.metadata),
-                            entity_spec.confidence,
-                            entity_spec.source,
-                            self._agent_id,
-                        ),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        entity_ids.append(str(row[0]))
+                entity_ids, entity_warnings = self._upsert_entities(cur, event.entities)
 
                 edge_ids, edge_warnings = self._upsert_edges(
                     cur, event.edges, event.entities, entity_ids
@@ -879,7 +892,7 @@ class ExperienceEventRecorder:
                         entity_ids=entity_ids,
                         edge_ids=edge_ids,
                         evidence_ids=evidence_ids,
-                        warnings=edge_warnings,
+                        warnings=edge_warnings + entity_warnings,
                     )
                 )
 

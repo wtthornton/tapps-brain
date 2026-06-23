@@ -57,11 +57,7 @@ def _apply_hive_profile_scope_rules(
         return effective_scope, rule_applied
     if private_tiers and tier in private_tiers:
         return "private", "private_tiers"
-    if (
-        auto_propagate_tiers
-        and tier in auto_propagate_tiers
-        and effective_scope == "private"
-    ):
+    if auto_propagate_tiers and tier in auto_propagate_tiers and effective_scope == "private":
         return "domain", "auto_propagate_tiers"
     return effective_scope, rule_applied
 
@@ -348,6 +344,9 @@ class PropagationEngine:
         )
         if refusal is not None:
             return refusal
+        if namespace is None:
+            msg = "propagation namespace missing without refusal outcome"
+            raise RuntimeError(msg)
 
         base_outcome: dict[str, Any] = {
             "propagated": True,

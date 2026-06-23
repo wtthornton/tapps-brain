@@ -15,6 +15,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     whl=$(ls /tmp/tapps_brain-*.whl) \
     && pip install --no-cache-dir "${whl}[cli,mcp,http,reranker,otel]" "psycopg[binary]"
 
+# TAP-4276 — bake the pinned embedding model for offline cold starts.
+# Revision must match tapps_brain.embeddings._DEFAULT_MODEL_REVISION.
+ENV HF_HOME=/opt/tapps-brain/hf-cache
+ARG TAPPS_BRAIN_EMBEDDING_REVISION=5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+RUN mkdir -p "${HF_HOME}" \
+    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5', revision='${TAPPS_BRAIN_EMBEDDING_REVISION}')"
+
+# Runtime: load from the baked cache only (no HuggingFace Hub contact).
+ENV TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE=1
+ENV HF_HUB_OFFLINE=1
+
 # STORY-070.15: one binary, both transports.
 # Port 8080 — HTTP data-plane + /mcp + /admin/* (FastAPI / Uvicorn).
 # Port 8090 — operator Streamable-HTTP MCP transport (FastMCP).

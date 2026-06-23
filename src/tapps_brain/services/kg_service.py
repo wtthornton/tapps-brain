@@ -21,6 +21,8 @@ from typing import Any
 import structlog
 from pydantic import ValidationError
 
+from tapps_brain.postgres_kg import json_safe_kg_value
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -804,10 +806,7 @@ def get_neighbors(
             limit=max(1, min(limit, 200)),
             predicate_filter=predicate_filter,
         )
-        # Ensure UUIDs are returned as strings (psycopg may return uuid objects).
-        serialisable = [
-            {k: str(v) if hasattr(v, "hex") else v for k, v in row.items()} for row in rows
-        ]
+        serialisable = [{k: json_safe_kg_value(v) for k, v in row.items()} for row in rows]
         return {"neighbors": serialisable, "entity_ids": entity_ids}
     finally:
         kg.close()

@@ -270,6 +270,9 @@ class TestCoreTools:
             # Profile-scoped learned data (EPIC-075)
             "brain_profile_set",
             "brain_profile_get",
+            # Docs lookup (Context7 + llms.txt cache)
+            "docs_lookup",
+            "docs_warm",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"
