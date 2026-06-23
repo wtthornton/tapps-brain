@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from tapps_brain.embeddings import (
     get_embedding_provider,
     quantize_embedding_int8,
     renormalize_embedding_l2,
+    reset_embedding_provider_cache,
 )
 from tapps_brain.models import MemoryEntry
 from tapps_brain.store import MemoryStore
@@ -99,6 +101,12 @@ class TestQuantizeEmbeddingInt8:
 class TestGetEmbeddingProvider:
     """Tests for get_embedding_provider factory."""
 
+    def setup_method(self) -> None:
+        reset_embedding_provider_cache()
+
+    def teardown_method(self) -> None:
+        reset_embedding_provider_cache()
+
     def test_returns_none_when_st_unavailable(self) -> None:
         """Returns None when SentenceTransformerProvider init fails."""
         with patch(
@@ -107,6 +115,83 @@ class TestGetEmbeddingProvider:
         ):
             result = get_embedding_provider()
         assert result is None
+
+
+class TestEmbeddingProviderSingleton:
+    """STORY-078.3: process-wide singleton for SentenceTransformer loads."""
+
+    def setup_method(self) -> None:
+        reset_embedding_provider_cache()
+
+    def teardown_method(self) -> None:
+        reset_embedding_provider_cache()
+
+    @staticmethod
+    def _mock_sentence_transformer() -> MagicMock:
+        mock_model = MagicMock()
+        mock_model.get_embedding_dimension.return_value = 384
+        return mock_model
+
+    def test_sequential_calls_load_model_once(self) -> None:
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformer",
+            return_value=self._mock_sentence_transformer(),
+        ) as mock_st:
+            providers = [get_embedding_provider() for _ in range(5)]
+        assert mock_st.call_count == 1
+        assert all(p is providers[0] for p in providers)
+
+    def test_parallel_calls_load_model_once(self) -> None:
+        barrier = threading.Barrier(10)
+        providers: list[SentenceTransformerProvider | None] = []
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                barrier.wait(timeout=5)
+                providers.append(get_embedding_provider())
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                errors.append(exc)
+
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformer",
+            return_value=self._mock_sentence_transformer(),
+        ) as mock_st:
+            threads = [threading.Thread(target=worker) for _ in range(10)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+        assert not errors
+        assert mock_st.call_count == 1
+        assert len(providers) == 10
+        assert all(p is providers[0] for p in providers)
+
+    def test_cache_reset_allows_second_load(self) -> None:
+        with patch(
+            "tapps_brain.embeddings.SentenceTransformer",
+            return_value=self._mock_sentence_transformer(),
+        ) as mock_st:
+            first = get_embedding_provider()
+            reset_embedding_provider_cache()
+            second = get_embedding_provider()
+        assert mock_st.call_count == 2
+        assert first is not second
+
+    def test_embedding_model_loaded_logged_once(self) -> None:
+        with (
+            patch(
+                "tapps_brain.embeddings.SentenceTransformer",
+                return_value=self._mock_sentence_transformer(),
+            ),
+            patch("tapps_brain.embeddings.logger") as mock_logger,
+        ):
+            for _ in range(5):
+                get_embedding_provider()
+        loaded_calls = [
+            c for c in mock_logger.info.call_args_list if c.args and c.args[0] == "embedding_model_loaded"
+        ]
+        assert len(loaded_calls) == 1
 
 
 class TestStoreWithEmbeddingProvider:
@@ -352,6 +437,12 @@ class TestSuppressHuggingfaceHttpChatter:
 
 class TestGetEmbeddingProviderFactoryPaths:
     """Cover remaining branches in get_embedding_provider."""
+
+    def setup_method(self) -> None:
+        reset_embedding_provider_cache()
+
+    def teardown_method(self) -> None:
+        reset_embedding_provider_cache()
 
     def test_st_init_os_error_returns_none(self) -> None:
         """When SentenceTransformerProvider raises OSError, returns None."""

@@ -103,6 +103,87 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# STORY-078.6: /snapshot build SLO metrics
+# ---------------------------------------------------------------------------
+
+#: Histogram bucket upper bounds (seconds) for cold snapshot builds.
+_SNAPSHOT_BUILD_HISTOGRAM_BUCKETS: tuple[float, ...] = (0.1, 0.5, 1, 2, 5, 10, 30)
+
+
+class _SnapshotBuildHistogram:
+    """Thread-safe fixed-bucket histogram for ``build_visual_snapshot`` duration."""
+
+    __slots__ = ("_bucket_counts", "_buckets", "_count", "_lock", "_sum")
+
+    def __init__(self, buckets: tuple[float, ...]) -> None:
+        self._buckets = buckets
+        self._bucket_counts: list[int] = [0] * len(buckets)
+        self._sum: float = 0.0
+        self._count: int = 0
+        self._lock = threading.Lock()
+
+    def observe(self, value_seconds: float) -> None:
+        with self._lock:
+            self._sum += value_seconds
+            self._count += 1
+            for i, bound in enumerate(self._buckets):
+                if value_seconds <= bound:
+                    self._bucket_counts[i] += 1
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "buckets": self._buckets,
+                "bucket_counts": list(self._bucket_counts),
+                "sum": self._sum,
+                "count": self._count,
+            }
+
+    def reset(self) -> None:
+        with self._lock:
+            self._bucket_counts = [0] * len(self._buckets)
+            self._sum = 0.0
+            self._count = 0
+
+
+_SNAPSHOT_BUILD_HIST: _SnapshotBuildHistogram = _SnapshotBuildHistogram(
+    _SNAPSHOT_BUILD_HISTOGRAM_BUCKETS
+)
+_SNAPSHOT_CACHE_HITS_TOTAL: int = 0
+_SNAPSHOT_METRICS_LOCK = threading.Lock()
+
+
+def record_snapshot_cache_hit() -> None:
+    """Increment TTL cache hit counter (no histogram observation)."""
+    global _SNAPSHOT_CACHE_HITS_TOTAL
+    with _SNAPSHOT_METRICS_LOCK:
+        _SNAPSHOT_CACHE_HITS_TOTAL += 1
+
+
+def record_snapshot_build_duration(seconds: float) -> None:
+    """Record one cold ``build_visual_snapshot`` wall duration."""
+    _SNAPSHOT_BUILD_HIST.observe(seconds)
+
+
+def get_snapshot_metrics_snapshot() -> dict[str, object]:
+    """Frozen copy of snapshot SLO metrics (tests only)."""
+    with _SNAPSHOT_METRICS_LOCK:
+        cache_hits = _SNAPSHOT_CACHE_HITS_TOTAL
+    return {
+        "build_histogram": _SNAPSHOT_BUILD_HIST.snapshot(),
+        "cache_hits_total": cache_hits,
+    }
+
+
+def reset_snapshot_metrics_for_tests() -> None:
+    """Clear snapshot metrics state (tests only)."""
+    global _SNAPSHOT_CACHE_HITS_TOTAL
+    with _SNAPSHOT_METRICS_LOCK:
+        _SNAPSHOT_CACHE_HITS_TOTAL = 0
+    _SNAPSHOT_BUILD_HIST.reset()
+
+
+# ---------------------------------------------------------------------------
 # Prometheus text rendering
 # ---------------------------------------------------------------------------
 
@@ -388,6 +469,40 @@ def _emit_profile_resolver_metrics(lines: list[str]) -> None:
                     lines.append(f'{_cn}{{result="{_result}"}} {_count}')
 
 
+def _emit_snapshot_metrics(lines: list[str]) -> None:
+    """STORY-078.6: snapshot build duration + TTL cache hit counters."""
+    with _SNAPSHOT_METRICS_LOCK:
+        cache_hits = _SNAPSHOT_CACHE_HITS_TOTAL
+    build_snap = _SNAPSHOT_BUILD_HIST.snapshot()
+    build_count = int(cast("int", build_snap.get("count", 0)))
+
+    if cache_hits > 0:
+        lines.append(
+            "# HELP tapps_brain_snapshot_cache_hits_total "
+            "Visual snapshot TTL cache hits (no rebuild)."
+        )
+        lines.append("# TYPE tapps_brain_snapshot_cache_hits_total counter")
+        lines.append(f"tapps_brain_snapshot_cache_hits_total {cache_hits}")
+
+    if build_count <= 0:
+        return
+
+    metric_name = "tapps_brain_snapshot_build_duration_seconds"
+    lines.append(
+        f"# HELP {metric_name} Wall-clock seconds for cold build_visual_snapshot calls."
+    )
+    lines.append(f"# TYPE {metric_name} histogram")
+    buckets: tuple[float, ...] = build_snap.get("buckets", ())  # type: ignore[assignment]
+    bucket_counts: list[int] = build_snap.get("bucket_counts", [])  # type: ignore[assignment]
+    total_sum: float = build_snap.get("sum", 0.0)  # type: ignore[assignment]
+    for bound, bcount in zip(buckets, bucket_counts, strict=True):
+        le = f"{bound:g}"
+        lines.append(f'{metric_name}_bucket{{le="{le}"}} {bcount}')
+    lines.append(f'{metric_name}_bucket{{le="+Inf"}} {build_count}')
+    lines.append(f"{metric_name}_sum {total_sum}")
+    lines.append(f"{metric_name}_count {build_count}")
+
+
 def _emit_probe_histogram(lines: list[str]) -> None:
     """TAP-1849: tapps_brain_mcp_probe_duration_seconds histogram.
 
@@ -467,6 +582,7 @@ def _collect_metrics(
     _emit_profile_filter_metrics(lines)
     _emit_profile_resolver_metrics(lines)
     _emit_probe_histogram(lines)
+    _emit_snapshot_metrics(lines)
 
     lines.append("")
     return "\n".join(lines)

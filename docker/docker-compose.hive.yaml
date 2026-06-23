@@ -199,6 +199,13 @@ services:
     depends_on:
       tapps-brain-http:
         condition: service_healthy
+    healthcheck:
+      # STORY-078.5: nginx liveness only — does not probe tapps-brain-http.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/healthz | grep -q tapps-visual"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

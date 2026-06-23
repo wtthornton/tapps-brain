@@ -44,6 +44,29 @@ There is no "Hive service" to start separately; the brain serves private memory 
 
 The `tapps-visual` service (nginx on `:8088`, `${TAPPS_VISUAL_PORT}`) is the serving layer for the **live always-on dashboard** (TAP-2131): it serves the `brain-visual/` frontend and proxies `/snapshot` to the brain so panels auto-refresh against the running container — it is *not* a static snapshot viewer and was *not* replaced by a separate container. It is part of the unified stack and should be **Up**; `make hive-deploy` starts it. If `docker ps -a` shows it merely `Created`, start it with `docker start tapps-visual` (or re-run the compose up). Smoke test: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/` → `200`.
 
+<a id="visual-dashboard"></a>
+
+#### Visual dashboard troubleshooting
+
+When the dashboard badge shows **OFFLINE** or **ERROR**, use the badge label and empty-state copy to narrow the cause:
+
+| Badge / HTTP | Likely cause | Remediation |
+|--------------|--------------|-------------|
+| **ERROR · timeout** / **504** | `tapps-brain-http` too slow or unhealthy; nginx `proxy_read_timeout` exceeded | `docker logs tapps-brain-http --tail 50`; `curl -sS http://localhost:8080/healthz`; cold snapshot can take up to ~25s |
+| **ERROR · auth** / **401** or **403** | `TAPPS_BRAIN_AUTH_TOKEN` mismatch between `tapps-visual` nginx and `tapps-brain-http` | Align token in `docker/.env`, then `docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --force-recreate tapps-visual tapps-brain-http` |
+| **ERROR · no store** / **503** | No `MemoryStore` configured on brain-http | Verify `TAPPS_BRAIN_DATABASE_URL` and migrate sidecar completed; check brain-http startup logs |
+| **OFFLINE** / network error | `tapps-visual` not running or wrong snapshot URL | `docker ps --filter name=tapps-visual`; `curl -sS -o /dev/null -w '%{http_code}' http://localhost:8088/snapshot` |
+
+Manual snapshot probe (replace `<token>` with your configured value):
+
+```bash
+curl -sS -H "Authorization: Bearer <token>" http://localhost:8080/snapshot | head -c 200
+```
+
+See also [`docker/README.md`](../docker/README.md) for nginx timeout tuning and structured 504 JSON from `nginx-visual.conf`.
+
+Full operator runbook (504/auth/empty panels, curl examples, snapshot SLO alerts): [`docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting`](../guides/visual-snapshot.md#visual-dashboard-troubleshooting).
+
 ### One-off: deduplicate `private_schema_version` v15 (TAP-2679)
 
 Two `015_*` migrations (TAP-732, TAP-733) recorded two rows at version 15. It is cosmetic — both are applied and the loader keys "applied" on the version-number set — but `GROUP BY version` double-counts. Run `scripts/fix_schema_version_15_dedup.sql` once per database (idempotent) to consolidate them into a single v15 row.

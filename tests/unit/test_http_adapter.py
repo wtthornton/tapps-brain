@@ -1126,6 +1126,21 @@ _FAKE_SNAPSHOT_DICT: dict[str, Any] = {
     "hive_health": {},
     "retrieval_effective_mode": "bm25_only",
     "retrieval_summary": "",
+    "retrieval_metrics": {
+        "total_queries": 0,
+        "bm25_hits": 0,
+        "vector_hits": 0,
+        "rrf_fusions": 0,
+        "mean_latency_ms": 0.0,
+    },
+    "retrieval": {
+        "latency_p50_ms": None,
+        "latency_p95_ms": None,
+        "latency_p99_ms": None,
+        "latency_histogram": None,
+        "embedding_model": None,
+        "cache_hit_ratio": None,
+    },
     "vector_index_enabled": False,
     "vector_index_rows": 0,
     "memory_group_count": 0,
@@ -1247,6 +1262,143 @@ class TestSnapshotEndpointWithStore:
                 resp = c.get("/snapshot")
         ct = resp.headers.get("content-type", "")
         assert "application/json" in ct
+
+
+class TestSnapshotPrometheusMetrics:
+    """STORY-078.6: snapshot SLO metrics on /metrics."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot_metrics(self) -> Any:
+        from tapps_brain.http.metrics_collector import reset_snapshot_metrics_for_tests
+
+        reset_snapshot_metrics_for_tests()
+        yield
+        reset_snapshot_metrics_for_tests()
+
+    def test_cache_hit_increments_counter_without_extra_histogram(self) -> None:
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            with _client(_make_settings(store=mock_store)) as c:
+                c.get("/snapshot")
+                c.get("/snapshot")
+                body = c.get("/metrics").text
+        assert "tapps_brain_snapshot_cache_hits_total 1" in body
+        assert "tapps_brain_snapshot_build_duration_seconds_count 1" in body
+
+    def test_build_duration_histogram_buckets(self) -> None:
+        from tapps_brain.http.metrics_collector import get_snapshot_metrics_snapshot
+
+        snap = get_snapshot_metrics_snapshot()
+        assert snap["build_histogram"]["buckets"] == (0.1, 0.5, 1, 2, 5, 10, 30)
+
+    def test_slow_build_observes_histogram_on_metrics(self) -> None:
+        mock_store = MagicMock()
+
+        def _slow_build(*args: Any, **kwargs: Any) -> MagicMock:
+            time.sleep(0.05)
+            return _make_mock_snapshot()
+
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_slow_build):
+            with _client(_make_settings(store=mock_store)) as c:
+                c.get("/snapshot")
+                body = c.get("/metrics").text
+        assert "tapps_brain_snapshot_build_duration_seconds_bucket" in body
+        assert "tapps_brain_snapshot_build_duration_seconds_sum" in body
+        assert "tapps_brain_snapshot_cache_hits_total" not in body
+
+    def test_snapshot_metrics_visible_with_metrics_token_gate(self) -> None:
+        mock_store = MagicMock()
+        mock_snap = _make_mock_snapshot()
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", return_value=mock_snap):
+            with _client(_make_settings(store=mock_store, metrics_token=None)) as c:
+                c.get("/snapshot")
+                anon = c.get("/metrics").text
+            with _client(_make_settings(store=mock_store, metrics_token=_METRICS_TOKEN)) as c:
+                c.get("/snapshot")
+                assert c.get("/metrics").status_code == 401
+                authed = c.get(
+                    "/metrics",
+                    headers={"Authorization": f"Bearer {_METRICS_TOKEN}"},
+                ).text
+        for body in (anon, authed):
+            assert "tapps_brain_snapshot_build_duration_seconds_count" in body
+            assert "tapps_brain_snapshot_build_duration_seconds_bucket" in body
+
+
+class TestSnapshotColdBuildConcurrency:
+    """STORY-078.1: cold snapshot build must not block the event loop."""
+
+    def test_healthz_responds_during_slow_snapshot_build(self) -> None:
+        """While a cold snapshot build runs in the thread pool, /healthz returns 200 < 1s."""
+        mock_store = MagicMock()
+        build_started = threading.Event()
+        release_build = threading.Event()
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+
+        def _slow_build(*args: Any, **kwargs: Any) -> MagicMock:
+            build_started.set()
+            assert release_build.wait(timeout=5.0), "snapshot build timed out waiting for release"
+            return _make_mock_snapshot()
+
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_slow_build),
+        ):
+            with _client(_make_settings(dsn="postgres://mockhost/testdb", store=mock_store)) as c:
+                snapshot_resp: dict[str, Any] = {}
+
+                def _snapshot_worker() -> None:
+                    snapshot_resp["resp"] = c.get("/snapshot")
+
+                worker = threading.Thread(target=_snapshot_worker)
+                worker.start()
+                assert build_started.wait(timeout=2.0), "slow snapshot build never started"
+                started = time.monotonic()
+                health = c.get("/healthz")
+                elapsed = time.monotonic() - started
+                release_build.set()
+                worker.join(timeout=5.0)
+
+        assert health.status_code == 200
+        assert elapsed < 1.0, f"/healthz took {elapsed:.2f}s during snapshot build"
+        assert snapshot_resp["resp"].status_code == 200
+
+    def test_concurrent_cold_builds_execute_once(self) -> None:
+        """Two concurrent cold-cache misses must invoke build_visual_snapshot exactly once."""
+        mock_store = MagicMock()
+        call_count = 0
+        build_gate = threading.Event()
+
+        def _slow_build(*args: Any, **kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            build_gate.set()
+            time.sleep(0.15)
+            return _make_mock_snapshot()
+
+        with patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_slow_build):
+            with _client(_make_settings(store=mock_store)) as c:
+                results: dict[str, Any] = {}
+
+                def _worker(key: str) -> None:
+                    results[key] = c.get("/snapshot")
+
+                t1 = threading.Thread(target=_worker, args=("r1",))
+                t2 = threading.Thread(target=_worker, args=("r2",))
+                t1.start()
+                t2.start()
+                t1.join(timeout=5.0)
+                t2.join(timeout=5.0)
+
+        assert build_gate.wait(timeout=2.0), "expected at least one snapshot build"
+        assert call_count == 1, f"expected 1 snapshot build; got {call_count}"
+        assert results["r1"].status_code == 200
+        assert results["r2"].status_code == 200
 
 
 class TestSnapshotEndpointAuth:

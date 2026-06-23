@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import struct
+import threading
 from typing import TYPE_CHECKING, Any, cast
 
 import structlog
@@ -69,6 +70,12 @@ _DEFAULT_MODEL_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
 
 # Symmetric int8 scale for components in [-1, 1] (L2-normalized sentence embeddings).
 _INT8_QUANT_SCALE = 127.0
+
+# Process-wide singleton cache for embedding providers (STORY-078.3).
+# Keyed by (model_name, revision) so concurrent MCP tool calls share one
+# SentenceTransformer load instead of blocking threads per request.
+_provider_cache: dict[tuple[str, str | None], SentenceTransformerProvider] = {}
+_provider_cache_lock = threading.Lock()
 
 
 def quantize_embedding_int8(embedding: list[float]) -> bytes:
@@ -193,6 +200,12 @@ class SentenceTransformerProvider:
         # version floor.
         raw_dim = self._model.get_embedding_dimension()
         self._dim: int = int(raw_dim) if raw_dim is not None else 384
+        logger.info(
+            "embedding_model_loaded",
+            model_name=model_name,
+            revision=revision,
+            dimension=self._dim,
+        )
 
     @property
     def model_id(self) -> str:
@@ -246,12 +259,18 @@ def embedding_startup_status(
     }
 
 
+def reset_embedding_provider_cache() -> None:
+    """Clear the process-wide embedding provider singleton (tests only)."""
+    with _provider_cache_lock:
+        _provider_cache.clear()
+
+
 def get_embedding_provider(
     model: str = _DEFAULT_MODEL,
     *,
     revision: str | None = _DEFAULT_MODEL_REVISION,
 ) -> SentenceTransformerProvider | None:
-    """Return a ``SentenceTransformerProvider``, or None if unavailable.
+    """Return a process-wide ``SentenceTransformerProvider`` singleton, or None.
 
     Args:
         model: HuggingFace model identifier.
@@ -265,17 +284,31 @@ def get_embedding_provider(
     degradation at default log levels. Semantic recall silently falls back to
     BM25-only when this returns None; the WARNING makes that observable without
     requiring DEBUG logging.
+
+    The underlying ``SentenceTransformer`` weights load at most once per process
+    per ``(model, revision)`` pair (STORY-078.3).
     """
-    try:
-        return SentenceTransformerProvider(model_name=model, revision=revision)
-    except ImportError:
-        logger.warning(
-            "embedding_provider_unavailable",
-            reason="sentence-transformers not installed",
-            install_hint="pip install 'tapps-brain[all]'",
-            embedding_degraded=True,
-        )
-        return None
-    except (OSError, RuntimeError, ValueError) as e:
-        logger.warning("embedding_provider_init_failed", error=str(e), embedding_degraded=True)
-        return None
+    cache_key = (model, revision)
+    cached = _provider_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    with _provider_cache_lock:
+        cached = _provider_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            provider = SentenceTransformerProvider(model_name=model, revision=revision)
+        except ImportError:
+            logger.warning(
+                "embedding_provider_unavailable",
+                reason="sentence-transformers not installed",
+                install_hint="pip install 'tapps-brain[all]'",
+                embedding_degraded=True,
+            )
+            return None
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.warning("embedding_provider_init_failed", error=str(e), embedding_degraded=True)
+            return None
+        _provider_cache[cache_key] = provider
+        return provider

@@ -220,3 +220,14 @@ elif [[ "$SNAPSHOT_STATUS" == "502" ]]; then
 else
     fail "GET /snapshot — unexpected HTTP $SNAPSHOT_STATUS"
 fi
+
+echo ""
+echo "==> Visual snapshot schema smoke (brain_visual_smoke_live)…"
+export TAPPS_BRAIN_AUTH_TOKEN="${SMOKE_AUTH_TOKEN}"
+export TAPPS_VISUAL_BASE_URL="http://localhost:${TAPPS_VISUAL_PORT}"
+export TAPPS_BRAIN_BASE_URL="http://localhost:${ADAPTER_PORT}"
+if bash scripts/brain_visual_smoke_live.sh; then
+    pass "brain_visual_smoke_live.sh (HTML meta + /snapshot schema on :8088 and :8080)"
+else
+    fail "brain_visual_smoke_live.sh — visual dashboard snapshot checks failed"
+fi

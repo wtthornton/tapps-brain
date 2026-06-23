@@ -488,3 +488,57 @@ SELECT COALESCE(SUM(byte_count), 0)
 FROM gc_archive
 WHERE project_id = %s AND agent_id = %s
 """
+
+# ---------------------------------------------------------------------------
+# Visual snapshot aggregates (STORY-078.2)
+# ---------------------------------------------------------------------------
+
+SNAPSHOT_ACCESS_STATS_SQL = """
+SELECT
+    COALESCE(SUM(access_count), 0),
+    COALESCE(SUM(total_access_count), 0),
+    COALESCE(SUM(useful_access_count), 0),
+    COUNT(*) FILTER (WHERE access_count > 0),
+    COUNT(*) FILTER (WHERE access_count = 0),
+    COUNT(*) FILTER (WHERE access_count BETWEEN 1 AND 5),
+    COUNT(*) FILTER (WHERE access_count BETWEEN 6 AND 20),
+    COUNT(*) FILTER (WHERE access_count > 20),
+    COUNT(*)
+FROM private_memories
+WHERE project_id = %s AND agent_id = %s
+"""
+
+SNAPSHOT_TIER_COUNTS_SQL = """
+SELECT tier, COUNT(*)::bigint
+FROM private_memories
+WHERE project_id = %s AND agent_id = %s
+GROUP BY tier
+"""
+
+SNAPSHOT_AGENT_SCOPE_COUNTS_SQL = """
+SELECT agent_scope, COUNT(*)::bigint
+FROM private_memories
+WHERE project_id = %s AND agent_id = %s
+GROUP BY agent_scope
+"""
+
+SNAPSHOT_MEMORY_GROUP_COUNTS_SQL = """
+SELECT memory_group, COUNT(*)::bigint
+FROM private_memories
+WHERE project_id = %s AND agent_id = %s
+  AND memory_group IS NOT NULL
+  AND memory_group <> ''
+GROUP BY memory_group
+"""
+
+SNAPSHOT_TAG_COUNTS_SQL = """
+SELECT tag, COUNT(*)::bigint AS cnt
+FROM private_memories,
+     jsonb_array_elements_text(tags) AS tag
+WHERE project_id = %s AND agent_id = %s
+  AND tag IS NOT NULL
+  AND btrim(tag) <> ''
+GROUP BY tag
+ORDER BY cnt DESC, tag ASC
+LIMIT %s
+"""

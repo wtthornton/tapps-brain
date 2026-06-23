@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import time
+import uuid
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,15 +19,19 @@ from tapps_brain.visual_snapshot import (
     VISUAL_SNAPSHOT_SCHEMA_VERSION,
     DiagnosticsSummary,
     HiveHealthSummary,
+    HiveNamespaceRow,
     MemoryVelocity,
-    NamespaceDetail,
+    RetrievalDetail,
     RetrievalMetrics,
+    SnapshotAggregates,
     _access_stats_from_entries,
     _build_scorecard,
     _collect_agent_registry,
     _collect_hive_health,
+    _collect_retrieval_detail,
     _collect_retrieval_metrics,
     _collect_velocity,
+    _snapshot_aggregates_from_entries,
     build_visual_snapshot,
     capture_png,
     compute_fingerprint_hex,
@@ -109,6 +117,9 @@ def test_build_visual_snapshot_shape(tmp_path: Path) -> None:
 def test_build_visual_snapshot_with_diagnostics(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     try:
+        # EPIC-078: the snapshot now reuses the most recent persisted diagnostics
+        # row instead of recomputing at request time, so record one first.
+        store.diagnostics(record_history=True)
         snap = build_visual_snapshot(store, skip_diagnostics=False)
     finally:
         store.close()
@@ -159,6 +170,37 @@ def test_privacy_strict_redacts_health_path(tmp_path: Path) -> None:
     assert snap.health.get("store_path") == "<redacted>"
     assert snap.health.get("integrity_tampered_keys") == []
     assert snap.privacy_tier == "strict"
+
+
+def test_health_skip_consolidation_scan_reuses_cached_gauge(tmp_path: Path) -> None:
+    """EPIC-078: the fast path must not run the O(n^2) consolidation scan."""
+    store = MemoryStore(tmp_path)
+    try:
+        store._last_consolidation_candidates = 7
+        with patch("tapps_brain.similarity.find_consolidation_groups") as mock_groups:
+            report = store.health(skip_consolidation_scan=True)
+        mock_groups.assert_not_called()
+        assert report.consolidation_candidates == 7
+    finally:
+        store.close()
+
+
+def test_build_snapshot_skips_consolidation_scan(tmp_path: Path) -> None:
+    """EPIC-078: /snapshot must call health() with the consolidation scan disabled."""
+    store = MemoryStore(tmp_path)
+    captured: dict[str, Any] = {}
+    real_health = store.health
+
+    def _spy(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return real_health(**kwargs)
+
+    try:
+        with patch.object(store, "health", _spy):
+            build_visual_snapshot(store, skip_diagnostics=True, privacy="standard")
+        assert captured.get("skip_consolidation_scan") is True
+    finally:
+        store.close()
 
 
 def test_privacy_local_includes_tags_and_groups(tmp_path: Path) -> None:
@@ -591,60 +633,55 @@ def test_scorecard_retrieval_other_mode() -> None:
 
 
 # ---------------------------------------------------------------------------
-# NamespaceDetail and HiveHealthSummary.namespace_detail
+# HiveNamespaceRow and HiveHealthSummary.namespaces (STORY-078.10 / EPIC-065.4)
 # ---------------------------------------------------------------------------
 
 
-def test_namespace_detail_defaults() -> None:
-    """NamespaceDetail has sensible defaults and accepts all fields."""
-    nd = NamespaceDetail(
-        namespace="repo-brain", entry_count=42, last_write_at="2026-01-01T00:00:00Z"
-    )
-    assert nd.namespace == "repo-brain"
-    assert nd.entry_count == 42
-    assert nd.last_write_at == "2026-01-01T00:00:00Z"
+def test_hive_namespace_row_defaults() -> None:
+    """HiveNamespaceRow has sensible defaults and accepts all fields."""
+    row = HiveNamespaceRow(name="repo-brain", entry_count=42, last_write_at="2026-01-01T00:00:00Z")
+    assert row.name == "repo-brain"
+    assert row.entry_count == 42
+    assert row.last_write_at == "2026-01-01T00:00:00Z"
 
 
-def test_namespace_detail_none_last_write() -> None:
-    nd = NamespaceDetail(namespace="empty-ns")
-    assert nd.entry_count == 0
-    assert nd.last_write_at is None
+def test_hive_namespace_row_none_last_write() -> None:
+    row = HiveNamespaceRow(name="empty-ns")
+    assert row.entry_count == 0
+    assert row.last_write_at is None
 
 
-def test_hive_health_summary_namespace_detail_default() -> None:
+def test_hive_health_summary_namespaces_default() -> None:
     hh = HiveHealthSummary()
-    assert hh.namespace_detail == []
+    assert hh.namespaces == []
 
 
-def test_hive_health_summary_namespace_detail_populated() -> None:
-    details = [
-        NamespaceDetail(namespace="alpha", entry_count=10, last_write_at="2026-01-01T00:00:00Z"),
-        NamespaceDetail(namespace="beta", entry_count=5, last_write_at=None),
+def test_hive_health_summary_namespaces_populated() -> None:
+    rows = [
+        HiveNamespaceRow(name="alpha", entry_count=10, last_write_at="2026-01-01T00:00:00Z"),
+        HiveNamespaceRow(name="beta", entry_count=5, last_write_at=None),
     ]
-    hh = HiveHealthSummary(
-        connected=True, status="ok", entries=15, agents=2, namespace_detail=details
-    )
-    assert len(hh.namespace_detail) == 2
-    assert hh.namespace_detail[0].namespace == "alpha"
-    assert hh.namespace_detail[1].entry_count == 5
+    hh = HiveHealthSummary(connected=True, status="ok", entries=15, agents=2, namespaces=rows)
+    assert len(hh.namespaces) == 2
+    assert hh.namespaces[0].name == "alpha"
+    assert hh.namespaces[1].entry_count == 5
 
 
-def test_hive_health_summary_serialises_namespace_detail() -> None:
-    """HiveHealthSummary with namespace_detail round-trips through model_dump/model_validate."""
-    details = [
-        NamespaceDetail(namespace="ns1", entry_count=7, last_write_at="2026-04-01T10:00:00Z")
-    ]
-    hh = HiveHealthSummary(
-        connected=True, status="ok", entries=7, agents=1, namespace_detail=details
-    )
+def test_hive_health_summary_serialises_namespaces() -> None:
+    """HiveHealthSummary.namespaces round-trips through model_dump/model_validate."""
+    rows = [HiveNamespaceRow(name="ns1", entry_count=7, last_write_at="2026-04-01T10:00:00Z")]
+    hh = HiveHealthSummary(connected=True, status="ok", entries=7, agents=1, namespaces=rows)
     dumped = hh.model_dump()
+    assert dumped["namespaces"] == [
+        {"name": "ns1", "entry_count": 7, "last_write_at": "2026-04-01T10:00:00Z"}
+    ]
     restored = HiveHealthSummary.model_validate(dumped)
-    assert restored.namespace_detail[0].namespace == "ns1"
-    assert restored.namespace_detail[0].entry_count == 7
+    assert restored.namespaces[0].name == "ns1"
+    assert restored.namespaces[0].entry_count == 7
 
 
 def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
-    """_collect_hive_health() populates namespace_detail when hive has namespace_detail_list()."""
+    """_collect_hive_health() populates namespaces when hive has namespace_detail_list()."""
     store = MemoryStore(tmp_path)
     try:
         mock_hive = MagicMock()
@@ -669,12 +706,12 @@ def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
         assert result.status == "ok"
         assert result.entries == 75
         assert result.agents == 3
-        assert len(result.namespace_detail) == 2
+        assert len(result.namespaces) == 2
         # sorted by namespace name
-        assert result.namespace_detail[0].namespace == "personal"
-        assert result.namespace_detail[0].entry_count == 20
-        assert result.namespace_detail[1].namespace == "repo-brain"
-        assert result.namespace_detail[1].last_write_at is None
+        assert result.namespaces[0].name == "personal"
+        assert result.namespaces[0].entry_count == 20
+        assert result.namespaces[1].name == "repo-brain"
+        assert result.namespaces[1].last_write_at is None
         mock_hive.close.assert_called_once()
     finally:
         store.close()
@@ -698,15 +735,17 @@ def test_collect_hive_health_falls_back_when_no_namespace_detail_list(tmp_path: 
         assert result.connected is True
         assert result.entries == 10
         assert result.agents == 1
-        assert result.namespace_detail == []  # no detail when fallback path used
-        assert sorted(result.namespaces) == ["alpha", "beta"]
+        assert len(result.namespaces) == 2
+        assert result.namespaces[0].name == "alpha"
+        assert result.namespaces[0].entry_count == 3
+        assert result.namespaces[0].last_write_at is None
         mock_hive.close.assert_called_once()
     finally:
         store.close()
 
 
 def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
-    """_collect_hive_health() returns empty namespace_detail when hive is fresh."""
+    """_collect_hive_health() returns empty namespaces when hive is fresh."""
     store = MemoryStore(tmp_path)
     try:
         mock_hive = MagicMock()
@@ -722,7 +761,7 @@ def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
 
         assert result.connected is True
         assert result.entries == 0
-        assert result.namespace_detail == []
+        assert result.namespaces == []
     finally:
         store.close()
 
@@ -736,7 +775,8 @@ def test_collect_hive_health_not_reachable(tmp_path: Path) -> None:
 
         assert result.connected is False
         assert result.status == "skipped"
-        assert result.namespace_detail == []
+        assert result.namespaces == []
+        assert result.entries == 0
     finally:
         store.close()
 
@@ -1253,6 +1293,86 @@ def test_rm_add_recall_latency_ignores_negative() -> None:
         _otel._rm_latency_count = orig_count
 
 
+def test_get_retrieval_latency_detail_empty() -> None:
+    """get_retrieval_latency_detail returns null percentiles when no samples."""
+    import tapps_brain.otel_tracer as _otel
+    from tapps_brain.otel_tracer import get_retrieval_latency_detail
+
+    orig_samples = _otel._rm_latency_samples
+    try:
+        _otel._rm_latency_samples = []
+        detail = get_retrieval_latency_detail()
+        assert detail["latency_p50_ms"] is None
+        assert detail["latency_p95_ms"] is None
+        assert detail["latency_p99_ms"] is None
+        assert detail["latency_histogram"] is None
+    finally:
+        _otel._rm_latency_samples = orig_samples
+
+
+def test_get_retrieval_latency_detail_with_samples() -> None:
+    """Percentiles and histogram reflect recorded recall latencies."""
+    import tapps_brain.otel_tracer as _otel
+    from tapps_brain.otel_tracer import get_retrieval_latency_detail, rm_add_recall_latency_ms
+
+    orig_samples = _otel._rm_latency_samples
+    try:
+        _otel._rm_latency_samples = []
+        for ms in (5.0, 15.0, 30.0, 80.0, 120.0):
+            rm_add_recall_latency_ms(ms)
+        detail = get_retrieval_latency_detail()
+        assert isinstance(detail["latency_p50_ms"], float)
+        assert isinstance(detail["latency_p95_ms"], float)
+        assert isinstance(detail["latency_p99_ms"], float)
+        hist = detail["latency_histogram"]
+        assert isinstance(hist, list)
+        assert hist
+        assert sum(int(row["count"]) for row in hist) == 5
+    finally:
+        _otel._rm_latency_samples = orig_samples
+
+
+def test_collect_retrieval_detail_from_store(tmp_path: Path) -> None:
+    """_collect_retrieval_detail includes embedding model when provider is set."""
+    store = MemoryStore(tmp_path)
+    try:
+        provider = MagicMock()
+        provider.model_id = "sentence-transformers/all-MiniLM-L6-v2"
+        store._embedding_provider = provider
+        detail = _collect_retrieval_detail(store)
+        assert isinstance(detail, RetrievalDetail)
+        assert detail.embedding_model == "sentence-transformers/all-MiniLM-L6-v2"
+    finally:
+        store.close()
+
+
+def test_snapshot_includes_retrieval_detail(tmp_path: Path) -> None:
+    """build_visual_snapshot includes retrieval latency block."""
+    store = MemoryStore(tmp_path)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=True)
+    finally:
+        store.close()
+    assert snap.retrieval is not None
+    assert isinstance(snap.retrieval, RetrievalDetail)
+
+
+def test_snapshot_json_includes_retrieval_block(tmp_path: Path) -> None:
+    """snapshot_to_json serializes retrieval with latency fields."""
+    store = MemoryStore(tmp_path)
+    try:
+        raw = snapshot_to_json(build_visual_snapshot(store, skip_diagnostics=True))
+    finally:
+        store.close()
+    data = json.loads(raw)
+    assert "retrieval" in data
+    retrieval = data["retrieval"]
+    assert "latency_p50_ms" in retrieval
+    assert "latency_p95_ms" in retrieval
+    assert "latency_p99_ms" in retrieval
+    assert "latency_histogram" in retrieval
+
+
 # ---------------------------------------------------------------------------
 # STORY-069.7: per-tenant filtering of diagnostics_history + feedback_events
 # ---------------------------------------------------------------------------
@@ -1405,3 +1525,254 @@ def test_filter_snapshot_by_project_excludes_legacy_rows() -> None:
     out2 = _filter_snapshot_by_project(payload, "ghost")
     assert out2["diagnostics_history"] == []
     assert out2["feedback_events"] == []
+
+
+# ---------------------------------------------------------------------------
+# STORY-078.2: snapshot SQL aggregates (no list_all on Postgres path)
+# ---------------------------------------------------------------------------
+
+
+def _deterministic_golden_entries(count: int = 100) -> list[Any]:
+    from tapps_brain.models import MemoryEntry, MemoryTier
+
+    tiers = [
+        MemoryTier.architectural,
+        MemoryTier.pattern,
+        MemoryTier.procedural,
+        MemoryTier.context,
+    ]
+    scopes = ["private", "hive", "domain"]
+    entries: list[Any] = []
+    for i in range(count):
+        entries.append(
+            MemoryEntry(
+                key=f"k{i:03d}",
+                value=f"secret-body-{i}",
+                tier=tiers[i % len(tiers)],
+                agent_scope=scopes[i % len(scopes)],
+                access_count=i % 25,
+                total_access_count=i * 2,
+                useful_access_count=i,
+                tags=[f"tag-{i % 5}", "common"] if i % 2 == 0 else ["common"],
+                memory_group=f"group-{i % 3}" if i % 4 == 0 else None,
+            )
+        )
+    return entries
+
+
+def _aggregate_snapshot_fields(snap: Any) -> dict[str, Any]:
+    return {
+        "agent_scope_counts": snap.agent_scope_counts,
+        "access_stats": snap.access_stats.model_dump() if snap.access_stats else None,
+        "memory_group_count": snap.memory_group_count,
+        "memory_group_counts": snap.memory_group_counts,
+        "tag_stats": [t.model_dump() for t in (snap.tag_stats or [])],
+    }
+
+
+def _seed_store_from_entries(store: MemoryStore, entries: list[Any]) -> None:
+    for entry in entries:
+        store.save(
+            key=entry.key,
+            value=entry.value,
+            tier=entry.tier.value,
+            agent_scope=entry.agent_scope,
+            tags=entry.tags,
+            memory_group=entry.memory_group,
+        )
+        loaded = store.get(entry.key)
+        assert loaded is not None
+        loaded.access_count = entry.access_count
+        loaded.total_access_count = entry.total_access_count
+        loaded.useful_access_count = entry.useful_access_count
+        store._persistence.save(loaded)
+
+
+def test_snapshot_empty_store_valid_scorecard(tmp_path: Path) -> None:
+    """Empty store → zero counts, valid scorecard."""
+    store = MemoryStore(tmp_path)
+    try:
+        snap = build_visual_snapshot(store, skip_diagnostics=True)
+    finally:
+        store.close()
+
+    assert snap.access_stats is not None
+    assert snap.access_stats.sum_access_count == 0
+    assert all(b.count == 0 for b in snap.access_stats.buckets)
+    assert snap.agent_scope_counts == {}
+    assert snap.memory_group_count == 0
+    assert len(snap.scorecard) >= 8
+
+
+def test_snapshot_golden_100_entry_parity(tmp_path: Path) -> None:
+    """100-entry fixture → list_all path matches aggregate path fields."""
+    entries = _deterministic_golden_entries(100)
+    store = MemoryStore(tmp_path)
+    try:
+        _seed_store_from_entries(store, entries)
+        snap_list_all = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+
+        aggregates = _snapshot_aggregates_from_entries(store.list_all())
+        store._persistence.snapshot_aggregates = lambda project_id: aggregates  # type: ignore[attr-defined]
+
+        with patch.object(
+            store,
+            "list_all",
+            side_effect=AssertionError("list_all must not be called on aggregate path"),
+        ):
+            snap_agg = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+    finally:
+        store.close()
+
+    assert _aggregate_snapshot_fields(snap_list_all) == _aggregate_snapshot_fields(snap_agg)
+    assert "secret-body" not in snapshot_to_json(snap_agg)
+
+
+def test_build_visual_snapshot_postgres_skips_list_all() -> None:
+    """Postgres aggregate path must not invoke MemoryStore.list_all()."""
+    from tapps_brain.postgres_private import PostgresPrivateBackend
+
+    class _FakeCM:
+        def __init__(self, obj: Any) -> None:
+            self._obj = obj
+
+        def __enter__(self) -> Any:
+            return self._obj
+
+        def __exit__(self, *args: Any) -> bool:
+            return False
+
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    cur.fetchone.side_effect = [
+        (10, 20, 5, 2, 1, 1, 0, 0, 3),  # access stats
+    ]
+    cur.fetchall.side_effect = [
+        [("pattern", 2), ("context", 1)],  # tiers
+        [("private", 2), ("hive", 1)],  # scopes
+        [("team-a", 1)],  # groups
+        [("alpha", 2)],  # tags
+    ]
+
+    cm = MagicMock()
+    cm.get_connection.return_value = _FakeCM(conn)
+    cm.project_context.return_value = _FakeCM(conn)
+
+    backend = PostgresPrivateBackend(cm, project_id="proj-abc", agent_id="agent-1")
+    store = MagicMock()
+    store._persistence = backend
+    store._project_id = "proj-abc"
+    store._hive_store = None
+    store.vector_row_count = 0
+    store.health.return_value = StoreHealthReport(
+        entry_count=3,
+        tier_distribution={"pattern": 2, "context": 1},
+        schema_version=1,
+        store_path="/tmp/mock",
+        profile_name="default",
+        federation_enabled=False,
+    )
+    store.diagnostics_history.return_value = []
+    store.query_feedback.return_value = []
+
+    with patch.object(
+        store,
+        "list_all",
+        side_effect=AssertionError("list_all must not be called"),
+    ):
+        snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+
+    assert snap.agent_scope_counts == {"hive": 1, "private": 2}
+    assert snap.memory_group_counts == {"team-a": 1}
+    assert snap.tag_stats is not None
+    assert snap.tag_stats[0].tag == "alpha"
+
+
+def test_postgres_snapshot_aggregates_empty() -> None:
+    """Empty Postgres scope returns zeroed SnapshotAggregates."""
+    from tapps_brain.postgres_private import PostgresPrivateBackend
+
+    class _FakeCM:
+        def __init__(self, obj: Any) -> None:
+            self._obj = obj
+
+        def __enter__(self) -> Any:
+            return self._obj
+
+        def __exit__(self, *args: Any) -> bool:
+            return False
+
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = (0, 0, 0, 0, 0, 0, 0, 0, 0)
+    cur.fetchall.return_value = []
+
+    cm = MagicMock()
+    cm.get_connection.return_value = _FakeCM(conn)
+    cm.project_context.return_value = _FakeCM(conn)
+
+    backend = PostgresPrivateBackend(cm, project_id="proj-empty", agent_id="agent-1")
+    aggs = backend.snapshot_aggregates("proj-empty")
+
+    assert isinstance(aggs, SnapshotAggregates)
+    assert aggs.tier_distribution == {}
+    assert aggs.agent_scope_counts == {}
+    assert aggs.access_stats.sum_access_count == 0
+    assert all(b.count == 0 for b in aggs.access_stats.buckets)
+
+
+@pytest.mark.requires_postgres
+def test_snapshot_5000_entry_postgres_under_3s(tmp_path: Path) -> None:
+    """5000-entry Postgres fixture builds snapshot in <3s without list_all."""
+    from tapps_brain.models import MemoryEntry, MemoryTier
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.postgres_migrations import apply_private_migrations
+    from tapps_brain.postgres_private import PostgresPrivateBackend
+
+    dsn = os.environ["TAPPS_BRAIN_DATABASE_URL"]
+    apply_private_migrations(dsn)
+
+    project_id = f"snap-perf-{uuid.uuid4().hex[:8]}"
+    agent_id = f"agent-{uuid.uuid4().hex[:8]}"
+    cm = PostgresConnectionManager(dsn)
+    backend = PostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)
+    entries = [
+        MemoryEntry(
+            key=f"perf-{i:05d}",
+            value=f"payload-{i}",
+            tier=MemoryTier.pattern,
+            agent_scope="private" if i % 2 == 0 else "hive",
+            access_count=i % 30,
+            total_access_count=i,
+            useful_access_count=i // 2,
+            tags=[f"tag-{i % 7}"],
+            memory_group=f"g-{i % 11}" if i % 3 == 0 else None,
+        )
+        for i in range(5000)
+    ]
+    try:
+        backend.save_many(entries)
+        store = MemoryStore(tmp_path, private_backend=backend)
+        try:
+            with patch.object(
+                store,
+                "list_all",
+                side_effect=AssertionError("list_all must not be called"),
+            ):
+                started = time.perf_counter()
+                snap = build_visual_snapshot(store, skip_diagnostics=True, privacy="local")
+                elapsed = time.perf_counter() - started
+        finally:
+            store.close()
+    finally:
+        backend.close()
+
+    assert elapsed < 3.0
+    assert snap.health["entry_count"] == 5000
+    assert snap.access_stats is not None
+    assert snap.access_stats.sum_access_count > 0

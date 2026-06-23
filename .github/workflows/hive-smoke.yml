@@ -6,7 +6,8 @@ on:
       - "docker/**"
       - "Makefile"
       - "scripts/hive_smoke.sh"
-      - "src/tapps_brain/http_adapter.py"
+      - "scripts/brain_visual_smoke_live.sh"
+      - "docker/nginx-visual.conf"
       - "src/tapps_brain/cli.py"
       # Anything that affects tool registration, profiles, or the REST route
       # map needs the e2e check — the v3.20.1 hotfix shipped because a stale
@@ -44,3 +45,4 @@ jobs:
           # Use non-default ports to avoid conflicts on the runner.
           TAPPS_VISUAL_PORT: "18088"
           TAPPS_BRAIN_HTTP_PORT: "18080"
+          TAPPS_HTTP_PORT: "18080"

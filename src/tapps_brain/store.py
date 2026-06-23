@@ -2822,8 +2822,19 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return "Memory quality recovering — diagnostic probes in progress."
         return None
 
-    def health(self) -> StoreHealthReport:
-        """Return a structured health report for this store."""
+    def health(self, *, skip_consolidation_scan: bool = False) -> StoreHealthReport:
+        """Return a structured health report for this store.
+
+        Parameters
+        ----------
+        skip_consolidation_scan:
+            When ``True``, skip the O(n^2) ``find_consolidation_groups`` similarity
+            scan and reuse the last cached candidate count instead.  Used by the
+            visual ``/snapshot`` builder (EPIC-078), where an exact, freshly
+            computed consolidation gauge is not worth a multi-minute, request-time
+            scan over thousands of entries.  Defaults to ``False`` so all other
+            callers keep the exact behaviour.
+        """
         from datetime import UTC, datetime
 
         from tapps_brain.gc import MemoryGarbageCollector
@@ -2843,13 +2854,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         )
         gc_candidates = gc.identify_candidates(entries)
 
-        groups = find_consolidation_groups(
-            entries,
-            threshold=self._consolidation_config.threshold,
-        )
-        consolidation_candidates = sum(len(g) for g in groups)
-        # Update tapps_brain.consolidation.candidates gauge (STORY-032.6).
-        self._last_consolidation_candidates = consolidation_candidates
+        if skip_consolidation_scan:
+            consolidation_candidates = self._last_consolidation_candidates
+        else:
+            groups = find_consolidation_groups(
+                entries,
+                threshold=self._consolidation_config.threshold,
+            )
+            consolidation_candidates = sum(len(g) for g in groups)
+            # Update tapps_brain.consolidation.candidates gauge (STORY-032.6).
+            self._last_consolidation_candidates = consolidation_candidates
 
         # Federation config removed (STORY-059.2 — SQLite federation deleted).
         # Federation is now Postgres-only; project count not available from local config.

@@ -153,6 +153,69 @@ if status == 400:
 else:
     fail(f"POST /v1/experience:query missing event_type should 400, got {status} {bad}")
 
+import time
+
+MAX_SNAPSHOT_SEC = float(os.environ.get("TAPPS_SNAPSHOT_MAX_SECONDS", "30"))
+
+
+def request_timed(method: str, path: str, *, auth: bool = True) -> tuple[int, dict, float]:
+    headers = {
+        "X-Project-Id": PROJECT,
+        "X-Agent-Id": AGENT,
+        "Content-Type": "application/json",
+    }
+    if auth:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+    req = urllib.request.Request(f"{BASE}{path}", headers=headers, method=method)
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=MAX_SNAPSHOT_SEC + 5) as resp:
+            raw = resp.read().decode()
+            elapsed = time.monotonic() - started
+            return resp.status, json.loads(raw) if raw else {}, elapsed
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode()
+        elapsed = time.monotonic() - started
+        try:
+            payload = json.loads(raw) if raw else {"detail": exc.reason}
+        except json.JSONDecodeError:
+            payload = {"detail": raw or exc.reason}
+        return exc.code, payload, elapsed
+    except TimeoutError:
+        elapsed = time.monotonic() - started
+        return 0, {"detail": f"timed out after {MAX_SNAPSHOT_SEC + 5:.0f}s"}, elapsed
+    except OSError as exc:
+        elapsed = time.monotonic() - started
+        return 0, {"detail": str(exc)}, elapsed
+
+
+status, snapshot, snap_elapsed = request_timed("GET", "/snapshot")
+schema_version = snapshot.get("schema_version")
+fingerprint = snapshot.get("fingerprint_sha256")
+if status == 0:
+    fail(
+        f"GET /snapshot timed out or was unreachable after {snap_elapsed:.2f}s "
+        f"(max {MAX_SNAPSHOT_SEC:.0f}s)"
+    )
+elif (
+    status == 200
+    and isinstance(schema_version, int)
+    and schema_version >= 2
+    and isinstance(fingerprint, str)
+    and fingerprint
+    and snap_elapsed < MAX_SNAPSHOT_SEC
+):
+    ok(
+        f"GET /snapshot schema_version={schema_version} "
+        f"fingerprint={fingerprint[:12]}… latency={snap_elapsed:.2f}s"
+    )
+else:
+    fail(
+        f"GET /snapshot expected 200 + schema_version>=2 + fingerprint_sha256 "
+        f"within {MAX_SNAPSHOT_SEC:.0f}s, got status={status} "
+        f"schema_version={schema_version!r} latency={snap_elapsed:.2f}s {snapshot}"
+    )
+
 print("")
 print(f"Results: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

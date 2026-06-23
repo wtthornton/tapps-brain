@@ -102,7 +102,10 @@ from tapps_brain.http.metrics_collector import (
     _LABELED_REQUEST_COUNTS_LOCK,
     _MAX_AGENT_ID_CARDINALITY,
     _collect_metrics,
+    _emit_snapshot_metrics,
     _record_labeled_request,
+    record_snapshot_build_duration,
+    record_snapshot_cache_hit,
 )
 
 # middleware
@@ -840,6 +843,8 @@ def _collect_metrics(  # type: ignore[no-redef]  # noqa: F811
                             f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
                         )
 
+    _emit_snapshot_metrics(lines)
+
     lines.append("")
     return "\n".join(lines)
 
@@ -1181,6 +1186,23 @@ def create_app(
             except Exception as exc:
                 logger.warning("http_adapter.async_store_init_failed", error=str(exc))
                 cfg.async_store = None
+
+        # STORY-078.3: eager-load embedding weights during startup when required
+        # so concurrent MCP tool calls do not block /healthz on cold model load.
+        if os.environ.get("TAPPS_BRAIN_EMBEDDING_REQUIRED", "0") == "1":
+            try:
+                from tapps_brain.embeddings import (
+                    embedding_startup_status,
+                    get_embedding_provider,
+                )
+
+                _emb_provider = get_embedding_provider()
+                logger.info(
+                    "http_adapter.embedding_warmup",
+                    **embedding_startup_status(_emb_provider),
+                )
+            except Exception as exc:
+                logger.warning("http_adapter.embedding_warmup_failed", error=str(exc))
 
         mcp = mcp_holder["mcp"]
         if mcp is None:
@@ -1604,6 +1626,12 @@ def create_app(
         }
         return JSONResponse(status_code=200, content=body)
 
+    # STORY-078.1: serialize cold snapshot builds so only one thread pool
+    # worker runs ``build_visual_snapshot`` at a time.  Closure-scoped like
+    # TAP-629 idempotency guards — each ``create_app()`` / TestClient gets a
+    # fresh lock.
+    _snapshot_build_lock = asyncio.Lock()
+
     @app.get("/snapshot", dependencies=[Depends(require_data_plane_auth)])
     async def _snapshot(request: Request) -> Response:
         if cfg.store is None:
@@ -1616,20 +1644,48 @@ def create_app(
         project_filter = project_filter.strip() if project_filter else None
         project_filter = project_filter or None
 
-        with cfg.snapshot_lock:
-            now = time.time()
-            cache_hit = (
+        def _cached_snapshot(now: float) -> Any | None:
+            if (
                 cfg.snapshot_cache is not None
                 and (now - cfg.snapshot_cache_at) < _SNAPSHOT_TTL_SECONDS
-            )
-            if cache_hit:
-                snapshot = cfg.snapshot_cache
-            else:
-                from tapps_brain.visual_snapshot import build_visual_snapshot
+            ):
+                return cfg.snapshot_cache
+            return None
 
-                snapshot = build_visual_snapshot(cfg.store, privacy="standard")
-                cfg.snapshot_cache = snapshot
-                cfg.snapshot_cache_at = now
+        # Thread-safety: ``build_visual_snapshot`` is read-only against the
+        # store; ``cfg.snapshot_lock`` covers TTL cache read/write only (never
+        # held across ``await asyncio.to_thread(...)``).
+        snapshot: Any = None
+        with cfg.snapshot_lock:
+            snapshot = _cached_snapshot(time.time())
+
+        if snapshot is not None:
+            record_snapshot_cache_hit()
+        else:
+            build_started = time.monotonic()
+            async with _snapshot_build_lock:
+                with cfg.snapshot_lock:
+                    snapshot = _cached_snapshot(time.time())
+
+                if snapshot is not None:
+                    record_snapshot_cache_hit()
+                else:
+                    from tapps_brain.visual_snapshot import build_visual_snapshot
+
+                    built = await asyncio.to_thread(
+                        build_visual_snapshot, cfg.store, privacy="standard"
+                    )
+                    build_duration = time.monotonic() - build_started
+                    with cfg.snapshot_lock:
+                        cached = _cached_snapshot(time.time())
+                        if cached is not None:
+                            snapshot = cached
+                            record_snapshot_cache_hit()
+                        else:
+                            cfg.snapshot_cache = built
+                            cfg.snapshot_cache_at = time.time()
+                            snapshot = built
+                            record_snapshot_build_duration(build_duration)
 
         payload = snapshot.model_dump(mode="json")
         if project_filter is not None:
