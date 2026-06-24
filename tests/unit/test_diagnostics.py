@@ -13,6 +13,7 @@ from tapps_brain.diagnostics import (
     DiagnosticsConfig,
     DiagnosticsReport,
     DimensionScore,
+    _hive_namespace_scores,
     adjust_weights_for_correlation,
     hive_recall_multiplier,
     load_custom_dimensions,
@@ -359,13 +360,55 @@ def test_circuit_half_open_after_cooldown(monkeypatch) -> None:
 
 
 def test_hive_namespace_scores_empty_without_hive(tmp_path) -> None:
-    from tapps_brain.diagnostics import _hive_namespace_scores
-
     store = MemoryStore(tmp_path)
     try:
         d, w = _hive_namespace_scores(store)
         assert d == {}
         assert w is None
+    finally:
+        store.close()
+
+
+class _HiveCountBackend:
+    def count_by_namespace(self) -> dict[str, int]:
+        return {"universal": 42, "repo-brain": 5}
+
+    def search(self, query: str, namespaces: list[str] | None = None, **kwargs: object) -> list[dict[str, str]]:
+        raise AssertionError(f"search should not be called when counts exist: {query!r}")
+
+
+class _HiveSearchBackend:
+    def search(
+        self,
+        query: str,
+        namespaces: list[str] | None = None,
+        **kwargs: object,
+    ) -> list[dict[str, str]]:
+        return [{"key": "k1"}]
+
+
+def test_hive_namespace_scores_uses_namespace_counts(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    store._hive_store = _HiveCountBackend()
+    try:
+        d, worst = _hive_namespace_scores(store)
+        assert worst == 0.85
+        assert d["universal"]["freshness"].score == 1.0
+        assert d["universal"]["freshness"].raw_details["probe"] == "namespace_count"
+        assert d["universal"]["freshness"].raw_details["hits"] == 42
+    finally:
+        store.close()
+
+
+def test_hive_namespace_scores_search_fallback(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    store._hive_store = _HiveSearchBackend()
+    try:
+        d, worst = _hive_namespace_scores(store)
+        assert d["universal"]["freshness"].score == 1.0
+        assert d["universal"]["freshness"].raw_details["probe"] == "search"
+        assert d["universal"]["freshness"].raw_details["hits"] == 1
+        assert worst == 0.85
     finally:
         store.close()
 

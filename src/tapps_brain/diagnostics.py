@@ -339,6 +339,41 @@ def load_custom_dimensions(paths: list[str]) -> list[HealthDimension]:
     return out
 
 
+_HIVE_PROBE_SEARCH_QUERY = "memory"
+_HIVE_PROBE_EMPTY_FRESHNESS = 0.4
+
+
+def _hive_namespace_entry_count(hs: object, namespace: str) -> int | None:
+    """Return hive row count for *namespace* when the backend exposes counts."""
+    count_fn = getattr(hs, "count_by_namespace", None)
+    if not callable(count_fn):
+        return None
+    try:
+        counts = count_fn()
+        if isinstance(counts, dict):
+            return int(counts.get(namespace, 0))
+    except Exception:
+        logger.warning("hive_namespace_count_failed", namespace=namespace, exc_info=True)
+    return None
+
+
+def _hive_namespace_search_hits(hs: object, namespace: str) -> int:
+    """Lexical hive probe — fallback when namespace counts are unavailable."""
+    search_fn = getattr(hs, "search", None)
+    if not callable(search_fn):
+        return 0
+    try:
+        rows = search_fn(
+            _HIVE_PROBE_SEARCH_QUERY,
+            namespaces=[namespace],
+            limit=5,
+            min_confidence=0.0,
+        )
+        return len(rows)
+    except Exception:  # nosec B110 — probe must not break diagnostics
+        return 0
+
+
 def _hive_namespace_scores(
     store: MemoryStore,
 ) -> tuple[dict[str, dict[str, DimensionScore]], float | None]:
@@ -354,15 +389,21 @@ def _hive_namespace_scores(
             ns_list.append(name)
     worst = 1.0
     for ns in ns_list:
-        try:
-            rows = hs.search("a", namespaces=[ns], limit=5, min_confidence=0.0)
-        except Exception:  # nosec B110 — hive search probe; failure treated as no results
-            rows = []
-        n = len(rows)
-        freshness = clamp01(1.0 if n > 0 else 0.4)
+        entry_count = _hive_namespace_entry_count(hs, ns)
+        if entry_count is not None:
+            n = entry_count
+            probe = "namespace_count"
+        else:
+            n = _hive_namespace_search_hits(hs, ns)
+            probe = "search"
+        freshness = clamp01(1.0 if n > 0 else _HIVE_PROBE_EMPTY_FRESHNESS)
         dup = DimensionScore(name="hive_duplication", score=0.85, raw_details={"namespace": ns})
         fb = DimensionScore(name="hive_feedback", score=0.9, raw_details={"namespace": ns})
-        fr = DimensionScore(name="hive_freshness", score=freshness, raw_details={"hits": n})
+        fr = DimensionScore(
+            name="hive_freshness",
+            score=freshness,
+            raw_details={"hits": n, "probe": probe, "query": _HIVE_PROBE_SEARCH_QUERY},
+        )
         out[ns] = {"freshness": fr, "duplication": dup, "feedback": fb}
         local_worst = min(fr.score, dup.score, fb.score)
         worst = min(worst, local_worst)
