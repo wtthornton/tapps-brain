@@ -91,6 +91,9 @@ def test_run_diagnostics_with_recall_feedback(tmp_path) -> None:
         re = rep.dimensions.get("retrieval_effectiveness")
         assert re is not None
         assert 0.0 <= re.score <= 1.0
+        fr = rep.dimensions.get("freshness")
+        assert fr is not None
+        assert fr.raw_details.get("tier_counts", {}).get("pattern") == 1
     finally:
         store.close()
 

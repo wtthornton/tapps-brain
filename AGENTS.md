@@ -46,6 +46,7 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make brain-qa` | Full QA: lint + type + tests (mirrors CI) |
 | `make brain-healthcheck` | MCP wiring + recall round-trip against the live brain |
 | `make brain-smoke-live` | HTTP smoke on the live stack (`/healthz`, `experience:query` round-trip) |
+| `make brain-diagnostics-live` | Read-only live diagnostics (`/healthz?deep=1`, snapshot, stale list, scorecard) |
 | `make brain-visual-smoke-live` | Visual dashboard smoke (`:8088/` meta, proxied + direct `/snapshot` schema) |
 | `make dev-deploy` | Fast Docker loop: reload brain + live smoke ([dev-docker-loop.md](docs/guides/dev-docker-loop.md)) |
 | `make hive-reload-http` | Rebuild wheel + http image only; restart brain container |

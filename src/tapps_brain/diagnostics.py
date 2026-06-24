@@ -228,8 +228,11 @@ def _freshness(store: MemoryStore) -> DimensionScore:
     cfg = DecayConfig()
     now = datetime.now(tz=UTC)
     scores: list[float] = []
+    tier_counts: dict[str, int] = {}
+    tier_age_days_sum: dict[str, float] = {}
     for e in entries:
         tier = e.tier if isinstance(e.tier, MemoryTier) else MemoryTier(str(e.tier))
+        tier_s = tier.value if isinstance(tier, MemoryTier) else str(tier)
         hl = max(1, _get_half_life(tier, cfg))
         try:
             raw = e.created_at.replace("Z", "+00:00")
@@ -240,8 +243,24 @@ def _freshness(store: MemoryStore) -> DimensionScore:
         except (ValueError, TypeError, AttributeError):
             age_days = 0.0
         scores.append(clamp01(math.exp(-age_days / float(hl))))
+        tier_counts[tier_s] = tier_counts.get(tier_s, 0) + 1
+        tier_age_days_sum[tier_s] = tier_age_days_sum.get(tier_s, 0.0) + age_days
     avg = sum(scores) / len(scores)
-    return DimensionScore(name="freshness", score=avg, raw_details={"entries": len(entries)})
+    n = len(entries)
+    tier_avg_age = {
+        k: round(tier_age_days_sum[k] / tier_counts[k], 2) for k in sorted(tier_counts)
+    }
+    context_n = tier_counts.get(MemoryTier.context.value, 0)
+    return DimensionScore(
+        name="freshness",
+        score=avg,
+        raw_details={
+            "entries": n,
+            "tier_counts": tier_counts,
+            "tier_avg_age_days": tier_avg_age,
+            "context_share": round(context_n / n, 4),
+        },
+    )
 
 
 def _completeness(store: MemoryStore) -> DimensionScore:
