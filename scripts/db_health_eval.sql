@@ -117,15 +117,20 @@ FROM (
 ) s;
 
 -- 2.8 Is the `status` column actually used? (all-active + supersede/expiry
--- pointers set => the state machine never flips status; recall MUST filter
--- on invalid_at/superseded_by, not status.)
+-- pointers set => the state machine never flips status.)
+-- CONFIRMED BENIGN (2026-06-24 source trace): the `status` column is
+-- decorative — production recall enforces lifecycle in the Python retrieval
+-- layer, not via status. RecallEngine.recall -> inject_memories ->
+-- MemoryRetriever.search -> _filter_candidates_to_pending (retrieval.py:417)
+-- calls entry.is_temporally_valid(as_of=None), which defaults to now()
+-- (models.py:445) and drops any row with invalid_at <= now() or that is
+-- superseded. So a frozen-at-'active' status is expected, not a bug.
 SELECT
   '2.8 status_transitions'                                     AS check_id,
-  CASE WHEN n_nonactive > 0 THEN 'PASS' ELSE 'WARN' END        AS severity,
+  'INFO'                                                       AS severity,
   format('%s non-active rows; %s active rows carry superseded_by or past invalid_at',
          n_nonactive, n_active_but_dead)                       AS metric,
-  CASE WHEN n_nonactive > 0 THEN 'status transitions are happening'
-       ELSE 'status never transitions — confirm recall filters on invalid_at/superseded_by' END AS verdict
+  'benign: status is decorative; lifecycle enforced in MemoryRetriever (retrieval.py:417)' AS verdict
 FROM (
   SELECT count(*) FILTER (WHERE status <> 'active')            AS n_nonactive,
          count(*) FILTER (WHERE status='active'
@@ -324,16 +329,16 @@ FROM (SELECT count(*) bad FROM private_memories
         AND invalid_at < valid_at) s;
 
 -- 5.4 Memories past invalid_at but still status='active'.
--- WARN (not FAIL): expected when status is non-transitioning (see 2.8).
--- The real question this raises: does recall correctly exclude rows where
--- invalid_at < now()? If yes, this is benign bookkeeping; if recall trusts
--- `status`, these are expired facts still being served.
+-- INFO (confirmed benign — see 2.8): recall DOES exclude these. The Python
+-- retrieval layer (MemoryRetriever._filter_candidates_to_pending,
+-- retrieval.py:417) drops rows where is_temporally_valid(now()) is false, so
+-- expired rows are never served despite status staying 'active'. This count
+-- just measures the expiry backlog the status column doesn't reflect.
 SELECT
   '5.4 expired_but_active'                                     AS check_id,
-  CASE WHEN bad = 0 THEN 'PASS' ELSE 'WARN' END                AS severity,
-  format('%s active rows past invalid_at (status not flipped)', bad) AS metric,
-  CASE WHEN bad = 0 THEN 'no expired-yet-active memories'
-       ELSE 'confirm recall filters on invalid_at, not status (see 2.8)' END AS verdict
+  'INFO'                                                       AS severity,
+  format('%s active rows past invalid_at (status not flipped; recall still excludes them)', bad) AS metric,
+  'benign: recall filters on invalid_at via is_temporally_valid; status is decorative' AS verdict
 FROM (SELECT count(*) bad FROM private_memories
       WHERE status='active' AND invalid_at IS NOT NULL AND invalid_at < now()) s;
 
