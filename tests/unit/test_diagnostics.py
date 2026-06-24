@@ -13,6 +13,7 @@ from tapps_brain.diagnostics import (
     DiagnosticsConfig,
     DiagnosticsReport,
     DimensionScore,
+    _dimension_recommendations,
     _hive_namespace_scores,
     adjust_weights_for_correlation,
     hive_recall_multiplier,
@@ -22,6 +23,63 @@ from tapps_brain.diagnostics import (
     run_diagnostics,
 )
 from tapps_brain.store import MemoryStore
+
+
+def test_dimension_recommendations_context_heavy_freshness() -> None:
+    """Low freshness dominated by context tier yields the structural explanation."""
+    scores = {
+        "freshness": DimensionScore(
+            name="freshness",
+            score=0.38,
+            raw_details={"context_share": 0.80, "tier_counts": {"context": 80, "procedural": 20}},
+        ),
+    }
+    recs = _dimension_recommendations(scores)
+    assert len(recs) == 1
+    assert "80% of entries are context tier" in recs[0]
+    assert "not data corruption" in recs[0]
+
+
+def test_dimension_recommendations_low_freshness_not_context() -> None:
+    """Low freshness without a context-tier majority yields the generic hint."""
+    scores = {
+        "freshness": DimensionScore(
+            name="freshness",
+            score=0.40,
+            raw_details={"context_share": 0.10},
+        ),
+    }
+    recs = _dimension_recommendations(scores)
+    assert len(recs) == 1
+    assert "review entry ages vs tier half-lives" in recs[0]
+
+
+def test_dimension_recommendations_gc_candidates() -> None:
+    """Staleness with GC candidates yields a maintenance gc hint."""
+    scores = {
+        "staleness": DimensionScore(
+            name="staleness",
+            score=0.99,
+            raw_details={"gc_candidates": 3},
+        ),
+    }
+    recs = _dimension_recommendations(scores)
+    assert len(recs) == 1
+    assert "3 GC candidate(s)" in recs[0]
+    assert "maintenance gc" in recs[0]
+
+
+def test_dimension_recommendations_healthy_store_silent() -> None:
+    """Healthy freshness + zero GC candidates produce no recommendations."""
+    scores = {
+        "freshness": DimensionScore(
+            name="freshness", score=0.90, raw_details={"context_share": 0.80}
+        ),
+        "staleness": DimensionScore(
+            name="staleness", score=1.0, raw_details={"gc_candidates": 0}
+        ),
+    }
+    assert _dimension_recommendations(scores) == []
 
 
 def test_normalize_weights_equal_sum() -> None:

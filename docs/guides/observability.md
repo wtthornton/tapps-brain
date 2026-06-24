@@ -401,13 +401,19 @@ The diagnostics module (`src/tapps_brain/diagnostics.py`) computes a multi-dimen
 | Dimension | Weight | Description |
 |---|---|---|
 | `retrieval_effectiveness` | 0.22 | Hit rate + mean confidence, blended with `recall_rated` feedback when available. |
-| `freshness` | 0.18 | Exponential decay score based on entry age relative to tier half-life. |
+| `freshness` | 0.18 | Exponential decay score based on entry age relative to tier half-life. `raw_details` includes `tier_counts`, `tier_avg_age_days`, and `context_share` (fraction of entries in context tier). |
 | `completeness` | 0.12 | Fraction of entries with non-empty value and source_agent. |
 | `duplication` | 0.15 | 1 minus the ratio of consolidation candidates to total entries. |
 | `staleness` | 0.15 | 1 minus the ratio of GC candidates to total entries. |
 | `integrity` | 0.18 | Ratio of verified entries to (verified + tampered). |
 
 Weights are re-normalized to sum to 1.0. Profile YAML can override individual weights via `diagnostics.dimension_weights`. Custom dimensions can be added via `diagnostics.custom_dimension_paths` (importable dotted paths to `HealthDimension` implementations).
+
+### Interpreting low freshness (context-heavy stores)
+
+A **freshness grade of F is often structural, not a defect.** The score is `mean(exp(-age_days / tier_half_life))` across all entries. The `context` tier has a 14-day half-life, so a store dominated by `context` entries settles around `exp(-1) ≈ 0.37` once those entries reach ~14 days old — even when the store is perfectly healthy.
+
+`run_diagnostics` surfaces this directly in `recommendations` (no LLM): when `freshness.score < 0.55` **and** `context_share >= 0.7`, the report explains that the low score reflects short-lived context tier near its half-life rather than data corruption, and suggests promoting durable facts to `pattern`/`procedural` or tightening capture write rules. When freshness is low *without* a context majority, it emits a generic "review entry ages vs tier half-lives" hint instead. A non-zero `staleness.gc_candidates` adds a `maintenance gc` hint. These recommendations fire regardless of composite score, so a healthy composite (e.g. 0.87, circuit `closed`) no longer hides actionable signals.
 
 ### Composite score and grades
 
@@ -491,6 +497,27 @@ Alerts include `threshold_warning` and `threshold_critical` levels with z-score 
 ### Correlation-adjusted weights
 
 When enough history rows exist (>= 20), `adjust_weights_for_correlation()` detects highly correlated dimension pairs (Pearson r > 0.7) and down-weights them by 30% to reduce double-counting.
+
+### Live-stack diagnostics runbook (`make brain-diagnostics-live`)
+
+`scripts/brain_diagnostics_live.sh` runs a read-only health pass against the **running** Docker stack: `/healthz?deep=1`, the `:8088/snapshot` aggregate, an in-container `maintenance stale` preview, and the full `diagnostics report` JSON (parsed, not grepped, so integrity/composite are reported accurately).
+
+It deliberately does **not** inherit host `TAPPS_BRAIN_*` env vars (which point at the dev repo / local agent and would diagnose the wrong store). Override via `BRAIN_LIVE_*` instead:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BRAIN_LIVE_PROJECT` | busiest `http-adapter` row in Postgres | Project id to diagnose |
+| `BRAIN_LIVE_AGENT_ID` | `http-adapter` | Agent id |
+| `BRAIN_LIVE_PROJECT_DIR` | `/var/lib/tapps-brain` | In-container project dir |
+| `TAPPS_BRAIN_HTTP_CONTAINER` | `tapps-brain-http` | Container name |
+| `AUTO_GC` | `0` | Set `1` to archive stale candidates in-container via `maintenance gc` |
+
+```bash
+make brain-diagnostics-live              # weekly read-only check
+AUTO_GC=1 make brain-diagnostics-live    # archive stale (contradicted-low-confidence) entries
+```
+
+**Snapshot lag:** the `:8088/snapshot` composite/circuit come from a throttled diagnostics row refreshed at most once per `_DIAG_REFRESH_TTL_SEC` (300 s), so `gc_candidates` there can lag the live store briefly. The in-container `maintenance stale` block is authoritative. Alert when composite < 0.70, circuit ≠ `closed`, or stale candidates persist across runs.
 
 ---
 

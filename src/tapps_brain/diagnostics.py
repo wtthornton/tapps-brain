@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# Freshness interpretation thresholds (ops runbook — docs/guides/observability.md).
+_CONTEXT_FRESHNESS_SHARE_THRESHOLD = 0.7
+_LOW_FRESHNESS_SCORE_THRESHOLD = 0.55
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -429,6 +433,41 @@ def _hive_namespace_scores(
     return out, worst
 
 
+def _dimension_recommendations(scores: dict[str, DimensionScore]) -> list[str]:
+    """Actionable operator hints from dimension raw_details (no LLM)."""
+    recs: list[str] = []
+    fr = scores.get("freshness")
+    if fr is not None and fr.score < _LOW_FRESHNESS_SCORE_THRESHOLD:
+        raw = fr.raw_details or {}
+        context_share = raw.get("context_share")
+        if context_share is not None and float(context_share) >= _CONTEXT_FRESHNESS_SHARE_THRESHOLD:
+            pct = int(float(context_share) * 100)
+            recs.append(
+                f"Freshness is low ({fr.score:.2f}) but {pct}% of entries are context tier "
+                "(14d half-life). Often structural when context entries age near half-life — "
+                "not data corruption. Promote durable facts to pattern/procedural or tighten "
+                "capture write rules."
+            )
+        else:
+            recs.append(
+                "Freshness is low — review entry ages vs tier half-lives; run maintenance gc "
+                "for contradicted entries or review capture tier defaults."
+            )
+    st = scores.get("staleness")
+    if st is not None:
+        gc_n = st.raw_details.get("gc_candidates", 0)
+        try:
+            gc_count = int(gc_n)
+        except (TypeError, ValueError):
+            gc_count = 0
+        if gc_count > 0:
+            recs.append(
+                f"{gc_count} GC candidate(s) — run maintenance gc "
+                "(live stack: AUTO_GC=1 make brain-diagnostics-live)."
+            )
+    return recs
+
+
 def run_diagnostics(
     store: MemoryStore,
     *,
@@ -479,6 +518,7 @@ def run_diagnostics(
         recs.append(gap_line)
     elif gaps:
         recs.append(f"{gaps} knowledge gap(s) reported — consider capturing missing facts.")
+    recs.extend(_dimension_recommendations(scores))
     if composite < 0.6:
         recs.append("Composite score below 0.6 — review dimension breakdown.")
     now = datetime.now(tz=UTC).isoformat()
