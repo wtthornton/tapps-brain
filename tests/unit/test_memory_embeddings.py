@@ -236,6 +236,46 @@ class TestStoreWithEmbeddingProvider:
         store.close()
 
 
+class TestBackfillEmbeddings:
+    """backfill_embeddings re-embeds rows written before a provider was active."""
+
+    def test_backfill_populates_missing_embeddings(self, tmp_path: Path) -> None:
+        # Rows written before any embedding provider was active.
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        store.save("a", "first value", tier="pattern")
+        store.save("b", "second value", tier="pattern")
+        pre = store.get("a")
+        assert pre is not None
+        assert pre.embedding is None
+
+        # Provider becomes available; backfill the legacy rows.
+        store._embedding_provider = _StubProvider(dimension=384, model_id="stub")
+        result = store.backfill_embeddings()
+
+        assert result == {"backfilled": 2, "skipped_existing": 0, "failed": 0}
+        for key in ("a", "b"):
+            loaded = store.get(key)
+            assert loaded is not None
+            assert loaded.embedding == [0.0] * 384
+            assert loaded.embedding_model_id == "stub"
+        store.close()
+
+    def test_backfill_skips_already_embedded(self, tmp_path: Path) -> None:
+        provider = _StubProvider(dimension=384, model_id="stub")
+        store = MemoryStore(tmp_path, embedding_provider=provider)
+        store.save("a", "already embedded", tier="pattern")
+        result = store.backfill_embeddings()
+        assert result == {"backfilled": 0, "skipped_existing": 1, "failed": 0}
+        store.close()
+
+    def test_backfill_no_provider_is_noop(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        store.save("a", "value")
+        result = store.backfill_embeddings()
+        assert result == {"backfilled": 0, "skipped_existing": 0, "failed": 0}
+        store.close()
+
+
 # ---------------------------------------------------------------------------
 # SentenceTransformerProvider (mocked — no real model download)
 # ---------------------------------------------------------------------------
