@@ -246,7 +246,7 @@ brain-healthcheck:  ## Verify this repo is wired to the deployed tapps-brain and
 brain-smoke-live:  ## HTTP smoke test against the running tapps-brain stack (no compose boot)
 	@bash scripts/brain_smoke_live.sh
 
-brain-diagnostics-live:  ## Read-only diagnostics against running hive stack (healthz, snapshot, stale, report)
+brain-diagnostics-live:  ## Live-stack diagnostics (healthz, snapshot, stale, report); AUTO_GC=1 archives stale
 	@bash scripts/brain_diagnostics_live.sh
 
 brain-visual-smoke-live:  ## Visual dashboard smoke (:8088 HTML + /snapshot proxy + direct :8080/snapshot)

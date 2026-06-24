@@ -12,6 +12,14 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Added
+
+- **Diagnostics scorecard recommendations** — `run_diagnostics` now emits actionable operator hints derived from dimension `raw_details`, independent of composite score: low `freshness` dominated by the context tier (`context_share >= 0.7`) is explained as structural (short-lived 14d-half-life entries near their half-life) rather than data corruption, and a non-zero `staleness.gc_candidates` adds a `maintenance gc` hint. Previously these only surfaced when composite < 0.6 or the circuit was OPEN, so a healthy composite could hide them. Surfaced in the CLI `diagnostics report` and persisted history.
+
+### Changed
+
+- **`make brain-diagnostics-live`** no longer inherits host `TAPPS_BRAIN_*` env (which targeted the dev repo / local agent and diagnosed the wrong store); it auto-detects the busiest `http-adapter` project in Postgres and accepts `BRAIN_LIVE_PROJECT` / `BRAIN_LIVE_AGENT_ID` / `BRAIN_LIVE_PROJECT_DIR` overrides, parses diagnostics JSON (accurate integrity/composite), and supports `AUTO_GC=1` to archive stale candidates in-container. Documented in `docs/guides/observability.md`.
+
 ## [3.25.0] — 2026-06-24
 
 Operational-recovery release for the brain-visual dashboard (EPIC-078 / [TAP-4297](https://linear.app/tappscodingagents/issue/TAP-4297)) plus deployed-brain reliability fixes (EPIC [TAP-4273](https://linear.app/tappscodingagents/issue/TAP-4273)) and AgentForge REST DX.
