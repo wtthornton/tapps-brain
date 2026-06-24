@@ -8,6 +8,10 @@ Tests cover:
   AC5: docs/guides/deployment.md exists and contains required content.
   AC6: Healthcheck aggregates both transports.
   AC7: Migration guide for 3.5.x operators exists.
+
+Convention (TAP-4421): these tests must never bind a real TCP port. Patch
+``uvicorn.run`` for any test that starts the MCP transport (``mcp_port > 0``)
+so the suite passes regardless of which local ports are already in use.
 """
 
 from __future__ import annotations
