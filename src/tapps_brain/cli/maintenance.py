@@ -697,6 +697,35 @@ def maintenance_resign_integrity(
         store.close()
 
 
+@maintenance_app.command("backfill-embeddings")
+def maintenance_backfill_embeddings(
+    project_dir: ProjectDir = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Compute + persist embeddings for entries that have none (EPIC-078).
+
+    Remediation for ``vector_index_rows == 0`` on the dashboard ("pgvector HNSW
+    ready but no embedded rows") — rows written before an embedding provider was
+    active.  Non-destructive: only ``embedding`` / ``embedding_model_id`` are
+    written; timestamps and integrity hashes are preserved.  Requires an
+    embedding provider (install the ``[all]`` extra); without one nothing is
+    backfilled.
+    """
+    store = _get_store(project_dir)
+    try:
+        result = store.backfill_embeddings()
+        if as_json:
+            _output(result, as_json=True)
+        else:
+            typer.echo(
+                f"Backfilled {result['backfilled']} entries "
+                f"({result['skipped_existing']} already embedded, "
+                f"{result['failed']} failed)."
+            )
+    finally:
+        store.close()
+
+
 # NOTE: the legacy `maintenance split-by-agent` command was removed in
 # ADR-007 — it operated on per-agent SQLite memory.db files.  Under the
 # Postgres-only persistence plane every agent already has an isolated

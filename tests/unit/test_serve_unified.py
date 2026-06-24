@@ -8,6 +8,10 @@ Tests cover:
   AC5: docs/guides/deployment.md exists and contains required content.
   AC6: Healthcheck aggregates both transports.
   AC7: Migration guide for 3.5.x operators exists.
+
+Convention (TAP-4421): these tests must never bind a real TCP port. Patch
+``uvicorn.run`` for any test that starts the MCP transport (``mcp_port > 0``)
+so the suite passes regardless of which local ports are already in use.
 """
 
 from __future__ import annotations
@@ -121,6 +125,9 @@ class TestServeDualTransport:
                 "tapps_brain.mcp_server.create_operator_server",
                 return_value=mock_mcp_server,
             ),
+            # Mock uvicorn.run so the MCP thread never binds a real port (the
+            # value of mcp_port is irrelevant once uvicorn is stubbed).
+            patch("uvicorn.run", MagicMock()),
             patch.object(threading.Thread, "__init__", _patched_thread_init),
             patch(
                 "os.environ.get",
@@ -256,15 +263,23 @@ class TestGracefulShutdown:
         mock_adapter = MagicMock()
         mock_mcp_server = MagicMock()
         mock_mcp_server.settings = MagicMock()
-        mock_mcp_server.run = MagicMock(side_effect=lambda transport: time.sleep(10))
+        mock_mcp_server.run = MagicMock()
 
         joined: list[bool] = []
+        # Keeps the mocked MCP transport "running" (thread alive) until the
+        # shutdown path joins it, so we never bind a real port.
+        release = threading.Event()
+
+        def _blocking_uvicorn_run(*_args: object, **_kwargs: object) -> None:
+            release.wait(timeout=10)
 
         original_join = threading.Thread.join
 
         def _patched_join(self: threading.Thread, timeout: float | None = None) -> None:
             if self.name == "tapps-brain-mcp":
                 joined.append(True)
+                # Let the mocked transport return so the join completes quickly.
+                release.set()
             original_join(self, timeout=timeout)
 
         with (
@@ -273,6 +288,7 @@ class TestGracefulShutdown:
                 "tapps_brain.mcp_server.create_operator_server",
                 return_value=mock_mcp_server,
             ),
+            patch("uvicorn.run", side_effect=_blocking_uvicorn_run),
             patch.object(threading.Thread, "join", _patched_join),
             patch(
                 "os.environ.get",

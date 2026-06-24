@@ -13,7 +13,7 @@ import os
 import threading
 import time
 from collections import deque
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -1820,6 +1820,83 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             except Exception:
                 logger.warning("embedding_compute_failed", key=key, exc_info=True)
         return entry
+
+    def backfill_embeddings(self) -> dict[str, int]:
+        """Compute + persist embeddings for cached entries that have none.
+
+        Operator remediation for rows written before an embedding provider was
+        active (``vector_index_rows == 0`` on the dashboard — "pgvector HNSW
+        ready but no embedded rows").  For each cached entry lacking an
+        ``embedding``, compute it with the configured provider and write it
+        through to Postgres (and Hive when configured).  Only ``embedding`` and
+        ``embedding_model_id`` change — timestamps and integrity hashes are
+        preserved, so a backfill never invalidates integrity verification.
+
+        Returns:
+            Dict with ``backfilled``, ``skipped_existing`` and ``failed``
+            counts.  All zero when no embedding provider is configured.
+        """
+        if self._embedding_provider is None:
+            logger.warning(
+                "backfill_embeddings.no_provider",
+                hint="no embedding provider configured; nothing to backfill",
+            )
+            return {"backfilled": 0, "skipped_existing": 0, "failed": 0}
+
+        mid_raw = getattr(self._embedding_provider, "model_id", None)
+        model_id: str | None = (
+            mid_raw.strip() if isinstance(mid_raw, str) and mid_raw.strip() else None
+        )
+
+        with self._serialized():
+            keys = list(self._entries.keys())
+
+        backfilled = 0
+        skipped_existing = 0
+        failed = 0
+
+        for key in keys:
+            with self._serialized():
+                entry = self._entries.get(key)
+            if entry is None:
+                continue
+            if getattr(entry, "embedding", None):
+                skipped_existing += 1
+                continue
+
+            try:
+                emb = self._embedding_provider.embed(entry.value)
+            except Exception:
+                failed += 1
+                logger.warning("backfill_embeddings.embed_failed", key=key, exc_info=True)
+                continue
+
+            update: dict[str, object] = {"embedding": emb, "embedding_model_id": model_id}
+            with self._lock:
+                current = self._entries.get(key)
+                if current is None:
+                    continue
+                updated = current.model_copy(update=update)
+                self._entries[key] = updated
+
+            if self._hive_store is not None:
+                with suppress(Exception):
+                    self._hive_store.save(updated)  # type: ignore[call-arg,arg-type,misc]
+
+            try:
+                self._persistence.save(updated)
+                backfilled += 1
+            except Exception:
+                failed += 1
+                logger.warning("backfill_embeddings.persist_failed", key=key, exc_info=True)
+
+        logger.info(
+            "backfill_embeddings.complete",
+            backfilled=backfilled,
+            skipped_existing=skipped_existing,
+            failed=failed,
+        )
+        return {"backfilled": backfilled, "skipped_existing": skipped_existing, "failed": failed}
 
     def _persist_entry_or_rollback(
         self,
