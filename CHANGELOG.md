@@ -12,6 +12,30 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.25.0] — 2026-06-24
+
+Operational-recovery release for the brain-visual dashboard (EPIC-078 / [TAP-4297](https://linear.app/tappscodingagents/issue/TAP-4297)) plus deployed-brain reliability fixes (EPIC [TAP-4273](https://linear.app/tappscodingagents/issue/TAP-4273)) and AgentForge REST DX.
+
+### Added
+
+- **Brain-visual dashboard operational recovery** (EPIC-078): async snapshot build off the event loop ([TAP-4298](https://linear.app/tappscodingagents/issue/TAP-4298)), SQL-aggregate snapshot path replacing `list_all` ([TAP-4299](https://linear.app/tappscodingagents/issue/TAP-4299)), process-wide embedding-model singleton ([TAP-4300](https://linear.app/tappscodingagents/issue/TAP-4300)), nginx proxy hardening + `/healthz` liveness ([TAP-4302](https://linear.app/tappscodingagents/issue/TAP-4302), [TAP-4303](https://linear.app/tappscodingagents/issue/TAP-4303)), snapshot-build Prometheus metrics ([TAP-4304](https://linear.app/tappscodingagents/issue/TAP-4304)), UI error classification + single-flight polling ([TAP-4305](https://linear.app/tappscodingagents/issue/TAP-4305), [TAP-4306](https://linear.app/tappscodingagents/issue/TAP-4306)), live Hive/agent-registry/velocity/retrieval panels (EPIC-065.3–065.7 → [TAP-4307](https://linear.app/tappscodingagents/issue/TAP-4307)–[TAP-4311](https://linear.app/tappscodingagents/issue/TAP-4311)), `brain-visual-smoke-live` + CI gate ([TAP-4301](https://linear.app/tappscodingagents/issue/TAP-4301)), and an OFFLINE ops runbook ([TAP-4312](https://linear.app/tappscodingagents/issue/TAP-4312)). NLTlabs branding on the dashboard.
+- **`maintenance backfill-embeddings` CLI + `MemoryStore.backfill_embeddings()`** — re-embed rows written before an embedding provider was active (clears the dashboard "pgvector ready but no embedded rows" warning). Non-destructive: only `embedding` / `embedding_model_id` change.
+- **AgentForge REST DX** (EPIC-078): edge keys, batch resolve, and docs.
+
+### Fixed
+
+- **`/snapshot` 504 from O(n²) consolidation scan** ([TAP-4330](https://linear.app/tappscodingagents/issue/TAP-4330)): size-guarded `health(consolidation_scan_max_entries=...)`, throttled diagnostics refresh, and a read-only snapshot path that no longer mutates the diagnostics circuit breaker. Cold `/snapshot` now returns in < 1s.
+- **HMAC integrity signing-key mismatch** ([TAP-4331](https://linear.app/tappscodingagents/issue/TAP-4331)): persist `TAPPS_BRAIN_INTEGRITY_KEY` across container restarts, ratio-based key-mismatch detection, and a `maintenance resign-integrity` remediation command.
+- **Stale dashboard diagnostics / consolidation gauge** ([TAP-4332](https://linear.app/tappscodingagents/issue/TAP-4332)).
+- **KG `kg_entities` cross-tenant RLS violation** ([TAP-4274](https://linear.app/tappscodingagents/issue/TAP-4274)): scope uniqueness by `tenant_id` (migration 025) so shared `brain_id` no longer drops experience-batch writes.
+- **`POST /v1/kg/neighbors` 500** ([TAP-4275](https://linear.app/tappscodingagents/issue/TAP-4275)): serialize datetime fields to ISO-8601 for JSON-safe KG REST responses.
+- **Embedding cold-start network dependency** ([TAP-4276](https://linear.app/tappscodingagents/issue/TAP-4276)): bake `BAAI/bge-small-en-v1.5` into the image and default to offline mode.
+- **Serve transport unit tests bind hardcoded ports** ([TAP-4421](https://linear.app/tappscodingagents/issue/TAP-4421)): patch `uvicorn.run` so the suite is hermetic.
+
+### Changed
+
+- **`repo-brain` profile `max_entries` raised 5000 → 10000.**
+
 ## [3.24.0] — 2026-06-09
 
 Wave-2 consumer APIs: experience-event **read** path (EPIC-074 / [TAP-3155](https://linear.app/tappscodingagents/issue/TAP-3155)) and profile-scoped learned KV (EPIC-075 / [TAP-3156](https://linear.app/tappscodingagents/issue/TAP-3156)). Also ships version-matched skill distribution for HTTP-only clients ([TAP-2981](https://linear.app/tappscodingagents/issue/TAP-2981)).
