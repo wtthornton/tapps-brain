@@ -960,6 +960,44 @@ class TestConflictCheckConfig:
         assert mp.conflict_check.aggressiveness == "high"
         assert mp.conflict_check.effective_similarity_threshold() == 0.45
 
+    def test_per_tier_override_wins_for_named_tier(self) -> None:
+        # TAP-4464: raise the context cutoff while keeping the global default.
+        c = ConflictCheckConfig(aggressiveness="medium", per_tier={"context": 0.85})
+        assert c.effective_similarity_threshold("context") == 0.85
+
+    def test_per_tier_does_not_affect_other_tiers(self) -> None:
+        c = ConflictCheckConfig(aggressiveness="medium", per_tier={"context": 0.85})
+        assert c.effective_similarity_threshold("architectural") == 0.6
+        assert c.effective_similarity_threshold() == 0.6
+
+    def test_per_tier_falls_back_to_explicit_threshold(self) -> None:
+        c = ConflictCheckConfig(similarity_threshold=0.3, per_tier={"context": 0.85})
+        assert c.effective_similarity_threshold("context") == 0.85
+        assert c.effective_similarity_threshold("pattern") == 0.3
+
+    def test_per_tier_rejects_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            ConflictCheckConfig(per_tier={"context": 1.5})
+
+    def test_per_tier_yaml_roundtrip(self, tmp_path: Path) -> None:
+        data = {
+            "profile": {
+                "name": "cc-per-tier",
+                "layers": [{"name": "context", "half_life_days": 14}],
+                "conflict_check": {"aggressiveness": "medium", "per_tier": {"context": 0.9}},
+            }
+        }
+        p = _write_yaml(tmp_path / "p.yaml", data)
+        mp = load_profile(p)
+        assert mp.conflict_check.per_tier == {"context": 0.9}
+        assert mp.conflict_check.effective_similarity_threshold("context") == 0.9
+        assert mp.conflict_check.effective_similarity_threshold("architectural") == 0.6
+
+    def test_builtin_repo_brain_raises_context_cutoff(self) -> None:
+        mp = get_builtin_profile("repo-brain")
+        assert mp.conflict_check.effective_similarity_threshold("context") >= 0.8
+        assert mp.conflict_check.effective_similarity_threshold("architectural") == 0.6
+
 
 class TestGetBuiltinProfileSecurity:
     """get_builtin_profile must reject path-traversal names (BUG-FIX)."""

@@ -100,6 +100,16 @@ profile:
     inferred: 0.70
     system: 0.95
 
+  # Save-time semantic conflict detection (EPIC-044.3 / TAP-4464). The global
+  # cutoff stays at the historical 0.6 (aggressiveness=medium); context-tier
+  # ingest workloads write many distinct facts that are ~0.6 similar, so raise
+  # the context cutoff to avoid falsely invalidating them. Architectural and
+  # other tiers keep the strict global cutoff.
+  conflict_check:
+    aggressiveness: "medium"
+    per_tier:
+      context: 0.85
+
   gc:
     floor_retention_days: 30
     session_expiry_days: 7

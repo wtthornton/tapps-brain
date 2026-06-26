@@ -280,9 +280,12 @@ class ConflictCheckConfig(BaseModel):
 
     Tune under ``profile.conflict_check`` in YAML. ``aggressiveness`` selects a
     default Jaccard-style similarity cutoff for ``detect_save_conflicts``; set
-    ``similarity_threshold`` explicitly to override the tier. For offline review
-    of pairs at that cutoff, use CLI ``maintenance save-conflict-candidates``
-    (see ``docs/guides/save-conflict-nli-offline.md``).
+    ``similarity_threshold`` explicitly to override the tier. ``per_tier`` raises
+    (or lowers) the cutoff for individual memory tiers — useful for ingest-heavy
+    ``context`` workloads where many distinct facts are ~0.6 similar and would
+    otherwise invalidate each other (TAP-4464). For offline review of pairs at a
+    cutoff, use CLI ``maintenance save-conflict-candidates`` (see
+    ``docs/guides/save-conflict-nli-offline.md``).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -298,15 +301,44 @@ class ConflictCheckConfig(BaseModel):
         default=None,
         ge=0.0,
         le=1.0,
-        description="When set, overrides aggressiveness-derived threshold.",
+        description="When set, overrides aggressiveness-derived threshold (all tiers).",
+    )
+    per_tier: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "Optional per-memory-tier similarity cutoffs (tier name -> 0..1). When set "
+            "for a tier, that value overrides aggressiveness/similarity_threshold for "
+            "saves of that tier only; other tiers are unaffected."
+        ),
     )
 
-    def effective_similarity_threshold(self) -> float:
-        """Similarity cutoff passed to ``detect_save_conflicts``."""
+    @field_validator("per_tier")
+    @classmethod
+    def _validate_per_tier(cls, value: dict[str, float] | None) -> dict[str, float] | None:
+        if value is None:
+            return None
+        for tier, cutoff in value.items():
+            if not 0.0 <= float(cutoff) <= 1.0:
+                msg = f"per_tier['{tier}'] must be in [0.0, 1.0], got {cutoff}"
+                raise ValueError(msg)
+        return value
+
+    def effective_similarity_threshold(self, tier: str | None = None) -> float:
+        """Similarity cutoff passed to ``detect_save_conflicts``.
+
+        When ``tier`` is supplied and a ``per_tier`` override exists for it, that
+        cutoff wins. Otherwise falls back to the explicit ``similarity_threshold``
+        and finally the ``aggressiveness`` preset — preserving prior behaviour when
+        no per-tier override is configured.
+        """
+        if tier is not None and self.per_tier is not None:
+            override = self.per_tier.get(tier)
+            if override is not None:
+                return float(override)
         if self.similarity_threshold is not None:
             return float(self.similarity_threshold)
-        tier_defaults: dict[str, float] = {"low": 0.75, "medium": 0.6, "high": 0.45}
-        return tier_defaults[self.aggressiveness]
+        aggressiveness_defaults: dict[str, float] = {"low": 0.75, "medium": 0.6, "high": 0.45}
+        return aggressiveness_defaults[self.aggressiveness]
 
 
 class SafetyConfig(BaseModel):

@@ -33,18 +33,19 @@ class ConflictPlan:
     similarity_threshold: float
 
 
-def resolve_similarity_threshold(profile: object | None) -> float:
+def resolve_similarity_threshold(profile: object | None, tier: str | None = None) -> float:
     """Return the effective similarity threshold for save-time conflict checks.
 
-    Falls back to :class:`ConflictCheckConfig` defaults when no profile or
-    ``conflict_check`` block is available.
+    When *tier* is supplied, a profile ``conflict_check.per_tier`` override for
+    that tier wins (TAP-4464). Falls back to :class:`ConflictCheckConfig`
+    defaults when no profile or ``conflict_check`` block is available.
     """
     cc = getattr(profile, "conflict_check", None) if profile is not None else None
     if cc is not None:
-        return float(cc.effective_similarity_threshold())
+        return float(cc.effective_similarity_threshold(tier))
     from tapps_brain.profile import ConflictCheckConfig
 
-    return float(ConflictCheckConfig().effective_similarity_threshold())
+    return float(ConflictCheckConfig().effective_similarity_threshold(tier))
 
 
 def plan_conflicts(

@@ -73,6 +73,23 @@ class TestResolveSimilarityThreshold:
         resolve_similarity_threshold(profile)
         conflict_cfg.effective_similarity_threshold.assert_called_once()
 
+    def test_tier_is_threaded_to_effective_threshold(self) -> None:
+        # TAP-4464: the saving tier must reach effective_similarity_threshold so
+        # per-tier overrides (e.g. a higher context cutoff) take effect.
+        conflict_cfg = MagicMock()
+        conflict_cfg.effective_similarity_threshold.return_value = 0.85
+        profile = MagicMock()
+        profile.conflict_check = conflict_cfg
+
+        threshold = resolve_similarity_threshold(profile, "context")
+        assert threshold == pytest.approx(0.85)
+        conflict_cfg.effective_similarity_threshold.assert_called_once_with("context")
+
+    def test_no_profile_threads_tier_to_default_config(self) -> None:
+        # repo-brain is not loaded here; the bare ConflictCheckConfig default has
+        # no per_tier overrides, so context falls back to the global 0.6.
+        assert resolve_similarity_threshold(None, "context") == pytest.approx(0.6)
+
 
 # ---------------------------------------------------------------------------
 # plan_conflicts — no conflicts

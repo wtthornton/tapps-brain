@@ -1569,7 +1569,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         with self._serialized():
             entries_snapshot = list(self._entries.values())
-        similarity_threshold = resolve_similarity_threshold(self._profile)
+        similarity_threshold = resolve_similarity_threshold(self._profile, tier)
         plan: ConflictPlan | None = plan_conflicts(
             key=key,
             value=value,
