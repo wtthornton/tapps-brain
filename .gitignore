@@ -115,3 +115,6 @@ target/
 *.swo
 .ralphrc.local
 .ralph_backup_*
+
+# brain_eval.py operational evaluation artifacts
+brain-eval-reports/

@@ -41,7 +41,7 @@ TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
-        brain-visual-smoke-live brain-diagnostics-live \
+        brain-visual-smoke-live brain-diagnostics-live brain-eval \
         hive-wheel hive-build hive-deploy hive-reload-http hive-reload dev-deploy \
         hive-up hive-down hive-logs hive-smoke check-brain-env brain-env-init \
         check-compose-isolation publish-brain-image
@@ -248,6 +248,9 @@ brain-smoke-live:  ## HTTP smoke test against the running tapps-brain stack (no 
 
 brain-diagnostics-live:  ## Live-stack diagnostics (healthz, snapshot, stale, report); AUTO_GC=1 archives stale
 	@bash scripts/brain_diagnostics_live.sh
+
+brain-eval:  ## Operational eval over a window (WINDOW_HOURS=72 default): metrics, usage, logs, recommendations
+	@python3 scripts/brain_eval.py
 
 brain-visual-smoke-live:  ## Visual dashboard smoke (:8088 HTML + /snapshot proxy + direct :8080/snapshot)
 	@bash scripts/brain_visual_smoke_live.sh
