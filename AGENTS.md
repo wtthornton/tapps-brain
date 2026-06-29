@@ -172,8 +172,37 @@ uv run pytest tests/unit/ -v
 | `tests/integration/test_pgvector_embeddings.py` | pgvector embedding write + knn_search recall |
 
 All tests generate unique `(project_id, agent_id)` pairs per test via `uuid.uuid4()` to
-prevent row collisions during parallel test execution.  Teardown is implicit — each test
-uses its own rows which never interfere with other tests.
+prevent row collisions during parallel test execution.
+
+### Test/load tenant cleanup (TAP-4465)
+
+Against a persistent or shared Postgres, rows written under unique
+`(project_id, agent_id)` keys leak unless explicitly removed. Two mechanisms keep
+the database clean:
+
+1. **Session-end purge.** A session-scoped autouse fixture in
+   `tests/integration/conftest.py` records every `project_id` a
+   `PostgresPrivateBackend` is built with and deletes those rows — across all
+   tables that carry a `project_id` column — when the test session ends. It also
+   sweeps any rows left under a reserved prefix.
+2. **Reserved test-tenant prefixes.** Test, load, and smoke harnesses MUST name
+   their throwaway tenants with a reserved prefix — `smoke-` or `test-` (see
+   `RESERVED_TEST_PROJECT_PREFIXES` in `src/tapps_brain/maintenance_purge.py`).
+   `scripts/load_smoke.py` deletes its `smoke-<hex>` project on exit (including on
+   partial failure), and `scripts/brain_smoke_live.sh` purges its smoke project
+   after the run.
+
+To mop up any leaked rows on a live DB, run the operational valve (dry-run by
+default):
+
+```bash
+# Preview rows matching the reserved prefixes
+make purge-test-tenants
+# Actually delete them
+APPLY=1 make purge-test-tenants
+# Or the CLI directly (custom prefix, JSON output):
+uv run tapps-brain maintenance purge-test-tenants --prefix smoke- --apply
+```
 
 Full parity doc and latency budget: `docs/engineering/v3-behavioral-parity.md`.
 

@@ -256,41 +256,64 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Starting {args.agents} agents x {args.ops} ops (project_id={project_id}) …")
     t_total = time.perf_counter()
 
-    for idx in range(args.agents):
-        agent_id = f"agent-{idx:03d}"
-        t = threading.Thread(
-            target=run_agent_workload,
-            kwargs={
-                "agent_id": agent_id,
-                "project_id": project_id,
-                "ops": args.ops,
-                "dsn": dsn,
-                "save_bucket": save_bucket,
-                "recall_bucket": recall_bucket,
-                "wall_bucket": wall_bucket,
-                "errors": errors,
-                "barrier": barrier,
-            },
-            daemon=True,
-            name=agent_id,
-        )
-        threads.append(t)
-        t.start()
+    try:
+        for idx in range(args.agents):
+            agent_id = f"agent-{idx:03d}"
+            t = threading.Thread(
+                target=run_agent_workload,
+                kwargs={
+                    "agent_id": agent_id,
+                    "project_id": project_id,
+                    "ops": args.ops,
+                    "dsn": dsn,
+                    "save_bucket": save_bucket,
+                    "recall_bucket": recall_bucket,
+                    "wall_bucket": wall_bucket,
+                    "errors": errors,
+                    "barrier": barrier,
+                },
+                daemon=True,
+                name=agent_id,
+            )
+            threads.append(t)
+            t.start()
 
-    for t in threads:
-        t.join()
+        for t in threads:
+            t.join()
 
-    elapsed = time.perf_counter() - t_total
-    print(f"All agents finished in {elapsed:.2f}s.")
+        elapsed = time.perf_counter() - t_total
+        print(f"All agents finished in {elapsed:.2f}s.")
 
-    _print_summary([save_bucket, recall_bucket, wall_bucket], args.agents, args.ops)
+        _print_summary([save_bucket, recall_bucket, wall_bucket], args.agents, args.ops)
 
-    if errors:
-        print(f"ERRORS ({len(errors)}):", file=sys.stderr)
-        for e in errors:
-            print(f"  {e}", file=sys.stderr)
-        return 1
-    return 0
+        if errors:
+            print(f"ERRORS ({len(errors)}):", file=sys.stderr)
+            for e in errors:
+                print(f"  {e}", file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        # TAP-4465: never leave this run's rows behind on a persistent DB, even
+        # on partial failure. No-op for the in-memory (--no-postgres) path.
+        if dsn:
+            _purge_smoke_project(dsn, project_id)
+
+
+def _purge_smoke_project(dsn: str, project_id: str) -> None:
+    """Delete all rows this smoke run created for *project_id* (best-effort)."""
+    try:
+        from tapps_brain.maintenance_purge import purge_projects
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        cm = PostgresConnectionManager(dsn)
+        try:
+            deleted = purge_projects(cm, [project_id])
+        finally:
+            cm.close()
+        total = sum(deleted.values())
+        print(f"Cleaned up {total} rows for project_id={project_id}.")
+    except Exception as exc:
+        print(f"WARNING: failed to purge smoke project {project_id}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

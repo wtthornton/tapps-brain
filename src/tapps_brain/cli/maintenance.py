@@ -1098,3 +1098,101 @@ def maintenance_migrations_rollback(
     else:
         action = "Would roll back" if dry_run else "Rolled back"
         typer.echo(f"{action} '{schema}' migrations: {rolled_back}")
+
+
+@maintenance_app.command("purge-test-tenants")
+def maintenance_purge_test_tenants(
+    prefix: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--prefix",
+            help="project_id prefix to purge (repeatable). Defaults to the reserved "
+            "test/load prefixes (smoke-, test-).",
+        ),
+    ] = None,
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="TAPPS_BRAIN_DATABASE_URL",
+            help="PostgreSQL DSN (or set TAPPS_BRAIN_DATABASE_URL).",
+        ),
+    ] = "",
+    apply: Annotated[
+        bool,
+        typer.Option("--apply", help="Actually delete. Without this flag, only counts (dry-run)."),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Delete leaked test/load tenant rows by project_id prefix (TAP-4465).
+
+    Dry-run by default: reports how many rows match each reserved prefix without
+    deleting. Pass ``--apply`` to remove them. Use this to mop up rows left by
+    test or load harnesses that ran against a persistent/shared Postgres.
+    """
+    if not dsn:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_DATABASE_URL is required.", err=True)
+        raise typer.Exit(code=1)
+
+    from tapps_brain.maintenance_purge import (
+        RESERVED_TEST_PROJECT_PREFIXES,
+        discover_tenant_tables,
+        purge_by_prefix,
+    )
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+
+    prefixes = tuple(prefix) if prefix else RESERVED_TEST_PROJECT_PREFIXES
+    cm = PostgresConnectionManager(dsn)
+    try:
+        if apply:
+            deleted = purge_by_prefix(cm, prefixes)
+            status = "purged"
+        else:
+            deleted = _count_prefix_rows(cm, prefixes, discover_tenant_tables)
+            status = "dry-run"
+    finally:
+        cm.close()
+
+    data = {
+        "prefixes": list(prefixes),
+        "status": status,
+        "rows_by_table": deleted,
+        "total_rows": sum(deleted.values()),
+    }
+    if as_json:
+        _output(data, as_json=True)
+    else:
+        verb = "Deleted" if apply else "Would delete"
+        typer.echo(f"{verb} {data['total_rows']} rows for prefixes {list(prefixes)}:")
+        for table, count in sorted(deleted.items()):
+            typer.echo(f"  {table}: {count}")
+        if not apply:
+            typer.echo("(dry-run — pass --apply to delete)")
+
+
+def _count_prefix_rows(
+    cm: object,
+    prefixes: tuple[str, ...],
+    discover: object,
+) -> dict[str, int]:
+    """Count rows matching reserved prefixes per tenant table (read-only)."""
+    from psycopg import sql as pgsql
+
+    patterns = [f"{p}%" for p in prefixes if p]
+    if not patterns:
+        return {}
+    clause = " OR ".join("project_id LIKE %s" for _ in patterns)
+    counts: dict[str, int] = {}
+    with cm.get_connection() as conn:  # type: ignore[attr-defined]
+        for table in discover(cm):  # type: ignore[operator]
+            stmt = pgsql.SQL("SELECT count(*) FROM {table} WHERE {where}").format(
+                table=pgsql.Identifier(table),
+                where=pgsql.SQL(clause),
+            )
+            with conn.cursor() as cur:
+                cur.execute(stmt, tuple(patterns))
+                row = cur.fetchone()
+                n = int(row[0]) if row else 0
+                if n > 0:
+                    counts[table] = n
+    return counts

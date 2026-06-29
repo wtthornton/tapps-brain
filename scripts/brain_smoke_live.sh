@@ -36,8 +36,11 @@ if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
     exit 1
 fi
 
+# TAP-4465: name the smoke tenant with a reserved prefix (smoke-) so leaked
+# rows are recoverable via `make purge-test-tenants` and the integration
+# session-end sweep.
 export TAPPS_BRAIN_BASE_URL="${TAPPS_BRAIN_BASE_URL:-http://127.0.0.1:8080}"
-export TAPPS_SMOKE_PROJECT_ID="${TAPPS_SMOKE_PROJECT_ID:-tapps-brain-smoke}"
+export TAPPS_SMOKE_PROJECT_ID="${TAPPS_SMOKE_PROJECT_ID:-smoke-brain-live}"
 export TAPPS_SMOKE_AGENT_ID="${TAPPS_SMOKE_AGENT_ID:-brain-smoke-live}"
 
 EXPECTED_VERSION="$(
@@ -49,7 +52,8 @@ echo "    base=${TAPPS_BRAIN_BASE_URL}"
 echo "    project=${TAPPS_SMOKE_PROJECT_ID}"
 echo "    expect_version=${EXPECTED_VERSION}"
 
-exec python3 - "$EXPECTED_VERSION" <<'PY'
+set +e
+python3 - "$EXPECTED_VERSION" <<'PY'
 import json
 import os
 import sys
@@ -220,3 +224,25 @@ print("")
 print(f"Results: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
 PY
+SMOKE_RC=$?
+set -e
+
+# TAP-4465: best-effort cleanup of the smoke tenant's rows so repeated live
+# smokes do not accumulate residue. The smoke writes only experience_events;
+# delete them inside the db container. Never let cleanup change the smoke
+# result — guarded so failures (no docker, container down) are non-fatal.
+purge_smoke_tenant() {
+    command -v docker >/dev/null 2>&1 || return 0
+    local db_container="${TAPPS_BRAIN_DB_CONTAINER:-tapps-brain-db}"
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$db_container" || return 0
+    local pg_user="${POSTGRES_USER:-tapps}"
+    local pg_db="${POSTGRES_DB:-tapps_brain}"
+    docker exec "$db_container" psql -U "$pg_user" -d "$pg_db" -v ON_ERROR_STOP=0 \
+        -c "DELETE FROM experience_events WHERE project_id = '${TAPPS_SMOKE_PROJECT_ID}';" \
+        >/dev/null 2>&1 \
+        && echo "    cleaned up smoke tenant ${TAPPS_SMOKE_PROJECT_ID}" \
+        || echo "    (smoke tenant cleanup skipped — purge later via 'make purge-test-tenants')"
+}
+purge_smoke_tenant || true
+
+exit "$SMOKE_RC"

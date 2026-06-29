@@ -99,3 +99,72 @@ def _track_and_close_postgres_pools(
                 # Best-effort cleanup — never let teardown raise.
                 pass
         tracked.clear()
+
+
+# ---------------------------------------------------------------------------
+# TAP-4465: purge tenant rows created during the test session
+# ---------------------------------------------------------------------------
+#
+# Integration tests write rows under unique (project_id, agent_id) keys but
+# historically never deleted them, so against a persistent/shared Postgres the
+# rows leak indefinitely (a 72h eval found 9,280 such leaked rows). We record
+# every project_id a PostgresPrivateBackend is built with during the session and
+# purge exactly those ids — across all tenant tables — at session end. A second
+# sweep removes anything left under a reserved test/load prefix (covers rows
+# written by non-private backends, e.g. Hive or experience writers).
+
+_session_test_project_ids: set[str] = set()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _track_and_purge_test_tenants() -> Iterator[None]:
+    """Record per-test project_ids and purge them when the session ends."""
+    try:
+        from tapps_brain.postgres_private import PostgresPrivateBackend
+    except Exception:
+        yield
+        return
+
+    original_init = PostgresPrivateBackend.__init__
+
+    def _wrapped_init(self: object, *args: object, **kwargs: object) -> None:
+        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+        pid = getattr(self, "_project_id", None)
+        if isinstance(pid, str) and pid:
+            _session_test_project_ids.add(pid)
+
+    PostgresPrivateBackend.__init__ = _wrapped_init  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        PostgresPrivateBackend.__init__ = original_init  # type: ignore[method-assign]
+        _purge_session_tenants()
+        _session_test_project_ids.clear()
+
+
+def _purge_session_tenants() -> None:
+    """Delete rows for tracked project_ids plus reserved-prefix tenants."""
+    dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+    if not dsn:
+        return
+    try:
+        from tapps_brain.maintenance_purge import purge_by_prefix, purge_projects
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+    except Exception:
+        return
+
+    cm: object | None = None
+    try:
+        cm = PostgresConnectionManager(dsn)
+        if _session_test_project_ids:
+            purge_projects(cm, sorted(_session_test_project_ids))
+        purge_by_prefix(cm)
+    except Exception:
+        # Cleanup is best-effort — never fail the suite over residue removal.
+        pass
+    finally:
+        if cm is not None:
+            try:
+                cm.close()
+            except Exception:
+                pass
