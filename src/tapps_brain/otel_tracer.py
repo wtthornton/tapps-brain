@@ -202,6 +202,29 @@ def get_tool_call_counts_snapshot() -> dict[tuple[str, str, str, str], int]:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_request_tenant() -> tuple[str | None, str | None]:
+    """Resolve ``(project_id, agent_id)`` for the active request.
+
+    Delegates to the canonical resolvers in :mod:`tapps_brain.mcp_server.context`
+    so the tool-call counter sees the *same* tenant the service layer uses to
+    route reads/writes. Those resolvers check, in order: the per-request
+    contextvar (HTTP tenant middleware), the MCP ``_meta.project_id`` /
+    ``_meta.agent_id`` envelope (stdio + JSON-RPC override), and the
+    ``TAPPS_BRAIN_PROJECT`` env var. Returns ``(None, None)`` when no request
+    context is available (e.g. background work or unauthenticated probe), in
+    which case the counter falls back to empty labels (TAP-4466).
+    """
+    try:
+        from tapps_brain.mcp_server.context import (  # lazy — avoid circular import
+            _current_request_agent_id,
+            _current_request_project_id,
+        )
+
+        return _current_request_project_id(), _current_request_agent_id()
+    except Exception:  # nosec B110 — resolvers unavailable in some test contexts
+        return None, None
+
+
 def _get_context_attrs(span_name: str | None = None) -> dict[str, str | int | float | bool]:
     """Build a safe attribute dict from the active MCP request contextvars.
 
@@ -406,20 +429,20 @@ def start_mcp_tool_span(
         "mcp.method.name": method,
         "gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL,
     }
-    # STORY-070.12: inject project_id / agent_id from contextvars when not
-    # supplied explicitly so both HTTP and MCP paths emit consistent labels.
+    # STORY-070.12 / TAP-4466: inject project_id / agent_id from the request
+    # context when not supplied explicitly so both HTTP and MCP paths emit
+    # consistent, non-empty labels for authenticated tenant calls. Uses the
+    # canonical resolver chain (contextvar -> _meta -> env), not the bare
+    # contextvar, so attribution survives the transports where only _meta/env
+    # is populated.
     _pid = project_id
     _aid = agent_id
     if _pid is None or _aid is None:
-        try:
-            from tapps_brain.mcp_server import REQUEST_AGENT_ID, REQUEST_PROJECT_ID
-
-            if _pid is None:
-                _pid = REQUEST_PROJECT_ID.get()
-            if _aid is None:
-                _aid = REQUEST_AGENT_ID.get()
-        except Exception:  # nosec B110 — mcp_server context vars unavailable in some test contexts
-            pass
+        resolved_pid, resolved_aid = _resolve_request_tenant()
+        if _pid is None:
+            _pid = resolved_pid
+        if _aid is None:
+            _aid = resolved_aid
     if _pid:
         attributes[ATTR_PROJECT_ID] = str(_pid)
     if _aid:

@@ -573,6 +573,93 @@ class TestMcpToolSpanRecordsMetric:
         assert snap.get(error_key, 0) >= 1
 
 
+class TestTap4466TenantResolution:
+    """TAP-4466: the tool-call counter resolves tenant from request context.
+
+    When project_id/agent_id are not passed explicitly, start_mcp_tool_span
+    must resolve them via the canonical resolver chain (contextvar -> _meta ->
+    env) so authenticated tenant calls get non-empty labels, falling back to
+    empty only when the call is genuinely unattributable.
+    """
+
+    def test_unspecified_ids_resolved_from_request_context(self) -> None:
+        from tapps_brain.otel_tracer import (
+            _TOOL_CALL_COUNTS,
+            _TOOL_CALL_LOCK,
+            get_tool_call_counts_snapshot,
+            start_mcp_tool_span,
+        )
+
+        with _TOOL_CALL_LOCK:
+            _TOOL_CALL_COUNTS.clear()
+
+        mock_tracer = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            patch(
+                "tapps_brain.otel_tracer._resolve_request_tenant",
+                return_value=("ctx-proj", "ctx-agent"),
+            ),
+            start_mcp_tool_span("brain_recall"),
+        ):
+            pass
+
+        snap = get_tool_call_counts_snapshot()
+        assert snap.get(("ctx-proj", "ctx-agent", "brain_recall", "success"), 0) == 1
+        # The empty-label series must NOT be emitted for an attributable call.
+        assert ("", "", "brain_recall", "success") not in snap
+
+    def test_empty_labels_only_when_unattributable(self) -> None:
+        from tapps_brain.otel_tracer import (
+            _TOOL_CALL_COUNTS,
+            _TOOL_CALL_LOCK,
+            get_tool_call_counts_snapshot,
+            start_mcp_tool_span,
+        )
+
+        with _TOOL_CALL_LOCK:
+            _TOOL_CALL_COUNTS.clear()
+
+        mock_tracer = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            patch(
+                "tapps_brain.otel_tracer._resolve_request_tenant",
+                return_value=(None, None),
+            ),
+            start_mcp_tool_span("brain_recall"),
+        ):
+            pass
+
+        snap = get_tool_call_counts_snapshot()
+        assert snap.get(("", "", "brain_recall", "success"), 0) == 1
+
+    def test_explicit_ids_take_precedence_over_resolver(self) -> None:
+        from tapps_brain.otel_tracer import (
+            _TOOL_CALL_COUNTS,
+            _TOOL_CALL_LOCK,
+            get_tool_call_counts_snapshot,
+            start_mcp_tool_span,
+        )
+
+        with _TOOL_CALL_LOCK:
+            _TOOL_CALL_COUNTS.clear()
+
+        mock_tracer = _make_mock_tracer()
+        with (
+            patch("tapps_brain.otel_tracer.get_tracer", return_value=mock_tracer),
+            patch(
+                "tapps_brain.otel_tracer._resolve_request_tenant",
+                return_value=("ctx-proj", "ctx-agent"),
+            ),
+            start_mcp_tool_span("brain_recall", project_id="explicit-proj", agent_id="explicit-agent"),
+        ):
+            pass
+
+        snap = get_tool_call_counts_snapshot()
+        assert snap.get(("explicit-proj", "explicit-agent", "brain_recall", "success"), 0) == 1
+
+
 # ---------------------------------------------------------------------------
 # Thread-safety smoke test
 # ---------------------------------------------------------------------------
