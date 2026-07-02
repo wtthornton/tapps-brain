@@ -20,6 +20,7 @@ backward compatibility.
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import os
 import threading
@@ -66,6 +67,77 @@ REQUEST_GROUP: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 REQUEST_PROFILE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "tapps_brain_request_profile", default=None
 )
+
+
+def _meta_field(meta: Any, field: str) -> str | None:  # noqa: ANN401
+    """Read *field* from an MCP ``RequestParams.Meta`` (or compatible) object."""
+    if meta is None:
+        return None
+    val = getattr(meta, field, None)
+    if val is None:
+        extra = getattr(meta, "model_extra", None) or {}
+        val = extra.get(field)
+    if not val:
+        return None
+    return str(val).strip() or None
+
+
+def _header_tenant_from_mcp_request() -> tuple[str | None, str | None]:
+    """Read the tenant envelope from the inbound HTTP request on MCP ``request_ctx``.
+
+    Streamable HTTP session tasks process ``tools/call`` outside the FastAPI
+    middleware task, so :data:`REQUEST_PROJECT_ID` is often unset even though
+    :class:`McpTenantMiddleware` validated ``X-Project-Id`` on the wire.
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx as _request_ctx_var
+    except Exception:
+        return None, None
+    try:
+        rc = _request_ctx_var.get()
+    except LookupError:
+        return None, None
+    req = getattr(rc, "request", None)
+    headers = getattr(req, "headers", None)
+    if headers is None:
+        return None, None
+    project_id = (headers.get("x-project-id") or "").strip() or None
+    agent_id = (headers.get("x-agent-id") or "").strip() or None
+    tapps_agent = (headers.get("x-tapps-agent") or "").strip()
+    if tapps_agent:
+        agent_id = tapps_agent
+    return project_id, agent_id
+
+
+def _meta_tenant_from_mcp_request() -> tuple[str | None, str | None]:
+    """Read ``project_id`` / ``agent_id`` from MCP JSON-RPC ``params._meta``."""
+    try:
+        from mcp.server.lowlevel.server import request_ctx as _request_ctx_var
+    except Exception:
+        return None, None
+    try:
+        rc = _request_ctx_var.get()
+    except LookupError:
+        return None, None
+    meta = getattr(rc, "meta", None)
+    return _meta_field(meta, "project_id"), _meta_field(meta, "agent_id")
+
+
+@contextlib.contextmanager
+def _mcp_tenant_context_for_tool_call():
+    """Bridge resolved tenant identity into contextvars for MCP tool execution."""
+    pid = _current_request_project_id()
+    aid = _current_request_agent_id()
+    tokens: list[tuple[contextvars.ContextVar[str | None], contextvars.Token[str | None]]] = []
+    if pid and REQUEST_PROJECT_ID.get() != pid:
+        tokens.append((REQUEST_PROJECT_ID, REQUEST_PROJECT_ID.set(pid)))
+    if aid and REQUEST_AGENT_ID.get() != aid:
+        tokens.append((REQUEST_AGENT_ID, REQUEST_AGENT_ID.set(aid)))
+    try:
+        yield
+    finally:
+        for var, tok in reversed(tokens):
+            var.reset(tok)
 
 
 # --------------------------------------------------------------------------
@@ -214,34 +286,24 @@ def _current_request_project_id() -> str | None:
     """Resolve the per-request project_id across transports.
 
     Precedence:
-      1. ``REQUEST_PROJECT_ID`` contextvar (set by the FastAPI tenant
-         middleware for Streamable HTTP — STORY-070.4).
-      2. MCP JSON-RPC ``_meta.project_id`` on the active request context
-         (legacy per-call override; also works over stdio).
-      3. ``TAPPS_BRAIN_PROJECT`` environment variable (stdio transport
-         set by the client's ``.mcp.json`` ``env``).
+      1. ``X-Project-Id`` on the Starlette :class:`~starlette.requests.Request`
+         attached to MCP ``request_ctx`` (authoritative for Streamable HTTP
+         ``tools/call`` — session tasks inherit a stale
+         :data:`REQUEST_PROJECT_ID` from ``initialize``).
+      2. MCP JSON-RPC ``_meta.project_id`` on the active request context.
+      3. ``REQUEST_PROJECT_ID`` contextvar (FastAPI middleware — same-task
+         HTTP handlers only).
+      4. ``TAPPS_BRAIN_PROJECT`` environment variable (stdio transport).
     """
+    header_pid, _ = _header_tenant_from_mcp_request()
+    if header_pid:
+        return header_pid
+    meta_pid, _ = _meta_tenant_from_mcp_request()
+    if meta_pid:
+        return meta_pid
     pid = REQUEST_PROJECT_ID.get()
     if pid:
         return str(pid).strip() or None
-    try:
-        from mcp.server.lowlevel.server import request_ctx
-    except Exception:
-        request_ctx = None  # type: ignore[assignment]
-    if request_ctx is not None:
-        try:
-            rc = request_ctx.get()
-        except LookupError:
-            rc = None
-        if rc is not None:
-            meta = getattr(rc, "meta", None)
-            if meta is not None:
-                mpid = getattr(meta, "project_id", None)
-                if mpid is None:
-                    extra = getattr(meta, "model_extra", None) or {}
-                    mpid = extra.get("project_id")
-                if mpid:
-                    return str(mpid).strip() or None
     env_pid = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
     return env_pid or None
 
@@ -250,39 +312,24 @@ def _current_request_agent_id() -> str | None:  # noqa: PLR0911
     """Return the effective per-request agent_id.
 
     Precedence (STORY-070.7):
-      1. :data:`REQUEST_AGENT_ID` contextvar (set by HTTP middleware from
-         ``X-Agent-Id`` / ``X-Tapps-Agent``).
-      2. MCP JSON-RPC ``_meta.agent_id`` on the active request context
-         (mirrors ``_current_request_project_id``).
-      3. ``None`` — caller falls back to the server-level default.
+      1. ``X-Tapps-Agent`` / ``X-Agent-Id`` on the Starlette request attached
+         to MCP ``request_ctx`` (see :func:`_current_request_project_id`).
+      2. MCP JSON-RPC ``_meta.agent_id`` on the active request context.
+      3. :data:`REQUEST_AGENT_ID` contextvar (HTTP middleware — same-task only).
+      4. ``None`` — caller falls back to the server-level default.
     """
+    _, header_aid = _header_tenant_from_mcp_request()
+    if header_aid:
+        return header_aid
+    _, meta_aid = _meta_tenant_from_mcp_request()
+    if meta_aid:
+        return meta_aid
     agent = REQUEST_AGENT_ID.get()
     if agent:
         val = str(agent).strip()
         if val:
             return val
-    # Also check _meta.agent_id from the MCP JSON-RPC envelope so stdio
-    # clients can multiplex agents without a header layer.
-    try:
-        from mcp.server.lowlevel.server import request_ctx
-    except Exception:
-        return None
-    try:
-        rc = request_ctx.get()
-    except LookupError:
-        return None
-    if rc is None:
-        return None
-    meta = getattr(rc, "meta", None)
-    if meta is None:
-        return None
-    aid = getattr(meta, "agent_id", None)
-    if aid is None:
-        extra = getattr(meta, "model_extra", None) or {}
-        aid = extra.get("agent_id")
-    if not aid:
-        return None
-    return str(aid).strip() or None
+    return None
 
 
 def _current_request_scope() -> str | None:

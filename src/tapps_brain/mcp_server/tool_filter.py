@@ -530,20 +530,23 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             with _METRICS_LOCK:
                 key = (profile, "", "allowed")
                 _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
-        try:
-            return await _orig_call_tool(name, arguments, **kwargs)
-        except Exception as exc:
-            # TAP-1580: enrich ToolError messages whose underlying cause is a
-            # pydantic ValidationError reporting missing required fields.
-            from mcp.server.fastmcp.exceptions import ToolError
+        from tapps_brain.mcp_server.context import _mcp_tenant_context_for_tool_call
 
-            if not isinstance(exc, ToolError):
-                raise
-            missing = _missing_required_fields(exc)
-            if not missing:
-                raise
-            enriched = ToolError(_enriched_tool_error_message(name, str(exc), missing))
-            raise enriched from exc.__cause__
+        with _mcp_tenant_context_for_tool_call():
+            try:
+                return await _orig_call_tool(name, arguments, **kwargs)
+            except Exception as exc:
+                # TAP-1580: enrich ToolError messages whose underlying cause is a
+                # pydantic ValidationError reporting missing required fields.
+                from mcp.server.fastmcp.exceptions import ToolError
+
+                if not isinstance(exc, ToolError):
+                    raise
+                missing = _missing_required_fields(exc)
+                if not missing:
+                    raise
+                enriched = ToolError(_enriched_tool_error_message(name, str(exc), missing))
+                raise enriched from exc.__cause__
 
     # Install wrappers on the tool manager instance (not the class) so only
     # this *mcp* instance is affected.
