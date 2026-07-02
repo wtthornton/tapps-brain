@@ -652,7 +652,9 @@ class TestTap4466TenantResolution:
                 "tapps_brain.otel_tracer._resolve_request_tenant",
                 return_value=("ctx-proj", "ctx-agent"),
             ),
-            start_mcp_tool_span("brain_recall", project_id="explicit-proj", agent_id="explicit-agent"),
+            start_mcp_tool_span(
+                "brain_recall", project_id="explicit-proj", agent_id="explicit-agent"
+            ),
         ):
             pass
 

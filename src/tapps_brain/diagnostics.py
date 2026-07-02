@@ -251,9 +251,7 @@ def _freshness(store: MemoryStore) -> DimensionScore:
         tier_age_days_sum[tier_s] = tier_age_days_sum.get(tier_s, 0.0) + age_days
     avg = sum(scores) / len(scores)
     n = len(entries)
-    tier_avg_age = {
-        k: round(tier_age_days_sum[k] / tier_counts[k], 2) for k in sorted(tier_counts)
-    }
+    tier_avg_age = {k: round(tier_age_days_sum[k] / tier_counts[k], 2) for k in sorted(tier_counts)}
     context_n = tier_counts.get(MemoryTier.context.value, 0)
     return DimensionScore(
         name="freshness",

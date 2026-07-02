@@ -2363,7 +2363,9 @@ class TestRestTenantStoreResolution:
         def _fake_get_store_for_project(project_id: str | None, **kwargs: Any) -> Any:
             return tenant if project_id == "tenant-b" else default
 
-        def _fake_memory_save(store: Any, project_id: str, agent_id: str, **kwargs: Any) -> dict[str, Any]:
+        def _fake_memory_save(
+            store: Any, project_id: str, agent_id: str, **kwargs: Any
+        ) -> dict[str, Any]:
             captured.append(store)
             return {
                 "status": "saved",

@@ -75,9 +75,7 @@ def test_dimension_recommendations_healthy_store_silent() -> None:
         "freshness": DimensionScore(
             name="freshness", score=0.90, raw_details={"context_share": 0.80}
         ),
-        "staleness": DimensionScore(
-            name="staleness", score=1.0, raw_details={"gc_candidates": 0}
-        ),
+        "staleness": DimensionScore(name="staleness", score=1.0, raw_details={"gc_candidates": 0}),
     }
     assert _dimension_recommendations(scores) == []
 
@@ -434,7 +432,9 @@ class _HiveCountBackend:
     def count_by_namespace(self) -> dict[str, int]:
         return {"universal": 42, "repo-brain": 5}
 
-    def search(self, query: str, namespaces: list[str] | None = None, **kwargs: object) -> list[dict[str, str]]:
+    def search(
+        self, query: str, namespaces: list[str] | None = None, **kwargs: object
+    ) -> list[dict[str, str]]:
         raise AssertionError(f"search should not be called when counts exist: {query!r}")
 
 
