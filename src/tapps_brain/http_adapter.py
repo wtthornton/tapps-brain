@@ -1036,6 +1036,24 @@ def _build_mcp_server() -> Any:
     )
 
 
+def _resolve_wrapped_default_store(store: Any) -> Any:
+    """Return the inner default store when ``store`` is a Hive ``_StoreProxy`` wrapper.
+
+    Do not use ``getattr(store, "_default_store", store)`` on :class:`MagicMock` —
+    mocks auto-create ``_default_store`` children, which breaks tenant matching in
+    integration tests that inject mock stores.
+    """
+    store_dict = getattr(store, "__dict__", None)
+    if isinstance(store_dict, dict) and "_default_store" in store_dict:
+        return store_dict["_default_store"]
+    slots = getattr(type(store), "__slots__", ())
+    if isinstance(slots, str):
+        slots = (slots,)
+    if isinstance(slots, (tuple, list)) and "_default_store" in slots:
+        return getattr(store, "_default_store")
+    return store
+
+
 def create_app(
     *,
     store: MemoryStore | None = None,
@@ -1724,7 +1742,7 @@ def create_app(
         from tapps_brain.project_registry import ProjectNotRegisteredError
 
         base = _get_store_or_503()
-        default_store = getattr(base, "_default_store", base)
+        default_store = _resolve_wrapped_default_store(base)
         server_agent = (
             getattr(default_store, "_agent_id", None)
             or getattr(default_store, "agent_id", None)
@@ -1755,7 +1773,7 @@ def create_app(
         """True when the startup async store matches the request tenant."""
         if _get_async_store_or_none() is None or cfg.store is None:
             return False
-        base = getattr(cfg.store, "_default_store", cfg.store)
+        base = _resolve_wrapped_default_store(cfg.store)
         store_pid = getattr(base, "_project_id", None) or ""
         store_aid = getattr(base, "_agent_id", None) or ""
         eff_agent = (agent_id or "").strip() or "unknown"
