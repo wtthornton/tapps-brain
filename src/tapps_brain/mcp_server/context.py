@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 
 def _get_logger() -> Any:  # noqa: ANN401
@@ -124,7 +124,7 @@ def _meta_tenant_from_mcp_request() -> tuple[str | None, str | None]:
 
 
 @contextlib.contextmanager
-def _mcp_tenant_context_for_tool_call():
+def _mcp_tenant_context_for_tool_call() -> Iterator[None]:
     """Bridge resolved tenant identity into contextvars for MCP tool execution."""
     pid = _current_request_project_id()
     aid = _current_request_agent_id()
@@ -308,7 +308,7 @@ def _current_request_project_id() -> str | None:
     return env_pid or None
 
 
-def _current_request_agent_id() -> str | None:  # noqa: PLR0911
+def _current_request_agent_id() -> str | None:
     """Return the effective per-request agent_id.
 
     Precedence (STORY-070.7):
