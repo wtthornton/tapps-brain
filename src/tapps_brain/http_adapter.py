@@ -1036,6 +1036,24 @@ def _build_mcp_server() -> Any:
     )
 
 
+def _resolve_wrapped_default_store(store: Any) -> Any:
+    """Return the inner default store when ``store`` is a Hive ``_StoreProxy`` wrapper.
+
+    Do not use ``getattr(store, "_default_store", store)`` on :class:`MagicMock` —
+    mocks auto-create ``_default_store`` children, which breaks tenant matching in
+    integration tests that inject mock stores.
+    """
+    store_dict = getattr(store, "__dict__", None)
+    if isinstance(store_dict, dict) and "_default_store" in store_dict:
+        return store_dict["_default_store"]
+    slots = getattr(type(store), "__slots__", ())
+    if isinstance(slots, str):
+        slots = (slots,)
+    if isinstance(slots, (tuple, list)) and "_default_store" in slots:
+        return store._default_store
+    return store
+
+
 def create_app(
     *,
     store: MemoryStore | None = None,
@@ -1710,6 +1728,58 @@ def create_app(
             )
         return cfg.store
 
+    def _get_tenant_store_or_503(project_id: str, agent_id: str) -> Any:
+        """Resolve a tenant-scoped :class:`MemoryStore` for REST data-plane routes (ADR-010).
+
+        ``cfg.store`` is the process-default store (often built at ``serve`` startup
+        for one project).  Per-request ``X-Project-Id`` must select the matching
+        Postgres scope via the same :func:`_get_store_for_project` helper the MCP
+        :class:`_StoreProxy` uses — passing ``project_id`` only into
+        ``memory_service`` while reusing the default store silently breaks tenant
+        isolation (tapps-mcp #6).
+        """
+        from tapps_brain.mcp_server.context import _get_store_for_project
+        from tapps_brain.project_registry import ProjectNotRegisteredError
+
+        base = _get_store_or_503()
+        default_store = _resolve_wrapped_default_store(base)
+        server_agent = (
+            getattr(default_store, "_agent_id", None)
+            or getattr(default_store, "agent_id", None)
+            or "http-adapter"
+        )
+        eff_agent = (agent_id or "").strip() or "unknown"
+        call_agent = eff_agent if eff_agent != server_agent else None
+
+        try:
+            return _get_store_for_project(
+                project_id,
+                default_store=default_store,
+                enable_hive=True,
+                agent_id=str(server_agent),
+                call_agent_id=call_agent,
+            )
+        except ProjectNotRegisteredError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "project_not_registered",
+                    "detail": f"Project {exc.project_id!r} is not registered.",
+                    "project_id": exc.project_id,
+                },
+            ) from exc
+
+    def _async_store_covers_tenant(project_id: str, agent_id: str) -> bool:
+        """True when the startup async store matches the request tenant."""
+        if _get_async_store_or_none() is None or cfg.store is None:
+            return False
+        base = _resolve_wrapped_default_store(cfg.store)
+        store_pid = getattr(base, "_project_id", None) or ""
+        store_aid = getattr(base, "_agent_id", None) or ""
+        eff_agent = (agent_id or "").strip() or "unknown"
+        agent_ok = eff_agent in {store_aid, "unknown"} or not store_aid
+        return bool(store_pid) and store_pid == project_id and agent_ok
+
     def _get_async_store_or_none() -> Any:
         """Return the async-native store when wired at startup, else None."""
         return getattr(cfg, "async_store", None)
@@ -1810,8 +1880,6 @@ def create_app(
               "tags"?: list[str], "scope"?: str, "confidence"?: float,
               "agent_scope"?: str, "group"?: str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -1819,6 +1887,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard BEFORE the cache check so that
         # concurrent duplicates yield at ``await guard.acquire()`` rather
@@ -1890,7 +1959,7 @@ def create_app(
             from tapps_brain.services import memory_service as _ms
 
             _async_store = _get_async_store_or_none()
-            if _async_store is not None:
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 # TAP-826: use async-native path — DB write goes through
                 # AsyncPostgresPrivateBackend without blocking a thread.
                 result = await _ms.async_memory_save(
@@ -1961,8 +2030,6 @@ def create_app(
         Request body (JSON):
           ``{ "key": str, "confidence_boost"?: float }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -1970,6 +2037,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard before cache check (see _v1_remember).
         ikey, istore = _get_ikey_and_istore(request)
@@ -2035,7 +2103,7 @@ def create_app(
             from tapps_brain.services import memory_service as _ms
 
             _async_store = _get_async_store_or_none()
-            if _async_store is not None:
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 # TAP-1566: async-native reinforce — DB write goes through
                 # AsyncPostgresPrivateBackend without blocking a thread.
                 result = await _ms.async_memory_reinforce(
@@ -2087,8 +2155,6 @@ def create_app(
         Response:
           ``{ "results": [...], "saved_count": int, "error_count": int }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2096,6 +2162,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
             raw = await request.body()
@@ -2158,8 +2225,6 @@ def create_app(
         Response:
           ``{ "results": [...], "query_count": int }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2167,6 +2232,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
             raw = await request.body()
@@ -2229,8 +2295,6 @@ def create_app(
         Response:
           ``{ "results": [...], "reinforced_count": int, "error_count": int }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2238,6 +2302,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
             raw = await request.body()
@@ -2280,7 +2345,7 @@ def create_app(
         from tapps_brain.services import memory_service as _ms
 
         _async_store = _get_async_store_or_none()
-        if _async_store is not None:
+        if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
             # TAP-1566: async-native batch reinforce — each per-item write
             # goes through AsyncPostgresPrivateBackend.
             result = await _ms.async_memory_reinforce_many(
@@ -2314,8 +2379,6 @@ def create_app(
 
         Response: ``{ "results": [...], "query": str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2323,6 +2386,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
             raw = await request.body()
@@ -2404,8 +2468,6 @@ def create_app(
 
         Response: ``{ "forgotten": bool, "key": str, "reason"?: str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2413,6 +2475,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
@@ -2476,7 +2539,7 @@ def create_app(
             from tapps_brain.services import memory_service as _ms
 
             _async_store = _get_async_store_or_none()
-            if _async_store is not None:
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 result = await _ms.async_brain_forget(
                     _async_store, project_id, agent_id, key=mem_key
                 )
@@ -2515,8 +2578,6 @@ def create_app(
 
         Response: ``{ "learned": true, "key": str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2524,6 +2585,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
@@ -2587,7 +2649,7 @@ def create_app(
             from tapps_brain.services import memory_service as _ms
 
             _async_store = _get_async_store_or_none()
-            if _async_store is not None:
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 result = await _ms.async_brain_learn_success(
                     _async_store,
                     project_id,
@@ -2636,8 +2698,6 @@ def create_app(
 
         Response: ``{ "learned": true, "key": str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -2645,6 +2705,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
@@ -2708,7 +2769,7 @@ def create_app(
             from tapps_brain.services import memory_service as _ms
 
             _async_store = _get_async_store_or_none()
-            if _async_store is not None:
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 result = await _ms.async_brain_learn_failure(
                     _async_store,
                     project_id,
@@ -3324,8 +3385,6 @@ def create_app(
 
         Response: ``{ "recorded": true, "edge_id": str, "feedback_type": str }``
         """
-        store = _get_store_or_503()
-
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
@@ -3333,6 +3392,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
             raw = await request.body()

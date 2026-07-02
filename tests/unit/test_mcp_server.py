@@ -3843,3 +3843,77 @@ class TestPerCallProjectDispatch:
         assert err.code == -32002
         assert err.message == "project_not_registered"
         assert err.data["project_id"] == "ghost"
+
+
+class TestMcpHttpHeaderTenantFallback:
+    """Streamable HTTP session tasks read tenant headers from request_ctx.request."""
+
+    def test_current_request_project_id_from_http_headers(self) -> None:
+        from types import SimpleNamespace
+
+        from tapps_brain.mcp_server import context as ctx
+
+        class _Headers:
+            def get(self, key: str, default: str | None = None) -> str | None:
+                return {"x-project-id": "tenant-b"}.get(key, default)
+
+        req = SimpleNamespace(headers=_Headers())
+        rc = SimpleNamespace(request=req, meta=None)
+
+        from mcp.server.lowlevel.server import request_ctx
+
+        tok = request_ctx.set(rc)
+        try:
+            assert ctx._current_request_project_id() == "tenant-b"
+        finally:
+            request_ctx.reset(tok)
+
+    def test_current_request_agent_id_prefers_x_tapps_agent(self) -> None:
+        from types import SimpleNamespace
+
+        from tapps_brain.mcp_server import context as ctx
+
+        class _Headers:
+            def get(self, key: str, default: str | None = None) -> str | None:
+                mapping = {
+                    "x-agent-id": "legacy",
+                    "x-tapps-agent": "canonical",
+                }
+                return mapping.get(key, default)
+
+        req = SimpleNamespace(headers=_Headers())
+        rc = SimpleNamespace(request=req, meta=None)
+
+        from mcp.server.lowlevel.server import request_ctx
+
+        tok = request_ctx.set(rc)
+        try:
+            assert ctx._current_request_agent_id() == "canonical"
+        finally:
+            request_ctx.reset(tok)
+
+    def test_mcp_tenant_context_binds_contextvars_for_tool_call(self) -> None:
+        from types import SimpleNamespace
+
+        from tapps_brain.mcp_server import context as ctx
+
+        class _Headers:
+            def get(self, key: str, default: str | None = None) -> str | None:
+                return {"x-project-id": "tenant-c", "x-agent-id": "agent-c"}.get(key, default)
+
+        req = SimpleNamespace(headers=_Headers())
+        rc = SimpleNamespace(request=req, meta=None)
+
+        from mcp.server.lowlevel.server import request_ctx
+
+        tok = request_ctx.set(rc)
+        stale = ctx.REQUEST_PROJECT_ID.set("stale-from-init")
+        try:
+            assert ctx._current_request_project_id() == "tenant-c"
+            with ctx._mcp_tenant_context_for_tool_call():
+                assert ctx.REQUEST_PROJECT_ID.get() == "tenant-c"
+                assert ctx.REQUEST_AGENT_ID.get() == "agent-c"
+            assert ctx.REQUEST_PROJECT_ID.get() == "stale-from-init"
+        finally:
+            ctx.REQUEST_PROJECT_ID.reset(stale)
+            request_ctx.reset(tok)

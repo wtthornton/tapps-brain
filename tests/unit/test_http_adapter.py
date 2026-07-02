@@ -2348,3 +2348,52 @@ class TestV1AgentBrainEndpoints:
                 headers={"X-Project-Id": "proj-x"},
             )
         assert resp.status_code == 401
+
+
+class TestRestTenantStoreResolution:
+    """REST data-plane routes resolve per-request stores (ADR-010 / tapps-mcp #6)."""
+
+    _AUTH = {"Authorization": "Bearer tok", "X-Project-Id": "tenant-a"}
+
+    def test_remember_resolves_tenant_store(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        default = MagicMock(name="default_store")
+        tenant = MagicMock(name="tenant_store")
+        captured: list[Any] = []
+
+        def _fake_get_store_for_project(project_id: str | None, **kwargs: Any) -> Any:
+            return tenant if project_id == "tenant-b" else default
+
+        def _fake_memory_save(
+            store: Any, project_id: str, agent_id: str, **kwargs: Any
+        ) -> dict[str, Any]:
+            captured.append(store)
+            return {
+                "status": "saved",
+                "key": kwargs["key"],
+                "tier": "pattern",
+                "confidence": 0.6,
+                "memory_group": None,
+            }
+
+        monkeypatch.setattr(
+            "tapps_brain.mcp_server.context._get_store_for_project",
+            _fake_get_store_for_project,
+        )
+        monkeypatch.setattr(
+            "tapps_brain.services.memory_service.memory_save",
+            _fake_memory_save,
+        )
+
+        settings = _make_settings(auth_token="tok", store=default)
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember",
+                json={"key": "k1", "value": "v1"},
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-Project-Id": "tenant-b",
+                    "X-Agent-Id": "agent-1",
+                },
+            )
+        assert resp.status_code == 200
+        assert captured == [tenant]

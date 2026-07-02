@@ -13,6 +13,7 @@ so the async dispatch logic can be verified in-process.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from datetime import UTC, datetime
@@ -104,6 +105,28 @@ def _make_settings(
     return s
 
 
+@contextlib.contextmanager
+def _patch_http_settings(settings: _Settings):
+    """Patch adapter settings and tenant store resolution for in-process tests."""
+
+    def _fake_get_store_for_project(project_id: str, **kwargs: Any) -> Any:
+        del project_id, kwargs
+        if settings.store is None:
+            msg = "test settings have no store"
+            raise RuntimeError(msg)
+        return settings.store
+
+    with (
+        patch.object(_http_mod, "_settings", settings),
+        patch.object(_http_mod, "get_settings", return_value=settings),
+        patch(
+            "tapps_brain.mcp_server.context._get_store_for_project",
+            side_effect=_fake_get_store_for_project,
+        ),
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -120,10 +143,7 @@ class TestAsyncNativeRemember:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -147,10 +167,7 @@ class TestAsyncNativeRemember:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -180,10 +197,7 @@ class TestAsyncNativeRemember:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -208,10 +222,7 @@ class TestAsyncNativeBrainForget:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -237,10 +248,7 @@ class TestAsyncNativeLearnSuccess:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -265,10 +273,7 @@ class TestAsyncNativeLearnFailure:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -298,10 +303,7 @@ class TestAsyncNativeReinforce:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -326,10 +328,7 @@ class TestAsyncNativeReinforce:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -352,10 +351,7 @@ class TestAsyncNativeReinforce:
         _mcp_dummy = MagicMock()
         _mcp_dummy.session_manager = None
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=_mcp_dummy)
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -554,10 +550,7 @@ class TestV1ToolsList:
 
         settings = _make_settings()
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=mcp_server)
             with TestClient(app, raise_server_exceptions=True) as client:
                 resp = client.get("/v1/tools/list")
@@ -585,10 +578,7 @@ class TestV1ToolsList:
         mcp_server.session_manager = None
         settings = _make_settings()
 
-        with (
-            patch.object(_http_mod, "_settings", settings),
-            patch.object(_http_mod, "get_settings", return_value=settings),
-        ):
+        with _patch_http_settings(settings):
             app = create_app(mcp_server=mcp_server)
             with TestClient(app) as client:
                 resp = client.get("/v1/tools/list")
