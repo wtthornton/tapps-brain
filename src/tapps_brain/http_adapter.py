@@ -1050,7 +1050,7 @@ def _resolve_wrapped_default_store(store: Any) -> Any:
     if isinstance(slots, str):
         slots = (slots,)
     if isinstance(slots, (tuple, list)) and "_default_store" in slots:
-        return getattr(store, "_default_store")
+        return store._default_store
     return store
 
 
