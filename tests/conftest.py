@@ -247,7 +247,9 @@ class InMemoryPrivateBackend:
     def get_schema_version(self) -> int:
         return 1
 
-    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
+    def knn_search(
+        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+    ) -> list[tuple[str, float]]:
         return []  # tests that exercise vector recall must use a real backend
 
     def vector_row_count(self) -> int:

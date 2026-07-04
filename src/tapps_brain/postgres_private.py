@@ -310,6 +310,7 @@ class PostgresPrivateBackend:
         time_field: str = "created_at",
         as_of: str | None = None,
         memory_class: str | None = None,
+        include_expired: bool = False,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -344,6 +345,7 @@ class PostgresPrivateBackend:
             time_field=time_field,
             memory_class=memory_class,
             as_of=as_of,
+            include_expired=include_expired,
         )
         params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
 
@@ -365,7 +367,9 @@ class PostgresPrivateBackend:
     # Vector similarity search
     # ------------------------------------------------------------------
 
-    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
+    def knn_search(
+        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+    ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
         Uses the ``idx_priv_embedding_hnsw`` index (migration 002).  Returns
@@ -390,7 +394,7 @@ class PostgresPrivateBackend:
                 cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
                 cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 cur.execute(
-                    _sql.KNN_SEARCH_SQL,
+                    _sql.build_knn_search_sql(include_expired=include_expired),
                     (vec_str, self._project_id, self._agent_id, k),
                 )
                 rows = cur.fetchall()
@@ -1165,6 +1169,7 @@ class AsyncPostgresPrivateBackend:
         time_field: str = "created_at",
         as_of: str | None = None,
         memory_class: str | None = None,
+        include_expired: bool = False,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``."""
         if not query.strip():
@@ -1176,6 +1181,7 @@ class AsyncPostgresPrivateBackend:
             time_field=time_field,
             memory_class=memory_class,
             as_of=as_of,
+            include_expired=include_expired,
         )
         params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
         async with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -1195,7 +1201,9 @@ class AsyncPostgresPrivateBackend:
     # Vector similarity search
     # ------------------------------------------------------------------
 
-    async def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
+    async def knn_search(
+        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+    ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
         TAP-2728: sets ``hnsw.iterative_scan = 'relaxed_order'`` and a tuned
@@ -1213,7 +1221,7 @@ class AsyncPostgresPrivateBackend:
                 await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
                 await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 await cur.execute(
-                    _sql.KNN_SEARCH_SQL,
+                    _sql.build_knn_search_sql(include_expired=include_expired),
                     (vec_str, self._project_id, self._agent_id, k),
                 )
                 rows = await cur.fetchall()

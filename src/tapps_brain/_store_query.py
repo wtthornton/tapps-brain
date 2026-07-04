@@ -345,6 +345,10 @@ class QueryMixin(_MemoryStoreBase):
                 time_field=time_field,
                 as_of=as_of,
                 memory_class=memory_class,
+                # TAP-4586: exclude expired/superseded rows at the SQL layer so
+                # they do not consume the top-K budget.  When the caller wants
+                # historical rows, fetch them too and let the Python filter decide.
+                include_expired=include_historical,
             )
 
             results = self._apply_search_filters(
