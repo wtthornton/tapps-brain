@@ -2179,9 +2179,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Return the current private-memory schema version."""
         return self._persistence.get_schema_version()
 
-    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]:
-        """Approximate-nearest-neighbour search via pgvector HNSW."""
-        return self._persistence.knn_search(query_embedding, k)
+    def knn_search(
+        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+    ) -> list[tuple[str, float]]:
+        """Approximate-nearest-neighbour search via pgvector HNSW.
+
+        TAP-4586: *include_expired* (default ``False``) pushes the live-row
+        predicate into recall SQL so expired/superseded rows do not consume a
+        top-K slot.  Pass ``True`` only when historical rows are wanted.
+        """
+        return self._persistence.knn_search(query_embedding, k, include_expired=include_expired)
 
     @property
     def vector_index_enabled(self) -> bool:

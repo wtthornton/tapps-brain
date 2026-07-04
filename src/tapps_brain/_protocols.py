@@ -383,6 +383,7 @@ class PrivateBackend(Protocol):
         time_field: str = "created_at",
         as_of: str | None = None,
         memory_class: str | None = None,
+        include_expired: bool = False,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -393,6 +394,10 @@ class PrivateBackend(Protocol):
             until: ISO-8601 upper bound (exclusive) on *time_field*.
             time_field: Column to filter on (``created_at``, ``updated_at``,
                 ``last_accessed``).
+            include_expired: TAP-4586 — when ``False`` (default), the recall SQL
+                excludes expired (``valid_until`` in the past) and superseded
+                (``superseded_by`` set) rows so they cannot occupy a top-K slot.
+                Pass ``True`` for historical/``include_superseded`` recall.
             as_of: ISO-8601 timestamp for bi-temporal point-in-time filtering.
                 When set, the SQL query adds::
 
@@ -425,7 +430,9 @@ class PrivateBackend(Protocol):
 
     def get_schema_version(self) -> int: ...
 
-    def knn_search(self, query_embedding: list[float], k: int) -> list[tuple[str, float]]: ...
+    def knn_search(
+        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+    ) -> list[tuple[str, float]]: ...
 
     def vector_row_count(self) -> int: ...
 

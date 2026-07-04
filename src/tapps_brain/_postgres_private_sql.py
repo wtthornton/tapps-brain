@@ -255,6 +255,25 @@ _SEARCH_BASE_SQL = (
     "WHERE project_id = %s AND agent_id = %s "
     "  AND search_vector @@ plainto_tsquery('english', %s)"
 )
+
+#: TAP-4586 — live-row predicate pushed into recall SQL so expired
+#: (``valid_until`` in the past) and superseded (``superseded_by`` set) rows
+#: never occupy a top-K slot when live rows exist.  Mirrors the canonical
+#: Python gate in :meth:`tapps_brain.models.MemoryEntry.is_temporally_valid`
+#: (kept as defense-in-depth in ``retrieval.py``).
+#:
+#: ``valid_until`` is ``TEXT NOT NULL DEFAULT ''`` (migration 001), so a live
+#: row is the empty string (or NULL, defensively); only a non-empty timestamp
+#: in the past marks the row expired.  Uses ``now()`` and ``IS NULL`` — no
+#: bound parameters — so it composes into existing param tuples unchanged.
+#: Deliberately touches NO tenant/RLS predicate (``project_id``/``agent_id``).
+_LIVE_ROW_PREDICATE_SQL = (
+    " AND superseded_by IS NULL"
+    " AND ("
+    "valid_until IS NULL OR valid_until = ''"
+    " OR valid_until::timestamptz > now()"
+    ")"
+)
 _SEARCH_FILTER_MEMORY_GROUP_SQL = " AND memory_group = %s"
 _SEARCH_FILTER_MEMORY_CLASS_SQL = " AND memory_class = %s"
 _SEARCH_FILTER_AS_OF_SQL = (
@@ -272,6 +291,7 @@ def build_search_sql(
     time_field: str,
     memory_class: str | None,
     as_of: str | None,
+    include_expired: bool = False,
 ) -> tuple[str, list[Any]]:
     """Compose the FTS search SQL + the variable-portion params.
 
@@ -284,6 +304,18 @@ def build_search_sql(
     Postgres prepared statements cannot parameterise column names.  The
     value is validated against :data:`VALID_TIME_FIELDS` first so the
     interpolation is safe.
+
+    *include_expired* (TAP-4586): when ``False`` (default), the live-row
+    predicate (:data:`_LIVE_ROW_PREDICATE_SQL`) is pushed into the WHERE so
+    expired/superseded rows never consume a top-K slot.  Pass ``True`` from
+    the ``include_historical`` / ``include_superseded`` recall paths so those
+    callers still see stale rows (the Python filter then decides).  The
+    predicate adds no bound params, so it never perturbs *extra_params*.
+
+    The live-row predicate is also suppressed when *as_of* is set: a
+    point-in-time query resolves temporal validity through the bi-temporal
+    ``valid_at``/``invalid_at`` window, and a superseded row is *expected* for
+    the timestamp at which it was valid.
 
     Raises:
         ValueError: if *time_field* is not in :data:`VALID_TIME_FIELDS`.
@@ -310,6 +342,13 @@ def build_search_sql(
     if as_of is not None:
         sql += _SEARCH_FILTER_AS_OF_SQL
         params.extend([as_of, as_of])
+    # TAP-4586: exclude expired/superseded rows from top-K — but NOT when a
+    # point-in-time (`as_of`) query is running.  For `as_of`, the bi-temporal
+    # `valid_at`/`invalid_at` window (added just above) is the authoritative
+    # gate; a superseded row is *expected* to be returned for the timestamp at
+    # which it was still valid, so the live-row predicate must stand down.
+    if not include_expired and as_of is None:
+        sql += _LIVE_ROW_PREDICATE_SQL
 
     sql += _SEARCH_ORDER_LIMIT_SQL
     return sql, params
@@ -319,13 +358,35 @@ def build_search_sql(
 # Vector similarity
 # ---------------------------------------------------------------------------
 
-KNN_SEARCH_SQL = (
+_KNN_SEARCH_HEAD_SQL = (
     "SELECT key, embedding <=> %s::vector AS distance "
     "FROM private_memories "
-    "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL "
-    "ORDER BY distance "
-    "LIMIT %s"
+    "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL"
 )
+_KNN_SEARCH_TAIL_SQL = " ORDER BY distance LIMIT %s"
+
+#: TAP-4586: KNN recall SQL with the live-row predicate baked in (the default
+#: recall path).  Kept as a module constant for callers/tests that want the
+#: budget-honest query without invoking :func:`build_knn_search_sql`.
+KNN_SEARCH_SQL = _KNN_SEARCH_HEAD_SQL + _LIVE_ROW_PREDICATE_SQL + _KNN_SEARCH_TAIL_SQL
+
+
+def build_knn_search_sql(*, include_expired: bool = False) -> str:
+    """Compose the KNN recall SQL (TAP-4586).
+
+    When *include_expired* is ``False`` (default), the live-row predicate is
+    pushed into the WHERE so expired/superseded rows do not occupy a top-K
+    slot when live rows exist.  Pass ``True`` from the ``include_historical``
+    recall path so stale rows still reach the Python filter.
+
+    The predicate adds no bound parameters, so the caller's positional
+    ``(vec, project_id, agent_id, k)`` tuple is unchanged in either case.
+    Tenant/RLS predicates (``project_id`` / ``agent_id``) are untouched.
+    """
+    if include_expired:
+        return _KNN_SEARCH_HEAD_SQL + _KNN_SEARCH_TAIL_SQL
+    return KNN_SEARCH_SQL
+
 
 VECTOR_ROW_COUNT_SQL = (
     "SELECT COUNT(*) FROM private_memories "
