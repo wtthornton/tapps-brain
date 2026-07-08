@@ -1525,6 +1525,50 @@ class TestSnapshotGraph:
         assert "/snapshot/graph" in body.get("paths", {})
 
 
+class TestSnapshotGraphHealth:
+    """GET /snapshot/graph/health — KG-graph health scorecard (P5)."""
+
+    def test_missing_project_returns_400(self) -> None:
+        with _client(_make_settings()) as c:
+            resp = c.get("/snapshot/graph/health")
+        assert resp.status_code == 400
+
+    def test_no_kg_configured_returns_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import tapps_brain.services.kg_service as kg
+
+        monkeypatch.setattr(kg, "_get_or_create_cm", lambda: None)
+        with _client(_make_settings()) as c:
+            resp = c.get("/snapshot/graph/health?project=p")
+        assert resp.status_code == 503
+
+    def test_returns_health_scorecard(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import tapps_brain.services.kg_service as kg
+
+        counts = {
+            "entities_active": 100,
+            "orphan_entities": 50,  # orphan_ratio 0.50 > 0.30
+            "edges_total": 100,
+            "edges_active": 45,
+            "edges_stale": 35,
+            "edges_superseded": 15,  # stale_ratio 0.50 > 0.40
+            "edges_contradicted": 10,  # contradicted_ratio 0.10 > 0.05
+        }
+        monkeypatch.setattr(kg, "_get_or_create_cm", lambda: object())
+        monkeypatch.setattr(kg, "graph_health", lambda *a, **k: counts)
+        with _client(_make_settings()) as c:
+            resp = c.get("/snapshot/graph/health?project=p")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["orphan_entities"] == 50
+        assert body["status"] == "degraded"
+        assert len(body["recommendations"]) == 3
+
+    def test_health_in_openapi_paths(self) -> None:
+        with _client(_make_settings()) as c:
+            body = c.get("/openapi.json").json()
+        assert "/snapshot/graph/health" in body.get("paths", {})
+
+
 # ---------------------------------------------------------------------------
 # STORY-069.7: /snapshot?project=<id> filter
 # ---------------------------------------------------------------------------

@@ -3342,6 +3342,41 @@ def create_app(
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
+    @app.get("/snapshot/graph/health", dependencies=[Depends(require_data_plane_auth)])
+    async def _snapshot_graph_health(request: Request) -> JSONResponse:
+        """KG-graph health for a project: orphan entities, stale/superseded and
+        contradicted edge ratios — the graph rot the memory-store scorecard
+        (freshness/staleness/GC) does not cover.
+
+        Query param ``project`` (or ``X-Project-Id`` header) required. Response:
+        ``{entities_active, orphan_entities, orphan_ratio, edges_*, stale_ratio,
+        contradicted_ratio, status, recommendations}``.
+        """
+        project_id = (
+            request.query_params.get("project") or request.headers.get("x-project-id") or ""
+        ).strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "detail": "project is required (query ?project= or X-Project-Id header).",
+                },
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+        from tapps_brain.visual_snapshot import build_kg_health
+
+        counts = await asyncio.to_thread(
+            _kg_svc.graph_health, cm, project_id, _kg_brain_id()
+        )
+        return JSONResponse(
+            status_code=200,
+            content=build_kg_health(counts),
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
     @app.post("/v1/kg/explain", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_explain(request: Request) -> JSONResponse:
         """Find the shortest path between two KG entities.

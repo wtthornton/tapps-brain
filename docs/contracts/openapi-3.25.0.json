@@ -883,6 +883,59 @@
         "summary": " Snapshot Graph"
       }
     },
+    "/snapshot/graph/health": {
+      "get": {
+        "description": "KG-graph health for a project: orphan entities, stale/superseded and\ncontradicted edge ratios \u2014 the graph rot the memory-store scorecard\n(freshness/staleness/GC) does not cover.\n\nQuery param ``project`` (or ``X-Project-Id`` header) required. Response:\n``{entities_active, orphan_entities, orphan_ratio, edges_*, stale_ratio,\ncontradicted_ratio, status, recommendations}``.",
+        "operationId": "_snapshot_graph_health_snapshot_graph_health_get",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " Snapshot Graph Health"
+      }
+    },
     "/v1/experience": {
       "post": {
         "description": "Record an experience event with optional KG side-effects.\n\nREST counterpart of the ``brain_record_event`` MCP tool.  All writes\n(event row + optional memory + entity + edge + evidence) happen in one\nPostgres transaction.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"event_type\": str, \"subject_key\"?: str, \"utility_score\"?: float,\n      \"payload\"?: dict, \"entities\"?: [EntitySpec], \"edges\"?: [EdgeSpec],\n      \"evidence\"?: [EvidenceSpec], \"memory_key\"?: str,\n      \"memory_value\"?: str, \"memory_tier\"?: str,\n      \"session_id\"?: str, \"workflow_run_id\"?: str }``\n\nResponse: ``{ \"event_id\": str, \"memory_key\": str|null,\n\"entity_ids\": [str], \"edge_ids\": [str], \"evidence_ids\": [str] }``",

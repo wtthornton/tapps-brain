@@ -812,6 +812,22 @@ def get_neighbors(
         kg.close()
 
 
+def graph_health(cm: Any, project_id: str, brain_id: str) -> dict[str, int]:
+    """Aggregate KG-graph health counts for a brain (P5).
+
+    Delegates to
+    :meth:`~tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.graph_health_counts`.
+    Returns raw counts; scoring lives in
+    :func:`tapps_brain.visual_snapshot.build_kg_health`.
+    """
+    kg = _kg_store(cm, project_id, brain_id)
+    try:
+        counts = kg.graph_health_counts()
+        return {k: int(v) for k, v in counts.items()}
+    finally:
+        kg.close()
+
+
 # ---------------------------------------------------------------------------
 # explain_connection
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ from tapps_brain.visual_snapshot import (
     _collect_velocity,
     _snapshot_aggregates_from_entries,
     build_kg_graph,
+    build_kg_health,
     build_visual_snapshot,
     capture_png,
     compute_fingerprint_hex,
@@ -1963,3 +1964,83 @@ def test_build_kg_graph_tolerates_missing_numeric_fields() -> None:
     assert edge["evidence_count"] == 0
     neighbor = next(n for n in graph["nodes"] if not n["is_root"])
     assert neighbor["confidence"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# build_kg_health — KG-graph health scorecard (P5)
+# ---------------------------------------------------------------------------
+
+
+def _health_counts(**overrides: int) -> dict[str, int]:
+    counts: dict[str, int] = {
+        "entities_active": 100,
+        "orphan_entities": 5,
+        "edges_total": 200,
+        "edges_active": 190,
+        "edges_stale": 5,
+        "edges_superseded": 5,
+        "edges_contradicted": 2,
+    }
+    counts.update(overrides)
+    return counts
+
+
+def test_build_kg_health_healthy_graph_is_ok() -> None:
+    h = build_kg_health(_health_counts())
+    assert h["status"] == "ok"
+    assert h["recommendations"] == []
+    assert h["orphan_ratio"] == 0.05
+    assert h["stale_ratio"] == 0.05
+    assert h["contradicted_ratio"] == 0.01
+
+
+def test_build_kg_health_empty_graph_no_division_error() -> None:
+    h = build_kg_health(
+        {
+            "entities_active": 0,
+            "orphan_entities": 0,
+            "edges_total": 0,
+            "edges_active": 0,
+            "edges_stale": 0,
+            "edges_superseded": 0,
+            "edges_contradicted": 0,
+        }
+    )
+    assert h["status"] == "ok"
+    assert h["orphan_ratio"] == 0.0
+    assert h["stale_ratio"] == 0.0
+    assert h["contradicted_ratio"] == 0.0
+
+
+def test_build_kg_health_orphan_heavy_warns() -> None:
+    h = build_kg_health(_health_counts(entities_active=100, orphan_entities=40))
+    assert h["status"] == "warn"
+    assert any("orphaned" in r for r in h["recommendations"])
+
+
+def test_build_kg_health_contradicted_over_threshold_warns() -> None:
+    h = build_kg_health(_health_counts(edges_total=100, edges_contradicted=10))
+    assert h["status"] == "warn"
+    assert any("contradicted" in r for r in h["recommendations"])
+
+
+def test_build_kg_health_multiple_issues_degrade() -> None:
+    h = build_kg_health(
+        _health_counts(
+            entities_active=100,
+            orphan_entities=50,  # 0.50 > 0.30
+            edges_total=100,
+            edges_stale=30,
+            edges_superseded=20,  # 0.50 > 0.40
+            edges_contradicted=10,  # 0.10 > 0.05
+        )
+    )
+    assert h["status"] == "degraded"
+    assert len(h["recommendations"]) == 3
+
+
+def test_build_kg_health_tolerates_missing_and_negative_counts() -> None:
+    h = build_kg_health({"entities_active": -5})
+    assert h["status"] == "ok"
+    assert h["entities_active"] == 0
+    assert h["edges_total"] == 0

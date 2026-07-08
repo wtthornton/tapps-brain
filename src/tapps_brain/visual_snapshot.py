@@ -1340,6 +1340,82 @@ def build_kg_graph(
     }
 
 
+# ---------------------------------------------------------------------------
+# Knowledge-graph health (P5) — KG-specific rot the memory-store scorecard
+# (freshness / staleness / GC) does not cover: orphan entities, stale/
+# superseded edge ratio, contradicted-but-unresolved edges.
+# ---------------------------------------------------------------------------
+
+#: Ratio thresholds above which a dimension is flagged (ops-tunable).
+_KG_ORPHAN_WARN_RATIO = 0.30
+_KG_STALE_WARN_RATIO = 0.40
+_KG_CONTRADICTED_WARN_RATIO = 0.05
+
+
+def build_kg_health(counts: dict[str, int]) -> dict[str, Any]:
+    """Derive KG-graph health metrics + status from raw aggregate counts.
+
+    Pure function — no DB. ``counts`` comes from
+    :meth:`tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.graph_health_counts`
+    and carries ``entities_active``, ``orphan_entities``, ``edges_total``,
+    ``edges_active``, ``edges_stale``, ``edges_superseded``,
+    ``edges_contradicted``.
+
+    Complements the memory-store diagnostics scorecard (freshness/staleness/GC),
+    which is about memory *entries*, not the KG's typed/evidenced edges. Returns
+    the raw counts, derived ratios, a ``status`` (ok/warn/degraded), and
+    actionable ``recommendations``.
+    """
+    entities = max(0, int(counts.get("entities_active", 0)))
+    orphans = max(0, int(counts.get("orphan_entities", 0)))
+    edges_total = max(0, int(counts.get("edges_total", 0)))
+    edges_stale = max(0, int(counts.get("edges_stale", 0)))
+    edges_superseded = max(0, int(counts.get("edges_superseded", 0)))
+    edges_contradicted = max(0, int(counts.get("edges_contradicted", 0)))
+    edges_active = max(0, int(counts.get("edges_active", 0)))
+
+    orphan_ratio = (orphans / entities) if entities else 0.0
+    stale_ratio = ((edges_stale + edges_superseded) / edges_total) if edges_total else 0.0
+    contradicted_ratio = (edges_contradicted / edges_total) if edges_total else 0.0
+
+    recommendations: list[str] = []
+    issues = 0
+    if orphan_ratio > _KG_ORPHAN_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{orphans} of {entities} active entities are orphaned (no active edges) — "
+            "review entity resolution or prune."
+        )
+    if stale_ratio > _KG_STALE_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{edges_stale + edges_superseded} of {edges_total} edges are stale/superseded — "
+            "consider a GC pass over the graph."
+        )
+    if contradicted_ratio > _KG_CONTRADICTED_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{edges_contradicted} contradicted edge(s) unresolved — review and supersede."
+        )
+
+    status = "ok" if issues == 0 else ("warn" if issues == 1 else "degraded")
+
+    return {
+        "entities_active": entities,
+        "orphan_entities": orphans,
+        "orphan_ratio": round(orphan_ratio, 4),
+        "edges_total": edges_total,
+        "edges_active": edges_active,
+        "edges_stale": edges_stale,
+        "edges_superseded": edges_superseded,
+        "edges_contradicted": edges_contradicted,
+        "stale_ratio": round(stale_ratio, 4),
+        "contradicted_ratio": round(contradicted_ratio, 4),
+        "status": status,
+        "recommendations": recommendations,
+    }
+
+
 def capture_png(  # pragma: no cover
     html_path: Path,
     json_path: Path,
