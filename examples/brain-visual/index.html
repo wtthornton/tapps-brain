@@ -2344,6 +2344,17 @@
             <span class="nav-label">Integrity</span>
           </a>
         </li>
+        <li>
+          <a href="#graph" data-nav="graph">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="3" r="1.8"/>
+              <circle cx="3" cy="12" r="1.8"/>
+              <circle cx="13" cy="12" r="1.8"/>
+              <path d="M7 4.5L4 10.5M9 4.5L12 10.5M4.8 12h6.4"/>
+            </svg>
+            <span class="nav-label">Graph</span>
+          </a>
+        </li>
       </ul>
     </nav>
     <div class="content-shell page-content" id="main-content" tabindex="-1">
@@ -3234,6 +3245,77 @@
         <p class="sub" id="copy-snapshot-status" style="margin-top: 0.5rem"></p>
       </section>
       </div>
+
+      <div data-page="graph" hidden>
+      <section class="dash-section reveal-on-scroll" id="graph">
+        <div class="dash-h2-row">
+          <h2>Knowledge graph</h2>
+          <button
+            type="button"
+            class="help-pill"
+            data-help="concept:kg_graph_panel"
+            aria-label="Explain the knowledge graph panel"
+          >
+            ?
+          </button>
+        </div>
+        <p class="prose-small">
+          A focus view of the knowledge graph: one entity plus its direct neighbours.
+          Edge <strong>opacity</strong> encodes confidence, <strong>red dashed</strong>
+          edges are contradicted, <strong>faded</strong> edges are stale/superseded.
+          Click a neighbour to re-centre on it; click an edge for its evidence and decay.
+        </p>
+
+        <style>
+          #kg-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
+          #kg-controls input { padding: 0.4rem 0.6rem; border: 1px solid var(--line, #d9cbb2); border-radius: 6px; font: inherit; }
+          #kg-entity { flex: 1 1 22rem; min-width: 14rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          #kg-limit { width: 5rem; }
+          #kg-load { padding: 0.4rem 0.9rem; border: 0; border-radius: 6px; background: var(--accent, #b45309); color: #fff; font: inherit; cursor: pointer; }
+          #kg-load:hover { filter: brightness(1.05); }
+          #kg-stage { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; gap: 0.75rem; }
+          @media (max-width: 760px) { #kg-stage { grid-template-columns: 1fr; } }
+          #kg-cy { height: 460px; border: 1px solid var(--line, #d9cbb2); border-radius: 8px; background: var(--surface, #fbf7ef); }
+          #kg-side { display: flex; flex-direction: column; gap: 0.75rem; }
+          #kg-detail, #kg-legend { border: 1px solid var(--line, #d9cbb2); border-radius: 8px; padding: 0.65rem 0.75rem; font-size: 0.85rem; }
+          #kg-detail dt { font-weight: 600; margin-top: 0.35rem; }
+          #kg-detail dd { margin: 0; color: var(--ink-2, #6b5d45); word-break: break-word; }
+          .kg-legend-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0; }
+          .kg-swatch { width: 20px; height: 0; border-top: 3px solid var(--accent, #b45309); }
+          .kg-swatch.node { height: 14px; width: 14px; border: 0; border-radius: 50%; background: var(--accent, #b45309); }
+          .kg-swatch.contra { border-top: 3px dashed #c0392b; }
+          .kg-swatch.stale { border-top: 3px solid #b9a17a; opacity: 0.4; }
+          #kg-msg { color: var(--ink-2, #6b5d45); font-size: 0.85rem; margin-top: 0.5rem; }
+        </style>
+
+        <div id="kg-controls">
+          <input id="kg-entity" type="text" placeholder="Entity UUID (focal node)" aria-label="Entity UUID" />
+          <input id="kg-limit" type="number" value="40" min="1" max="200" aria-label="Neighbour limit" />
+          <button id="kg-load" type="button">Load</button>
+        </div>
+
+        <div class="integrity-kpi-grid" id="kg-kpi-grid">
+          <div class="kpi"><p class="kpi-lbl">Nodes</p><p class="kpi-val" id="kg-kpi-nodes">—</p><p class="kpi-sub">in view</p></div>
+          <div class="kpi"><p class="kpi-lbl">Edges</p><p class="kpi-val" id="kg-kpi-edges">—</p><p class="kpi-sub">from focus</p></div>
+          <div class="kpi"><p class="kpi-lbl">Contradicted</p><p class="kpi-val" id="kg-kpi-contra">—</p><p class="kpi-sub">flagged edges</p></div>
+        </div>
+
+        <div id="kg-stage">
+          <div id="kg-cy" role="img" aria-label="Knowledge graph focus view"></div>
+          <div id="kg-side">
+            <div id="kg-legend">
+              <strong>Legend</strong>
+              <div class="kg-legend-row"><span class="kg-swatch node"></span> entity (focus = ring)</div>
+              <div class="kg-legend-row"><span class="kg-swatch"></span> edge (opacity = confidence)</div>
+              <div class="kg-legend-row"><span class="kg-swatch contra"></span> contradicted</div>
+              <div class="kg-legend-row"><span class="kg-swatch stale"></span> stale / superseded</div>
+            </div>
+            <div id="kg-detail"><em>Click a node or edge for details.</em></div>
+          </div>
+        </div>
+        <p id="kg-msg">Enter an entity UUID and press Load. Neighbours are one hop; click one to expand.</p>
+      </section>
+      </div>
     </div>
   </main>
 
@@ -3282,6 +3364,8 @@
 
   <script src="brain-visual-router.js"></script>
   <script src="brain-visual-help.js"></script>
+  <script src="cytoscape.min.js"></script>
+  <script src="brain-visual-graph.js"></script>
   <script>
     /* ── Enter-view reveal via IntersectionObserver ────────────────────────────
      * Static-first: .reveal-on-scroll elements start invisible only when the user

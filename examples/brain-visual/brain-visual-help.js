@@ -445,6 +445,39 @@
   };
 
   const HELP_CONCEPTS = {
+    kg_graph_panel: {
+      title: "Knowledge graph panel",
+      sections: [
+        {
+          heading: "What it is",
+          html:
+            "<p>A focus view of the first-class knowledge graph: one <strong>entity</strong> plus its " +
+            "direct neighbours, drawn from <code>GET /snapshot/graph?entity=&lt;uuid&gt;</code> " +
+            "(a 1-hop <code>get_neighbors</code> query). Click a neighbour to re-centre on it.</p>",
+        },
+        {
+          heading: "The math",
+          html:
+            "<p>Edge <strong>opacity + width</strong> encode <code>edge_confidence</code>; " +
+            "<strong>red dashed</strong> edges are <code>contradicted</code>; <strong>dotted/faded</strong> " +
+            "edges are <code>stale</code>/<code>superseded</code>. Edge detail shows <code>stability</code> " +
+            "(FSRS decay) and <code>evidence_count</code> — the signals a plain hyperlink graph lacks.</p>",
+        },
+        {
+          heading: "Why it matters",
+          html:
+            "<p>The KG drives routing (tie-break re-rank, path grounding). This panel makes edge quality, " +
+            "decay, and contradictions visible instead of hidden behind a scalar edge count.</p>",
+        },
+        {
+          heading: "What tapps-brain does",
+          html:
+            "<p><code>build_kg_graph</code> serializes the neighbours into <code>{nodes, edges}</code>; " +
+            "the panel renders it with the vendored (offline) Cytoscape build.</p>",
+        },
+      ],
+      reference: "Code: <code>visual_snapshot.build_kg_graph</code> · <code>GET /snapshot/graph</code>",
+    },
     live_connection_status: {
       title: "Live connection status badge",
       sections: [
