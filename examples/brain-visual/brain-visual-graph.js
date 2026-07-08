@@ -245,10 +245,45 @@
       });
   }
 
+  function loadHealth() {
+    var project = currentProject();
+    var url = graphBaseUrl() + "/health";
+    if (project) url += "?project=" + encodeURIComponent(project);
+    setMsg("Loading graph health…");
+    fetch(url, { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) return resp.json().then(function (b) {
+          throw new Error((b && b.detail) || ("HTTP " + resp.status));
+        }, function () { throw new Error("HTTP " + resp.status); });
+        return resp.json();
+      })
+      .then(function (h) {
+        var pairs = [
+          ["status", h.status],
+          ["entities (active)", h.entities_active],
+          ["orphans", h.orphan_entities + " (" + h.orphan_ratio + ")"],
+          ["edges (total)", h.edges_total],
+          ["stale/superseded", (h.edges_stale + h.edges_superseded) + " (" + h.stale_ratio + ")"],
+          ["contradicted", h.edges_contradicted + " (" + h.contradicted_ratio + ")"],
+        ];
+        (h.recommendations || []).forEach(function (r, i) { pairs.push(["fix " + (i + 1), r]); });
+        showDetail("Graph health", pairs);
+        setMsg("Graph health: " + h.status
+          + ((h.recommendations || []).length ? " — " + h.recommendations.length + " item(s) to review." : " — no issues."));
+      })
+      .catch(function (err) {
+        var m = String(err && err.message ? err.message : err).slice(0, 120);
+        setMsg("Could not load graph health: " + m
+          + (currentProject() ? "" : " (tip: select a project in the top filter)."));
+      });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var btn = document.getElementById("kg-load");
     var input = document.getElementById("kg-entity");
+    var healthBtn = document.getElementById("kg-health");
     if (btn) btn.addEventListener("click", function () { loadGraph(input ? input.value : ""); });
+    if (healthBtn) healthBtn.addEventListener("click", loadHealth);
     if (input) input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); loadGraph(input.value); }
     });
@@ -256,4 +291,5 @@
 
   // Expose for tests / console.
   window.tappsKgLoadGraph = loadGraph;
+  window.tappsKgLoadHealth = loadHealth;
 })();
