@@ -3289,6 +3289,52 @@ def create_app(
         )
         return JSONResponse(status_code=200, content=result)
 
+    @app.get("/snapshot/graph", dependencies=[Depends(require_data_plane_auth)])
+    async def _snapshot_graph(request: Request) -> JSONResponse:
+        """Focus view of the knowledge graph around one entity (1-hop star).
+
+        Powers the brain-visual KG panel: the focal entity plus its direct
+        neighbours, with edge ``confidence`` / ``status`` / ``contradicted`` /
+        ``stability`` (decay) / ``evidence_count`` so the panel can encode the
+        signals that make the KG richer than a plain link graph. Expand-on-click
+        re-roots on a neighbour.
+
+        Query params: ``entity`` (UUID, required), ``limit`` (default 40, max 200).
+        Header ``X-Project-Id`` required. Response: ``{root, nodes, edges,
+        node_count, edge_count}``.
+        """
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        entity_id = _validate_uuid_field(request.query_params.get("entity", ""), "entity")
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", "40")), 200))
+        except (TypeError, ValueError):
+            limit = 40
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+        from tapps_brain.visual_snapshot import build_kg_graph
+
+        result = await asyncio.to_thread(
+            _kg_svc.get_neighbors,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            entity_ids=[entity_id],
+            hops=1,
+            limit=limit,
+        )
+        graph = build_kg_graph(entity_id, result.get("neighbors", []))
+        return JSONResponse(
+            status_code=200,
+            content=graph,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
     @app.post("/v1/kg/explain", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_explain(request: Request) -> JSONResponse:
         """Find the shortest path between two KG entities.
