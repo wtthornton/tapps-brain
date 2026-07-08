@@ -514,7 +514,8 @@ def _percentile(sorted_values: list[float], pct: float) -> float | None:
 # ---------------------------------------------------------------------------
 
 _EXPORT_SCHEMA_VERSION: int = 1
-_EXPORT_VALID_LAYOUTS: frozenset[str] = frozenset({"managed-agents"})
+_EXPORT_VALID_LAYOUTS: frozenset[str] = frozenset({"managed-agents", "okf"})
+_OKF_VERSION: str = "0.1"
 _EXPORT_READONLY_BANNER: str = "<!-- READ-ONLY managed by tapps-brain. Edits ignored. -->"
 _EXPORT_SECRET_TAG: str = "secret"
 
@@ -597,6 +598,89 @@ def _build_frontmatter(entry: Any, *, redacted_value: str) -> str:
     )
 
 
+def _one_line(text: str, limit: int = 140) -> str:
+    """Collapse *text* to a single whitespace-normalized line, truncated to *limit*."""
+    collapsed = " ".join(text.split())
+    return collapsed[:limit]
+
+
+def _build_okf_doc(entry: Any, *, redacted_value: str) -> str:
+    """Render an OKF v0.1-conformant concept document for *entry*.
+
+    Frontmatter is the first thing in the file (OKF conformance rule 1) with a
+    non-empty ``type`` (the tier). String scalars are JSON-encoded so arbitrary
+    values (colons, quotes) stay parseable YAML. The READ-ONLY banner moves into
+    the body so it does not break frontmatter position.
+    """
+    from tapps_brain.models import tier_str
+
+    tier = tier_str(entry.tier)
+    tags = list(getattr(entry, "tags", []) or [])
+    source = getattr(entry, "source", "agent")
+    source_value = source.value if hasattr(source, "value") else str(source)
+    timestamp = getattr(entry, "created_at", "") or getattr(entry, "last_accessed", "")
+    description = _one_line(redacted_value)
+    lines = [
+        "---",
+        f"type: {tier}",
+        f"title: {json.dumps(entry.key)}",
+        f"description: {json.dumps(description)}",
+        f"key: {json.dumps(entry.key)}",
+        f"tier: {tier}",
+        f"confidence: {_resolve_confidence(entry):.4f}",
+        f"source: {json.dumps(source_value)}",
+        f"timestamp: {json.dumps(timestamp)}",
+        f"tags: {json.dumps(tags)}",
+        "---",
+        "",
+        _EXPORT_READONLY_BANNER,
+        "",
+        redacted_value,
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _build_okf_index(project_id: str, okf_entries: list[tuple[str, str, str, str]]) -> str:
+    """Render the reserved bundle-root ``index.md`` (no frontmatter, grouped by tier)."""
+    by_tier: dict[str, list[tuple[str, str]]] = {}
+    for tier, key, desc, _created in okf_entries:
+        by_tier.setdefault(tier, []).append((key, desc))
+    lines = [
+        f"# {project_id or 'tapps-brain'} knowledge bundle",
+        "",
+        f"<!-- okf_version: {_OKF_VERSION} -->",
+        "",
+    ]
+    for tier in sorted(by_tier):
+        lines.append(f"## {tier}")
+        lines.append("")
+        for key, desc in sorted(by_tier[tier]):
+            suffix = f" — {desc}" if desc else ""
+            lines.append(f"- [{key}]({tier}/{key}.md){suffix}")
+        lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _build_okf_log(exported_at: str, okf_entries: list[tuple[str, str, str, str]]) -> str:
+    """Render the reserved ``log.md`` — ISO date headings, newest first."""
+    by_date: dict[str, list[tuple[str, str]]] = {}
+    for tier, key, _desc, created in okf_entries:
+        date = (created or exported_at)[:10]
+        by_date.setdefault(date, []).append((tier, key))
+    lines = ["# Log", ""]
+    if not by_date:
+        lines.extend([f"## {exported_at[:10]}", "", "- **Export** — empty snapshot.", ""])
+        return "\n".join(lines).rstrip("\n") + "\n"
+    for date in sorted(by_date, reverse=True):
+        lines.append(f"## {date}")
+        lines.append("")
+        for tier, key in sorted(by_date[date]):
+            lines.append(f"- **Creation** — `{tier}/{key}` recorded.")
+        lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
 def brain_export(
     store: Any,
     project_id: str,
@@ -623,7 +707,10 @@ def brain_export(
     Args:
         output_dir: Destination directory.  Created if absent; refuses to
             overwrite when the directory already contains files.
-        layout: Layout name.  Only ``"managed-agents"`` is supported today.
+        layout: Layout name.  ``"managed-agents"`` (default) writes a banner +
+            frontmatter per tier; ``"okf"`` writes an Open Knowledge Format v0.1
+            bundle (frontmatter-first concept docs + reserved ``index.md`` /
+            ``log.md``).
         redact: When true, apply the redaction pattern set to every value
             before write.  Independent of the ``secret``-tag skip.
         top_n_per_tier: Maximum entries to export per tier (default 500).
@@ -683,6 +770,8 @@ def brain_export(
     tier_counts: dict[str, int] = {}
     files_written = 0
     redacted_fields = 0
+    # (tier, key, description, created_at) collected for the OKF reserved files.
+    okf_entries: list[tuple[str, str, str, str]] = []
     for tier_key, entries in per_tier.items():
         ranked = sorted(entries, key=_rank_score, reverse=True)[:top_n_per_tier]
         if not ranked:
@@ -700,12 +789,27 @@ def brain_export(
             # Key charset is validator-constrained to [a-z0-9._-] (lowercase slug
             # starting with alphanumeric, max 128 chars), so it is filesystem-safe
             # without further sanitization.
-            (tier_dir / f"{entry.key}.md").write_text(
-                _build_frontmatter(entry, redacted_value=clean_value), encoding="utf-8"
-            )
+            if layout == "okf":
+                doc = _build_okf_doc(entry, redacted_value=clean_value)
+                okf_entries.append(
+                    (
+                        tier_key,
+                        entry.key,
+                        _one_line(clean_value),
+                        str(getattr(entry, "created_at", "") or ""),
+                    )
+                )
+            else:
+                doc = _build_frontmatter(entry, redacted_value=clean_value)
+            (tier_dir / f"{entry.key}.md").write_text(doc, encoding="utf-8")
             files_written += 1
 
     exported_at = datetime.now(tz=UTC).isoformat()
+    if layout == "okf":
+        (target / "index.md").write_text(
+            _build_okf_index(effective_pid, okf_entries), encoding="utf-8"
+        )
+        (target / "log.md").write_text(_build_okf_log(exported_at, okf_entries), encoding="utf-8")
     manifest = {
         "schema_version": _EXPORT_SCHEMA_VERSION,
         "project_id": effective_pid,
@@ -718,6 +822,8 @@ def brain_export(
         "skipped_secret_tag": skipped_secret,
         "redacted_fields": redacted_fields,
     }
+    if layout == "okf":
+        manifest["okf_version"] = _OKF_VERSION
     (target / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

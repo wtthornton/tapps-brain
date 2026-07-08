@@ -44,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--layout",
         default="managed-agents",
-        choices=["managed-agents"],
-        help="Output layout (only managed-agents is supported today).",
+        choices=["managed-agents", "okf"],
+        help="Output layout: managed-agents (default) or okf (Open Knowledge Format v0.1 bundle).",
     )
     parser.add_argument(
         "--top-n-per-tier",
