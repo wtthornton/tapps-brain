@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var PAGES = ["overview", "health", "memory", "retrieval", "agents", "integrity"];
+  var PAGES = ["overview", "health", "memory", "retrieval", "agents", "integrity", "graph"];
   var DEFAULT_PAGE = "overview";
 
   /** Read location.hash, strip '#', validate against PAGES, return page name. */

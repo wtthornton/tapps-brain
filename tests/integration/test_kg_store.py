@@ -594,3 +594,30 @@ class TestSyncAsyncParity:
         _, _, async_reason = asyncio.get_event_loop().run_until_complete(_run_async())
 
         assert sync_reason == async_reason == "exact_match"
+
+
+class TestGraphHealthCounts:
+    """graph_health_counts() aggregate SQL (P5) — validated against a real schema."""
+
+    def setup_method(self) -> None:
+        _apply_migrations()
+        self._pid = "test_kg_" + _uid()
+        self._bid = "brain_" + _uid()
+        self._store = _make_sync_store(self._pid, self._bid, evidence_required=False)
+        a = self._store.upsert_entity(entity_type="module", canonical_name="a_" + _uid())
+        b = self._store.upsert_entity(entity_type="module", canonical_name="b_" + _uid())
+        # Third entity is an orphan — no edges on either side.
+        self._store.upsert_entity(entity_type="module", canonical_name="orphan_" + _uid())
+        self._store.upsert_edge(
+            subject_entity_id=a, predicate="DEPENDS_ON", object_entity_id=b
+        )
+
+    def test_graph_health_counts_reports_entities_edges_and_orphans(self) -> None:
+        counts = self._store.graph_health_counts()
+        assert counts["entities_active"] == 3
+        assert counts["orphan_entities"] == 1
+        assert counts["edges_total"] == 1
+        assert counts["edges_active"] == 1
+        assert counts["edges_stale"] == 0
+        assert counts["edges_superseded"] == 0
+        assert counts["edges_contradicted"] == 0

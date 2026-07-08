@@ -32,6 +32,8 @@ from tapps_brain.visual_snapshot import (
     _collect_retrieval_metrics,
     _collect_velocity,
     _snapshot_aggregates_from_entries,
+    build_kg_graph,
+    build_kg_health,
     build_visual_snapshot,
     capture_png,
     compute_fingerprint_hex,
@@ -1874,3 +1876,171 @@ def test_snapshot_5000_entry_postgres_under_3s(tmp_path: Path) -> None:
     assert snap.health["entry_count"] == 5000
     assert snap.access_stats is not None
     assert snap.access_stats.sum_access_count > 0
+
+
+# ---------------------------------------------------------------------------
+# build_kg_graph — KG focus-view serializer (P1)
+# ---------------------------------------------------------------------------
+
+
+def _neighbor_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "edge_id": "e1",
+        "predicate": "depends_on",
+        "edge_confidence": 0.8,
+        "edge_status": "active",
+        "contradicted": False,
+        "stability": 12.5,
+        "evidence_count": 3,
+        "neighbor_id": "n1",
+        "entity_type": "module",
+        "canonical_name": "auth",
+        "entity_confidence": 0.9,
+        "hop": 1,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_build_kg_graph_empty_neighbors_returns_lone_root() -> None:
+    graph = build_kg_graph("root-1", [], root_label="Root")
+    assert graph["root"] == "root-1"
+    assert graph["node_count"] == 1
+    assert graph["edge_count"] == 0
+    assert graph["nodes"][0]["is_root"] is True
+    assert graph["nodes"][0]["label"] == "Root"
+
+
+def test_build_kg_graph_maps_edge_and_node_signals() -> None:
+    graph = build_kg_graph("root-1", [_neighbor_row()])
+    assert graph["node_count"] == 2
+    assert graph["edge_count"] == 1
+    edge = graph["edges"][0]
+    assert edge["source"] == "root-1"
+    assert edge["target"] == "n1"
+    assert edge["predicate"] == "depends_on"
+    assert edge["confidence"] == 0.8
+    assert edge["status"] == "active"
+    assert edge["contradicted"] is False
+    assert edge["stability"] == 12.5
+    assert edge["evidence_count"] == 3
+    neighbor = next(n for n in graph["nodes"] if not n["is_root"])
+    assert neighbor["label"] == "auth"
+    assert neighbor["type"] == "module"
+    assert neighbor["confidence"] == 0.9
+
+
+def test_build_kg_graph_dedupes_repeated_neighbor_into_one_node_two_edges() -> None:
+    rows = [
+        _neighbor_row(edge_id="e1", predicate="depends_on"),
+        _neighbor_row(edge_id="e2", predicate="calls"),
+    ]
+    graph = build_kg_graph("root-1", rows)
+    assert graph["node_count"] == 2  # root + single deduped neighbor
+    assert graph["edge_count"] == 2
+    assert {e["predicate"] for e in graph["edges"]} == {"depends_on", "calls"}
+
+
+def test_build_kg_graph_skips_rows_without_neighbor_id() -> None:
+    graph = build_kg_graph("root-1", [_neighbor_row(neighbor_id="")])
+    assert graph["node_count"] == 1
+    assert graph["edge_count"] == 0
+
+
+def test_build_kg_graph_carries_contradicted_and_stale_signals() -> None:
+    row = _neighbor_row(contradicted=True, edge_status="stale", edge_confidence=0.1)
+    graph = build_kg_graph("root-1", [row])
+    edge = graph["edges"][0]
+    assert edge["contradicted"] is True
+    assert edge["status"] == "stale"
+    assert edge["confidence"] == 0.1
+
+
+def test_build_kg_graph_tolerates_missing_numeric_fields() -> None:
+    row = _neighbor_row(edge_confidence=None, entity_confidence=None, evidence_count=None)
+    graph = build_kg_graph("root-1", [row])
+    edge = graph["edges"][0]
+    assert edge["confidence"] == 0.0
+    assert edge["evidence_count"] == 0
+    neighbor = next(n for n in graph["nodes"] if not n["is_root"])
+    assert neighbor["confidence"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# build_kg_health — KG-graph health scorecard (P5)
+# ---------------------------------------------------------------------------
+
+
+def _health_counts(**overrides: int) -> dict[str, int]:
+    counts: dict[str, int] = {
+        "entities_active": 100,
+        "orphan_entities": 5,
+        "edges_total": 200,
+        "edges_active": 190,
+        "edges_stale": 5,
+        "edges_superseded": 5,
+        "edges_contradicted": 2,
+    }
+    counts.update(overrides)
+    return counts
+
+
+def test_build_kg_health_healthy_graph_is_ok() -> None:
+    h = build_kg_health(_health_counts())
+    assert h["status"] == "ok"
+    assert h["recommendations"] == []
+    assert h["orphan_ratio"] == 0.05
+    assert h["stale_ratio"] == 0.05
+    assert h["contradicted_ratio"] == 0.01
+
+
+def test_build_kg_health_empty_graph_no_division_error() -> None:
+    h = build_kg_health(
+        {
+            "entities_active": 0,
+            "orphan_entities": 0,
+            "edges_total": 0,
+            "edges_active": 0,
+            "edges_stale": 0,
+            "edges_superseded": 0,
+            "edges_contradicted": 0,
+        }
+    )
+    assert h["status"] == "ok"
+    assert h["orphan_ratio"] == 0.0
+    assert h["stale_ratio"] == 0.0
+    assert h["contradicted_ratio"] == 0.0
+
+
+def test_build_kg_health_orphan_heavy_warns() -> None:
+    h = build_kg_health(_health_counts(entities_active=100, orphan_entities=40))
+    assert h["status"] == "warn"
+    assert any("orphaned" in r for r in h["recommendations"])
+
+
+def test_build_kg_health_contradicted_over_threshold_warns() -> None:
+    h = build_kg_health(_health_counts(edges_total=100, edges_contradicted=10))
+    assert h["status"] == "warn"
+    assert any("contradicted" in r for r in h["recommendations"])
+
+
+def test_build_kg_health_multiple_issues_degrade() -> None:
+    h = build_kg_health(
+        _health_counts(
+            entities_active=100,
+            orphan_entities=50,  # 0.50 > 0.30
+            edges_total=100,
+            edges_stale=30,
+            edges_superseded=20,  # 0.50 > 0.40
+            edges_contradicted=10,  # 0.10 > 0.05
+        )
+    )
+    assert h["status"] == "degraded"
+    assert len(h["recommendations"]) == 3
+
+
+def test_build_kg_health_tolerates_missing_and_negative_counts() -> None:
+    h = build_kg_health({"entities_active": -5})
+    assert h["status"] == "ok"
+    assert h["entities_active"] == 0
+    assert h["edges_total"] == 0

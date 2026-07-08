@@ -1262,6 +1262,160 @@ def snapshot_to_json(snapshot: VisualSnapshot) -> str:
     return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Knowledge-graph focus view (P1 — graph visualizer backend)
+# ---------------------------------------------------------------------------
+
+
+def _as_float(value: object, default: float) -> float:
+    """Best-effort float coercion; returns *default* on None/garbage."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def build_kg_graph(
+    root_entity_id: str,
+    neighbors: list[dict[str, Any]],
+    *,
+    root_label: str = "",
+) -> dict[str, Any]:
+    """Transform a 1-hop ``get_neighbors_multi`` result into a ``{nodes, edges}`` graph.
+
+    Star topology: the focal entity plus one node per distinct neighbour and one
+    edge per neighbour row (``root -> neighbor``). Edge attributes carry the
+    signals that make the KG richer than a plain hyperlink graph — ``confidence``,
+    ``status``, ``contradicted``, ``stability`` (FSRS decay), ``evidence_count`` —
+    so the panel can encode them (opacity, fade, flag). Expand-on-click re-roots on
+    a neighbour, which is why a correct 1-hop star (not an ambiguous multi-hop dump)
+    is the right primitive.
+
+    Pure function — no DB. ``neighbors`` comes from
+    :func:`tapps_brain.services.kg_service.get_neighbors` (its ``"neighbors"`` list).
+    """
+    nodes: dict[str, dict[str, Any]] = {
+        root_entity_id: {
+            "id": root_entity_id,
+            "label": root_label or root_entity_id,
+            "type": "",
+            "confidence": 1.0,
+            "is_root": True,
+        }
+    }
+    edges: list[dict[str, Any]] = []
+    for row in neighbors:
+        neighbor_id = str(row.get("neighbor_id", "") or "")
+        if not neighbor_id:
+            continue
+        if neighbor_id not in nodes:
+            nodes[neighbor_id] = {
+                "id": neighbor_id,
+                "label": str(row.get("canonical_name", "") or neighbor_id),
+                "type": str(row.get("entity_type", "") or ""),
+                "confidence": _as_float(row.get("entity_confidence"), 0.0),
+                "is_root": False,
+            }
+        edge_id = str(row.get("edge_id", "") or f"{root_entity_id}->{neighbor_id}")
+        edges.append(
+            {
+                "id": edge_id,
+                "source": root_entity_id,
+                "target": neighbor_id,
+                "predicate": str(row.get("predicate", "") or ""),
+                "confidence": _as_float(row.get("edge_confidence"), 0.0),
+                "status": str(row.get("edge_status", "") or "active"),
+                "contradicted": bool(row.get("contradicted", False)),
+                "stability": _as_float(row.get("stability"), 0.0),
+                "evidence_count": int(row.get("evidence_count") or 0),
+                "hop": int(row.get("hop") or 1),
+            }
+        )
+    return {
+        "root": root_entity_id,
+        "nodes": list(nodes.values()),
+        "edges": edges,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Knowledge-graph health (P5) — KG-specific rot the memory-store scorecard
+# (freshness / staleness / GC) does not cover: orphan entities, stale/
+# superseded edge ratio, contradicted-but-unresolved edges.
+# ---------------------------------------------------------------------------
+
+#: Ratio thresholds above which a dimension is flagged (ops-tunable).
+_KG_ORPHAN_WARN_RATIO = 0.30
+_KG_STALE_WARN_RATIO = 0.40
+_KG_CONTRADICTED_WARN_RATIO = 0.05
+
+
+def build_kg_health(counts: dict[str, int]) -> dict[str, Any]:
+    """Derive KG-graph health metrics + status from raw aggregate counts.
+
+    Pure function — no DB. ``counts`` comes from
+    :meth:`tapps_brain.postgres_kg.PostgresKnowledgeGraphStore.graph_health_counts`
+    and carries ``entities_active``, ``orphan_entities``, ``edges_total``,
+    ``edges_active``, ``edges_stale``, ``edges_superseded``,
+    ``edges_contradicted``.
+
+    Complements the memory-store diagnostics scorecard (freshness/staleness/GC),
+    which is about memory *entries*, not the KG's typed/evidenced edges. Returns
+    the raw counts, derived ratios, a ``status`` (ok/warn/degraded), and
+    actionable ``recommendations``.
+    """
+    entities = max(0, int(counts.get("entities_active", 0)))
+    orphans = max(0, int(counts.get("orphan_entities", 0)))
+    edges_total = max(0, int(counts.get("edges_total", 0)))
+    edges_stale = max(0, int(counts.get("edges_stale", 0)))
+    edges_superseded = max(0, int(counts.get("edges_superseded", 0)))
+    edges_contradicted = max(0, int(counts.get("edges_contradicted", 0)))
+    edges_active = max(0, int(counts.get("edges_active", 0)))
+
+    orphan_ratio = (orphans / entities) if entities else 0.0
+    stale_ratio = ((edges_stale + edges_superseded) / edges_total) if edges_total else 0.0
+    contradicted_ratio = (edges_contradicted / edges_total) if edges_total else 0.0
+
+    recommendations: list[str] = []
+    issues = 0
+    if orphan_ratio > _KG_ORPHAN_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{orphans} of {entities} active entities are orphaned (no active edges) — "
+            "review entity resolution or prune."
+        )
+    if stale_ratio > _KG_STALE_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{edges_stale + edges_superseded} of {edges_total} edges are stale/superseded — "
+            "consider a GC pass over the graph."
+        )
+    if contradicted_ratio > _KG_CONTRADICTED_WARN_RATIO:
+        issues += 1
+        recommendations.append(
+            f"{edges_contradicted} contradicted edge(s) unresolved — review and supersede."
+        )
+
+    status = "ok" if issues == 0 else ("warn" if issues == 1 else "degraded")
+
+    return {
+        "entities_active": entities,
+        "orphan_entities": orphans,
+        "orphan_ratio": round(orphan_ratio, 4),
+        "edges_total": edges_total,
+        "edges_active": edges_active,
+        "edges_stale": edges_stale,
+        "edges_superseded": edges_superseded,
+        "edges_contradicted": edges_contradicted,
+        "stale_ratio": round(stale_ratio, 4),
+        "contradicted_ratio": round(contradicted_ratio, 4),
+        "status": status,
+        "recommendations": recommendations,
+    }
+
+
 def capture_png(  # pragma: no cover
     html_path: Path,
     json_path: Path,

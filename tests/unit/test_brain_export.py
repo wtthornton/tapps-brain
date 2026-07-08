@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
 from tapps_brain.services import memory_service
@@ -238,3 +239,98 @@ def test_every_tier_round_trips(tmp_path: Path, tier: MemoryTier) -> None:
     out = tmp_path / "export"
     _export(_FakeStore([_entry("k", tier=tier)]), out)
     assert (out / tier.value / "k.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# OKF layout (Open Knowledge Format v0.1)
+# ---------------------------------------------------------------------------
+
+
+def _parse_okf_frontmatter(md_text: str) -> tuple[dict[str, Any], str]:
+    """Split an OKF concept doc into (frontmatter, body); assert frontmatter-first."""
+    assert md_text.startswith("---\n"), "OKF frontmatter must be the first thing in the file"
+    _, front, body = md_text.split("---\n", 2)
+    return yaml.safe_load(front), body
+
+
+def test_okf_layout_writes_frontmatter_first_conformant_docs(tmp_path: Path) -> None:
+    entries = [
+        _entry("alpha", tier=MemoryTier.architectural, value="alpha body: with colons"),
+        _entry("beta", tier=MemoryTier.pattern, value='body "quoted"'),
+    ]
+    out = tmp_path / "export"
+    report = _export(_FakeStore(entries), out, layout="okf")
+    assert report["files_written"] == 2
+
+    fm, body = _parse_okf_frontmatter((out / "architectural" / "alpha.md").read_text())
+    # Conformance rule 2: non-empty `type`.
+    assert fm["type"] == "architectural"
+    assert fm["key"] == "alpha"
+    assert fm["tier"] == "architectural"
+    assert isinstance(fm["tags"], list)
+    assert "timestamp" in fm
+    # Banner lives in the body, not before the frontmatter.
+    assert "READ-ONLY managed by tapps-brain" in body
+    assert "alpha body: with colons" in body
+
+    # Special characters in the value must not break YAML parsing.
+    fm_beta, body_beta = _parse_okf_frontmatter((out / "pattern" / "beta.md").read_text())
+    assert fm_beta["type"] == "pattern"
+    assert 'body "quoted"' in body_beta
+
+
+def test_okf_layout_writes_reserved_index_and_log(tmp_path: Path) -> None:
+    entries = [
+        _entry("alpha", tier=MemoryTier.architectural, value="alpha body"),
+        _entry("beta", tier=MemoryTier.pattern, value="beta body"),
+    ]
+    out = tmp_path / "export"
+    _export(_FakeStore(entries), out, layout="okf")
+
+    # index.md is reserved → no frontmatter; groups by tier with relative links.
+    index = (out / "index.md").read_text()
+    assert not index.startswith("---")
+    assert "## architectural" in index
+    assert "[alpha](architectural/alpha.md)" in index
+    assert "[beta](pattern/beta.md)" in index
+    assert "okf_version: 0.1" in index
+
+    # log.md is reserved → ISO date headings, newest first.
+    log = (out / "log.md").read_text()
+    assert log.startswith("# Log")
+    assert "**Creation**" in log
+    import re
+
+    assert re.search(r"## \d{4}-\d{2}-\d{2}", log), "log.md needs an ISO date heading"
+
+
+def test_okf_manifest_declares_version_and_layout(tmp_path: Path) -> None:
+    out = tmp_path / "export"
+    _export(_FakeStore([_entry("a")]), out, layout="okf")
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["layout"] == "okf"
+    assert manifest["okf_version"] == "0.1"
+
+
+def test_okf_layout_redacts_and_skips_secret_tags(tmp_path: Path) -> None:
+    entries = [
+        _entry("public", value="key AKIAIOSFODNN7EXAMPLE here"),
+        _entry("hidden", value="nope", tags=["secret"]),
+    ]
+    out = tmp_path / "export"
+    report = _export(_FakeStore(entries), out, layout="okf")
+    assert report["skipped_secret_tag"] == 1
+    assert not (out / "pattern" / "hidden.md").exists()
+
+    _fm, body = _parse_okf_frontmatter((out / "pattern" / "public.md").read_text())
+    assert "AKIAIOSFODNN7EXAMPLE" not in body
+    assert "[REDACTED:aws-key]" in body
+
+
+def test_managed_agents_layout_emits_no_okf_reserved_files(tmp_path: Path) -> None:
+    out = tmp_path / "export"
+    _export(_FakeStore([_entry("a")]), out)  # default layout
+    assert not (out / "index.md").exists()
+    assert not (out / "log.md").exists()
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "okf_version" not in manifest

@@ -607,6 +607,44 @@ class PostgresKnowledgeGraphStore:
 
         return results
 
+    def graph_health_counts(self) -> dict[str, int]:
+        """Aggregate KG-graph health counts for this brain (P5).
+
+        Returns ``entities_active``, ``orphan_entities`` (active entity with no
+        active edge on either side), ``edges_total``, ``edges_active``,
+        ``edges_stale``, ``edges_superseded``, ``edges_contradicted``. Feeds
+        :func:`tapps_brain.visual_snapshot.build_kg_health`.
+        """
+        out: dict[str, int] = {
+            "entities_active": 0,
+            "orphan_entities": 0,
+            "edges_total": 0,
+            "edges_active": 0,
+            "edges_stale": 0,
+            "edges_superseded": 0,
+            "edges_contradicted": 0,
+        }
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.GRAPH_HEALTH_ENTITIES_SQL, (self._brain_id,))
+            row = cur.fetchone()
+            if row is not None:
+                d = _row_to_dict(row, cur.description)
+                out["entities_active"] = int(d.get("entities_active") or 0)
+                out["orphan_entities"] = int(d.get("orphan_entities") or 0)
+            cur.execute(_sql.GRAPH_HEALTH_EDGES_SQL, (self._brain_id,))
+            row = cur.fetchone()
+            if row is not None:
+                d = _row_to_dict(row, cur.description)
+                for key in (
+                    "edges_total",
+                    "edges_active",
+                    "edges_stale",
+                    "edges_superseded",
+                    "edges_contradicted",
+                ):
+                    out[key] = int(d.get(key) or 0)
+        return out
+
     # ------------------------------------------------------------------
     # Edge lifecycle mutations
     # ------------------------------------------------------------------

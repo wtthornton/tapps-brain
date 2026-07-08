@@ -480,3 +480,38 @@ WHERE id = %s::uuid
   AND brain_id = %s
 RETURNING id
 """
+
+
+# ---------------------------------------------------------------------------
+# Graph health aggregates (P5)
+# ---------------------------------------------------------------------------
+
+#: Entity counts for a brain: active total + orphaned (active entity with no
+#: active edge on either side). Params: brain_id.
+GRAPH_HEALTH_ENTITIES_SQL = """
+SELECT
+    COUNT(*) FILTER (WHERE e.status = 'active') AS entities_active,
+    COUNT(*) FILTER (
+        WHERE e.status = 'active'
+          AND NOT EXISTS (
+              SELECT 1 FROM kg_edges ed
+              WHERE ed.brain_id = e.brain_id
+                AND ed.status = 'active'
+                AND (ed.subject_entity_id = e.id OR ed.object_entity_id = e.id)
+          )
+    ) AS orphan_entities
+FROM kg_entities e
+WHERE e.brain_id = %s
+"""
+
+#: Edge counts by status + contradicted for a brain. Params: brain_id.
+GRAPH_HEALTH_EDGES_SQL = """
+SELECT
+    COUNT(*)                                      AS edges_total,
+    COUNT(*) FILTER (WHERE status = 'active')     AS edges_active,
+    COUNT(*) FILTER (WHERE status = 'stale')      AS edges_stale,
+    COUNT(*) FILTER (WHERE status = 'superseded') AS edges_superseded,
+    COUNT(*) FILTER (WHERE contradicted)          AS edges_contradicted
+FROM kg_edges
+WHERE brain_id = %s
+"""
