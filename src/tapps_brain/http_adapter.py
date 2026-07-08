@@ -3299,15 +3299,22 @@ def create_app(
         signals that make the KG richer than a plain link graph. Expand-on-click
         re-roots on a neighbour.
 
-        Query params: ``entity`` (UUID, required), ``limit`` (default 40, max 200).
-        Header ``X-Project-Id`` required. Response: ``{root, nodes, edges,
-        node_count, edge_count}``.
+        Query params: ``entity`` (UUID, required), ``project`` (required unless the
+        ``X-Project-Id`` header is set), ``limit`` (default 40, max 200). The
+        ``?project=`` query mirrors ``GET /snapshot`` so the dashboard can call it
+        the same way; API clients may use the ``X-Project-Id`` header instead.
+        Response: ``{root, nodes, edges, node_count, edge_count}``.
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
+        project_id = (
+            request.query_params.get("project") or request.headers.get("x-project-id") or ""
+        ).strip()
         if not project_id:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+                detail={
+                    "error": "bad_request",
+                    "detail": "project is required (query ?project= or X-Project-Id header).",
+                },
             )
         entity_id = _validate_uuid_field(request.query_params.get("entity", ""), "entity")
         try:
