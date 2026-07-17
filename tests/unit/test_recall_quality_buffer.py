@@ -72,6 +72,11 @@ def test_empty_recall_sample_is_recorded_with_nones() -> None:
     assert samples[0].oldest_returned_age_days is None
 
 
+def test_negative_memory_count_clamped_to_zero() -> None:
+    recall_quality_buffer.record("proj-a", 0.5, 1.0, -3, timestamp=1.0)
+    assert recall_quality_buffer.snapshot("proj-a")[0].memory_count == 0
+
+
 def test_configure_resets_existing_samples() -> None:
     recall_quality_buffer.record("proj-a", 0.5, 1.0, 1, timestamp=10.0)
     assert recall_quality_buffer.snapshot("proj-a")

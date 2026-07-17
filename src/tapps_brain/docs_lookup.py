@@ -9,6 +9,7 @@ project (``TAPPS_BRAIN_DOCS_PROJECT_ID``, default ``library-docs``) with
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -52,7 +53,26 @@ class DocsConfig:
     @classmethod
     def from_env(cls) -> DocsConfig:
         ttl_raw = os.environ.get(DOCS_TTL_ENV, "").strip()
-        ttl = float(ttl_raw) if ttl_raw else DEFAULT_DOCS_CACHE_TTL_SECONDS
+        ttl = DEFAULT_DOCS_CACHE_TTL_SECONDS
+        if ttl_raw:
+            try:
+                parsed = float(ttl_raw)
+            except ValueError:
+                logger.warning(
+                    "docs_config.invalid_ttl",
+                    raw=ttl_raw,
+                    fallback=DEFAULT_DOCS_CACHE_TTL_SECONDS,
+                )
+                parsed = DEFAULT_DOCS_CACHE_TTL_SECONDS
+            # Negative / non-finite TTL would make freshness checks nonsensical.
+            if math.isfinite(parsed) and parsed >= 0.0:
+                ttl = parsed
+            else:
+                logger.warning(
+                    "docs_config.invalid_ttl",
+                    raw=ttl_raw,
+                    fallback=DEFAULT_DOCS_CACHE_TTL_SECONDS,
+                )
         key = os.environ.get(CONTEXT7_KEY_ENV, "").strip() or None
         fallback_raw = os.environ.get(DOCS_LLMS_FALLBACK_ENV, "1").strip().lower()
         llms_fallback = fallback_raw not in {"0", "false", "no", "off"}
@@ -116,7 +136,11 @@ def get_docs_store(cfg: DocsConfig | None = None) -> MemoryStore:
 def doc_memory_key(library: str, topic: str) -> str:
     """Stable memory key for a library/topic pair."""
     lib = library.strip().lower().replace("/", "_").replace("\\", "_").replace(":", "_")
-    top = (topic.strip().lower() or "overview").replace("/", "_").replace("\\", "_")
+    # Sanitize topic the same way as library so colons cannot create ambiguous
+    # ``docs:lib:a:b`` keys that look like a four-segment path.
+    top = (
+        (topic.strip().lower() or "overview").replace("/", "_").replace("\\", "_").replace(":", "_")
+    )
     return f"docs:{lib}:{top}"
 
 
@@ -168,9 +192,8 @@ def _is_fresh(payload: dict[str, Any], ttl_seconds: float) -> bool:
     raw_cached_at = payload.get("cached_at")
     cached_at = _parse_cached_at(payload)
     if cached_at is None:
-        if isinstance(raw_cached_at, str) and raw_cached_at.strip():
-            return False
-        return True
+        # Malformed cached_at → stale; missing/legacy → treat as fresh.
+        return not (isinstance(raw_cached_at, str) and raw_cached_at.strip())
     if cached_at.tzinfo is None:
         cached_at = cached_at.replace(tzinfo=UTC)
     return datetime.now(UTC) - cached_at < timedelta(seconds=ttl_seconds)

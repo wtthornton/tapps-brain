@@ -357,8 +357,10 @@ def run_health_check(  # noqa: PLR0915
             # Resolve which backend to probe:
             #   1. Explicit hive_store parameter
             #   2. store._hive_store (already-configured backend from MemoryStore)
-            #   3. TAPPS_BRAIN_HIVE_DSN env var → Postgres via create_hive_backend (ADR-007)
-            _hive_dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            #   3. TAPPS_BRAIN_HIVE_DSN, else TAPPS_BRAIN_DATABASE_URL (unified stack)
+            _hive_dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN") or os.environ.get(
+                "TAPPS_BRAIN_DATABASE_URL"
+            )
             _resolved_hive: object | None = hive_store or getattr(store, "_hive_store", None)
             _owns_hive = False  # whether we opened it and must close it
 
@@ -372,7 +374,8 @@ def run_health_check(  # noqa: PLR0915
                 hive_health.status = "skipped"
                 hive_health.connected = False
                 warnings.append(
-                    "Hive not configured (set TAPPS_BRAIN_HIVE_DSN for Postgres; ADR-007)"
+                    "Hive not configured (set TAPPS_BRAIN_HIVE_DSN or "
+                    "TAPPS_BRAIN_DATABASE_URL for Postgres; ADR-007)"
                 )
             else:
                 hive = _resolved_hive

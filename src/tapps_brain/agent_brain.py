@@ -148,15 +148,18 @@ class AgentBrain:
         # MemoryStore.__init__ also performs this check, but we call it here so
         # AgentBrain users see the error before the backend is constructed.
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
-        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
-            try:
-                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+        if _auto_migrate_dsn:
+            from tapps_brain.postgres_connection import is_postgres_dsn
 
-                maybe_auto_migrate_private(_auto_migrate_dsn)
-            except Exception:
-                # MigrationDowngradeError and ImportError propagate; other
-                # transient errors are logged and deferred to the store.
-                raise
+            if is_postgres_dsn(_auto_migrate_dsn):
+                try:
+                    from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+                    maybe_auto_migrate_private(_auto_migrate_dsn)
+                except Exception:
+                    # MigrationDowngradeError and ImportError propagate; other
+                    # transient errors are logged and deferred to the store.
+                    raise
 
         # ADR-007: resolve the Postgres private backend from
         # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is
@@ -279,9 +282,21 @@ class AgentBrain:
                 raise BrainValidationError(
                     "share_with list must not be empty and must not contain blank group names"
                 )
-            # Save to each specified group
-            for group in share_with:
-                self._store.save(key=key, value=fact, tier=tier, agent_scope=f"group:{group}")
+            # One private row + Hive fan-out. Repeated save() on the same key
+            # would overwrite agent_scope and leave only the last group.
+            groups = [g.strip() for g in share_with]
+            self._store.save(key=key, value=fact, tier=tier, agent_scope=f"group:{groups[0]}")
+            if len(groups) > 1:
+                entry = self._store.get(key)
+                if entry is not None:
+                    from tapps_brain._save_propagation import propagate_group_save
+
+                    propagate_group_save(
+                        entry=entry,
+                        agent_scope="group",
+                        groups=groups,
+                        hive_store=self._hive,
+                    )
             return key
 
         self._store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)

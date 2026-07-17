@@ -20,6 +20,7 @@ from tapps_brain.decay import (
     DecayConfig,
     _days_since,
     _decay_reference_time,
+    _get_confidence_floor,
     _get_half_life,
     calculate_decayed_confidence,
 )
@@ -248,8 +249,9 @@ class MemoryGarbageCollector:
 
         reasons: list[str] = []
         effective = calculate_decayed_confidence(entry, self._config, now=now)
+        floor = _get_confidence_floor(entry.tier, self._config)
 
-        if effective <= self._config.confidence_floor:
+        if effective <= floor:
             days_at_floor = self._days_at_floor(entry, now)
             if days_at_floor >= self._floor_retention_days:
                 reasons.append("floor_retention")
@@ -273,13 +275,14 @@ class MemoryGarbageCollector:
         half_life = _get_half_life(entry.tier, self._config)
         ref_time = _decay_reference_time(entry)
         total_days = _days_since(ref_time, now)
+        floor = _get_confidence_floor(entry.tier, self._config)
 
-        if entry.confidence <= 0 or self._config.confidence_floor <= 0:
+        if entry.confidence <= 0 or floor <= 0:
             return total_days
 
         # Solve: floor = confidence * 0.5^(days_to_floor / half_life)
         # days_to_floor = half_life * log2(confidence / floor)
-        ratio = entry.confidence / self._config.confidence_floor
+        ratio = entry.confidence / floor
         if ratio <= 1.0:
             return total_days  # was already at or below floor from the start
 

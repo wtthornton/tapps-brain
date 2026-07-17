@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tapps_brain.injection import (
     _MAX_INJECT_HIGH,
     _MAX_INJECT_MEDIUM,
+    _budget_fractions,
     append_memory_to_answer,
     estimate_tokens,
     inject_memories,
@@ -205,6 +208,19 @@ class TestEstimateTokens:
         assert estimate_tokens("abcd") == 1
         assert estimate_tokens("a" * 8) == 2
         assert estimate_tokens("a" * 40) == 10
+
+
+class TestBudgetFractions:
+    def test_unnormalized_profile_fractions_are_scaled_to_one(self) -> None:
+        class _Oversize:
+            token_budget_memories = 0.9
+            token_budget_entities = 0.9
+            token_budget_edges = 0.9
+            token_budget_evidence = 0.9
+
+        fracs = _budget_fractions(_Oversize())
+        assert sum(fracs) == pytest.approx(1.0)
+        assert all(f == pytest.approx(0.25) for f in fracs)
 
 
 class TestAppendMemoryToAnswer:

@@ -87,6 +87,14 @@ class TestAnalyzeQueryNoBackend:
         result = analyze_query("", kg_backend=None)
         assert result.mentions == []
 
+    def test_empty_analysis_is_not_shared_mutable(self) -> None:
+        """Callers must not be able to poison a shared empty-analysis singleton."""
+        first = analyze_query("anything", kg_backend=None)
+        first.unmatched.append("poison")
+        second = analyze_query("anything-else", kg_backend=None)
+        assert second.unmatched == []
+        assert first is not second
+
 
 # ---------------------------------------------------------------------------
 # analyze_query — with a mocked KG backend

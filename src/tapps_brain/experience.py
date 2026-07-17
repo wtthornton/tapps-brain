@@ -114,12 +114,19 @@ def _ref_to_lookup(ref: dict[str, Any]) -> tuple[str, str]:
 
 def _build_entity_lookup(
     entities: list[EntitySpec],
-    entity_ids: list[str],
+    entity_ids: list[str | None],
 ) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
-    """Map upserted entities to UUIDs for same-transaction edge key resolution."""
+    """Map upserted entities to UUIDs for same-transaction edge key resolution.
+
+    *entity_ids* is index-aligned with *entities*; ``None`` slots (failed
+    upserts) are skipped so a later success is never paired with an earlier
+    entity's UUID.
+    """
     typed: dict[tuple[str, str], str] = {}
     by_name: dict[str, str] = {}
-    for spec, entity_id in zip(entities, entity_ids, strict=False):
+    for spec, entity_id in zip(entities, entity_ids, strict=True):
+        if entity_id is None:
+            continue
         typed[(spec.entity_type, spec.canonical_name)] = entity_id
         by_name[spec.canonical_name] = entity_id
     return typed, by_name
@@ -495,7 +502,7 @@ class ExperienceEventRecorder:
         cur: Any,  # noqa: ANN401 — psycopg cursor
         edges: list[EdgeSpec],
         entities: list[EntitySpec],
-        entity_ids: list[str],
+        entity_ids: list[str | None],
     ) -> tuple[list[str], list[dict[str, Any]]]:
         """Upsert edges after resolving key/ref endpoints against same-event entities."""
         edge_ids: list[str] = []
@@ -578,9 +585,13 @@ class ExperienceEventRecorder:
         self,
         cur: Any,  # noqa: ANN401 — psycopg cursor
         entities: list[EntitySpec],
-    ) -> tuple[list[str], list[dict[str, Any]]]:
-        """Upsert KG entities; isolate failures via savepoints (TAP-4274)."""
-        entity_ids: list[str] = []
+    ) -> tuple[list[str | None], list[dict[str, Any]]]:
+        """Upsert KG entities; isolate failures via savepoints (TAP-4274).
+
+        Returns an index-aligned list (``None`` for failed upserts) so edge
+        key resolution never pairs a later entity with an earlier UUID.
+        """
+        entity_ids: list[str | None] = [None] * len(entities)
         warnings: list[dict[str, Any]] = []
 
         for index, entity_spec in enumerate(entities):
@@ -604,7 +615,7 @@ class ExperienceEventRecorder:
                 )
                 row = cur.fetchone()
                 if row:
-                    entity_ids.append(str(row[0]))
+                    entity_ids[index] = str(row[0])
                 cur.execute(f"RELEASE SAVEPOINT {savepoint}")
             except Exception as exc:
                 cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
@@ -638,12 +649,13 @@ class ExperienceEventRecorder:
             The full transaction is rolled back before this is raised.
         """
         event_id = str(_uuid_mod.uuid4())
-        entity_ids: list[str] = []
+        entity_ids: list[str | None] = []
         edge_ids: list[str] = []
         evidence_ids: list[str] = []
         memory_key: str | None = None
         edge_warnings: list[dict[str, Any]] = []
         entity_warnings: list[dict[str, Any]] = []
+        resolved_entity_ids: list[str] = []
 
         log = logger.bind(event_type=event.event_type, event_id=event_id)
 
@@ -731,7 +743,8 @@ class ExperienceEventRecorder:
                     evidence_ids.append(str(row[0]))
 
             # Step 6 — patch event cross-reference columns.
-            first_entity_id = entity_ids[0] if entity_ids else None
+            resolved_entity_ids = [eid for eid in entity_ids if eid is not None]
+            first_entity_id = resolved_entity_ids[0] if resolved_entity_ids else None
             first_edge_id = edge_ids[0] if edge_ids else None
             if memory_key or first_entity_id or first_edge_id:
                 cur.execute(
@@ -742,7 +755,7 @@ class ExperienceEventRecorder:
         log.info(
             "experience_event_recorded",
             memory_key=memory_key,
-            entity_count=len(entity_ids),
+            entity_count=len(resolved_entity_ids),
             edge_count=len(edge_ids),
             evidence_count=len(evidence_ids),
         )
@@ -750,7 +763,7 @@ class ExperienceEventRecorder:
         return ExperienceResult(
             event_id=event_id,
             memory_key=memory_key,
-            entity_ids=entity_ids,
+            entity_ids=resolved_entity_ids,
             edge_ids=edge_ids,
             evidence_ids=evidence_ids,
             warnings=edge_warnings + entity_warnings,
@@ -797,7 +810,7 @@ class ExperienceEventRecorder:
         with self._cm.project_context(self._project_id) as conn, conn.cursor() as cur:
             for event, (emb_pgv, emb_model_id) in zip(events, event_embeddings, strict=True):
                 event_id = str(_uuid_mod.uuid4())
-                entity_ids: list[str] = []
+                entity_ids: list[str | None] = []
                 edge_ids: list[str] = []
                 evidence_ids: list[str] = []
                 memory_key: str | None = None
@@ -877,7 +890,8 @@ class ExperienceEventRecorder:
                     if row:
                         evidence_ids.append(str(row[0]))
 
-                first_entity_id = entity_ids[0] if entity_ids else None
+                resolved_entity_ids = [eid for eid in entity_ids if eid is not None]
+                first_entity_id = resolved_entity_ids[0] if resolved_entity_ids else None
                 first_edge_id = edge_ids[0] if edge_ids else None
                 if memory_key or first_entity_id or first_edge_id:
                     cur.execute(
@@ -889,7 +903,7 @@ class ExperienceEventRecorder:
                     ExperienceResult(
                         event_id=event_id,
                         memory_key=memory_key,
-                        entity_ids=entity_ids,
+                        entity_ids=resolved_entity_ids,
                         edge_ids=edge_ids,
                         evidence_ids=evidence_ids,
                         warnings=edge_warnings + entity_warnings,

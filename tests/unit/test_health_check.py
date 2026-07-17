@@ -306,13 +306,41 @@ def test_run_health_check_hive_migration_version_populated(
 def test_run_health_check_hive_no_dsn_reports_skipped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Without TAPPS_BRAIN_HIVE_DSN and no explicit hive_store, hive status is 'skipped'."""
+    """Without Hive/Database DSN and no explicit hive_store, hive status is 'skipped'."""
     monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
     # v3: no SQLite fallback — hive requires Postgres DSN (ADR-007)
     report = run_health_check(project_root=tmp_path, check_hive=True)
     assert report.hive.status == "skipped"
     assert report.hive.connected is False
     assert any("hive" in w.lower() for w in report.warnings)
+
+
+def test_run_health_check_hive_uses_database_url_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unified-stack installs set only TAPPS_BRAIN_DATABASE_URL — health should open Hive."""
+    monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+    monkeypatch.setenv("TAPPS_BRAIN_DATABASE_URL", "postgres://localhost/tapps_brain")
+
+    mock_hive = MagicMock()
+    mock_hive.count_by_namespace.return_value = {"default": 2}
+    mock_hive.close = MagicMock()
+    mock_reg = MagicMock()
+    mock_reg.list_agents.return_value = [{"agent_id": "a1"}]
+
+    import tapps_brain.backends as _backends
+
+    create = MagicMock(return_value=mock_hive)
+    monkeypatch.setattr(_backends, "create_hive_backend", create)
+    monkeypatch.setattr(_backends, "AgentRegistry", lambda **_: mock_reg)
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: _make_mock_store(tmp_path))
+
+    report = run_health_check(project_root=tmp_path, check_hive=True)
+    create.assert_called_once_with("postgres://localhost/tapps_brain")
+    assert report.hive.connected is True
+    assert report.hive.entries == 2
+    mock_hive.close.assert_called()
 
 
 def test_run_health_check_hive_no_agents_warning(

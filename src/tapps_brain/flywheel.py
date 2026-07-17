@@ -192,8 +192,10 @@ class FeedbackProcessor:
                         },
                     )
                     adjustments += 1
+                # Advance cursor only for applied events — a ``since`` filter must
+                # not skip confidence updates on a later call without ``since``.
+                last_ts, last_id = ev.timestamp, ev.id
             processed += 1
-            last_ts, last_id = ev.timestamp, ev.id
         if last_ts is not None and last_id is not None:
             store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
                 _FEEDBACK_CURSOR_KEY,
@@ -398,11 +400,12 @@ def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:
         hits = []
     if not hits:
         return 1.0
-    best = 1.0
+    # Start at 0 so context (0.9) can down-weight; max() over hits then lifts.
+    best = 0.0
     for e in hits:
         t = _tier_str(e.tier)
         best = max(best, _TIER_GAP_WEIGHT.get(t, 1.0))
-    return best
+    return best if best > 0.0 else 1.0
 
 
 def knowledge_gap_summary_for_diagnostics(store: MemoryStore) -> str | None:

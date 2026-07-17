@@ -340,6 +340,14 @@ class TestPostgresConnectionManager:
         cm = PostgresConnectionManager("postgresql://localhost/test")
         assert cm.dsn == "postgresql://localhost/test"
 
+    def test_scheme_matching_is_case_insensitive(self) -> None:
+        from tapps_brain.postgres_connection import PostgresConnectionManager, is_postgres_dsn
+
+        assert is_postgres_dsn("PostgreSQL://localhost/test")
+        assert is_postgres_dsn("POSTGRES://localhost/test")
+        cm = PostgresConnectionManager("PostgreSQL://localhost/test")
+        assert cm.dsn == "PostgreSQL://localhost/test"
+
     # -- Pool size constraints ------------------------------------------------
 
     def test_pool_max_less_than_one_raises(self) -> None:

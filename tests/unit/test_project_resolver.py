@@ -62,6 +62,16 @@ class TestResolvePrecedence:
         )
         assert result == "lower-header"
 
+    def test_x_project_id_header_accepted(self) -> None:
+        """HTTP canonical ``X-Project-Id`` must resolve (not only ``X-Tapps-Project``)."""
+        from tapps_brain.project_resolver import HTTP_HEADER_NAME
+
+        result = resolve_project_id(
+            headers={HTTP_HEADER_NAME: "from-http-header"},
+            env={ENV_VAR: "from-env"},
+        )
+        assert result == "from-http-header"
+
     def test_blank_values_skipped(self) -> None:
         result = resolve_project_id(
             meta_override="   ",

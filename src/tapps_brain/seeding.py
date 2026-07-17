@@ -20,6 +20,7 @@ value is exposed on ``StoreHealthReport.profile_seed_version``, CLI
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -293,8 +294,15 @@ def _do_seed(  # noqa: PLR0915
 
 
 def _slugify(text: str) -> str:
-    """Convert text to a simple slug for use as a memory key suffix."""
-    return text.lower().replace(" ", "-").replace("_", "-")
+    """Convert text to a simple slug for use as a memory key suffix.
+
+    Strips characters that are illegal in MemoryEntry keys (e.g. ``+``, ``#``)
+    so languages like ``C++`` / ``C#`` seed successfully.
+    """
+    slug = text.lower().strip().replace(" ", "-").replace("_", "-")
+    slug = re.sub(r"[^a-z0-9._-]+", "-", slug)
+    slug = re.sub(r"[-_.]{2,}", "-", slug).strip("-._")
+    return slug or "x"
 
 
 def _set_seeded_from(store: MemoryStore, key: str) -> None:

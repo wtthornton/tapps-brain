@@ -270,6 +270,19 @@ class TestExportMarkdown:
         assert "created:" in text
         assert "confidence" in text
 
+    def test_export_to_markdown_includes_ephemeral_tier(self) -> None:
+        from tapps_brain.io import export_to_markdown
+        from tapps_brain.models import MemoryEntry, MemoryTier
+
+        entries = [
+            MemoryEntry(key="eph-1", value="momentary", tier=MemoryTier.ephemeral),
+            MemoryEntry(key="pat-1", value="pattern val", tier=MemoryTier.pattern),
+        ]
+        result = export_to_markdown(entries, group_by="tier")
+        assert "# Ephemeral" in result
+        assert "eph-1" in result
+        assert "# Pattern" in result
+
 
 # ---------------------------------------------------------------------------
 # Import tests

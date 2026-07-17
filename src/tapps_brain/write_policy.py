@@ -175,7 +175,11 @@ class LLMWritePolicy:
                 reasoning="rate limit exceeded — fallback to ADD",
             )
 
-        top_candidates = candidates[: self._candidates_limit]
+        top_candidates = sorted(
+            candidates,
+            key=lambda c: getattr(c, "updated_at", "") or "",
+            reverse=True,
+        )[: self._candidates_limit]
         try:
             return self._call_llm(key, value, top_candidates)
         except Exception:

@@ -40,6 +40,12 @@ class TestSessionSummarySave:
         assert result["tier"] in ("short-term", "context", "pattern")
         assert result["scope"] == "project"
 
+    def test_session_key_uses_utc_date(self, tmp_path: Path):
+        """Session key date segment must use UTC, not the local calendar date."""
+        result = session_summary_save("utc date check", project_dir=tmp_path)
+        utc_date = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
+        assert result["key"].startswith(f"session.{utc_date}.")
+
     def test_default_tags(self, tmp_path: Path):
         result = session_summary_save("Something happened", project_dir=tmp_path)
         assert "date" in result["tags"]

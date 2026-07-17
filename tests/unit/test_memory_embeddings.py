@@ -66,6 +66,11 @@ class TestQuantizeEmbeddingInt8:
         back = dequantize_embedding_int8(blob, renormalize=False)
         assert back == pytest.approx([1.0, -1.0])
 
+    def test_nan_and_inf_do_not_crash(self) -> None:
+        blob = quantize_embedding_int8([float("nan"), float("inf"), float("-inf")])
+        back = dequantize_embedding_int8(blob, renormalize=False)
+        assert back == pytest.approx([0.0, 1.0, -1.0])
+
     def test_cosine_self_high_after_renormalize(self) -> None:
         """Random unit vectors: cosine(u, rq(u)) should stay very high after int8 + L2 fixup."""
         import random

@@ -197,3 +197,35 @@ class TestGcReasonAggregation:
             "floor_retention": 1,
             "session_expired": 1,
         }
+
+
+def test_floor_retention_uses_layer_confidence_floor() -> None:
+    """Architectural entries at their layer floor must still qualify for archival."""
+    from datetime import UTC, datetime, timedelta
+
+    from tapps_brain.decay import DecayConfig
+    from tapps_brain.gc import MemoryGarbageCollector
+    from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+
+    dcfg = DecayConfig(
+        confidence_floor=0.05,
+        layer_confidence_floors={
+            "architectural": 0.10,
+            "pattern": 0.10,
+            "procedural": 0.10,
+            "context": 0.05,
+        },
+    )
+    gc = MemoryGarbageCollector(config=dcfg, floor_retention_days=30)
+    old = (datetime.now(tz=UTC) - timedelta(days=2000)).isoformat()
+    entry = MemoryEntry(
+        key="arch-old",
+        value="decision",
+        tier=MemoryTier.architectural,
+        source=MemorySource.human,
+        confidence=0.9,
+        created_at=old,
+        updated_at=old,
+    )
+    reasons = gc._archive_reasons(entry, datetime.now(tz=UTC))
+    assert "floor_retention" in reasons

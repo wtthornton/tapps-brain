@@ -582,3 +582,8 @@ class TestEffectiveHalfLife:
             current = PromotionEngine.effective_half_life(base, count)
             assert current > prev, f"half-life did not grow at reinforce_count={count}"
             prev = current
+
+    def test_negative_reinforce_count_clamped(self) -> None:
+        """Corrupt negative reinforce_count must not raise (log1p domain error)."""
+        result = PromotionEngine.effective_half_life(30, -1)
+        assert result == pytest.approx(30.0)

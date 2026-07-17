@@ -310,6 +310,8 @@ def precision_at_k(ranked_doc_ids: list[str], qrels: dict[str, int], k: int) -> 
 
 def recall_at_k(ranked_doc_ids: list[str], qrels: dict[str, int], k: int) -> float:
     """Fraction of relevant judged docs that appear in top-k."""
+    if k <= 0:
+        return 0.0
     relevant = {d for d, g in qrels.items() if _is_relevant(g)}
     if not relevant:
         return 0.0
@@ -328,6 +330,8 @@ def reciprocal_rank(ranked_doc_ids: list[str], qrels: dict[str, int]) -> float:
 
 def dcg_at_k(ranked_doc_ids: list[str], qrels: dict[str, int], k: int) -> float:
     """DCG@k using graded relevance as gain, log2(rank+1) discount."""
+    if k <= 0:
+        return 0.0
     total = 0.0
     for i, d in enumerate(ranked_doc_ids[:k]):
         gain = float(qrels.get(d, 0))
@@ -337,6 +341,8 @@ def dcg_at_k(ranked_doc_ids: list[str], qrels: dict[str, int], k: int) -> float:
 
 def ideal_dcg_at_k(qrels: dict[str, int], k: int) -> float:
     """IDCG@k from all judged gains for the query."""
+    if k <= 0:
+        return 0.0
     gains = sorted((float(g) for g in qrels.values()), reverse=True)[:k]
     return sum(g / math.log2(i + 2) for i, g in enumerate(gains))
 

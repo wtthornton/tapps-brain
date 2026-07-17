@@ -346,6 +346,8 @@ class _SavePrep:
     source_agent: str
     mg_explicit: str | None | object
     conflict_valid_at: str | None
+    effective_key: str | None = None
+    """When write-policy UPDATE remaps onto an existing candidate key."""
 
 
 _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
@@ -462,10 +464,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         first connection.
         """
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
-        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
-            from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+        if _auto_migrate_dsn:
+            from tapps_brain.postgres_connection import is_postgres_dsn
 
-            maybe_auto_migrate_private(_auto_migrate_dsn)
+            if is_postgres_dsn(_auto_migrate_dsn):
+                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+                maybe_auto_migrate_private(_auto_migrate_dsn)
 
     @staticmethod
     def _resolve_private_backend(
@@ -797,7 +802,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """
         project_id = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
         dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
-        if not project_id or not dsn.startswith(("postgres://", "postgresql://")):
+        from tapps_brain.postgres_connection import is_postgres_dsn
+
+        if not project_id or not is_postgres_dsn(dsn):
             return None
         try:
             from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -1105,7 +1112,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             MetricsTimer(self._metrics, "store.save_ms"),
         ):
             entry, existing = self._build_and_assign_entry(
-                key=key,
+                key=prep.effective_key or key,
                 value=prep.value,
                 tier=prep.tier,
                 source=source,
@@ -1130,10 +1137,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 superseded_by=superseded_by,
             )
 
-            entry = self._embed_entry(key, prep.value, entry)
-            self._persist_entry_or_rollback(key, entry, existing=existing, dedup=dedup)
+            persist_key = prep.effective_key or key
+            entry = self._embed_entry(persist_key, prep.value, entry)
+            self._persist_entry_or_rollback(persist_key, entry, existing=existing, dedup=dedup)
             self._postprocess_saved_entry(
-                key,
+                persist_key,
                 entry,
                 existing,
                 value=prep.value,
@@ -1209,16 +1217,21 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         # Phase 3 — optional write-policy gate (may short-circuit).
         wp_short = self._apply_write_policy(key, value)
-        if wp_short is not None:
+        update_key: str | None = None
+        if isinstance(wp_short, dict) and wp_short.get("write_policy") == "update":
+            update_key = str(wp_short["target_key"])
+        elif wp_short is not None:
             return wp_short
 
         # Phase 4 — dedup fast-path.
-        dedup_short = self._handle_dedup(key, value, dedup)
+        dedup_short = self._handle_dedup(key if update_key is None else update_key, value, dedup)
         if dedup_short is not None:
             return dedup_short
 
         # Phase 5 — conflict detection (opt-in) marks superseded entries.
-        conflict_valid_at = self._handle_conflicts(key, value, tier, conflict_check)
+        conflict_valid_at = self._handle_conflicts(
+            key if update_key is None else update_key, value, tier, conflict_check
+        )
 
         return _SavePrep(
             value=value,
@@ -1227,6 +1240,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             source_agent=source_agent,
             mg_explicit=mg_explicit,
             conflict_valid_at=conflict_valid_at,
+            effective_key=update_key,
         )
 
     def _postprocess_saved_entry(
@@ -1375,9 +1389,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         )
         if not isinstance(prep, _SavePrep):
             return prep
+        persist_key = prep.effective_key or key
         try:
             entry, existing = self._build_and_assign_entry(
-                key=key,
+                key=persist_key,
                 value=prep.value,
                 tier=prep.tier,
                 source=item.get("source", "agent"),
@@ -1401,7 +1416,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 stale_date=item.get("stale_date"),
                 superseded_by=item.get("superseded_by"),
             )
-            entry = self._embed_entry(key, prep.value, entry)
+            entry = self._embed_entry(persist_key, prep.value, entry)
         except _PydanticValidationError as exc:
             # Mirror memory_save's TAP-747 handling per row so one bad row
             # surfaces a structured error without aborting the batch.
@@ -1461,7 +1476,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 lifetime_count=rate_result.current_lifetime_count,
             )
 
-    def _apply_write_policy(
+    def _apply_write_policy(  # noqa: PLR0911
         self,
         key: str,
         value: str,
@@ -1496,6 +1511,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return {"write_policy": "noop", "key": key, "reasoning": result.reasoning}
 
         if result.decision == WriteDecision.DELETE and result.target_key:
+            candidate_keys = {c.key for c in candidates}
+            if result.target_key not in candidate_keys:
+                logger.warning(
+                    "memory_save_write_policy_delete_unscoped",
+                    key=key,
+                    target_key=result.target_key,
+                    reasoning=result.reasoning,
+                )
+                # Fall through to ADD rather than deleting an arbitrary key.
+                return None
             self._metrics.increment("store.save.write_policy.delete")
             logger.info(
                 "memory_save_write_policy_delete",
@@ -1510,7 +1535,30 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 "reasoning": result.reasoning,
             }
 
-        # ADD / UPDATE / unexpected → fall through.
+        if result.decision == WriteDecision.UPDATE and result.target_key:
+            candidate_keys = {c.key for c in candidates}
+            if result.target_key not in candidate_keys:
+                logger.warning(
+                    "memory_save_write_policy_update_unscoped",
+                    key=key,
+                    target_key=result.target_key,
+                    reasoning=result.reasoning,
+                )
+                return None  # fall through to ADD under the incoming key
+            self._metrics.increment("store.save.write_policy.update")
+            logger.info(
+                "memory_save_write_policy_update",
+                key=key,
+                target_key=result.target_key,
+                reasoning=result.reasoning,
+            )
+            return {
+                "write_policy": "update",
+                "target_key": result.target_key,
+                "reasoning": result.reasoning,
+            }
+
+        # ADD / unexpected → fall through.
         if result.decision != WriteDecision.ADD:
             logger.debug(
                 "memory_save_write_policy_passthrough",

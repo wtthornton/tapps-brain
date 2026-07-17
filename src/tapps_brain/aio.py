@@ -34,6 +34,7 @@ import os
 import threading
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from tapps_brain.postgres_connection import is_postgres_dsn
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -331,7 +332,7 @@ class AsyncMemoryStore:
             or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
             or ""
         ).strip()
-        if dsn.startswith(("postgres://", "postgresql://")):
+        if is_postgres_dsn(dsn):
             from tapps_brain.backends import create_async_private_backend
 
             project_id = getattr(store, "_project_id", None) or ""

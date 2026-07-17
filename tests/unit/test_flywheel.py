@@ -74,6 +74,24 @@ class TestConfidencePipeline:
         finally:
             store.close()
 
+    def test_process_feedback_since_does_not_advance_cursor(self, tmp_path: Path) -> None:
+        root = tmp_path / "since2"
+        root.mkdir()
+        store = MemoryStore(root)
+        try:
+            store.save("sk", "x", tier="context", source="agent", confidence=0.5)
+            store.rate_recall("sk", rating="helpful")
+            FeedbackProcessor(FlywheelConfig()).process_feedback(
+                store, since="2099-01-01T00:00:00+00:00"
+            )
+            r2 = FeedbackProcessor(FlywheelConfig()).process_feedback(store)
+            assert r2["confidence_adjustments"] >= 1
+            e = store.get("sk")
+            assert e is not None
+            assert e.confidence != 0.5
+        finally:
+            store.close()
+
     def test_process_feedback_bad_cursor_json(self, tmp_path: Path) -> None:
         root = tmp_path / "pc"
         root.mkdir()
@@ -564,3 +582,18 @@ class TestCrossProjectAggregation:
         monkeypatch.setattr(flywheel_mod, "aggregate_hive_feedback", lambda _h: rep)
         out = process_hive_feedback(hs)
         assert out["updated"] == 0
+
+
+    def test_estimate_tier_weight_context_downweight(self, tmp_path: Path) -> None:
+        """context-only hits use 0.9, not the default 1.0 floor."""
+        root = tmp_path / "tw"
+        root.mkdir()
+        store = MemoryStore(root)
+        try:
+            class _E:
+                tier = "context"
+
+            store.search = lambda _q: [_E()]  # type: ignore[method-assign]
+            assert flywheel_mod._estimate_tier_weight(store, "q") == 0.9
+        finally:
+            store.close()

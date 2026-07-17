@@ -6,6 +6,7 @@ clock and optionally boosting confidence within source-based ceilings.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 
 import structlog
@@ -45,8 +46,11 @@ def reinforce(
     if now is None:
         now = datetime.now(tz=UTC)
 
-    # Clamp boost
-    boost = max(0.0, min(confidence_boost, _MAX_CONFIDENCE_BOOST))
+    # Non-finite boosts (NaN / ±inf) must not poison confidence — treat as 0.
+    if not math.isfinite(confidence_boost):
+        boost = 0.0
+    else:
+        boost = max(0.0, min(confidence_boost, _MAX_CONFIDENCE_BOOST))
 
     # Calculate new confidence with ceiling enforcement
     ceiling = _get_ceiling(entry.source, config)

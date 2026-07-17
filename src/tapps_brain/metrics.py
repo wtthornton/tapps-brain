@@ -239,17 +239,33 @@ class _Reservoir:
             return HistogramStats()
 
         sorted_samples = sorted(self._samples)
-        n = len(sorted_samples)
 
         return HistogramStats(
             count=self._count,
             min=self._min,
             max=self._max,
             mean=self._sum / self._count,
-            p50=sorted_samples[int(n * 0.5)] if n > 0 else 0.0,
-            p95=sorted_samples[min(int(n * 0.95), n - 1)] if n > 0 else 0.0,
-            p99=sorted_samples[min(int(n * 0.99), n - 1)] if n > 0 else 0.0,
+            p50=_percentile(sorted_samples, 0.50),
+            p95=_percentile(sorted_samples, 0.95),
+            p99=_percentile(sorted_samples, 0.99),
         )
+
+
+def _percentile(sorted_samples: list[float], p: float) -> float:
+    """Linear-interpolation percentile over a non-empty sorted sample list.
+
+    Uses the standard ``rank = p * (n - 1)`` formula so even-length samples
+    (e.g. ``[1, 100]`` at p50) return the midpoint rather than the upper
+    nearest-rank value that ``int(n * p)`` incorrectly selected.
+    """
+    n = len(sorted_samples)
+    if n == 1:
+        return sorted_samples[0]
+    rank = p * (n - 1)
+    lo = int(rank)
+    hi = min(lo + 1, n - 1)
+    frac = rank - lo
+    return sorted_samples[lo] * (1.0 - frac) + sorted_samples[hi] * frac
 
 
 # ---------------------------------------------------------------------------

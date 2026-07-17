@@ -44,6 +44,14 @@ class TestReservoir:
         assert stats.mean == 30.0
         assert stats.p50 == 30.0
 
+    def test_p50_even_sample_count_is_midpoint(self):
+        """Even-length samples must not pick the upper nearest-rank value."""
+        r = _Reservoir()
+        r.add(1.0)
+        r.add(100.0)
+        stats = r.stats()
+        assert stats.p50 == 50.5
+
     def test_reservoir_overflow(self):
         """When more than _RESERVOIR_SIZE values are added, stats still work."""
         r = _Reservoir()

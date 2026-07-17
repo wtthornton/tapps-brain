@@ -80,17 +80,26 @@ def tokenize_lexical(
     return _TOKEN_RUN.findall(raw)
 
 
-def fts_query_terms(query: str, *, fts_path_splits: bool) -> list[str]:
+def fts_query_terms(
+    query: str,
+    *,
+    fts_path_splits: bool,
+    ascii_fold: bool = False,
+) -> list[str]:
     """Terms for FTS5 literal phrases (AND-combined in :func:`build_fts_match_query`).
 
     Splits on whitespace; when *fts_path_splits* is True, also splits segments
     on ``/`` and ``\\`` so ``src/models`` becomes ``src``, ``models``. Each
     segment is further split into alphanumeric runs (``foo.py`` → ``foo``, ``py``).
     Does **not** apply camelCase splitting (avoids over-constraining AND queries).
+    When *ascii_fold* is True, applies the same NFKD folding as BM25 so accented
+    queries (e.g. ``café`` → ``cafe``) match folded index terms.
     """
     s = query.strip()
     if not s:
         return []
+    if ascii_fold:
+        s = ascii_fold_text(s)
     chunks = re.split(r"[\s/\\]+", s) if fts_path_splits else s.split()
     terms: list[str] = []
     for ch in chunks:
@@ -100,9 +109,14 @@ def fts_query_terms(query: str, *, fts_path_splits: bool) -> list[str]:
     return terms
 
 
-def build_fts_match_query(query: str, *, fts_path_splits: bool) -> str:
+def build_fts_match_query(
+    query: str,
+    *,
+    fts_path_splits: bool,
+    ascii_fold: bool = False,
+) -> str:
     """Build a safe FTS5 MATCH string: AND of double-quoted literals."""
-    tokens = fts_query_terms(query, fts_path_splits=fts_path_splits)
+    tokens = fts_query_terms(query, fts_path_splits=fts_path_splits, ascii_fold=ascii_fold)
     if not tokens:
         return ""
     return " ".join(f'"{t.replace(chr(34), chr(34) + chr(34))}"' for t in tokens)

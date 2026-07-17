@@ -33,20 +33,27 @@ class LlmsTxtError(Exception):
 
 
 def extract_topic_section(content: str, topic: str) -> str:
-    """Return the markdown section whose heading contains *topic*, or full body."""
+    """Return the markdown section whose heading contains *topic*, or full body.
+
+    Includes nested subsections (deeper ``#`` levels) under the matched heading.
+    Ends only when another heading at the same or higher level appears.
+    """
     lines = content.splitlines()
     section_lines: list[str] = []
     in_section = False
+    section_level = 0
     topic_lower = topic.lower()
 
     for line in lines:
         if line.startswith("#"):
+            level = len(line) - len(line.lstrip("#"))
             heading = line.lstrip("#").strip().lower()
             if topic_lower in heading:
                 in_section = True
+                section_level = level
                 section_lines.append(line)
                 continue
-            if in_section:
+            if in_section and level <= section_level:
                 break
         if in_section:
             section_lines.append(line)

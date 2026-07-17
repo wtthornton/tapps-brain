@@ -906,11 +906,22 @@ def _latency_bucket_label(lower_ms: float, upper_ms: float) -> str:
 
 
 def _percentile_from_sorted(sorted_samples: list[float], pct: float) -> float:
+    """Linear-interpolation percentile (``pct`` is 0-100).
+
+    Matches :func:`tapps_brain.metrics._percentile` so even-length samples
+    (e.g. ``[1, 100]`` at p50) return the midpoint rather than the upper
+    nearest-rank value that ``int(n * pct / 100)`` incorrectly selected.
+    """
     n = len(sorted_samples)
     if n == 0:
         return 0.0
-    idx = min(int(n * pct / 100.0), n - 1)
-    return sorted_samples[idx]
+    if n == 1:
+        return sorted_samples[0]
+    rank = (pct / 100.0) * (n - 1)
+    lo = int(rank)
+    hi = min(lo + 1, n - 1)
+    frac = rank - lo
+    return sorted_samples[lo] * (1.0 - frac) + sorted_samples[hi] * frac
 
 
 def get_retrieval_latency_detail() -> dict[str, object]:

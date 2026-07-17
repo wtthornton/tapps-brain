@@ -360,8 +360,31 @@ class ContradictionDetector:
             return None
 
         try:
+            # Confirm we are inside a git work tree before treating a missing
+            # ref as a contradiction (git init without commits has no HEAD).
+            repo_probe = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                capture_output=True,
+                text=True,
+                cwd=str(self._project_root),
+                timeout=5,
+                check=False,
+            )
+            if repo_probe.returncode != 0:
+                logger.debug(
+                    "branch_check_skipped",
+                    branch=entry.branch,
+                    returncode=repo_probe.returncode,
+                    stderr=repo_probe.stderr.strip(),
+                )
+                return None
+
+            # Exact ref lookup — `git branch --list` treats the argument as a
+            # glob, so names like "*" would match every branch and produce
+            # false "branch gone" contradictions when the literal name is
+            # absent from the expanded list.
             result = subprocess.run(
-                ["git", "branch", "--list", entry.branch],
+                ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{entry.branch}"],
                 capture_output=True,
                 text=True,
                 cwd=str(self._project_root),
@@ -369,22 +392,10 @@ class ContradictionDetector:
                 check=False,
             )
             if result.returncode != 0:
-                # Not a git repository or git error — skip check rather than false-positive.
-                logger.debug(
-                    "branch_check_skipped",
-                    branch=entry.branch,
-                    returncode=result.returncode,
-                    stderr=result.stderr.strip(),
-                )
-                return None
-            branches = [
-                b.strip().removeprefix("* ").strip() for b in result.stdout.strip().splitlines()
-            ]
-            if entry.branch not in branches:
                 contradiction = Contradiction(
                     memory_key=entry.key,
                     reason=(f"Memory is scoped to branch '{entry.branch}' which no longer exists."),
-                    evidence="git branch --list",
+                    evidence="git show-ref --verify refs/heads/<branch>",
                 )
                 logger.debug(
                     "contradiction_detected",

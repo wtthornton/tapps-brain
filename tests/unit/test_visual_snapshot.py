@@ -1432,6 +1432,22 @@ def test_get_retrieval_latency_detail_with_samples() -> None:
         _otel._rm_latency_samples = orig_samples
 
 
+def test_retrieval_latency_p50_interpolates_even_samples() -> None:
+    """Even-length latency samples must not bias p50 to the upper nearest-rank."""
+    import tapps_brain.otel_tracer as _otel
+    from tapps_brain.otel_tracer import get_retrieval_latency_detail, rm_add_recall_latency_ms
+
+    orig_samples = _otel._rm_latency_samples
+    try:
+        _otel._rm_latency_samples = []
+        rm_add_recall_latency_ms(1.0)
+        rm_add_recall_latency_ms(100.0)
+        detail = get_retrieval_latency_detail()
+        assert detail["latency_p50_ms"] == pytest.approx(50.5)
+    finally:
+        _otel._rm_latency_samples = orig_samples
+
+
 def test_collect_retrieval_detail_from_store(tmp_path: Path) -> None:
     """_collect_retrieval_detail includes embedding model when provider is set."""
     store = MemoryStore(tmp_path)
