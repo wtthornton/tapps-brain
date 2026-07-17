@@ -564,7 +564,11 @@ def _recency_score(last_accessed: str) -> float:
 
     try:
         ts = datetime.fromisoformat(last_accessed.replace("Z", "+00:00"))
-    except ValueError:
+        # Imported / legacy rows may be tz-naive — assume UTC so ranking does
+        # not raise TypeError when subtracting from an aware ``now``.
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+    except (ValueError, TypeError):
         return 0.0
     age_days = max(0.0, (datetime.now(tz=UTC) - ts).total_seconds() / 86400.0)
     return 1.0 / (1.0 + age_days / 30.0)

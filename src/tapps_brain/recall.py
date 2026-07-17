@@ -72,7 +72,11 @@ def _compute_recall_quality(
         if isinstance(raw_ts, str) and raw_ts:
             try:
                 ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-            except ValueError:
+                # Imported / legacy rows may be tz-naive — assume UTC (matches
+                # tapps_brain.models._parse_iso / decay._days_since).
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+            except (ValueError, TypeError):
                 continue
             age = (now - ts).total_seconds() / 86400.0
             if age >= 0:

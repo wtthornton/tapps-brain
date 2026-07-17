@@ -64,6 +64,10 @@ class BloomFilter:
         self._hash_count = max(1, self._optimal_hashes(self._size, expected_items))
         self._bits = bytearray(self._size // 8 + 1)
         self._count = 0
+        # After auto-resize clears bits without a full rebuild, force
+        # might_contain() → True so callers (e.g. MemoryStore dedup) always
+        # run the exact membership scan until rebuild()/clear().
+        self._force_scan: bool = False
 
     @property
     def bit_size(self) -> int:
@@ -101,6 +105,7 @@ class BloomFilter:
         """Reset the filter to an empty state (all bits zero, count zero)."""
         self._bits = bytearray(self._size // 8 + 1)
         self._count = 0
+        self._force_scan = False
 
     def rebuild(self, items: Iterable[str]) -> None:
         """Clear the filter and re-add *items*.
@@ -117,30 +122,17 @@ class BloomFilter:
         """Add an item to the filter.
 
         When ``count`` reaches or exceeds ``expected_items + expected_items // 2``
-        (>= 1.5x for even values) the filter auto-resizes
-        (doubles the underlying bit array) and rebuilds from the items already
-        in the filter's logical set.  This keeps the false-positive rate bounded
-        rather than letting it grow without limit as the store expands beyond
-        the initial capacity estimate.  Callers that previously captured items
-        for a manual rebuild can skip that after the auto-resize path fires
-        (the filter's bits are already updated).
-
-        .. note::
-            Auto-resize cannot enumerate the items that were previously added
-            because a plain Bloom filter does not retain them.  The resize
-            therefore only works when the caller is tracking items externally
-            and can supply them to :meth:`rebuild` — or when the store calls
-            :meth:`rebuild` right after (which :class:`MemoryStore` does on GC
-            and rollback).  If auto-resize fires mid-stream (between a GC and
-            the subsequent rebuild) the bits are cleared and only items added
-            *after* the resize are present, which is conservative (no false
-            negatives can be introduced — items not yet re-added will just
-            trigger a full similarity check rather than being short-circuited).
+        (>= 1.5x for even values) the filter auto-resizes (doubles capacity)
+        and clears the bit array.  A plain Bloom filter cannot enumerate prior
+        items, so :attr:`_force_scan` is set until :meth:`rebuild` / :meth:`clear`
+        so :meth:`might_contain` returns ``True`` (forcing an exact scan).
+        Without that flag, cleared bits would look like definite misses and
+        ``MemoryStore`` dedup would skip the linear check and save duplicates.
         """
         # Auto-resize: when count reaches or exceeds expected_items + expected_items//2
         # (>= 1.5x the design capacity for even values), double the filter's capacity
-        # and clear it.  The store's GC / save paths call rebuild() after mutations,
-        # so the cleared filter will be repopulated shortly.
+        # and clear it.  Callers must rebuild from known items (or rely on
+        # _force_scan) until membership bits are trustworthy again.
         if self._count >= self._expected_items + (self._expected_items // 2):
             new_expected = self._expected_items * 2
             _log.warning(
@@ -157,6 +149,7 @@ class BloomFilter:
             self._hash_count = max(1, self._optimal_hashes(self._size, new_expected))
             self._bits = bytearray(self._size // 8 + 1)
             self._count = 0
+            self._force_scan = True
 
         for pos in self._get_hashes(item):
             byte_idx = pos // 8
@@ -166,6 +159,8 @@ class BloomFilter:
 
     def might_contain(self, item: str) -> bool:
         """Check if item might be in the filter. False = definitely not. True = maybe."""
+        if self._force_scan:
+            return True
         for pos in self._get_hashes(item):
             byte_idx = pos // 8
             bit_idx = pos % 8

@@ -229,11 +229,20 @@ def extract_relations_from_entries(
             )
             if triple_key in seen:
                 existing = seen[triple_key]
-                # Merge source keys (deduplicated)
+                # Merge source keys (deduplicated) and append confidence provenance
+                # (matches merge_entry_relations / RelationEntry.confidence_history docs).
                 merged_keys = list(
                     dict.fromkeys(existing.source_entry_keys + rel.source_entry_keys)
                 )
-                seen[triple_key] = existing.model_copy(update={"source_entry_keys": merged_keys})
+                merged_history = list(existing.confidence_history) + list(rel.confidence_history)
+                merged_conf = max(merged_history) if merged_history else existing.confidence
+                seen[triple_key] = existing.model_copy(
+                    update={
+                        "source_entry_keys": merged_keys,
+                        "confidence_history": merged_history,
+                        "confidence": merged_conf,
+                    }
+                )
             else:
                 seen[triple_key] = rel
 

@@ -75,6 +75,12 @@ class SyncLlmsTxtClient:
                     if resp.status_code == _HTTP_OK:
                         return url
                 except httpx.HTTPError:
+                    pass
+                try:
+                    resp = client.get(url)
+                    if resp.status_code == _HTTP_OK:
+                        return url
+                except httpx.HTTPError:
                     continue
         return None
 

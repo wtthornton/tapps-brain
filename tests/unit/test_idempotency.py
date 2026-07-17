@@ -183,6 +183,15 @@ class TestIdempotencyStoreCheck:
         assert status == 200
         assert returned_body == body
 
+    def test_hit_returns_predecoded_jsonb_body(self) -> None:
+        body = {"status": "saved", "key": "foo"}
+        istore, _ = self._store_with_row((200, body))
+        result = istore.check("proj", "key-123")
+        assert result is not None
+        status, returned_body = result
+        assert status == 200
+        assert returned_body == body
+
     def test_decode_error_treated_as_miss(self) -> None:
         istore, _ = self._store_with_row((200, "NOT_VALID_JSON"))
         assert istore.check("proj", "key-123") is None

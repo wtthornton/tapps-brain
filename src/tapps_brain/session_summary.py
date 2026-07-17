@@ -93,11 +93,21 @@ def session_summary_save(
     root = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
 
     # Apply token/character budget before persisting.
+    # Reserve room for the ellipsis so the final string never exceeds max_chars.
     truncated = False
     if max_chars is not None and len(summary) > max_chars:
-        head = summary[:max_chars]
-        cut = head.rsplit(None, 1)[0] if " " in head else head
-        summary = cut + " …"
+        ellipsis = " …"
+        if max_chars <= 0:
+            summary = ""
+        elif max_chars <= len(ellipsis):
+            summary = ellipsis[:max_chars]
+        else:
+            budget = max_chars - len(ellipsis)
+            head = summary[:budget]
+            cut = head.rsplit(None, 1)[0] if any(c.isspace() for c in head) else head
+            if not cut:
+                cut = head
+            summary = cut + ellipsis
         truncated = True
 
     today = datetime.date.today().isoformat()

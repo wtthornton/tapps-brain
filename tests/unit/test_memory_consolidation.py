@@ -283,7 +283,7 @@ class TestSelectTier:
         assert result == "my_custom_layer"
 
     def test_custom_tier_beats_context(self) -> None:
-        """Custom tier string (priority 2) beats context tier (priority 1)."""
+        """Custom tier string (default priority 3) beats context tier (priority 2)."""
         entries = [
             _make_entry("a", "v", tier=MemoryTier.context),
             _make_entry("b", "v", tier="my_custom_layer"),
@@ -292,13 +292,31 @@ class TestSelectTier:
         assert result == "my_custom_layer"
 
     def test_procedural_beats_custom_tier(self) -> None:
-        """Built-in procedural (priority 2) ties with custom tier; architectural always wins."""
+        """Built-in procedural (priority 3) ties with custom tier; architectural always wins."""
         entries = [
             _make_entry("a", "v", tier="my_custom_layer"),
             _make_entry("b", "v", tier=MemoryTier.architectural),
         ]
         result = select_tier(entries)
         assert result == MemoryTier.architectural
+
+    def test_context_over_ephemeral(self) -> None:
+        """Context outranks ephemeral (most durable wins)."""
+        entries = [
+            _make_entry("a", "v", tier=MemoryTier.ephemeral),
+            _make_entry("b", "v", tier=MemoryTier.context),
+        ]
+        result = select_tier(entries)
+        assert result == MemoryTier.context
+
+    def test_context_over_session(self) -> None:
+        """Context outranks session (most durable wins)."""
+        entries = [
+            _make_entry("a", "v", tier=MemoryTier.session),
+            _make_entry("b", "v", tier=MemoryTier.context),
+        ]
+        result = select_tier(entries)
+        assert result == MemoryTier.context
 
 
 # ---------------------------------------------------------------------------

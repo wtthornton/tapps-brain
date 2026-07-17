@@ -67,7 +67,11 @@ class NoopReranker:
         """Return top_k candidates in order with position-based scores.
 
         Score = 1.0 - (index / max(1, len(candidates))) to preserve ranking.
+        ``top_k <= 0`` returns an empty list (negative values must not be
+        treated as Python reverse slices).
         """
+        if top_k <= 0 or not candidates:
+            return []
         result: list[tuple[str, float]] = []
         n = max(1, len(candidates))
         for i, (key, _) in enumerate(candidates[:top_k]):
@@ -104,7 +108,7 @@ class FlashRankReranker:
         top_k: int,
     ) -> list[tuple[str, float]]:
         """Rerank candidates using FlashRank local cross-encoder."""
-        if not candidates:
+        if top_k <= 0 or not candidates:
             return []
 
         keys = [k for k, _ in candidates]

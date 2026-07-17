@@ -295,7 +295,7 @@ def run_health_check(  # noqa: PLR0915
                     store_health.pool_max = int(_ps.get("pool_max", 0))
                     store_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                     store_health.pool_idle = int(_ps.get("pool_available", 0))
-                except (AttributeError, TypeError, ValueError, KeyError):
+                except Exception:
                     pass  # pool stats unavailable; health check continues without them
 
             # Last applied private-memory migration version.
@@ -400,7 +400,7 @@ def run_health_check(  # noqa: PLR0915
                             hive_health.pool_max = int(_ps.get("pool_max", 0))
                             hive_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                             hive_health.pool_idle = int(_ps.get("pool_available", 0))
-                        except (AttributeError, TypeError, ValueError, KeyError):
+                        except Exception:
                             pass  # hive pool stats unavailable; health check continues without them
 
                     # Migration version: last applied Hive schema version.

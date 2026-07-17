@@ -188,6 +188,43 @@ def test_docs_lookup_cache_hit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["context7_id"] == "/pytest/docs"
 
 
+def test_docs_lookup_invalid_cached_at_refetches(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _MemStore()
+    cfg = DocsConfig(
+        project_id="library-docs",
+        agent_id="docs-cache",
+        cache_ttl_seconds=3600,
+        context7_api_key="test-key",
+        llms_txt_fallback=False,
+    )
+    key = doc_memory_key("pytest", "fixtures")
+    payload = {
+        "content": "stale body",
+        "library": "pytest",
+        "topic": "fixtures",
+        "mode": "code",
+        "context7_id": "/pytest/docs",
+        "provider_source": "context7",
+        "cached_at": "not-a-timestamp",
+    }
+    store.rows[(cfg.project_id, cfg.agent_id, key)] = {
+        "key": key,
+        "value": json.dumps(payload),
+        "access_count": 2,
+    }
+    _install_memory_service_fake(monkeypatch, store)
+    monkeypatch.setattr(
+        "tapps_brain.docs_lookup._fetch_remote_docs",
+        lambda *_args, **_kwargs: ("/pytest/docs", "fresh body", "context7"),
+    )
+
+    result = docs_lookup(store, library="pytest", topic="fixtures", config=cfg)
+
+    assert result["success"] is True
+    assert result["cache_hit"] is False
+    assert result["content"] == "fresh body"
+
+
 @patch("tapps_brain.docs_lookup.SyncContext7Client")
 def test_docs_lookup_fetches_context7(
     mock_client_cls: MagicMock,
@@ -233,6 +270,28 @@ def test_docs_warm_batch(monkeypatch: pytest.MonkeyPatch) -> None:
     report = docs_warm(store, ["httpx", "pytest"], config=cfg)
     assert report["count"] == 0
     assert len(report["failed"]) == 2
+
+
+def test_docs_warm_cache_hits_count_as_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _MemStore()
+    cfg = DocsConfig(
+        project_id="library-docs",
+        agent_id="docs-cache",
+        cache_ttl_seconds=3600,
+        context7_api_key=None,
+        llms_txt_fallback=False,
+    )
+    _install_memory_service_fake(monkeypatch, store)
+
+    def _fake_lookup(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"success": True, "cache_hit": True, "content": "cached"}
+
+    monkeypatch.setattr("tapps_brain.docs_lookup.docs_lookup", _fake_lookup)
+    report = docs_warm(store, ["httpx", "pytest"], config=cfg)
+
+    assert report["count"] == 0
+    assert report["warmed"] == []
+    assert report["skipped"] == ["httpx", "pytest"]
 
 
 def test_import_cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

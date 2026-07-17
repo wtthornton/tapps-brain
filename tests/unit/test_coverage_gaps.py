@@ -678,7 +678,8 @@ class TestGCEdges:
     def test_days_since_timestamp_bad_value(self):
         from tapps_brain.gc import _days_since_timestamp
 
-        assert _days_since_timestamp("not-a-date", _NOW) == 0.0
+        # Align with decay._days_since (TAP-725): corrupt stamps are maximally stale.
+        assert _days_since_timestamp("not-a-date", _NOW) == float("inf")
 
     def test_days_since_timestamp_naive(self):
         from tapps_brain.gc import _days_since_timestamp

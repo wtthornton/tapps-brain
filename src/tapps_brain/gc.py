@@ -474,12 +474,17 @@ def run_hnsw_maintenance(
 
 
 def _days_since_timestamp(iso_timestamp: str, now: datetime) -> float:
-    """Return fractional days since an ISO-8601 timestamp."""
+    """Return fractional days since an ISO-8601 timestamp.
+
+    Malformed timestamps are treated as maximally stale (``inf``), matching
+    :func:`tapps_brain.decay._days_since` (TAP-725). Returning ``0.0`` here
+    previously blocked session-expiry GC for corrupt ``updated_at`` values.
+    """
     try:
         ts = datetime.fromisoformat(iso_timestamp)
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=UTC)
     except (ValueError, TypeError):
-        return 0.0
+        return float("inf")
     delta = now - ts
     return max(delta.total_seconds() / 86400.0, 0.0)

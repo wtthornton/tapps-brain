@@ -245,6 +245,36 @@ def test_run_health_check_hive_pool_saturation_populated(
     assert report.hive.pool_saturation == pytest.approx(0.25)
 
 
+def test_run_health_check_hive_pool_stats_runtime_error_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pool stats failures should not downgrade otherwise healthy Hive checks."""
+    mock_cm = MagicMock()
+    mock_cm.get_pool_stats.side_effect = RuntimeError("pool stats unavailable")
+
+    mock_hive = MagicMock()
+    mock_hive._cm = mock_cm
+    mock_hive.count_by_namespace.return_value = {"universal": 10}
+    mock_hive.close = MagicMock()
+
+    mock_registry = MagicMock()
+    mock_registry.list_agents.return_value = ["agent-1"]
+
+    monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
+    monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
+    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+
+    import tapps_brain.postgres_migrations as _pm
+
+    monkeypatch.setattr(_pm, "get_hive_schema_status", MagicMock(side_effect=Exception("skip")))
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: _make_mock_store(tmp_path))
+
+    report = run_health_check(project_root=tmp_path, check_hive=True)
+    assert report.hive.status == "ok"
+    assert report.hive.connected is True
+    assert report.hive.pool_saturation is None
+
+
 def test_run_health_check_hive_migration_version_populated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -511,6 +541,25 @@ def test_run_health_check_store_pool_stats_populated(
     report = run_health_check(project_root=tmp_path, check_hive=False)
     assert report.store.pool_saturation == pytest.approx(0.4)
     assert report.store.pool_idle == 6
+
+
+def test_run_health_check_store_pool_stats_runtime_error_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pool stats failures should not mark the whole store slice as an error."""
+    mock_cm = MagicMock()
+    mock_cm.get_pool_stats.side_effect = RuntimeError("pool stats unavailable")
+
+    mock_store = _make_mock_store(tmp_path, entry_count=1)
+    mock_store._persistence._cm = mock_cm
+
+    monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: mock_store)
+    monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
+
+    report = run_health_check(project_root=tmp_path, check_hive=False)
+    assert report.store.status == "ok"
+    assert report.store.pool_saturation is None
+    assert report.store.pool_idle is None
 
 
 def test_run_health_check_store_pool_stats_none_when_no_cm(

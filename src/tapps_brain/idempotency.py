@@ -110,8 +110,12 @@ class IdempotencyStore:
             return None
         status, body_json = row
         try:
+            if isinstance(body_json, dict):
+                return int(status), body_json
+            if isinstance(body_json, bytes):
+                body_json = body_json.decode("utf-8")
             return int(status), json.loads(body_json)
-        except (ValueError, json.JSONDecodeError) as exc:
+        except (TypeError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
             logger.warning(
                 "idempotency.decode_failed",
                 key=key,

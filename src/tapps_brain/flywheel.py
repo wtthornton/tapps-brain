@@ -376,6 +376,11 @@ def _run_hdbscan_clustering(  # pragma: no cover
 
 
 def _parse_iso(ts: str) -> datetime:
+    """Parse an ISO-8601 timestamp; malformed values are treated as ancient.
+
+    Returning ``datetime.now()`` on parse failure previously counted corrupt
+    gap timestamps as "recent", which inflated knowledge-gap trend scores.
+    """
     try:
         raw = ts.replace("Z", "+00:00")
         dt = datetime.fromisoformat(raw)
@@ -383,7 +388,7 @@ def _parse_iso(ts: str) -> datetime:
             dt = dt.replace(tzinfo=UTC)
         return dt
     except (ValueError, TypeError):
-        return datetime.now(tz=UTC)
+        return datetime.min.replace(tzinfo=UTC)
 
 
 def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:

@@ -257,8 +257,9 @@ def merge_tags(entries: list[MemoryEntry], max_tags: int = 10) -> list[str]:
 def select_tier(entries: list[MemoryEntry]) -> MemoryTier | str:
     """Select the most appropriate tier for consolidated entry.
 
-    Priority: architectural > pattern > context.
-    If entries have different tiers, use the most durable one.
+    Priority (most durable first): architectural > pattern > procedural >
+    context > ephemeral / session.  If entries have different tiers, use the
+    most durable one.
 
     Args:
         entries: Entries with tier classifications.
@@ -270,16 +271,18 @@ def select_tier(entries: list[MemoryEntry]) -> MemoryTier | str:
         return MemoryTier.pattern
 
     tier_priority: dict[MemoryTier | str, int] = {
-        MemoryTier.architectural: 4,
-        MemoryTier.pattern: 3,
-        MemoryTier.procedural: 2,  # Epic 65.11
-        MemoryTier.context: 1,
+        MemoryTier.architectural: 5,
+        MemoryTier.pattern: 4,
+        MemoryTier.procedural: 3,  # Epic 65.11
+        MemoryTier.context: 2,
+        MemoryTier.ephemeral: 1,
+        MemoryTier.session: 1,
     }
 
     # Find highest priority tier.
-    # Unknown custom tier strings (from profile layers) get priority 2,
+    # Unknown custom tier strings (from profile layers) get priority 3,
     # same as procedural — prevents custom tiers from always losing to context.
-    best_entry = max(entries, key=lambda e: tier_priority.get(e.tier, 2))
+    best_entry = max(entries, key=lambda e: tier_priority.get(e.tier, 3))
     return best_entry.tier
 
 

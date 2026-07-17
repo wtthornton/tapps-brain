@@ -816,6 +816,7 @@ class CircuitBreaker:
     cooldown_seconds: float = 3600.0
 
     def transition(self, composite: float) -> CircuitState:
+        prev = self.state
         if self.state == CircuitState.HALF_OPEN:
             if composite >= 0.6:
                 self.state = CircuitState.CLOSED
@@ -824,19 +825,27 @@ class CircuitBreaker:
                 self.state = CircuitState.DEGRADED
             else:
                 self.state = CircuitState.OPEN
-            return self.state
-        if composite >= 0.6:
+        elif composite >= 0.6:
             self.state = CircuitState.CLOSED
         elif composite >= 0.3:
             self.state = CircuitState.DEGRADED
         else:
             self.state = CircuitState.OPEN
+        # Entering OPEN starts a fresh cooldown; do not treat a missing
+        # timestamp as monotonic epoch 0 (which would half-open immediately
+        # on long-uptime processes).
+        if self.state == CircuitState.OPEN and prev != CircuitState.OPEN:
+            self._last_remediation_mono.pop("half_open", None)
         return self.state
 
     def enter_half_open_if_cooled(self, now_mono: float) -> bool:
         if self.state != CircuitState.OPEN:
             return False
-        last = self._last_remediation_mono.get("half_open", 0.0)
+        if "half_open" not in self._last_remediation_mono:
+            # First observation while OPEN — start the cooldown clock.
+            self._last_remediation_mono["half_open"] = now_mono
+            return False
+        last = self._last_remediation_mono["half_open"]
         jitter = random.random() * 30.0
         if now_mono - last >= self.cooldown_seconds + jitter:
             self.state = CircuitState.HALF_OPEN

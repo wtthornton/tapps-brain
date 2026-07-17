@@ -62,6 +62,45 @@ def test_strict_mode_rejects_unknown_edge_type() -> None:
         store.record(FeedbackEvent(event_type="edge_neutral", entry_key="x"))
 
 
+def test_inmemory_query_non_positive_limit_returns_empty() -> None:
+    store = InMemoryFeedbackStore(config=FeedbackConfig(strict_event_types=False))
+    for i in range(3):
+        store.record(FeedbackEvent(event_type="recall_rated", entry_key=f"k{i}"))
+    assert store.query(limit=0) == []
+    assert store.query(limit=-1) == []
+
+
+def test_inmemory_query_orders_by_timestamp_ascending() -> None:
+    store = InMemoryFeedbackStore(config=FeedbackConfig(strict_event_types=False))
+    store.record(
+        FeedbackEvent(
+            event_type="recall_rated",
+            entry_key="newer",
+            timestamp="2026-06-02T00:00:00+00:00",
+        )
+    )
+    store.record(
+        FeedbackEvent(
+            event_type="recall_rated",
+            entry_key="older",
+            timestamp="2026-06-01T00:00:00+00:00",
+        )
+    )
+    keys = [e.entry_key for e in store.query(limit=10)]
+    assert keys == ["older", "newer"]
+
+
+def test_inmemory_record_dedupes_by_event_id() -> None:
+    """Match Postgres ON CONFLICT (id) DO NOTHING."""
+    store = InMemoryFeedbackStore(config=FeedbackConfig(strict_event_types=False))
+    event = FeedbackEvent(id="fixed-id", event_type="recall_rated", entry_key="a")
+    store.record(event)
+    store.record(FeedbackEvent(id="fixed-id", event_type="recall_rated", entry_key="b"))
+    results = store.query(limit=10)
+    assert len(results) == 1
+    assert results[0].entry_key == "a"
+
+
 # ---------------------------------------------------------------------------
 # apply_edge_feedback — edge_helpful
 # ---------------------------------------------------------------------------

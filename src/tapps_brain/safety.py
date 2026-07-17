@@ -358,11 +358,15 @@ def check_content_safety(
             metrics.increment("rag_safety.blocked")
         return result
 
-    # Low match count - sanitise and warn.  Run the regexes against the
-    # *original* content so callers receive their exact bytes back with only
-    # the injection substrings replaced.  NFKC normalisation is used solely
-    # for detection; we deliberately do not rewrite the user's Unicode.
+    # Low match count - sanitise and warn. Prefer the original bytes so
+    # benign Unicode (ligatures, curly quotes, CJK compatibility chars)
+    # survives (TAP-712). Homograph/lookalike injections only match after
+    # NFKC, so if the original-byte pass left patterns intact, redact the
+    # normalised form instead — never claim "sanitised" while the payload
+    # still matches after NFKC.
     sanitised = _sanitise_content(content, patterns)
+    if any(pattern.search(unicodedata.normalize("NFKC", sanitised)) for _, pattern in patterns):
+        sanitised = _sanitise_content(normalised, patterns)
     logger.info(
         "rag_safety_warning",
         match_count=total_matches,

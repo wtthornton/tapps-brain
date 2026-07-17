@@ -97,6 +97,11 @@ class TestReciprocalRankFusion:
         with pytest.raises(ValueError, match="non-negative"):
             reciprocal_rank_fusion_weighted(["a"], ["b"], bm25_weight=-1.0, vector_weight=1.0)
 
+    def test_weighted_rejects_negative_k(self) -> None:
+        """Negative k makes k+rank==0 for rank=1 and would ZeroDivisionError."""
+        with pytest.raises(ValueError, match="non-negative"):
+            reciprocal_rank_fusion_weighted(["a"], ["b"], k=-1)
+
     def test_hybrid_weights_sum_to_one(self) -> None:
         a, b = hybrid_rrf_weights_for_query("any query here")
         assert a == pytest.approx(1.0 - b)

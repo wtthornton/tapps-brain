@@ -124,11 +124,19 @@ def _parse_and_import(text: str, store: MemoryStore) -> int:
 
 
 def _parse_sections(text: str) -> list[tuple[str, str, MemoryTier]]:
-    """Split markdown into (key, value, tier) tuples from headings + body."""
+    """Split markdown into (key, value, tier) tuples from headings + body.
+
+    Within a single document, colliding slugified headings are disambiguated
+    with the same deterministic suffix scheme as :mod:`tapps_brain.markdown_sync`
+    (TAP-718) so the second section is not silently dropped.
+    """
+    from tapps_brain.markdown_sync import _resolve_slug_collision
+
     sections: list[tuple[str, str, MemoryTier]] = []
     current_key: str | None = None
     current_tier: MemoryTier = MemoryTier.pattern
     body_lines: list[str] = []
+    seen_slugs: dict[str, str] = {}
 
     for line in text.splitlines():
         match = _HEADING_RE.match(line)
@@ -141,7 +149,8 @@ def _parse_sections(text: str) -> list[tuple[str, str, MemoryTier]]:
 
             level = len(match.group(1))
             heading_text = match.group(2)
-            current_key = _slugify(heading_text)
+            slug = _slugify(heading_text)
+            current_key = _resolve_slug_collision(slug, heading_text, seen_slugs)
             current_tier = _tier_from_level(level)
             body_lines = []
         else:
