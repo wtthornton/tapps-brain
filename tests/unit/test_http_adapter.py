@@ -137,10 +137,12 @@ class TestProbeDb:
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=mock_status,
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                return_value=mock_status,
             ),
         ):
             is_ready, version, msg = _probe_db("postgres://localhost/testdb")
@@ -159,9 +161,7 @@ class TestProbeDb:
             patch(
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
-            patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=priv
-            ),
+            patch("tapps_brain.postgres_migrations.get_private_schema_status", return_value=priv),
             patch(
                 "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=priv
             ),
@@ -205,7 +205,9 @@ class TestProbeDb:
             for _ in range(100):
                 _probe_db(dsn)
 
-        assert call_count == 3, f"expected 1 hive+private+federation trio, got {call_count} status calls"
+        assert call_count == 3, (
+            f"expected 1 hive+private+federation trio, got {call_count} status calls"
+        )
 
         # Clean up cache so other tests aren't affected.
         _pc._PROBE_CACHE.pop(dsn, None)
@@ -246,7 +248,9 @@ class TestProbeDb:
             _pc._PROBE_CACHE[dsn] = (expires_at - _pc._PROBE_CACHE_TTL - 1.0, result)
             _probe_db(dsn)  # second call — cache expired, should re-fetch
 
-        assert call_count == 6, f"expected 2 hive+private+federation trios after expiry, got {call_count}"
+        assert call_count == 6, (
+            f"expected 2 hive+private+federation trios after expiry, got {call_count}"
+        )
         _pc._PROBE_CACHE.pop(dsn, None)
 
 
@@ -370,10 +374,12 @@ class TestReadyEndpointDbHealthy:
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=mock_status,
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                return_value=mock_status,
             ),
             _client(settings) as c,
         ):
@@ -393,10 +399,12 @@ class TestReadyEndpointDbHealthy:
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=mock_status,
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                return_value=mock_status,
             ),
             _client(settings) as c,
         ):
@@ -468,10 +476,12 @@ class TestHealthzEndpoint:
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=mock_status,
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                return_value=mock_status,
             ),
             _client(settings) as c,
         ):
@@ -1414,10 +1424,12 @@ class TestSnapshotColdBuildConcurrency:
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=mock_status,
             ),
             patch(
-                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                return_value=mock_status,
             ),
             patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_slow_build),
         ):

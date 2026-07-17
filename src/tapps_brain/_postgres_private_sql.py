@@ -248,9 +248,7 @@ LOAD_ALL_SQL = (
 )
 
 LOAD_ONE_SQL = (
-    "SELECT * FROM private_memories"
-    " WHERE project_id = %s AND agent_id = %s AND key = %s"
-    " LIMIT 1"
+    "SELECT * FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s LIMIT 1"
 )
 
 DELETE_BY_KEY_SQL = (

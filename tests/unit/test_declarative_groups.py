@@ -298,9 +298,7 @@ class TestGroupScopedSave:
             agent_scope="group:dev-pipeline",
         )
         group_calls = [
-            c
-            for c in hive.save.call_args_list
-            if c.kwargs.get("namespace") == "dev-pipeline"
+            c for c in hive.save.call_args_list if c.kwargs.get("namespace") == "dev-pipeline"
         ]
         assert len(group_calls) >= 1
         assert group_calls[0].kwargs["namespace"] == "dev-pipeline"

@@ -1879,9 +1879,7 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2048,9 +2046,7 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2202,9 +2198,7 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2228,12 +2222,16 @@ def create_app(
                 )
             if not raw:
                 raise HTTPException(
-                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             if len(raw) > 10 * 1_048_576:  # 10 MiB
                 raise HTTPException(
                     status_code=413,
-                    detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": "Max 10 MiB for batch requests.",
+                    },
                 )
             try:
                 body = json.loads(raw.decode("utf-8"))
@@ -2246,7 +2244,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             entries = body.get("entries")
@@ -2389,9 +2390,7 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2415,12 +2414,16 @@ def create_app(
                 )
             if not raw:
                 raise HTTPException(
-                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             if len(raw) > 10 * 1_048_576:
                 raise HTTPException(
                     status_code=413,
-                    detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": "Max 10 MiB for batch requests.",
+                    },
                 )
             try:
                 body = json.loads(raw.decode("utf-8"))
@@ -2433,7 +2436,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             entries = body.get("entries")
@@ -2602,9 +2608,7 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2736,9 +2740,7 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2880,9 +2882,7 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -3060,9 +3060,7 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -3086,7 +3084,8 @@ def create_app(
                 )
             if not raw:
                 raise HTTPException(
-                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             # TAP-1940: /v1/experience uses a higher 256 KB ceiling than the 64 KB
             # default applied to /v1/kg/* endpoints, so evidence payloads (stack
@@ -3109,7 +3108,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             event_type = (body.get("event_type") or "").strip()
@@ -3223,9 +3225,7 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(
-                        _idempotency_check, istore, project_id, ikey
-                    )
+                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -3249,7 +3249,8 @@ def create_app(
                 )
             if not raw:
                 raise HTTPException(
-                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             if len(raw) > _EXPERIENCE_BATCH_MAX_BODY_BYTES:
                 raise HTTPException(
@@ -3269,7 +3270,10 @@ def create_app(
             if not isinstance(body, dict):
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "Request body must be a JSON object.",
+                    },
                 )
 
             events = body.get("events")
@@ -3676,9 +3680,7 @@ def create_app(
         from tapps_brain.services import kg_service as _kg_svc
         from tapps_brain.visual_snapshot import build_kg_health
 
-        counts = await asyncio.to_thread(
-            _kg_svc.graph_health, cm, project_id, _kg_brain_id()
-        )
+        counts = await asyncio.to_thread(_kg_svc.graph_health, cm, project_id, _kg_brain_id())
         return JSONResponse(
             status_code=200,
             content=build_kg_health(counts),

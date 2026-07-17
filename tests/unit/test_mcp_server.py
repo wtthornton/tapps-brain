@@ -1659,9 +1659,7 @@ class TestMemorySaveAgentScope:
         save_fn = _tool_fn(server, "memory_save")
         save_fn(key="prop-test", value="propagated value", agent_scope="hive")
         hive.save.assert_called()
-        assert any(
-            c.kwargs.get("namespace") == "universal" for c in hive.save.call_args_list
-        )
+        assert any(c.kwargs.get("namespace") == "universal" for c in hive.save.call_args_list)
 
         store.close()
 

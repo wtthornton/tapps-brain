@@ -469,9 +469,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 raise McpError(
                     ErrorData(
                         code=INVALID_PARAMS,
-                        message=(
-                            f"Unknown brain profile {profile!r}; tool {name!r} denied."
-                        ),
+                        message=(f"Unknown brain profile {profile!r}; tool {name!r} denied."),
                     )
                 ) from None
             else:
@@ -639,9 +637,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 raise McpError(
                     ErrorData(
                         code=INVALID_PARAMS,
-                        message=(
-                            f"Unknown brain profile {profile!r}; tool {tool_name!r} denied."
-                        ),
+                        message=(f"Unknown brain profile {profile!r}; tool {tool_name!r} denied."),
                     )
                 ) from None
 

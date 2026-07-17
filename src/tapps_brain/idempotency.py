@@ -110,9 +110,7 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
-            raise IdempotencyUnavailableError(
-                f"idempotency check failed for key={key!r}"
-            ) from exc
+            raise IdempotencyUnavailableError(f"idempotency check failed for key={key!r}") from exc
 
         if row is None:
             return None
@@ -130,9 +128,7 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
-            raise IdempotencyUnavailableError(
-                f"idempotency decode failed for key={key!r}"
-            ) from exc
+            raise IdempotencyUnavailableError(f"idempotency decode failed for key={key!r}") from exc
 
     def save(
         self,
@@ -176,9 +172,7 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
-            raise IdempotencyUnavailableError(
-                f"idempotency save failed for key={key!r}"
-            ) from exc
+            raise IdempotencyUnavailableError(f"idempotency save failed for key={key!r}") from exc
 
     def sweep_expired(self, ttl_hours: int | None = None) -> int:
         """Delete keys older than *ttl_hours* and return the row count.
