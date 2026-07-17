@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.46
-# tapps-mcp-hook-content-sha: b071ddb7
+# tapps-mcp-hook-version: 3.12.52
+# tapps-mcp-hook-content-sha: 5a2c3acd
 # TappsMCP PostToolUse hook — Linear cache-gate sentinel writer (TAP-1224)
 # Writes a per-(team, project, state, label, limit) sentinel on BOTH
 # cached=true and cached=false responses from tapps_linear_snapshot_get.
@@ -33,27 +33,36 @@ except Exception:
     limit = 50
 # Open-bucket alias: tapps-mcp's TTL bucket 'open' covers backlog, unstarted,
 # started, triage. The skill tells agents to snapshot_get(state='open') and
-# then list_issues with a concrete state. Without alias support the keys
-# differ and the gate self-trips (TAP-1374). Fix: derive a bucket alias and
-# emit additional sentinels for it. Same logic on both sides.
+# then list_issues with a concrete state. TAP-4588: canonicalize any open
+# alias ('' / 'open' / bucket member) to ONE token so the payload key and the
+# sentinel key converge — matching server _canonical_state. limit is dropped
+# from the hash (enforced at read time via the superset fallback). Same logic
+# on both sides — see server_linear_tools._resolve_cache_key.
 OPEN_BUCKET = ('backlog', 'unstarted', 'started', 'triage')
 state_lc = state.lower()
+def _canon_state(s):
+    s_lc = (s or '').strip().lower()
+    if s_lc == '' or s_lc == 'open' or s_lc in OPEN_BUCKET:
+        return 'open'
+    return s_lc
 def _key_for(state_part: str) -> str:
+    canon = _canon_state(state_part)
     filt = {k: v for k, v in sorted({
-        'state': state_part, 'label': label, 'limit': limit,
+        'state': canon, 'label': label,
     }.items()) if v not in (None, '')}
     payload = json.dumps(filt, sort_keys=True, default=str).encode('utf-8')
     fhash = hashlib.sha256(payload).hexdigest()[:16]
     parts = [
         (team.replace('/', '_') or '_'),
         (project.replace('/', '_') or '_'),
-        ((state_part or 'any').replace('/', '_')),
+        (canon.replace('/', '_') or 'any'),
         fhash,
     ]
     return '__'.join(parts)
 key = _key_for(state)
-# Bucket alias keys: when state is 'open' (a tapps-mcp alias), '' (any), or
-# any open-bucket member, every other open-bucket member should resolve.
+# With canonicalization every open-bucket alias resolves to the same key, so
+# the alias set is a singleton ({key}). We still emit the bucket variants and
+# de-dup so the set matches the Python _alias_keys contract byte-for-byte.
 alias_keys = []
 if not team or not project:
     key = ''

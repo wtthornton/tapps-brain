@@ -1,4 +1,4 @@
-<!-- tapps-agents-version: 3.12.46 -->
+<!-- tapps-agents-version: 3.12.52 -->
 # TappsMCP - instructions for AI assistants
 
 When the **TappsMCP** MCP server is configured, you have access to tools for **code quality, doc lookup, and domain expert advice**. Use them to avoid hallucinated APIs, missed quality steps, and inconsistent output.
@@ -236,7 +236,7 @@ Outputs a latency table (p50/p90/p95/p99/max for save, recall, and per-agent wal
 | **tapps_usage** | When you want to see what you missed this session - per-session `gaps` + concrete `recommendations`. Inlined as `usage_gaps` on every `tapps_checklist` response. |
 | **tapps_quality_gate** | Before declaring work complete - ensures file passes preset |
 
-**For full tool reference** (42 tools with per-tool guidance), invoke the **tapps-tool-reference** skill when the user asks "what tools does TappsMCP have?", "when do I use tapps_score_file?", etc.
+**For full tool reference** (43 tools with per-tool guidance), invoke the **tapps-tool-reference** skill when the user asks "what tools does TappsMCP have?", "when do I use tapps_score_file?", etc.
 
 ---
 
@@ -443,7 +443,7 @@ Sixteen core tapps-* SKILL.md files per platform in `.claude/skills/` or `.curso
 - **tapps-review-pipeline** - Orchestrate a parallel review-fix-validate pipeline
 - **tapps-research** - Look up library documentation and research best practices
 - **tapps-security** - Run a comprehensive security audit with vulnerability scanning
-- **tapps-memory** - Manage shared project memory (42 actions, cross-session)
+- **tapps-memory** - Manage shared project memory (44 actions, cross-session)
 - **tapps-tool-reference** - Full per-tool reference and when-to-use guidance
 - **tapps-init** - Bootstrap TappsMCP scaffolding in a project
 - **tapps-upgrade** - Reinstall global CLIs from latest source, restart MCP, run `tapps-mcp upgrade` + doctor + checklist

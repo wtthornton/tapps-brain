@@ -19,11 +19,12 @@ Close out the current task end-to-end. Run each step; do NOT skip one that faile
 
 2. **Verify the checklist.** Call `tapps_checklist(task_type=<feature|bugfix|refactor|security|review>)`. Read the inline **`usage_gaps`** block — not only `complete` / `missing_steps`. If `complete: false`, address each entry in `missing_steps` and re-run.
 
-3. **Clear doc-lookup gaps.** When `usage_gaps.gaps` includes `library_uses_without_lookup_docs` or `libraries_without_lookup` is non-empty:
+3. **Clear doc-lookup gaps.** When `usage_gaps.gaps` includes `lookup_docs_underused`,
+   `library_uses_without_lookup_docs`, or `libraries_without_lookup` is non-empty:
    - Call `tapps_lookup_docs(library=<name>, topic=<relevant-api>)` for **each** listed library (retrospective MCP lookups clear telemetry gaps; cache hits are fine — ADR-0021).
    - CLI `tapps-mcp lookup-docs` also records `.lookup-docs-events.jsonl` for the next session.
    - Re-run `tapps_checklist` until `usage_gaps.gaps` is empty **and** `complete: true`.
-   Prefer lookup **before first use** of each external library in future sessions.
+   Prefer lookup **before the first edit** that uses each external library in future sessions.
 
 4. **Save learnings (conditional).** If the session produced a non-obvious architectural or pattern-level decision, run `uv run tapps-mcp memory save --key <slug> --tier <architectural|pattern> --value "<decision>"` (CLI via BrainBridge). Skip for routine fixes. Brain offline → skip silently.
 5. **Report.** Emit a one-line summary: `Files validated: N pass. Checklist: <task_type> complete. Doc gaps: cleared|none. Memory saved: yes|no.`

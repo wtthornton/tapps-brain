@@ -5,6 +5,8 @@ alwaysApply: true
 
 All Linear writes in this project — epic creation, story creation, issue updates — MUST route through the `linear-issue` skill, which in turn routes through the docs-mcp generator and validator tools. Raw calls to `mcp__plugin_linear_linear__save_issue` are a rule violation.
 
+> **The generic `linear` skill is not a substitute.** A broad `linear` skill may be installed by the Linear Claude Code plugin (it is not owned or managed by TappsMCP). It does **not** run the docs-mcp validator on writes or the cache-first snapshot dance on reads, so invoking it bypasses every gate below. For any Linear **write** use `linear-issue`; for any multi-issue **read** use `linear-read`; single-issue lookups go straight to `get_issue`. A Linear task driven through the generic `linear` skill is a rule violation, exactly like a raw `save_issue` / `list_issues` call.
+
 ## Required flow
 
 ### For a new epic
