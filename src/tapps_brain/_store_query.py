@@ -9,6 +9,7 @@ helpers.  Behaviour is identical to the original in-class definitions.
 from __future__ import annotations
 
 import time
+from typing import cast
 
 import structlog
 
@@ -159,7 +160,7 @@ class QueryMixin(_MemoryStoreBase):
         load_one = getattr(self._persistence, "load_one", None)
         if not callable(load_one):
             return None
-        entry = load_one(key)
+        entry = cast("MemoryEntry | None", load_one(key))
         if entry is None:
             return None
         with self._serialized():

@@ -16,9 +16,13 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import structlog
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from tapps_brain._protocols import HiveBackend
 
 logger = structlog.get_logger(__name__)
 
@@ -226,7 +230,7 @@ def run_health_check(  # noqa: PLR0915
     *,
     check_hive: bool = True,
     store: object | None = None,
-    hive_store: object | None = None,
+    hive_store: HiveBackend | None = None,
 ) -> HealthReport:
     """Run all health checks and return a structured report.
 
@@ -372,7 +376,9 @@ def run_health_check(  # noqa: PLR0915
             _hive_dsn = os.environ.get("TAPPS_BRAIN_HIVE_DSN") or os.environ.get(
                 "TAPPS_BRAIN_DATABASE_URL"
             )
-            _resolved_hive: object | None = hive_store or getattr(store, "_hive_store", None)
+            _resolved_hive: HiveBackend | None = hive_store or cast(
+                "HiveBackend | None", getattr(store, "_hive_store", None)
+            )
             _owns_hive = False  # whether we opened it and must close it
 
             if _resolved_hive is None and _hive_dsn:
@@ -393,7 +399,7 @@ def run_health_check(  # noqa: PLR0915
                 if _hive_dsn:
                     hive_health.hive_reachable = True
                 try:
-                    ns_counts = hive.count_by_namespace()  # type: ignore[attr-defined]
+                    ns_counts = hive.count_by_namespace()
                     hive_health.connected = True
                     hive_health.hive_reachable = True
                     hive_health.namespaces = sorted(ns_counts.keys())

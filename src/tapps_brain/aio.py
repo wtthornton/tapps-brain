@@ -95,12 +95,13 @@ class _CapturePersistenceBackend:
             self._relations = [(k, r) for k, r in self._relations if k != key]
         return True
 
-    def delete_relations(self, key: str) -> None:
+    def delete_relations(self, key: str) -> int:
         """Queue relation deletion so async flush mirrors sync QueryMixin.delete."""
         with self._lock:
             self._relations = [(k, r) for k, r in self._relations if k != key]
             if key not in self._deleted_relations:
                 self._deleted_relations.append(key)
+        return 0
 
     # --- Captured secondary writes ------------------------------------------
 
