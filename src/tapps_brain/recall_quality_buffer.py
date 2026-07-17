@@ -80,7 +80,7 @@ def record(
         timestamp=ts,
         top_score=top_score,
         oldest_returned_age_days=oldest_returned_age_days,
-        memory_count=int(memory_count),
+        memory_count=max(0, int(memory_count)),
     )
     with _lock:
         buf = _buffers.get(project_id)

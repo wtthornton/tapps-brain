@@ -287,6 +287,14 @@ class TestRememberValidation:
             with pytest.raises(BrainValidationError):
                 brain.remember("some fact", share_with=[])
 
+    def test_remember_share_with_list_keeps_first_group_scope(self, tmp_path: Path) -> None:
+        """Multi-group share_with must not overwrite until only the last group remains."""
+        with _make_brain(tmp_path, groups=["alpha", "beta"]) as brain:
+            key = brain.remember("shared across groups", share_with=["alpha", "beta"])
+            entry = brain.store.get(key)
+            assert entry is not None
+            assert entry.agent_scope == "group:alpha"
+
 
 class TestRecallValidation:
     """TAP-632: recall() enforces BrainValidationError contract for max_results."""

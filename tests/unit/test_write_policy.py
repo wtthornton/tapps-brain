@@ -191,15 +191,19 @@ class TestLLMWritePolicy:
         judge = _make_judge("ADD")
         policy = LLMWritePolicy(judge, candidates_limit=2)
         many_candidates = [_make_entry(f"k{i}", f"v{i}") for i in range(10)]
+        # Stamp recency so ranking is deterministic (most recent first).
+        for i, entry in enumerate(many_candidates):
+            many_candidates[i] = entry.model_copy(
+                update={"updated_at": f"2026-01-{i + 1:02d}T00:00:00+00:00"}
+            )
         policy.decide("new", "value", many_candidates)
-        # Inspect what the judge was called with — the prompt should only
-        # reference 2 candidates (indices [1] and [2]).
         call_args = judge.judge_relevance.call_args
         prompt = call_args[1]["query"] if call_args[1] else call_args[0][0]
-        # Only k0 and k1 should appear in the prompt (first 2 candidates).
-        assert "[3]" not in prompt  # candidate index 3 should NOT appear
-        assert "[1]" in prompt
-        assert "[2]" in prompt
+        # Most recent two (k9, k8) should appear; older ones must not.
+        assert "k9" in prompt
+        assert "k8" in prompt
+        assert "k0" not in prompt
+        assert "[3]" not in prompt
 
     def test_satisfies_write_policy_protocol(self) -> None:
         from tapps_brain._protocols import WritePolicy
@@ -302,3 +306,42 @@ class TestMemoryStoreWritePolicyIntegration:
         assert isinstance(result, dict)
         assert result.get("write_policy") == "delete"
         assert store.get("stale") is None
+
+    def test_delete_unscoped_target_falls_through_to_add(self, store: Any) -> None:
+        """DELETE with a target not in candidates must not delete arbitrary keys."""
+        store.save(key="keep-me", value="important")
+        judge = _make_judge("DELETE", target="not-a-candidate", reasoning="hallucinated")
+        # Empty-store decide sees only keep-me after the prior save — force empty
+        # candidates by deciding against a fresh store snapshot via a stub.
+        store._write_policy = LLMWritePolicy(judge)
+
+        class _UnscopedDelete:
+            def decide(self, key: str, value: str, candidates: list[Any]) -> Any:
+                return WritePolicyResult(
+                    decision=WriteDecision.DELETE,
+                    target_key="not-a-candidate",
+                    reasoning="hallucinated",
+                )
+
+        store._write_policy = _UnscopedDelete()
+        result = store.save(key="incoming", value="new value")
+        from tapps_brain.models import MemoryEntry
+
+        assert isinstance(result, MemoryEntry)
+        assert store.get("keep-me") is not None
+        assert store.get("incoming") is not None
+
+    def test_update_decision_overwrites_target_key(self, store: Any) -> None:
+        """UPDATE remaps the save onto target_key instead of creating a new key."""
+        store.save(key="old-fact", value="v1")
+        judge = _make_judge("UPDATE", target="old-fact", reasoning="refresh")
+        store._write_policy = LLMWritePolicy(judge)
+        result = store.save(key="new-fact", value="v2-updated")
+        from tapps_brain.models import MemoryEntry
+
+        assert isinstance(result, MemoryEntry)
+        assert result.key == "old-fact"
+        assert result.value == "v2-updated"
+        assert store.get("new-fact") is None
+        assert store.get("old-fact") is not None
+        assert store.get("old-fact").value == "v2-updated"

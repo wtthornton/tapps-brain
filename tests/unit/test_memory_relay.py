@@ -260,6 +260,32 @@ def test_confidence_bool_treated_as_default(tmp_path: Path) -> None:
         store.close()
 
 
+def test_confidence_nan_and_inf_treated_as_default(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    try:
+        for idx, bad in enumerate((float("nan"), float("inf"), 2.5, -5.0)):
+            r = import_relay_to_store(
+                store,
+                {
+                    "source_agent": "s",
+                    "items": [
+                        {
+                            "key": f"conf.bad{idx}",
+                            "value": f"unique-value-{idx}",
+                            "scope": "project",
+                            "confidence": bad,
+                        }
+                    ],
+                },
+            )
+            assert r.imported == 1, r.warnings
+            ent = store.get(f"conf.bad{idx}")
+            assert ent is not None
+            assert ent.confidence == 0.6
+    finally:
+        store.close()
+
+
 def test_branch_persisted(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     try:

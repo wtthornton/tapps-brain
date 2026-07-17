@@ -144,6 +144,55 @@ class TestRestProfileGateMiddlewareIntegration:
         assert body["data"]["tool"] == "brain_forget"
         assert body["data"]["profile"] == "reviewer"
 
+    def test_x_tapps_agent_takes_precedence_over_x_agent_id(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RestProfileGate must honor X-Tapps-Agent like MCP tenant middleware."""
+        seen: dict[str, str] = {}
+
+        class _Resolver:
+            def resolve(
+                self,
+                *,
+                project_id: str,
+                agent_id: str,
+                header_profile: str | None,
+            ) -> str:
+                seen["agent_id"] = agent_id
+                return "full"
+
+            class _Registry:
+                @staticmethod
+                def get(profile: str) -> frozenset[str]:
+                    return frozenset(
+                        {
+                            "brain_recall",
+                            "brain_remember",
+                            "brain_forget",
+                            "brain_reinforce",
+                            "memory_reinforce",
+                            "brain_record_event",
+                        }
+                    )
+
+                @staticmethod
+                def suggest_profile_for_tool(tool: str, exclude: str | None = None) -> None:
+                    return None
+
+            _registry = _Registry()
+
+        monkeypatch.setattr(
+            "tapps_brain.http.profile_resolver._get_profile_resolver",
+            lambda: _Resolver(),
+        )
+        r = client.post(
+            "/v1/recall",
+            json={},
+            headers={"X-Agent-Id": "ignored-agent", "X-Tapps-Agent": "preferred-agent"},
+        )
+        assert r.status_code == 200
+        assert seen["agent_id"] == "preferred-agent"
+
 
 # ---------------------------------------------------------------------------
 # TAP-1934 — record_many atomicity (unit test against a fake CM)

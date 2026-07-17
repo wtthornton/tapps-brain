@@ -347,9 +347,12 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
             # Unmapped /v1/* path — let it through (admin / future routes).
             return await call_next(request)  # type: ignore[no-any-return]
 
-        # Profile resolution mirrors McpTenantMiddleware exactly.
+        # Profile resolution mirrors McpTenantMiddleware / _resolve_tenant_headers.
         project_id = (request.headers.get("x-project-id") or "").strip()
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        tapps_agent = (request.headers.get("x-tapps-agent") or "").strip()
+        if tapps_agent:
+            agent_id = tapps_agent
 
         from tapps_brain.http.profile_resolver import _get_profile_resolver
         from tapps_brain.mcp_server.profile_registry import UnknownProfileError

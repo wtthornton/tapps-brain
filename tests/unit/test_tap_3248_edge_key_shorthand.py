@@ -76,6 +76,20 @@ class TestEdgeEndpointResolution:
         assert resolved == "uuid-task"
         assert by_name["ralph"] == "uuid-task"
 
+    def test_lookup_skips_failed_upsert_slots(self) -> None:
+        """Partial upsert failures must not realign later entities onto earlier UUIDs."""
+        entities = [
+            EntitySpec(entity_type="agent", canonical_name="a"),
+            EntitySpec(entity_type="task", canonical_name="b"),
+            EntitySpec(entity_type="tool", canonical_name="c"),
+        ]
+        typed, by_name = _build_entity_lookup(entities, ["uuid-a", None, "uuid-c"])
+        assert typed[("agent", "a")] == "uuid-a"
+        assert typed[("tool", "c")] == "uuid-c"
+        assert ("task", "b") not in typed
+        assert by_name["c"] == "uuid-c"
+        assert "b" not in by_name
+
     def test_agentforge_task_completion_event_shape(self) -> None:
         event = ExperienceEvent(
             event_type="workflow_completed",

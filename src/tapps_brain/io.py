@@ -109,7 +109,17 @@ def export_to_markdown(
             t = str(e.tier)
             by_tier.setdefault(t, []).append(e)
         for tier_name in ("architectural", "pattern", "procedural", "context"):
-            tier_entries = by_tier.get(tier_name, [])
+            tier_entries = by_tier.pop(tier_name, [])
+            if not tier_entries:
+                continue
+            lines.append(f"# {tier_name.title()}")
+            lines.append("")
+            for entry in sort_entries(tier_entries):
+                lines.extend(render_entry(entry))
+        # Emit remaining tiers (ephemeral, session, profile layers) so they are
+        # not silently dropped after being collected into by_tier.
+        for tier_name in sorted(by_tier.keys()):
+            tier_entries = by_tier[tier_name]
             if not tier_entries:
                 continue
             lines.append(f"# {tier_name.title()}")

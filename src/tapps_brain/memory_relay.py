@@ -8,6 +8,7 @@ Sub-agents without a local tapps-brain can build a relay JSON payload (via MCP
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -199,6 +200,10 @@ def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
         confidence = -1.0
     elif isinstance(conf, (int, float)):
         confidence = float(conf)
+        # Reject non-finite / out-of-range values so MemoryStore.save does not
+        # raise ValidationError mid-import (use source default via -1.0).
+        if not math.isfinite(confidence) or confidence > 1.0 or confidence < -1.0:
+            confidence = -1.0
     else:
         confidence = -1.0
 

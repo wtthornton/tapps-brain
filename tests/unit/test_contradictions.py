@@ -256,6 +256,22 @@ class TestBranchCheck:
         assert len(result) == 1
         assert "feature-xyz-does-not-exist" in result[0].reason
 
+    def test_glob_metachar_branch_does_not_false_positive(self, tmp_project_with_git: Path):
+        """Branch names that are git globs must not match via fnmatch expansion."""
+        entry = _make_entry(
+            key="mem-glob",
+            value="on star branch",
+            tags=["branch"],
+            branch="*",
+        )
+        detector = ContradictionDetector(tmp_project_with_git)
+        result = detector.detect_contradictions([entry], _FakeProfile())
+        # Literal refs/heads/* does not exist — contradiction is correct.
+        # The bug was treating "*" as a glob that matched main/master and then
+        # failing the `branch in list` check inconsistently; show-ref is exact.
+        assert len(result) == 1
+        assert "*" in result[0].reason
+
     def test_git_not_available_no_crash(self, tmp_path: Path):
         entry = _make_entry(
             key="mem-b",
