@@ -27,6 +27,7 @@ may still index the full corpus for IDF; ranking applies the filters above.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -916,7 +917,7 @@ class MemoryRetriever:
         rm_add_bm25_candidates(len(results))
         return results
 
-    def _get_hybrid_candidates(
+    def _get_hybrid_candidates(  # noqa: PLR0915
         self,
         query: str,
         store: MemoryStore,
@@ -1026,7 +1027,7 @@ class MemoryRetriever:
 
         return results
 
-    def _vector_search(  # noqa: PLR0911
+    def _vector_search(  # noqa: PLR0911, PLR0915
         self,
         query: str,
         store: MemoryStore,
@@ -1072,10 +1073,8 @@ class MemoryRetriever:
                 # "vector channel empty" — mirror PostgresPrivateBackend sticky flag.
                 persistence = getattr(store, "_persistence", None)
                 if persistence is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         persistence.knn_search_degraded = True
-                    except Exception:
-                        pass
                 knn = []
             if knn:
                 scored_knn: list[tuple[str, float]] = []

@@ -800,7 +800,7 @@ def create_agent_registry_backend(
 
 
 def resolve_agent_registry(
-    hive: Any | None = None,
+    hive: HiveBackend | None = None,
 ) -> AgentRegistryBackend:
     """Prefer Postgres ``agent_registry`` when Hive DSN / ``hive._cm`` is available.
 
