@@ -769,16 +769,21 @@ class AnomalyDetector:
     def detect(self, report: DiagnosticsReport) -> list[dict[str, Any]]:
         alerts: list[dict[str, Any]] = []
         for name, ds in report.dimensions.items():
+            # Z-score against the *pre-update* EWMA so the current observation
+            # is not folded into the baseline before comparison.
+            prev_m = self._ewma.get(name)
+            prev_v = self._var_ewma.get(name, 0.0)
             self._observe(name, ds.score, mutate=True)
             self._obs_count[name] = self._obs_count.get(name, 0) + 1
             if self._obs_count[name] < self.min_obs:
                 continue
-            m = self._ewma.get(name)
-            v = max(1e-9, self._var_ewma.get(name, 0.0))
-            sigma = math.sqrt(v)
-            if m is None or sigma < 1e-6:
+            if prev_m is None:
                 continue
-            z = abs(ds.score - m) / sigma
+            v = max(1e-9, prev_v)
+            sigma = math.sqrt(v)
+            if sigma < 1e-6:
+                continue
+            z = abs(ds.score - prev_m) / sigma
             level = None
             if z >= self.crit_sigma:
                 level = "threshold_critical"

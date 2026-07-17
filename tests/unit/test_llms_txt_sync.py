@@ -65,3 +65,11 @@ def test_fetch_raises_when_empty(mock_client_cls: MagicMock) -> None:
     except LlmsTxtError:
         return
     raise AssertionError("expected LlmsTxtError")
+
+
+def test_extract_topic_section_includes_subsections() -> None:
+    content = "# FastAPI\n## Overview\nbody here\n## Other\nskip\n# Next\nx\n"
+    section = extract_topic_section(content, "fastapi")
+    assert "body here" in section
+    assert "## Overview" in section
+    assert "# Next" not in section

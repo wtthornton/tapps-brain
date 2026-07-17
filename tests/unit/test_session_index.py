@@ -322,3 +322,13 @@ def test_concurrent_writers_no_duplicate_keys(tmp_path: Path) -> None:
     # Both threads write chunks 0-19 for the same session; dict enforces one entry
     # per (session_id, chunk_index) key, so exactly 20 keys must exist.
     assert len(bucket) == 20
+
+
+def test_reindex_shorter_session_drops_orphan_chunks(tmp_path: Path) -> None:
+    index_session(tmp_path, "sess", ["one", "two", "three"])
+    index_session(tmp_path, "sess", ["ONLY"])
+    stale = search_session_index(tmp_path, "two")
+    assert stale == []
+    hits = search_session_index(tmp_path, "ONLY")
+    assert len(hits) == 1
+    assert hits[0]["content"] == "ONLY"

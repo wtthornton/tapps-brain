@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from tapps_brain.markdown_import import (
     _import_daily_note,
+    _parse_and_import,
     _parse_sections,
     _slugify,
     _tier_from_level,
@@ -387,3 +388,27 @@ class TestImportDailyNoteEncodingError:
         store = MemoryStore(tmp_path / "store")
         result = _import_daily_note(note, store)
         assert result is False
+
+
+class TestImportSaveFailureNotCounted:
+    def test_failed_save_not_counted_as_imported(self) -> None:
+        class FailStore:
+            def get(self, k):
+                return None
+
+            def save(self, **kw):
+                return {"error": "content_blocked", "message": "blocked"}
+
+        assert _parse_and_import("# Title\n\nSome body text here.\n", FailStore()) == 0
+
+    def test_failed_daily_save_returns_false(self, tmp_path: Path) -> None:
+        class FailStore:
+            def get(self, k):
+                return None
+
+            def save(self, **kw):
+                return {"error": "content_blocked", "message": "blocked"}
+
+        note = tmp_path / "2026-07-16.md"
+        note.write_text("daily note body\n", encoding="utf-8")
+        assert _import_daily_note(note, FailStore()) is False

@@ -109,6 +109,10 @@ def index_session(
             if is_new and len(bucket) > _max_in_memory:
                 oldest = min(bucket, key=lambda k: bucket[k]["created_at"])
                 del bucket[oldest]
+        # Drop surplus indices from a prior longer write so re-index replaces
+        # the session rather than leaving stale searchable orphans.
+        for surplus_key in [k for k in bucket if k[0] == session_id and k[1] >= len(trimmed)]:
+            del bucket[surplus_key]
     return len(trimmed)
 
 
@@ -228,6 +232,15 @@ class SessionIndex:
                     """,
                     (self._project_id, self._agent_id, session_id, idx, content),
                 )
+            # Remove higher indices left from a previous longer write.
+            cur.execute(
+                """
+                DELETE FROM session_chunks
+                WHERE project_id = %s AND agent_id = %s AND session_id = %s
+                  AND chunk_index >= %s
+                """,
+                (self._project_id, self._agent_id, session_id, len(trimmed)),
+            )
         logger.debug(
             "session_indexed",
             session_id=session_id,

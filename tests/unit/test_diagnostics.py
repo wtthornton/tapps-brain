@@ -495,3 +495,30 @@ def test_hive_namespace_scores_search_fallback(tmp_path) -> None:
 )
 def test_hive_namespace_scores_with_hive(tmp_path) -> None:
     raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")
+
+
+def test_anomaly_detector_z_score_uses_pre_update_ewma() -> None:
+    """Outlier z must be measured against the baseline before folding it in."""
+    import math
+
+    det = AnomalyDetector(lam=0.3, min_obs=3, warn_sigma=1.5, crit_sigma=3.0, confirm_window=1)
+    for s in (0.8, 0.8, 0.8):
+        det.detect(
+            DiagnosticsReport(
+                composite_score=s,
+                dimensions={"x": DimensionScore(name="x", score=s)},
+                recorded_at="t",
+            )
+        )
+    prev_m = det._ewma["x"]
+    prev_v = det._var_ewma["x"]
+    expected_z = abs(0.2 - prev_m) / math.sqrt(max(1e-9, prev_v))
+    alerts = det.detect(
+        DiagnosticsReport(
+            composite_score=0.2,
+            dimensions={"x": DimensionScore(name="x", score=0.2)},
+            recorded_at="t",
+        )
+    )
+    assert alerts, "expected anomaly alert for large drop"
+    assert abs(alerts[0]["z_score"] - round(expected_z, 4)) < 1e-6

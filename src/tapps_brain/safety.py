@@ -194,7 +194,8 @@ def _has_encoded_injection(
         except Exception:
             continue
         text = _decode_as_text(raw)
-        if text is not None and _matches_any(text):
+        # NFKC after decode — encoded homographs must match plaintext rules.
+        if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
             return True
 
     # --- URL-safe base64 (only tokens that use - or _; others caught above) ---
@@ -208,7 +209,7 @@ def _has_encoded_injection(
         except Exception:
             continue
         text = _decode_as_text(raw)
-        if text is not None and _matches_any(text):
+        if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
             return True
 
     # --- Hex ---
@@ -218,7 +219,7 @@ def _has_encoded_injection(
         except ValueError:
             continue
         text = _decode_as_text(raw)
-        if text is not None and _matches_any(text):
+        if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
             return True
 
     return False

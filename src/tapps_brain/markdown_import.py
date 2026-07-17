@@ -111,12 +111,20 @@ def _parse_and_import(text: str, store: MemoryStore) -> int:
             value = value[:MAX_VALUE_LENGTH]
 
         with batch_exempt_scope("import_markdown"):
-            store.save(
+            saved = store.save(
                 key=key,
                 value=value,
                 tier=tier.value,
                 source=MemorySource.system.value,
             )
+        if isinstance(saved, dict) and saved.get("error"):
+            logger.warning(
+                "markdown_import.save_failed",
+                key=key,
+                error=saved.get("error"),
+                message=saved.get("message"),
+            )
+            continue
         imported += 1
         logger.debug("markdown_import.imported", key=key, tier=tier.value)
 
@@ -199,12 +207,20 @@ def _import_daily_note(path: Path, store: MemoryStore) -> bool:
     value = text[:MAX_VALUE_LENGTH]
 
     with batch_exempt_scope("import_markdown"):
-        store.save(
+        saved = store.save(
             key=key,
             value=value,
             tier=MemoryTier.context.value,
             source=MemorySource.system.value,
         )
+    if isinstance(saved, dict) and saved.get("error"):
+        logger.warning(
+            "markdown_import.daily_save_failed",
+            key=key,
+            error=saved.get("error"),
+            message=saved.get("message"),
+        )
+        return False
     logger.debug("markdown_import.imported_daily", key=key, date=date_str)
     return True
 

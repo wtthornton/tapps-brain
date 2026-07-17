@@ -97,8 +97,11 @@ class _EdgeDecayAdapter:
         self.stability = stability
         self.difficulty = difficulty
         # Map edge layer → MemoryTier-compatible string used by _get_half_life.
-        # "domain"/"procedural"/"context" are valid tier names in decay.py.
-        self.tier = layer or "pattern"
+        # Schema allows "domain"; decay only knows MemoryTier names — map it.
+        _layer = (layer or "pattern").strip().lower()
+        if _layer == "domain":
+            _layer = "architectural"
+        self.tier = _layer
         # decay.py expects ISO-8601 strings; psycopg returns datetime objects.
         self.last_reinforced = last_reinforced.isoformat() if last_reinforced is not None else None
         self.updated_at = updated_at.isoformat() if updated_at is not None else None
