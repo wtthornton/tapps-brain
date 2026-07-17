@@ -154,7 +154,7 @@ class RecallOrchestrator:
     # Recall
     # ------------------------------------------------------------------
 
-    def recall(self, message: str, **kwargs: object) -> RecallResult:
+    def recall(self, message: str, **kwargs: object) -> RecallResult:  # noqa: PLR0915
         """Search the store and return injection-ready context.
 
         Args:

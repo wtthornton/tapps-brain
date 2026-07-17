@@ -121,7 +121,6 @@ from tapps_brain.http.middleware import (
 
 # probe cache
 from tapps_brain.http.probe_cache import (
-    _PROBE_CACHE,
     _PROBE_CACHE_TTL,
     _get_hive_pool_stats,
     _probe_db,

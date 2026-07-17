@@ -2961,7 +2961,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             try:
                 self._persistence.delete_relations(old_key)
             except Exception:
-                logger.warning("supersede_delete_old_relations_failed", old_key=old_key, exc_info=True)
+                logger.warning(
+                    "supersede_delete_old_relations_failed",
+                    old_key=old_key,
+                    exc_info=True,
+                )
             with self._serialized():
                 self._relations.pop(old_key, None)
 
