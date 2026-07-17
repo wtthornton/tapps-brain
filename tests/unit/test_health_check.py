@@ -359,9 +359,7 @@ def test_run_health_check_hive_no_agents_warning(
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = []
 
-    monkeypatch.setattr(
-        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg
-    )
+    monkeypatch.setattr("tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg)
 
     report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
     assert report.hive.connected is True
@@ -377,9 +375,7 @@ def test_run_health_check_hive_store_parameter(
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = ["agent-a"]
 
-    monkeypatch.setattr(
-        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg
-    )
+    monkeypatch.setattr("tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg)
 
     report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
 

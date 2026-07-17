@@ -584,13 +584,13 @@ class TestCrossProjectAggregation:
         out = process_hive_feedback(hs)
         assert out["updated"] == 0
 
-
     def test_estimate_tier_weight_context_downweight(self, tmp_path: Path) -> None:
         """context-only hits use 0.9, not the default 1.0 floor."""
         root = tmp_path / "tw"
         root.mkdir()
         store = MemoryStore(root)
         try:
+
             class _E:
                 tier = "context"
 

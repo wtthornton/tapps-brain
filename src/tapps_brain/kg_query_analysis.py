@@ -208,6 +208,7 @@ class QueryAnalysis:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def _empty_analysis() -> QueryAnalysis:
     """Return a fresh empty analysis (never share a mutable singleton)."""
     return QueryAnalysis()

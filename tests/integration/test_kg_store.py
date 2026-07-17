@@ -608,9 +608,7 @@ class TestGraphHealthCounts:
         b = self._store.upsert_entity(entity_type="module", canonical_name="b_" + _uid())
         # Third entity is an orphan — no edges on either side.
         self._store.upsert_entity(entity_type="module", canonical_name="orphan_" + _uid())
-        self._store.upsert_edge(
-            subject_entity_id=a, predicate="DEPENDS_ON", object_entity_id=b
-        )
+        self._store.upsert_edge(subject_entity_id=a, predicate="DEPENDS_ON", object_entity_id=b)
 
     def test_graph_health_counts_reports_entities_edges_and_orphans(self) -> None:
         counts = self._store.graph_health_counts()

@@ -334,9 +334,7 @@ def run_health_check(  # noqa: PLR0915
                     "pgvector knn_search previously failed — semantic recall may be degraded"
                 )
             if getattr(_priv_backend, "index_verify_unknown", False):
-                warnings.append(
-                    "private index verification failed — HNSW presence unknown"
-                )
+                warnings.append("private index verification failed — HNSW presence unknown")
 
             # Checks
             if report.entry_count == 0:

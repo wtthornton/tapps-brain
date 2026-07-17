@@ -247,7 +247,6 @@ class TestSlugify:
     def test_mixed(self):
         assert _slugify("My_Lib Name") == "my-lib-name"
 
-
     def test_plus_and_hash_stripped_for_valid_keys(self):
         from tapps_brain.models import _KEY_SLUG_PATTERN
 
