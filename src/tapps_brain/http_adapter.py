@@ -1784,7 +1784,12 @@ def create_app(
         istore: Any, project_id: str, ikey: str
     ) -> tuple[int, dict[str, Any]] | None:
         """Run idempotency check (raises IdempotencyUnavailableError on failure)."""
-        return istore.check(project_id, ikey)
+        from typing import cast
+
+        return cast(
+            "tuple[int, dict[str, Any]] | None",
+            istore.check(project_id, ikey),
+        )
 
     def _get_ikey_and_istore(request: Request) -> tuple[str | None, Any]:
         """Extract idempotency key + singleton store, or (None, None).

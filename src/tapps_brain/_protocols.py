@@ -426,6 +426,10 @@ class PrivateBackend(Protocol):
 
     def load_relations(self, key: str) -> list[dict[str, Any]]: ...
 
+    def delete_relations(self, key: str) -> int:
+        """Delete all durable relations whose source key is *key*."""
+        ...
+
     # -- Schema / vector / audit ---------------------------------------------
 
     def get_schema_version(self) -> int: ...
