@@ -408,3 +408,19 @@ async def test_async_retry_count_honours_max_attempts() -> None:
 
     assert mock_http.post.call_count == 3
     assert mock_asyncio.sleep.call_count == 2
+
+
+def test_retry_after_seconds_accepts_numeric_header() -> None:
+    from tapps_brain.client import _retry_after_seconds
+
+    class _Resp:
+        headers = {"Retry-After": 7}
+
+    assert _retry_after_seconds(_Resp()) == 7.0
+
+
+def test_unwrap_mcp_result_ignores_non_dict_content() -> None:
+    from tapps_brain.client import _unwrap_mcp_result
+
+    envelope = {"result": {"content": ["not-a-dict"]}}
+    assert _unwrap_mcp_result(envelope) is envelope

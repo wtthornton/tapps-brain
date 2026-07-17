@@ -179,5 +179,8 @@ class PromotionEngine:
 
         A memory with reinforce_count=10 gets base x 1.72.
         """
-        stability_growth = 1.0 + math.log1p(reinforce_count) * 0.3
+        # Negative counts (corrupt data) are treated as zero — log1p(-1)
+        # is undefined and previously raised ValueError.
+        safe_count = max(0, reinforce_count)
+        stability_growth = 1.0 + math.log1p(safe_count) * 0.3
         return base_half_life * stability_growth

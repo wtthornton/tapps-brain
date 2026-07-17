@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import random
 import time
@@ -219,12 +220,15 @@ def _retry_after_seconds(resp: Any) -> float:
                     break
     except (AttributeError, TypeError):
         return 0.0
+    if isinstance(value, (int, float)):
+        return float(value) if math.isfinite(float(value)) else 0.0
     if not isinstance(value, str):
         return 0.0
     try:
-        return float(value)
+        parsed = float(value)
     except ValueError:
         return 0.0
+    return parsed if math.isfinite(parsed) else 0.0
 
 
 def _backoff_delay(config: RetryConfig, attempt: int, hint_seconds: float) -> float:
@@ -499,11 +503,13 @@ def _unwrap_mcp_result(data: Any) -> Any:
     if isinstance(data, dict) and "result" in data:
         content = data["result"].get("content", [])
         if content and isinstance(content, list):
-            raw = content[0].get("text", "{}")
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                return raw
+            first = content[0]
+            if isinstance(first, dict):
+                raw = first.get("text", "{}")
+                try:
+                    return json.loads(raw)
+                except (TypeError, json.JSONDecodeError):
+                    return raw
     return data
 
 

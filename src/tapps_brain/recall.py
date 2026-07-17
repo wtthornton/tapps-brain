@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import structlog
 
@@ -199,8 +199,9 @@ class RecallOrchestrator:
             recall_diag = None
 
         # Graph boost: boost scores of entries connected via relation graph
-        memories = result.get("memories", [])
-        memory_section: str = result.get("memory_section", "")
+        memories_raw = result.get("memories", [])
+        memories: list[Any] = memories_raw if isinstance(memories_raw, list) else []
+        memory_section: str = result.get("memory_section", "") or ""
 
         if cfg.use_graph_boost and memories:
             memories = self._apply_graph_boost(memories, cfg.graph_boost_factor)

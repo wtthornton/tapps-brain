@@ -64,8 +64,11 @@ def import_cache_dir(
         return report
 
     for lib_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
-        library = lib_dir.name
+        dir_library = lib_dir.name
         for md_path in sorted(lib_dir.glob("*.md")):
+            # Per-file locals — do not mutate dir_library across siblings when one
+            # meta.json remaps ``library`` (otherwise later files inherit the remap).
+            library = dir_library
             topic = md_path.stem
             meta_path = lib_dir / f"{topic}.meta.json"
             try:

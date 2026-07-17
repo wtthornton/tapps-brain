@@ -12,6 +12,7 @@ import pytest
 from tapps_brain.context7_sync import Context7Error, extract_context7_content
 from tapps_brain.docs_import import import_cache_dir
 from tapps_brain.docs_lookup import (
+    DEFAULT_DOCS_CACHE_TTL_SECONDS,
     DocsConfig,
     decode_doc_value,
     doc_memory_key,
@@ -393,3 +394,48 @@ def test_persist_doc_entry_uses_hive_scope(monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert captured.get("agent_scope") == "hive"
     assert captured.get("group") == "library-docs"
+
+
+def test_import_cache_dir_meta_library_remap_does_not_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A meta.json library remap must not apply to sibling files in the same dir."""
+    store = _MemStore()
+    cfg = DocsConfig(
+        project_id="library-docs",
+        agent_id="docs-cache",
+        cache_ttl_seconds=3600,
+        context7_api_key=None,
+        llms_txt_fallback=False,
+    )
+    _install_memory_service_fake(monkeypatch, store)
+    lib_dir = tmp_path / "fastapi"
+    lib_dir.mkdir()
+    (lib_dir / "overview.md").write_text("overview body", encoding="utf-8")
+    (lib_dir / "routing.md").write_text("routing body", encoding="utf-8")
+    (lib_dir / "overview.meta.json").write_text(
+        json.dumps({"library": "other-lib", "topic": "overview"}),
+        encoding="utf-8",
+    )
+
+    report = import_cache_dir(store, tmp_path, config=cfg, skip_existing=False)
+    assert report.imported == 2
+    assert report.failed == 0
+    assert (cfg.project_id, cfg.agent_id, doc_memory_key("other-lib", "overview")) in store.rows
+    assert (cfg.project_id, cfg.agent_id, doc_memory_key("fastapi", "routing")) in store.rows
+
+
+def test_docs_config_invalid_ttl_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOCS_CACHE_TTL", "not-a-number")
+    cfg = DocsConfig.from_env()
+    assert cfg.cache_ttl_seconds == DEFAULT_DOCS_CACHE_TTL_SECONDS
+
+
+def test_docs_config_negative_ttl_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOCS_CACHE_TTL", "-10")
+    cfg = DocsConfig.from_env()
+    assert cfg.cache_ttl_seconds == DEFAULT_DOCS_CACHE_TTL_SECONDS
+
+
+def test_doc_memory_key_sanitizes_topic_colons() -> None:
+    assert doc_memory_key("lib", "a:b") == "docs:lib:a_b"

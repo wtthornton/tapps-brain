@@ -88,6 +88,8 @@ class SyncContext7Client:
                 raise Context7Error(f"Context7 resolve failed: {exc}") from exc
             data = resp.json()
         items = data if isinstance(data, list) else data.get("results", [])
+        if not isinstance(items, list):
+            items = []
         results: list[dict[str, str]] = []
         for item in items:
             if not isinstance(item, dict):

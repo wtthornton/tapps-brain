@@ -183,6 +183,23 @@ class TestRecallOrchestrator:
         assert result.memory_count == 0
         assert result.memory_section == ""
 
+    def test_recall_tolerates_null_memories_payload(self, store, monkeypatch):
+        """inject_memories returning memories=None must not raise on len()."""
+        from tapps_brain import recall as recall_mod
+
+        def _fake_inject(*args, **kwargs):
+            return {
+                "memories": None,
+                "memory_section": "",
+                "recall_diagnostics": {"retriever_hits": 0, "empty_reason": "store_empty"},
+            }
+
+        monkeypatch.setattr(recall_mod, "inject_memories", _fake_inject)
+        orch = RecallOrchestrator(store)
+        result = orch.recall("anything")
+        assert result.memory_count == 0
+        assert result.memories == []
+
     def test_recall_no_matches_returns_empty(self, store):
         orch = RecallOrchestrator(store)
         result = orch.recall("quantum computing blockchain")

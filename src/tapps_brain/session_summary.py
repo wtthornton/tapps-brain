@@ -110,8 +110,11 @@ def session_summary_save(
             summary = cut + ellipsis
         truncated = True
 
-    today = datetime.date.today().isoformat()
-    now_ts = datetime.datetime.now(tz=datetime.UTC).strftime("%H%M%S")
+    # Use UTC date to match the UTC timestamp below and daily-note labels.
+    # ``date.today()`` is local-tz and can disagree with UTC near midnight.
+    now_utc = datetime.datetime.now(tz=datetime.UTC)
+    today = now_utc.date().isoformat()
+    now_ts = now_utc.strftime("%H%M%S")
     key = f"session.{today}.{now_ts}"
 
     base_tags = ["date", "session", "episodic"]

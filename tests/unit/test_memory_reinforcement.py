@@ -126,3 +126,16 @@ class TestReinforce:
         # Without reinforcement, decay still applies from updated_at
         decayed = calculate_decayed_confidence(entry, config, now=now)
         assert decayed < 0.5  # roughly 50% at half-life
+
+    def test_nan_boost_treated_as_zero(self, config: DecayConfig) -> None:
+        """Non-finite boosts must not poison confidence with NaN."""
+        entry = _make_entry(confidence=0.6)
+        now = datetime.now(tz=UTC)
+        updates = reinforce(entry, config, confidence_boost=float("nan"), now=now)
+        assert updates["confidence"] == pytest.approx(0.6, abs=0.01)
+
+    def test_inf_boost_treated_as_zero(self, config: DecayConfig) -> None:
+        entry = _make_entry(confidence=0.6)
+        now = datetime.now(tz=UTC)
+        updates = reinforce(entry, config, confidence_boost=float("inf"), now=now)
+        assert updates["confidence"] == pytest.approx(0.6, abs=0.01)
