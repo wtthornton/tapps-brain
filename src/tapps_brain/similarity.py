@@ -229,7 +229,11 @@ def compute_similarity_with_embeddings(
         emb_score = embedding_cosine_similarity(entry_a.embedding, entry_b.embedding)
         # Primary: embedding cosine; secondary: Jaccard tag similarity.
         total = embedding_weight + tag_weight
-        combined = (emb_score * embedding_weight + tag_score * tag_weight) / total
+        if total <= 0.0:
+            # Degenerate weights — fall back to equal blend of available signals.
+            combined = 0.5 * emb_score + 0.5 * tag_score
+        else:
+            combined = (emb_score * embedding_weight + tag_score * tag_weight) / total
         return SimilarityResult(
             entry_key=entry_b.key,
             combined_score=round(combined, 4),
@@ -240,10 +244,15 @@ def compute_similarity_with_embeddings(
         )
 
     # Fallback: Jaccard tag + TF-cosine (original path).
+    # Honour an explicitly passed non-default *tag_weight*; otherwise use the
+    # text-path default (0.4) rather than the embedding-path default (0.3).
+    fallback_tag_weight = (
+        tag_weight if tag_weight != DEFAULT_EMBEDDING_TAG_WEIGHT else DEFAULT_TAG_WEIGHT
+    )
     return compute_similarity(
         entry_a,
         entry_b,
-        tag_weight=DEFAULT_TAG_WEIGHT,
+        tag_weight=fallback_tag_weight,
         text_weight=text_weight,
     )
 
@@ -281,10 +290,24 @@ def find_similar(
         if exclude_self and candidate.key == entry.key:
             continue
 
-        if use_embeddings:
+        if use_embeddings and entry.embedding and candidate.embedding:
+            # Embedding path uses its own tag/embedding weight defaults unless
+            # the caller overrode tag_weight away from the text-path default.
+            emb_tag = (
+                tag_weight if tag_weight != DEFAULT_TAG_WEIGHT else DEFAULT_EMBEDDING_TAG_WEIGHT
+            )
             result = compute_similarity_with_embeddings(
                 entry,
                 candidate,
+                tag_weight=emb_tag,
+                text_weight=text_weight,
+            )
+        elif use_embeddings:
+            # No stored vectors — honour the caller's text-path weights.
+            result = compute_similarity(
+                entry,
+                candidate,
+                tag_weight=tag_weight,
                 text_weight=text_weight,
             )
         else:

@@ -248,6 +248,23 @@ class TestBloomFilterClearAndRebuild:
             bf.add(f"y-{i}")
         assert bf._expected_items == expected * 2
 
+    def test_auto_resize_forces_scan_until_rebuild(self) -> None:
+        """After auto-resize clears bits, prior items must not look like definite misses."""
+        expected = 4
+        bf = BloomFilter(expected_items=expected, fp_rate=0.01)
+        early = "early-value-that-must-still-dedup"
+        bf.add(early)
+        threshold = expected + expected // 2
+        for i in range(threshold):  # next add triggers resize
+            bf.add(f"overflow-{i}")
+        assert bf._force_scan is True
+        # Without _force_scan, cleared bits would return False → store skips exact scan.
+        assert bf.might_contain(early) is True
+        bf.rebuild([early, "overflow-0"])
+        assert bf._force_scan is False
+        assert bf.might_contain(early) is True
+        assert bf.might_contain("never-added") is False
+
     def test_approximate_fp_rate_after_rebuild(self) -> None:
         bf = BloomFilter(expected_items=100, fp_rate=0.01)
         for i in range(50):

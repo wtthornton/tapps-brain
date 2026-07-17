@@ -142,6 +142,9 @@ def reciprocal_rank_fusion_weighted(
     if bm25_weight < 0.0 or vector_weight < 0.0:
         msg = "bm25_weight and vector_weight must be non-negative"
         raise ValueError(msg)
+    if k < 0:
+        msg = f"k must be non-negative, got {k}"
+        raise ValueError(msg)
 
     fused: dict[str, float] = {}
 

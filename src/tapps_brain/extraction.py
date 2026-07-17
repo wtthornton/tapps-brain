@@ -109,13 +109,28 @@ def _slugify(text: str, max_len: int = 64) -> str:
     return text[:max_len] if len(text) > max_len else text
 
 
+# Ellipsis length reserved when truncating extracted fact values.
+_TRUNCATE_ELLIPSIS_LEN = 3
+
+
 def _truncate(value: str, max_chars: int) -> str:
-    """Truncate value to max_chars, preserving word boundary."""
+    """Truncate value to max_chars, preserving word boundary.
+
+    Reserves three characters for the ``...`` ellipsis when *max_chars* is
+    larger than that. Values of *max_chars* <= 0 yield an empty string;
+    values 1-3 return a hard prefix (no ellipsis) so negative Python
+    slices cannot expand the result.
+    """
     value = value.strip()
+    if max_chars <= 0:
+        return ""
     if len(value) <= max_chars:
         return value
-    cut = value[: max_chars - 3].rsplit(maxsplit=1)
-    return (cut[0] if cut else value[: max_chars - 3]) + "..."
+    if max_chars <= _TRUNCATE_ELLIPSIS_LEN:
+        return value[:max_chars]
+    cut = value[: max_chars - _TRUNCATE_ELLIPSIS_LEN].rsplit(maxsplit=1)
+    head = cut[0] if cut and cut[0] else value[: max_chars - _TRUNCATE_ELLIPSIS_LEN]
+    return head + "..."
 
 
 def extract_durable_facts(

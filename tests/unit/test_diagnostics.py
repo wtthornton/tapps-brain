@@ -414,7 +414,23 @@ def test_circuit_half_open_after_cooldown(monkeypatch) -> None:
     cb.state = CircuitState.OPEN
     cb._last_remediation_mono.clear()
     monkeypatch.setattr("tapps_brain.diagnostics.random.random", lambda: 0.0)
-    assert cb.enter_half_open_if_cooled(now_mono=cb.cooldown_seconds + 1.0) is True
+    # First observation while OPEN starts the cooldown clock (missing ≠ epoch 0).
+    assert cb.enter_half_open_if_cooled(now_mono=100.0) is False
+    assert cb.state == CircuitState.OPEN
+    assert cb.enter_half_open_if_cooled(now_mono=100.0 + cb.cooldown_seconds + 1.0) is True
+    assert cb.state == CircuitState.HALF_OPEN
+
+
+def test_circuit_open_does_not_half_open_on_long_uptime(monkeypatch) -> None:
+    """Long process uptime must not skip OPEN cooldown (missing timestamp ≠ 0)."""
+    cb = CircuitBreaker()
+    monkeypatch.setattr("tapps_brain.diagnostics.random.random", lambda: 0.0)
+    cb.transition(0.1)
+    assert cb.state == CircuitState.OPEN
+    # Simulate a process that has been up for days.
+    assert cb.enter_half_open_if_cooled(now_mono=1_000_000.0) is False
+    assert cb.state == CircuitState.OPEN
+    assert cb.enter_half_open_if_cooled(now_mono=1_000_000.0 + cb.cooldown_seconds + 1.0) is True
     assert cb.state == CircuitState.HALF_OPEN
 
 

@@ -197,6 +197,14 @@ def test_search_respects_limit(tmp_path: Path) -> None:
     assert len(results) <= 5
 
 
+def test_search_non_positive_limit_returns_empty(tmp_path: Path) -> None:
+    """Negative limit must not use Python suffix-slice semantics."""
+    index_session(tmp_path, "s1", ["alpha beta"])
+    index_session(tmp_path, "s2", ["alpha gamma"])
+    assert search_session_index(tmp_path, "alpha", limit=0) == []
+    assert search_session_index(tmp_path, "alpha", limit=-1) == []
+
+
 def test_search_returns_copies_not_references(tmp_path: Path) -> None:
     """Mutating a search result must not corrupt the in-memory index."""
     index_session(tmp_path, "s1", ["original"])

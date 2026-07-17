@@ -62,6 +62,18 @@ class TestNoopReranker:
         reranker = NoopReranker()
         assert isinstance(reranker, Reranker)
 
+    def test_top_k_zero_returns_empty(self) -> None:
+        """top_k=0 must return [] — not silently treat 0 as 'no limit'."""
+        reranker = NoopReranker()
+        candidates = [("a", "va"), ("b", "vb")]
+        assert reranker.rerank("q", candidates, top_k=0) == []
+
+    def test_top_k_negative_returns_empty(self) -> None:
+        """Negative top_k must not use Python reverse-slice semantics."""
+        reranker = NoopReranker()
+        candidates = [("a", "va"), ("b", "vb"), ("c", "vc")]
+        assert reranker.rerank("q", candidates, top_k=-1) == []
+
 
 # ---------------------------------------------------------------------------
 # FlashRankReranker (mocked — no real flashrank needed)
@@ -75,6 +87,18 @@ class TestFlashRankReranker:
         reranker = FlashRankReranker()
         result = reranker.rerank("query", [], top_k=5)
         assert result == []
+
+    def test_top_k_zero_returns_empty_without_calling_model(self) -> None:
+        """top_k=0 must short-circuit; ``len(result) >= 0`` must not leak one hit."""
+        reranker = FlashRankReranker()
+        candidates = [("a", "val a"), ("b", "val b")]
+        mock_ranker = MagicMock()
+        mock_flashrank = MagicMock()
+        mock_flashrank.Ranker.return_value = mock_ranker
+        with patch.dict("sys.modules", {"flashrank": mock_flashrank}):
+            result = reranker.rerank("query", candidates, top_k=0)
+        assert result == []
+        mock_ranker.rerank.assert_not_called()
 
     def test_flashrank_success(self) -> None:
         reranker = FlashRankReranker()

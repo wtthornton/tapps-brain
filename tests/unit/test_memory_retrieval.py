@@ -12,6 +12,7 @@ from tapps_brain.decay import DecayConfig
 from tapps_brain.models import (
     MemoryEntry,
     MemorySource,
+    MemoryStatus,
     MemoryTier,
 )
 from tapps_brain.profile import ScoringConfig
@@ -190,6 +191,31 @@ class TestMemoryRetriever:
         results = retriever.search("contradicted memory", store, include_contradicted=True)
         assert len(results) == 1
         assert results[0].entry.key == "bad-key"
+
+    def test_lifecycle_stale_excluded_by_default(self) -> None:
+        active = _make_entry("active-key", "active memory about widgets")
+        stale = _make_entry("stale-key", "stale memory about widgets")
+        stale.status = MemoryStatus.stale
+        archived = _make_entry("archived-key", "archived memory about widgets")
+        archived.status = MemoryStatus.archived
+        retriever = MemoryRetriever()
+        store = _make_store([active, stale, archived])
+
+        results = retriever.search("widgets memory", store)
+        keys = [r.entry.key for r in results]
+        assert "active-key" in keys
+        assert "stale-key" not in keys
+        assert "archived-key" not in keys
+
+    def test_lifecycle_stale_included_when_requested(self) -> None:
+        stale = _make_entry("stale-key", "stale memory about widgets")
+        stale.status = MemoryStatus.stale
+        retriever = MemoryRetriever()
+        store = _make_store([stale])
+
+        results = retriever.search("widgets memory", store, include_stale=True)
+        assert len(results) == 1
+        assert results[0].entry.key == "stale-key"
 
     def test_result_limit_respected(self) -> None:
         entries = [_make_entry(f"key-{i}", f"matching value {i}") for i in range(20)]

@@ -133,7 +133,7 @@ class TestSessionSummarySave:
         assert result["status"] == "saved"
         assert result.get("truncated") is True
 
-        # Verify stored value is within budget (plus ellipsis marker " …")
+        # Verify stored value never exceeds the hard character budget.
         from tapps_brain.store import MemoryStore
 
         store = MemoryStore(tmp_path)
@@ -142,7 +142,22 @@ class TestSessionSummarySave:
             assert entries, "Expected at least one stored entry"
             stored_value = entries[0].value
             assert stored_value.endswith(" …")
-            assert len(stored_value) <= 50 + 3  # " …" is 2 chars
+            assert len(stored_value) <= 50
+        finally:
+            store.close()
+
+    def test_max_chars_no_space_never_exceeds_budget(self, tmp_path: Path):
+        """Whitespace-free summaries must still respect max_chars after ellipsis."""
+        summary = "abcdefghijklmnop"  # no spaces
+        result = session_summary_save(summary, project_dir=tmp_path, max_chars=5)
+        assert result.get("truncated") is True
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        try:
+            entries = store.list_all()
+            assert entries
+            assert len(entries[0].value) <= 5
         finally:
             store.close()
 

@@ -133,6 +133,10 @@ def search_session_index(
     """
     if not query or not query.strip():
         return []
+    # ``scored[:limit]`` with a negative *limit* drops a suffix instead of
+    # capping — treat non-positive limits as empty (same as SQL LIMIT 0).
+    if limit <= 0:
+        return []
     q_words = set(query.lower().split())
     key = str(project_root)
     scored: list[tuple[int, dict[str, Any]]] = []
@@ -239,6 +243,9 @@ class SessionIndex:
         ``created_at`` keys, ranked by ``ts_rank`` descending.
         """
         if not query or not query.strip():
+            return []
+        # Postgres treats a negative LIMIT as LIMIT ALL — clamp to avoid that.
+        if limit <= 0:
             return []
 
         sql = (

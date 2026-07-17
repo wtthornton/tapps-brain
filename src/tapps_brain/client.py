@@ -199,12 +199,24 @@ def _retry_after_seconds(resp: Any) -> float:
     Only the delta-seconds form is honoured — the HTTP-date form is rare in
     brain responses and falls through to the body hint or computed backoff.
     Defensive against test mocks that lack a real headers mapping.
+
+    Lookup is case-insensitive so plain ``dict`` mocks and HTTP libraries that
+    preserve the canonical ``Retry-After`` casing still work (httpx ``Headers``
+    is already case-insensitive; a bare ``dict`` is not).
     """
     headers = getattr(resp, "headers", None)
     if headers is None:
         return 0.0
     try:
         value = headers.get("retry-after")
+        if value is None:
+            value = headers.get("Retry-After")
+        if value is None:
+            # Slow path for plain dicts / mappings that are case-sensitive.
+            for key, val in headers.items():
+                if isinstance(key, str) and key.lower() == "retry-after":
+                    value = val
+                    break
     except (AttributeError, TypeError):
         return 0.0
     if not isinstance(value, str):

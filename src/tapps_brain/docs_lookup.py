@@ -165,8 +165,11 @@ def _parse_cached_at(payload: dict[str, Any]) -> datetime | None:
 
 
 def _is_fresh(payload: dict[str, Any], ttl_seconds: float) -> bool:
+    raw_cached_at = payload.get("cached_at")
     cached_at = _parse_cached_at(payload)
     if cached_at is None:
+        if isinstance(raw_cached_at, str) and raw_cached_at.strip():
+            return False
         return True
     if cached_at.tzinfo is None:
         cached_at = cached_at.replace(tzinfo=UTC)
@@ -460,10 +463,10 @@ def docs_warm(
         if not name:
             continue
         result = docs_lookup(store, library=name, topic=topic, mode=mode, config=config)
-        if result.get("success"):
-            warmed.append(name)
-        elif result.get("cache_hit"):
+        if result.get("success") and result.get("cache_hit"):
             skipped.append(name)
+        elif result.get("success"):
+            warmed.append(name)
         else:
             failed.append({"library": name, "error": str(result.get("error", "unknown"))})
     return {

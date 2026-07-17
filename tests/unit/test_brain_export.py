@@ -241,6 +241,17 @@ def test_every_tier_round_trips(tmp_path: Path, tier: MemoryTier) -> None:
     assert (out / tier.value / "k.md").exists()
 
 
+def test_recency_score_naive_timestamp_does_not_raise() -> None:
+    """tz-naive last_accessed must not TypeError against aware ``now``."""
+    from tapps_brain.services.memory_service import _recency_score
+
+    naive = (datetime.now(tz=UTC) - timedelta(days=3)).replace(tzinfo=None).isoformat()
+    score = _recency_score(naive)
+    assert 0.0 < score < 1.0
+    # ~3 days → 1/(1+3/30) ≈ 0.909
+    assert 0.88 < score < 0.93
+
+
 # ---------------------------------------------------------------------------
 # OKF layout (Open Knowledge Format v0.1)
 # ---------------------------------------------------------------------------

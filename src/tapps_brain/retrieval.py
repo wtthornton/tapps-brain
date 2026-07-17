@@ -19,9 +19,10 @@ EPIC-042.6: After hybrid scoring, optional rerank emits structured logs
 ``last_rerank_stats`` for callers (e.g. ``inject_memories`` telemetry).
 Default ``search()`` excludes: contradicted entries (unless ``include_contradicted``),
 consolidated source rows (unless ``include_sources``), temporally invalid /
-superseded entries (unless ``include_superseded`` / ``include_historical``), and
-entries below ``min_confidence`` after decay. BM25/FTS may still index the full
-corpus for IDF; ranking applies the filters above.
+superseded entries (unless ``include_superseded`` / ``include_historical``),
+lifecycle ``stale`` / ``superseded`` / ``archived`` statuses (unless
+``include_stale``), and entries below ``min_confidence`` after decay. BM25/FTS
+may still index the full corpus for IDF; ranking applies the filters above.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from pydantic import BaseModel, Field
 from tapps_brain.bm25 import BM25Scorer, preprocess
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
 from tapps_brain.lexical import LexicalRetrievalConfig
-from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier, tier_str
+from tapps_brain.models import MemoryEntry, MemorySource, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import (
     rm_add_bm25_candidates,
     rm_add_vector_candidates,
@@ -64,6 +65,9 @@ logger = structlog.get_logger(__name__)
 _MAX_RESULTS = 50
 _DEFAULT_RESULTS = 10
 _MIN_CONFIDENCE_FLOOR = 0.1
+_EXCLUDED_LIFECYCLE_STATUSES = frozenset(
+    {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
+)
 
 
 class ScoredMemory(BaseModel):
@@ -392,6 +396,7 @@ class MemoryRetriever:
         include_sources: bool,
         include_contradicted: bool,
         include_superseded: bool,
+        include_stale: bool,
         as_of: str | None,
         min_confidence: float,
         now: datetime,
@@ -407,6 +412,12 @@ class MemoryRetriever:
             # Filter source entries of consolidated memories (Epic 58.5)
             if not include_sources and _is_consolidated_source(entry):
                 continue
+
+            # TAP-732: exclude lifecycle stale/superseded/archived by default
+            if not include_stale:
+                entry_status = getattr(entry, "status", MemoryStatus.active)
+                if entry_status in _EXCLUDED_LIFECYCLE_STATUSES:
+                    continue
 
             # Filter contradicted entries (sources already handled above)
             is_included_source = include_sources and _is_consolidated_source(entry)
@@ -505,6 +516,7 @@ class MemoryRetriever:
         as_of: str | None = None,
         include_superseded: bool = False,
         include_historical: bool = False,
+        include_stale: bool = False,
         memory_group: str | None = None,
         since: str | None = None,
         until: str | None = None,
@@ -534,6 +546,9 @@ class MemoryRetriever:
                 (marked with ``stale=True`` and a 0.5x relevance penalty).
             include_historical: Alias for ``include_superseded`` (GitHub #29, task 040.3).
                 When True, include expired/superseded entries in results.
+            include_stale: When True, include entries whose lifecycle ``status``
+                is ``stale``, ``superseded``, or ``archived`` (TAP-732). Default
+                excludes them so inject/recall match ``brain_recall``.
             memory_filter: Optional structured pre-filter applied before BM25/vector scoring
                 (TAP-733).  When ``None`` or all fields are unset, no pre-filtering is done
                 (preserves existing behaviour).  Filters are applied as hard AND conditions
@@ -595,6 +610,7 @@ class MemoryRetriever:
             include_sources=include_sources,
             include_contradicted=include_contradicted,
             include_superseded=include_superseded,
+            include_stale=include_stale,
             as_of=as_of,
             min_confidence=min_confidence,
             now=now,

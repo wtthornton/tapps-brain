@@ -390,6 +390,33 @@ class TestFindSimilarThresholdBoundaries:
         # used_embeddings must be False on the Jaccard+TF path
         assert results_emb_off[0].used_embeddings is False
 
+    def test_zero_embedding_weights_do_not_divide_by_zero(self) -> None:
+        """embedding_weight=tag_weight=0 must not raise ZeroDivisionError."""
+        from tapps_brain.similarity import compute_similarity_with_embeddings
+
+        a = MemoryEntry(
+            key="a", value="alpha", tier=MemoryTier.pattern, tags=["t"], embedding=[1.0, 0.0]
+        )
+        b = MemoryEntry(
+            key="b", value="beta", tier=MemoryTier.pattern, tags=["t"], embedding=[0.0, 1.0]
+        )
+        result = compute_similarity_with_embeddings(a, b, tag_weight=0.0, embedding_weight=0.0)
+        assert 0.0 <= result.combined_score <= 1.0
+        assert result.used_embeddings is True
+
+    def test_find_similar_honours_tag_weight_without_embeddings(self) -> None:
+        """use_embeddings=True with no vectors must still respect tag_weight."""
+        ref = _entry("ref", "postgres database cluster", tags=["db", "sql"])
+        cand = _entry("cand", "unrelated cats and dogs story", tags=["db", "sql"])
+        heavy = find_similar(
+            ref, [cand], threshold=0.0, use_embeddings=True, tag_weight=0.95, text_weight=0.05
+        )
+        light = find_similar(
+            ref, [cand], threshold=0.0, use_embeddings=True, tag_weight=0.05, text_weight=0.95
+        )
+        assert heavy and light
+        assert heavy[0].combined_score > light[0].combined_score
+
 
 # ---------------------------------------------------------------------------
 # same_topic_score — overlap boundary (≥50%)

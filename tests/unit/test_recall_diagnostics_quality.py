@@ -91,3 +91,13 @@ def test_z_suffix_iso_timestamps_are_accepted() -> None:
     _, age = _compute_recall_quality([{"key": "a", "score": 0.5, "last_accessed": iso_z}])
     assert age is not None
     assert 4.99 < age < 5.01
+
+
+def test_naive_iso_timestamps_treated_as_utc() -> None:
+    """tz-naive ``last_accessed`` must not raise TypeError against aware ``now``."""
+    naive = (datetime.now(tz=UTC) - timedelta(days=2)).replace(tzinfo=None).isoformat()
+    assert "+" not in naive and not naive.endswith("Z")
+    top, age = _compute_recall_quality([{"key": "a", "score": 0.6, "last_accessed": naive}])
+    assert top == 0.6
+    assert age is not None
+    assert 1.99 < age < 2.01

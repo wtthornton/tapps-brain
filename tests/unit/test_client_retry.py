@@ -114,6 +114,13 @@ def test_retry_after_header_parses_seconds() -> None:
     assert _retry_after_seconds(resp) == 12.0
 
 
+def test_retry_after_header_canonical_casing() -> None:
+    """Plain dicts preserve ``Retry-After`` casing from real HTTP responses."""
+    resp = MagicMock()
+    resp.headers = {"Retry-After": "9"}
+    assert _retry_after_seconds(resp) == 9.0
+
+
 def test_retry_after_header_missing_returns_zero() -> None:
     resp = MagicMock()
     resp.headers = {}

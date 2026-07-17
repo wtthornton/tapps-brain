@@ -24,6 +24,20 @@ def test_resolve_url_known_library() -> None:
 
 
 @patch("tapps_brain.llms_txt_sync.httpx.Client")
+def test_resolve_url_falls_back_to_get_when_head_blocked(mock_client_cls: MagicMock) -> None:
+    head_resp = MagicMock()
+    head_resp.status_code = 405
+    get_resp = MagicMock()
+    get_resp.status_code = 200
+    client_ctx = mock_client_cls.return_value.__enter__.return_value
+    client_ctx.head.return_value = head_resp
+    client_ctx.get.return_value = get_resp
+
+    client = SyncLlmsTxtClient()
+    assert client.resolve_url("custom-lib") == "https://docs.custom-lib.dev/llms.txt"
+
+
+@patch("tapps_brain.llms_txt_sync.httpx.Client")
 def test_fetch_returns_content(mock_client_cls: MagicMock) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 200

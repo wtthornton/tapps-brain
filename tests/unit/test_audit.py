@@ -67,6 +67,13 @@ class TestAuditReader:
         results = reader.query(limit=5)
         assert len(results) == 5
 
+    def test_query_non_positive_limit_returns_empty(self, audit_file: Path):
+        """limit<=0 must not return a phantom first row (``len >= 0`` trap)."""
+        reader = AuditReader(audit_file)
+        assert reader.query(limit=0) == []
+        assert reader.query(limit=-1) == []
+        assert reader.query(limit=-5) == []
+
     def test_query_combined_filters(self, audit_file: Path):
         reader = AuditReader(audit_file)
         results = reader.query(key="key-0", event_type="save")

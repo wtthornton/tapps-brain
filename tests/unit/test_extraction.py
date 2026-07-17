@@ -65,7 +65,18 @@ class TestExtractDurableFacts:
         long_val = "We decided to " + "x" * 5000 + " end."
         facts = extract_durable_facts(long_val, max_value_chars=100)
         assert facts
-        assert len(facts[0]["value"]) <= 103  # 100 + "..."
+        assert len(facts[0]["value"]) <= 100
+
+    def test_truncate_small_budget_never_expands(self) -> None:
+        """max_value_chars < 3 must hard-cut, not negative-slice the full string."""
+        from tapps_brain.extraction import _truncate
+
+        long_val = "We decided to use a very long architectural approach for this."
+        for budget in (0, 1, 2, 3):
+            out = _truncate(long_val, budget)
+            assert len(out) <= budget
+        assert _truncate(long_val, 0) == ""
+        assert len(_truncate(long_val, 10)) <= 10
 
     def test_deterministic_same_input_same_output(self) -> None:
         """Same input produces same output (deterministic)."""

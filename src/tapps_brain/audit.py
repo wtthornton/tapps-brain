@@ -69,6 +69,8 @@ class AuditReader:
         limit: int = 100,
     ) -> list[AuditEntry]:
         """Query audit log entries with optional filters."""
+        if limit <= 0:
+            return []
         # Legacy / unit-test path: backend is a file path.
         if isinstance(self._backend, Path):
             return self._query_file(
@@ -118,6 +120,10 @@ class AuditReader:
         limit: int,
     ) -> list[AuditEntry]:
         """Read and filter a JSONL audit file (legacy / unit-test path)."""
+        # Non-positive limits must return empty — ``len(results) >= 0`` is always
+        # true after the first match, so a bare comparison would return one row.
+        if limit <= 0:
+            return []
         path = self._backend  # Path object
         if not path.exists():
             return []

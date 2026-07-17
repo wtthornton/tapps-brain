@@ -191,6 +191,16 @@ class TestExtractFromEntries:
         assert "m1" in api_redis[0].source_entry_keys
         assert "m2" in api_redis[0].source_entry_keys
 
+    def test_merge_appends_confidence_history(self):
+        """Duplicate triples must accumulate confidence_history (not drop it)."""
+        e1 = _make_entry(key="m1", value="The API uses Redis")
+        e2 = _make_entry(key="m2", value="The API uses Redis")
+        rels = extract_relations_from_entries([e1, e2])
+        api_redis = [r for r in rels if "redis" in r.object_entity.lower()]
+        assert len(api_redis) == 1
+        assert len(api_redis[0].confidence_history) == 2
+        assert api_redis[0].confidence_history == [0.8, 0.8]
+
     def test_different_entries_produce_different_relations(self):
         e1 = _make_entry(key="m1", value="The API uses Redis")
         e2 = _make_entry(key="m2", value="The scheduler manages workers")

@@ -342,6 +342,8 @@ class TestReportTemplates:
             assert naive.tzinfo == UTC
             bad = flywheel_mod._parse_iso("not-an-iso-timestamp")
             assert bad.tzinfo == UTC
+            # Corrupt stamps must not count as "recent" in gap trend scoring.
+            assert bad.year == datetime.min.year
             store.save("t1", "python data science", tier="architectural", source="agent")
 
             def _boom(_q: str) -> list[object]:

@@ -318,6 +318,11 @@ class FeedbackStore:
             conditions.append("timestamp <= %s")
             params.append(until)
 
+        # Postgres treats a negative LIMIT as LIMIT ALL — clamp so callers cannot
+        # accidentally dump the full table via a bad limit argument.
+        if limit <= 0:
+            return []
+
         # `where` is assembled only from the static condition fragments above
         # (e.g. "event_type = %s"); every user value is bound via a %s placeholder
         # in `params`, so no caller data is interpolated into the SQL text.
@@ -409,6 +414,9 @@ class InMemoryFeedbackStore:
                 f"Known types: {known}"
             )
         with self._lock:
+            # Match Postgres ``ON CONFLICT (project_id, agent_id, id) DO NOTHING``.
+            if any(e.id == event.id for e in self._events):
+                return
             self._events.append(event)
 
     def query(
@@ -422,6 +430,9 @@ class InMemoryFeedbackStore:
         limit: int = 100,
     ) -> list[FeedbackEvent]:
         """Query feedback events with optional filters (oldest-first)."""
+        # Python ``list[:n]`` with *n* < 0 drops a suffix — clamp like Postgres.
+        if limit <= 0:
+            return []
         with self._lock:
             results = list(self._events)
         if event_type is not None:
@@ -434,6 +445,8 @@ class InMemoryFeedbackStore:
             results = [e for e in results if e.timestamp >= since]
         if until is not None:
             results = [e for e in results if e.timestamp <= until]
+        # Match FeedbackStore: ORDER BY timestamp ASC before applying LIMIT.
+        results.sort(key=lambda e: e.timestamp)
         return results[:limit]
 
     def close(self) -> None:
