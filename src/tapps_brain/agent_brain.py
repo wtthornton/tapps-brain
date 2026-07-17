@@ -141,8 +141,11 @@ class AgentBrain:
         if _hive_dsn:
             try:
                 self._hive = create_hive_backend(_hive_dsn, encryption_key=encryption_key)
-            except Exception:
-                logger.warning("agent_brain.hive_init_failed", exc_info=True)
+            except Exception as exc:
+                # Fail closed: an explicit Hive DSN that cannot open must not
+                # silently degrade share=/hive paths to private-only.
+                msg = f"Failed to open Hive backend for DSN ({type(exc).__name__}): {exc}"
+                raise RuntimeError(msg) from exc
 
         # STORY-066.8: Auto-migrate private schema if TAPPS_BRAIN_AUTO_MIGRATE=1.
         # MemoryStore.__init__ also performs this check, but we call it here so
@@ -185,10 +188,11 @@ class AgentBrain:
             logger.warning("agent_brain.private_backend_init_failed", exc_info=True)
             _private_backend = None
 
-        # Create MemoryStore
+        # Create MemoryStore — always pass the same resolved agent id used for
+        # the private backend tenant key (avoids None vs "unknown" split).
         self._store = MemoryStore(
             self._project_dir,
-            agent_id=self._agent_id,
+            agent_id=_effective_agent_id,
             hive_store=self._hive,
             hive_agent_id=_effective_agent_id,
             groups=_groups,

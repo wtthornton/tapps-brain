@@ -233,20 +233,22 @@ def merge_tags(entries: list[MemoryEntry], max_tags: int = 10) -> list[str]:
     if not entries:
         return []
 
-    # Count tag occurrences
+    # Count tag occurrences; keep first-seen casing (lowercase only for dedup).
     tag_counts: dict[str, int] = {}
+    display: dict[str, str] = {}
     for entry in entries:
         for tag in entry.tags:
             tag_lower = tag.lower()
             tag_counts[tag_lower] = tag_counts.get(tag_lower, 0) + 1
+            display.setdefault(tag_lower, tag)
 
-    # Sort by count (descending), then alphabetically
-    sorted_tags = sorted(
+    # Sort by count (descending), then alphabetically by canonical lower key
+    sorted_keys = sorted(
         tag_counts.keys(),
         key=lambda t: (-tag_counts[t], t),
     )
 
-    return sorted_tags[:max_tags]
+    return [display[t] for t in sorted_keys[:max_tags]]
 
 
 # ---------------------------------------------------------------------------

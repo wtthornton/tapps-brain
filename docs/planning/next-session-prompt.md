@@ -8,7 +8,7 @@ Copy everything below the line into a new chat as the **user message**.
 
 **Start by reading:** `CLAUDE.md`, `docs/planning/STATUS.md`, then the epic you implement (if any). **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). File new work via `linear-issue` skill before coding.
 
-**Package version:** `3.24.0` (`pyproject.toml`).
+**Package version:** `3.25.0` (`pyproject.toml`). Current max private migration: **025**.
 
 **Already on `main` — do not redo:**
 

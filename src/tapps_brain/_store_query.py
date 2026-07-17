@@ -73,6 +73,8 @@ class QueryMixin(_MemoryStoreBase):
         """
         self._metrics.increment("store.get")
         with MetricsTimer(self._metrics, "store.get_ms"):
+            # Always hydrate first so scoped resolution sees durable rows.
+            self._ensure_entry_cached(key)
             with self._serialized():
                 if scope is not None and branch is not None:
                     entry = self._resolve_scope(key, scope, branch)
@@ -123,6 +125,7 @@ class QueryMixin(_MemoryStoreBase):
                 (superseded/expired) entries. Default ``True`` for backward
                 compatibility.
         """
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -137,17 +140,44 @@ class QueryMixin(_MemoryStoreBase):
 
     def list_memory_groups(self) -> list[str]:
         """Return sorted distinct project-local ``memory_group`` values (GitHub #49)."""
+        self._merge_durable_entries()
         with self._serialized():
             names = {e.memory_group for e in self._entries.values() if e.memory_group}
         return sorted(names)
 
+    def _ensure_entry_cached(self, key: str) -> MemoryEntry | None:
+        """Return *key* from cache, hydrating from durable store on miss.
+
+        Experience-path and other out-of-band upserts write Postgres without
+        updating ``_entries``.  Mutating APIs must hydrate before treating a
+        miss as "does not exist".
+        """
+        with self._serialized():
+            entry = self._entries.get(key)
+            if entry is not None:
+                return entry
+        load_one = getattr(self._persistence, "load_one", None)
+        if not callable(load_one):
+            return None
+        entry = load_one(key)
+        if entry is None:
+            return None
+        with self._serialized():
+            existing = self._entries.get(key)
+            if existing is not None:
+                return existing
+            self._entries[key] = entry
+            return entry
+
     def delete(self, key: str) -> bool:
         """Delete a memory entry by key. Returns True if deleted."""
         with start_span(SPAN_DELETE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}):
+            removed = self._ensure_entry_cached(key)
+            if removed is None:
+                return False
             with self._serialized():
-                if key not in self._entries:
-                    return False
-                removed = self._entries.pop(key)
+                # Re-pop under lock in case another writer raced.
+                removed = self._entries.pop(key, removed)
 
             # Persist deletion — rollback in-memory cache on failure to
             # maintain write-through consistency.
@@ -157,6 +187,21 @@ class QueryMixin(_MemoryStoreBase):
                 with self._serialized():
                     self._entries[key] = removed
                 raise
+
+            # Drop relations that referenced this key (cache + durable store).
+            try:
+                self._persistence.delete_relations(key)
+            except Exception:
+                # Restore durable entry + in-memory row so callers see failure.
+                with self._serialized():
+                    self._entries[key] = removed
+                try:
+                    self._persistence.save(removed)
+                except Exception:
+                    logger.warning("delete_relations_rollback_failed", key=key, exc_info=True)
+                raise
+            with self._serialized():
+                self._relations.pop(key, None)
 
             # Remove from entity index (TAP-734).
             self._remove_entry_entities(key)
@@ -243,11 +288,14 @@ class QueryMixin(_MemoryStoreBase):
             try:
                 with start_span(
                     SPAN_HIVE_SEARCH,
-                    {"hive.group": group_name, "hive.namespace": f"group:{group_name}"},
+                    {"hive.group": group_name, "hive.namespace": group_name},
                 ):
+                    # Bare group name is canonical (matches PropagationEngine +
+                    # search_with_groups). Also probe legacy ``group:<name>``
+                    # rows written before the namespace unification fix.
                     group_results = self._hive_store.search(
                         query,
-                        namespaces=[f"group:{group_name}"],
+                        namespaces=[group_name, f"group:{group_name}"],
                         limit=max_group_results,
                     )
                 for gr in group_results:

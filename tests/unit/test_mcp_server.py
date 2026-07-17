@@ -1644,44 +1644,45 @@ class TestMemorySaveAgentScope:
         assert entry is not None
         assert entry.agent_scope == "hive"
 
-    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_memory_save_hive_scope_triggers_propagation(self, store_dir):
-        """When Hive is enabled, saving with agent_scope='hive' propagates."""
-        from unittest.mock import patch
+        """When Hive is attached, saving with agent_scope='hive' writes to Hive."""
+        from unittest.mock import MagicMock
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        server = create_server(store_dir, enable_hive=False, agent_id="test-agent")
         store = server._tapps_store
+        hive = MagicMock()
+        hive.agent_is_group_member.return_value = True
+        store._hive_store = hive
 
-        with patch.object(store, "_propagate_to_hive") as mock_propagate:
-            save_fn = _tool_fn(server, "memory_save")
-            save_fn(key="prop-test", value="propagated value", agent_scope="hive")
-            mock_propagate.assert_called_once()
-            propagated_entry = mock_propagate.call_args[0][0]
-            assert propagated_entry.agent_scope == "hive"
+        save_fn = _tool_fn(server, "memory_save")
+        save_fn(key="prop-test", value="propagated value", agent_scope="hive")
+        hive.save.assert_called()
+        assert any(
+            c.kwargs.get("namespace") == "universal" for c in hive.save.call_args_list
+        )
 
-        store._hive_store.close()
         store.close()
 
-    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
     def test_memory_save_private_scope_still_calls_propagate(self, store_dir):
-        """Private scope entries still call _propagate_to_hive (engine decides)."""
-        from unittest.mock import patch
+        """Private scope entries remain private in the store with Hive attached."""
+        from unittest.mock import MagicMock
 
         from tapps_brain.mcp_server import create_server
 
-        server = create_server(store_dir, enable_hive=True, agent_id="test-agent")
+        server = create_server(store_dir, enable_hive=False, agent_id="test-agent")
         store = server._tapps_store
+        hive = MagicMock()
+        store._hive_store = hive
 
-        with patch.object(store, "_propagate_to_hive") as mock_propagate:
-            save_fn = _tool_fn(server, "memory_save")
-            save_fn(key="priv-test", value="private value", agent_scope="private")
-            mock_propagate.assert_called_once()
-            propagated_entry = mock_propagate.call_args[0][0]
-            assert propagated_entry.agent_scope == "private"
+        save_fn = _tool_fn(server, "memory_save")
+        out = save_fn(key="priv-test", value="private value", agent_scope="private")
+        assert "error" not in (out if isinstance(out, dict) else {})
+        entry = store.get("priv-test")
+        assert entry is not None
+        assert entry.agent_scope == "private"
 
-        store._hive_store.close()
         store.close()
 
 
@@ -2588,43 +2589,38 @@ class TestMCPAdditionalCoverage:
         server._tapps_store.close()
 
     # ------------------------------------------------------------------
-    # hive_status / hive_search — exception paths
+    # hive_status / hive_search — exception paths (mocked, no Postgres)
     # ------------------------------------------------------------------
 
-    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
-    def test_hive_status_exception_returns_error(self, store_dir, monkeypatch):
+    def test_hive_status_exception_returns_error(self, store_dir):
         """hive_status returns error JSON when an exception occurs."""
-        from tapps_brain.mcp_server import create_server
+        from tapps_brain.services import hive_service
 
-        server = create_server(store_dir, enable_hive=True, agent_id="test")
-        # Corrupt the shared hive store to force an exception
-        monkeypatch.setattr(
-            server._tapps_store._hive_store,
-            "list_namespaces",
-            lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-        )
-        status_fn = _tool_fn(server, "hive_status")
-        result = json.loads(status_fn())
-        assert result.get("error") == "hive_error" or "namespaces" in result
-        server._tapps_store._hive_store.close()
-        server._tapps_store.close()
+        def _boom() -> tuple[object, bool]:
+            raise RuntimeError("boom")
 
-    @pytest.mark.skip(reason="Requires Postgres HiveBackend (ADR-007); no SQLite HiveStore in v3")
-    def test_hive_search_exception_returns_error(self, store_dir, monkeypatch):
+        result = hive_service.hive_status(None, "pid", "test", hive_resolver=_boom)
+        assert result.get("error") == "hive_error"
+
+    def test_hive_search_exception_returns_error(self, store_dir):
         """hive_search returns error JSON when an exception occurs."""
-        from tapps_brain.mcp_server import create_server
+        from tapps_brain.services import hive_service
 
-        server = create_server(store_dir, enable_hive=True, agent_id="test")
-        monkeypatch.setattr(
-            server._tapps_store._hive_store,
-            "search",
-            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("search failure")),
+        class _BadHive:
+            def search(self, *a: object, **k: object) -> list[object]:
+                raise RuntimeError("search failure")
+
+            def close(self) -> None:
+                return None
+
+        result = hive_service.hive_search(
+            None,
+            "pid",
+            "test",
+            hive_resolver=lambda: (_BadHive(), True),
+            query="anything",
         )
-        search_fn = _tool_fn(server, "hive_search")
-        result = json.loads(search_fn(query="anything"))
-        assert result.get("error") == "hive_error" or "results" in result
-        server._tapps_store._hive_store.close()
-        server._tapps_store.close()
+        assert result.get("error") == "hive_error"
 
     # ------------------------------------------------------------------
     # agent_create — exception path
@@ -3816,9 +3812,24 @@ class TestPerCallProjectDispatch:
 
         default = _FakeStore("tenant-x")
         default._tapps_project_id = "tenant-x"
+        default._agent_id = "x"
         monkeypatch.setattr(ms, "_current_request_project_id", lambda: "tenant-x")
         proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
         assert proxy._resolve() is default
+
+    def test_meta_matching_default_rejects_agent_mismatch(self, monkeypatch) -> None:
+        """Default store with no agent_id must not be reused for a different agent."""
+        from tapps_brain import mcp_server as ms
+
+        default = _FakeStore("tenant-x")
+        default._tapps_project_id = "tenant-x"
+        # Intentionally omit _agent_id (None) — previously failed open.
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: "tenant-x")
+        other = _FakeStore("tenant-x-other")
+        monkeypatch.setattr(ms, "_get_store", lambda *a, **kw: other)
+        ms._STORE_CACHE.clear()
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="agent-b")
+        assert proxy._resolve() is other
 
     def test_project_not_registered_maps_to_mcp_error(self, monkeypatch) -> None:
         from mcp.shared.exceptions import McpError

@@ -65,6 +65,22 @@ def test_resolve_propagation_namespace_group_denied() -> None:
     assert refusal["decision"] == "refused_group_not_member"
 
 
+def test_resolve_propagation_namespace_unknown_scope_refused() -> None:
+    hive = MagicMock()
+    namespace, refusal = _resolve_propagation_namespace(
+        effective_scope="not-a-real-scope",
+        agent_profile="profile-a",
+        agent_id="agent-1",
+        key="k1",
+        requested_scope="not-a-real-scope",
+        tier="context",
+        hive_store=hive,
+    )
+    assert namespace is None
+    assert refusal is not None
+    assert refusal["decision"] == "refused_unknown_scope"
+
+
 def test_filter_memory_entries_by_tier_and_tags() -> None:
     entry = make_entry(key="a", tags=["alpha"], tier="pattern")
     other = make_entry(key="b", tags=["beta"], tier="context")

@@ -254,12 +254,18 @@ def _get_store_for_project(
     if not project_id:
         project_id = getattr(default_store, "_tapps_project_id", "") or ""
 
-    # Compound key when the per-call agent differs from the server default;
-    # otherwise keep the historical bare-project_id key for cache compat.
-    cache_key = f"{project_id}\x00{effective_agent_id}" if per_call_differs else project_id
+    # Compound key always includes agent_id so pooled MCP connections cannot
+    # reuse another agent's store when only project_id matches.
+    cache_key = f"{project_id}\x00{effective_agent_id}"
 
     default_pid = getattr(default_store, "_tapps_project_id", None)
-    if not per_call_differs and default_pid and project_id == default_pid:
+    default_aid = getattr(default_store, "_agent_id", None)
+    if (
+        not per_call_differs
+        and default_pid
+        and project_id == default_pid
+        and (default_aid is not None and default_aid == effective_agent_id)
+    ):
         return default_store
 
     def _factory() -> Any:  # noqa: ANN401
@@ -473,12 +479,14 @@ class _StoreProxy:
         import tapps_brain.mcp_server as _ms_pkg
 
         pid = _ms_pkg._current_request_project_id()  # type: ignore[attr-defined]
+        call_aid = _current_request_agent_id()
         try:
             return _get_store_for_project(
                 pid,
                 default_store=self._default_store,
                 enable_hive=self._enable_hive,
                 agent_id=self._agent_id,
+                call_agent_id=call_aid if call_aid and call_aid != self._agent_id else None,
             )
         except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError

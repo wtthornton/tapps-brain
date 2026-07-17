@@ -30,8 +30,12 @@ if TYPE_CHECKING:
 # Schema metadata
 # ---------------------------------------------------------------------------
 
-#: Schema version reported by ``get_schema_version()`` (mirrors 001_initial.sql).
-PRIVATE_SCHEMA_VERSION = 1
+#: Bootstrap seed from migration ``001_initial.sql``. Never treat this as the
+#: live "current" schema version — call sites that cannot read the version
+#: table should report ``0`` (unknown) instead.
+PRIVATE_SCHEMA_BOOTSTRAP_VERSION = 1
+# Back-compat alias for older imports/tests.
+PRIVATE_SCHEMA_VERSION = PRIVATE_SCHEMA_BOOTSTRAP_VERSION
 
 #: Valid ``time_field`` values for temporal filtering on private_memories.
 VALID_TIME_FIELDS: frozenset[str] = frozenset({"created_at", "updated_at", "last_accessed"})
@@ -144,14 +148,17 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     negative_feedback_count  = EXCLUDED.negative_feedback_count,
     integrity_hash           = EXCLUDED.integrity_hash,
     integrity_hash_v         = EXCLUDED.integrity_hash_v,
-    embedding_model_id       = EXCLUDED.embedding_model_id,
+    embedding_model_id       = CASE
+        WHEN EXCLUDED.embedding IS NOT NULL THEN EXCLUDED.embedding_model_id
+        ELSE private_memories.embedding_model_id
+    END,
     temporal_sensitivity     = EXCLUDED.temporal_sensitivity,
     failed_approaches        = EXCLUDED.failed_approaches,
     status                   = EXCLUDED.status,
     stale_reason             = EXCLUDED.stale_reason,
     stale_date               = EXCLUDED.stale_date,
     memory_class             = EXCLUDED.memory_class,
-    embedding                = EXCLUDED.embedding
+    embedding                = COALESCE(EXCLUDED.embedding, private_memories.embedding)
 """
 
 
@@ -238,6 +245,12 @@ LOAD_ALL_SQL = (
     "SELECT * FROM private_memories"
     " WHERE project_id = %s AND agent_id = %s"
     " ORDER BY updated_at DESC"
+)
+
+LOAD_ONE_SQL = (
+    "SELECT * FROM private_memories"
+    " WHERE project_id = %s AND agent_id = %s AND key = %s"
+    " LIMIT 1"
 )
 
 DELETE_BY_KEY_SQL = (

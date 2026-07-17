@@ -349,7 +349,7 @@ def inject_memories(  # noqa: PLR0915
             until=until,
             time_field=time_field,
         )
-    except Exception:
+    except Exception as exc:
         logger.warning(
             "memory_injection_search_failed",
             question=question[:80],
@@ -360,12 +360,15 @@ def inject_memories(  # noqa: PLR0915
             vis_err = _visible_entry_count(store, memory_group)
         except Exception:
             vis_err = None
-        return _injection_empty(
+        empty = _injection_empty(
             empty_reason=RECALL_EMPTY_SEARCH_FAILED,
             retriever_hits=0,
             visible_entries=vis_err,
             injection_telemetry=_default_injection_telemetry(tlabel),
         )
+        empty["quality_warning"] = f"memory search failed: {type(exc).__name__}: {exc}"
+        empty["search_error"] = True
+        return empty
 
     telem = _default_injection_telemetry(tlabel)
     _merge_rerank_telemetry(telem, retriever)

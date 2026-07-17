@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-06-09 — **v3.24.0** — Wave-2 consumer APIs shipped (EPIC-074/075). **EPIC-077** (TAP-3198 autonomous-loop cleanup) complete except release gate. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
+**Last updated:** 2026-07-16 — **v3.25.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
 
-**Package version (`pyproject.toml`):** **3.24.0**
+**Package version (`pyproject.toml`):** **3.25.0**
 
 Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic acceptance criteria: [`epics/`](./epics/).
 
@@ -34,7 +34,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
-- **Migrations 007–024:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`). Current max private migration: **024**.
+- **Migrations 007–025:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`). Current max private migration: **025**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 

@@ -36,7 +36,7 @@ class TestCapturePersistenceBackendSaveMany:
         entries = [MemoryEntry(key=f"k{i}", value=f"v{i}") for i in range(3)]
         capture.save_many(entries)
 
-        saves, _deletes, _relations, _audit = capture.flush()
+        saves, _deletes, _deleted_rels, _relations, _audit = capture.flush()
         assert [e.key for e in saves] == ["k0", "k1", "k2"]
 
 
@@ -375,7 +375,7 @@ class TestAsyncNativeSecondaryWriteParity:
             backend.append_audit.assert_awaited_once_with("save", "k", {"reason": "test"})
 
             # Queues are drained after flush.
-            saves, deletes, rels, audit = capture.flush()
+            saves, deletes, _deleted_rels, rels, audit = capture.flush()
             assert saves == [] and deletes == [] and rels == [] and audit == []
         finally:
             await sync_store.close()
@@ -410,7 +410,7 @@ class TestAsyncNativeSecondaryWriteParity:
 
         capture = _CapturePersistenceBackend(MagicMock())
         assert capture.save_relations("k", []) == 0
-        _saves, _deletes, rels, _audit = capture.flush()
+        _saves, _deletes, _deleted_rels, rels, _audit = capture.flush()
         assert rels == []
 
 

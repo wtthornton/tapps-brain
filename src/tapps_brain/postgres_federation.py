@@ -45,6 +45,16 @@ class PostgresFederationBackend:
 
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             for entry in entries:
+                agent_scope = getattr(entry, "agent_scope", None) or "private"
+                # Refuse private-scoped rows — federation is cross-project share.
+                if agent_scope == "private":
+                    logger.warning(
+                        "federation.pg.publish_refused_private",
+                        project_id=project_id,
+                        key=getattr(entry, "key", None),
+                        agent_scope=agent_scope,
+                    )
+                    continue
                 tags_json = json.dumps(
                     entry.tags if hasattr(entry, "tags") else getattr(entry, "tags", [])
                 )

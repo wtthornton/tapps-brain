@@ -21,9 +21,10 @@ Usage::
     return result
 
 The underlying Postgres table ``idempotency_keys`` is created by migration
-``010_idempotency_keys.sql``.  :class:`IdempotencyStore` degrades gracefully
-(logs a warning, treats every check as a cache miss) when the table does not
-exist yet.
+``010_idempotency_keys.sql``.  When Postgres is unreachable or the check
+fails, :meth:`IdempotencyStore.check` raises
+:class:`IdempotencyUnavailableError` so write paths fail closed instead of
+silently allowing duplicate writes.
 """
 
 from __future__ import annotations
@@ -45,6 +46,10 @@ _MAX_RESPONSE_BYTES: int = 65_536  # 64 KiB
 _IDEMPOTENCY_ENV = "TAPPS_BRAIN_IDEMPOTENCY"
 
 
+class IdempotencyUnavailableError(RuntimeError):
+    """Raised when an idempotency check cannot be completed safely."""
+
+
 def is_idempotency_enabled() -> bool:
     """Return ``True`` when the ``TAPPS_BRAIN_IDEMPOTENCY`` env var equals ``"1"``."""
     return os.environ.get(_IDEMPOTENCY_ENV, "").strip() == "1"
@@ -54,8 +59,9 @@ class IdempotencyStore:
     """Postgres-backed idempotency key store.
 
     Requires migration ``010_idempotency_keys.sql`` to be applied against the
-    private schema.  When the table is absent, :meth:`check` returns ``None``
-    and :meth:`save` is a no-op (with a logged warning).
+    private schema.  When the table is absent or Postgres errors,
+    :meth:`check` raises :class:`IdempotencyUnavailableError` (fail-closed).
+    :meth:`save` remains a logged no-op on write failure.
 
     Parameters
     ----------
@@ -79,9 +85,9 @@ class IdempotencyStore:
     def check(self, project_id: str, key: str) -> tuple[int, dict[str, Any]] | None:
         """Return ``(status_code, response_body)`` for an existing key, or ``None``.
 
-        The key must have been stored within :attr:`ttl_hours`.  Returns
-        ``None`` on any Postgres error so that the caller can fall through to
-        the real write path.
+        The key must have been stored within :attr:`ttl_hours`.  Raises
+        :class:`IdempotencyUnavailableError` on Postgres / decode failure so
+        callers do not fall through to a duplicate write.
         """
         try:
             with self._cm.get_connection() as conn, conn.cursor() as cur:
@@ -104,7 +110,9 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
-            return None
+            raise IdempotencyUnavailableError(
+                f"idempotency check failed for key={key!r}"
+            ) from exc
 
         if row is None:
             return None
@@ -122,7 +130,9 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
-            return None
+            raise IdempotencyUnavailableError(
+                f"idempotency decode failed for key={key!r}"
+            ) from exc
 
     def save(
         self,
@@ -166,6 +176,9 @@ class IdempotencyStore:
                 project_id=project_id,
                 error=str(exc),
             )
+            raise IdempotencyUnavailableError(
+                f"idempotency save failed for key={key!r}"
+            ) from exc
 
     def sweep_expired(self, ttl_hours: int | None = None) -> int:
         """Delete keys older than *ttl_hours* and return the row count.
@@ -225,6 +238,7 @@ def sweep_expired_keys(
 __all__ = [
     "IDEMPOTENCY_TTL_HOURS",
     "IdempotencyStore",
+    "IdempotencyUnavailableError",
     "is_idempotency_enabled",
     "sweep_expired_keys",
 ]

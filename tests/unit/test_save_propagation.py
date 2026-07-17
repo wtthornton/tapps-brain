@@ -120,7 +120,7 @@ class TestPropagateGroupSaveFanOut:
         )
         hive.save.assert_called_once()
         _, kwargs = hive.save.call_args
-        assert kwargs["namespace"] == "group:team-a"
+        assert kwargs["namespace"] == "team-a"
         assert kwargs["key"] == "k"
         assert kwargs["value"] == "v"
 
@@ -135,10 +135,10 @@ class TestPropagateGroupSaveFanOut:
         )
         assert hive.save.call_count == 3
         namespaces = [call.kwargs["namespace"] for call in hive.save.call_args_list]
-        assert set(namespaces) == {"group:alpha", "group:beta", "group:gamma"}
+        assert set(namespaces) == {"alpha", "beta", "gamma"}
 
-    def test_named_group_scope_targets_single_namespace(self) -> None:
-        """``agent_scope == "group:<name>"`` writes only to that namespace."""
+    def test_named_group_scope_deferred_to_propagation_engine(self) -> None:
+        """``group:<name>`` is owned by PropagationEngine — no double-write here."""
         hive = _hive()
         entry = _entry(agent_scope="group:beta")
         propagate_group_save(
@@ -147,9 +147,7 @@ class TestPropagateGroupSaveFanOut:
             groups=["alpha", "beta"],
             hive_store=hive,
         )
-        hive.save.assert_called_once()
-        _, kwargs = hive.save.call_args
-        assert kwargs["namespace"] == "group:beta"
+        hive.save.assert_not_called()
 
     def test_tags_forwarded(self) -> None:
         hive = _hive()

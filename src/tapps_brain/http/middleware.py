@@ -380,10 +380,17 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
 
         try:
             allowed_tools = _get_profile_resolver()._registry.get(resolved_profile)
-        except UnknownProfileError:
-            # Server default points at an unknown profile — let the call
-            # through rather than refuse; operators see this in startup logs.
-            return await call_next(request)  # type: ignore[no-any-return]
+        except UnknownProfileError as exc:
+            # Server default points at an unknown profile — refuse rather than
+            # fail open (spoofed / misconfigured profiles must not unlock tools).
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "forbidden",
+                    "detail": f"Unknown MCP profile {resolved_profile!r}.",
+                    "available": exc.available,
+                },
+            )
 
         if tool not in allowed_tools:
             # TAP-1972: hint the smallest profile that exposes the tool so

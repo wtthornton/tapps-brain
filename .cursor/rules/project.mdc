@@ -45,7 +45,7 @@ mypy --strict src/tapps_brain/
 
 ### Source layout: `src/tapps_brain/`
 
-**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + Postgres write-through, thread-safe via `threading.Lock`. Per-agent isolation via `(project_id, agent_id)` on every private row (EPIC-053). `health()` returns `StoreHealthReport` (includes `profile_seed_version` when `profile.seeding.seed_version` is set). `postgres_private.py` handles the private memory backend; schema migrations live in `src/tapps_brain/migrations/private/` (currently v1–024; max version **024** = `profile_scoped_data`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
+**Storage layer** — `store.py` is the main `MemoryStore` class: in-memory dict + Postgres write-through, thread-safe via `threading.Lock`. Per-agent isolation via `(project_id, agent_id)` on every private row (EPIC-053). `health()` returns `StoreHealthReport` (includes `profile_seed_version` when `profile.seeding.seed_version` is set). `postgres_private.py` handles the private memory backend; schema migrations live in `src/tapps_brain/migrations/private/` (currently v1–025; max version **025** = `kg_entities_tenant_unique`). MCP tool/resource counts: `docs/generated/mcp-tools-manifest.json`. See `docs/planning/STATUS.md` for a release snapshot.
 
 **Data model** — `models.py` defines `MemoryEntry` (Pydantic v2) with tier-based classification (`MemoryTier`: architectural/pattern/procedural/context), source tracking, scope visibility, and access counting.
 

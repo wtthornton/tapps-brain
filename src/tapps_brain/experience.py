@@ -420,6 +420,9 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     value              = EXCLUDED.value,
     tier               = EXCLUDED.tier,
     confidence         = EXCLUDED.confidence,
+    source_agent       = EXCLUDED.source_agent,
+    agent_scope        = EXCLUDED.agent_scope,
+    tags               = EXCLUDED.tags,
     updated_at         = now(),
     embedding_model_id = COALESCE(EXCLUDED.embedding_model_id, private_memories.embedding_model_id),
     embedding          = COALESCE(EXCLUDED.embedding, private_memories.embedding)
@@ -496,6 +499,45 @@ class ExperienceEventRecorder:
         except Exception:
             logger.warning("experience_embedding_compute_failed", exc_info=True)
             return None, None
+
+    def _ensure_memory_capacity(self, cur: Any, key: str) -> None:  # noqa: ANN401
+        """Evict lowest-confidence row when a new key would exceed max_entries."""
+        from tapps_brain.store import _max_entries_from_env
+
+        max_entries = _max_entries_from_env()
+        cur.execute(
+            "SELECT 1 FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s",
+            (self._project_id, self._agent_id, key),
+        )
+        if cur.fetchone() is not None:
+            return  # upsert path — does not grow cardinality
+        cur.execute(
+            "SELECT COUNT(*) FROM private_memories WHERE project_id = %s AND agent_id = %s",
+            (self._project_id, self._agent_id),
+        )
+        row = cur.fetchone()
+        count = int(row[0]) if row and row[0] is not None else 0
+        if count < max_entries:
+            return
+        cur.execute(
+            """
+            DELETE FROM private_memories
+            WHERE project_id = %s AND agent_id = %s AND ctid = (
+                SELECT ctid FROM private_memories
+                WHERE project_id = %s AND agent_id = %s
+                ORDER BY confidence ASC, updated_at ASC NULLS FIRST
+                LIMIT 1
+            )
+            """,
+            (self._project_id, self._agent_id, self._project_id, self._agent_id),
+        )
+        logger.info(
+            "experience_memory_evicted_for_cap",
+            project_id=self._project_id,
+            agent_id=self._agent_id,
+            max_entries=max_entries,
+            incoming_key=key,
+        )
 
     def _upsert_edges(
         self,
@@ -688,6 +730,7 @@ class ExperienceEventRecorder:
             # Step 2 — optional private memory write.
             if event.memory is not None:
                 mem = event.memory
+                self._ensure_memory_capacity(cur, mem.key)
                 cur.execute(
                     _INSERT_MEMORY_SQL,
                     (
@@ -838,6 +881,7 @@ class ExperienceEventRecorder:
                 # Optional memory.
                 if event.memory is not None:
                     mem = event.memory
+                    self._ensure_memory_capacity(cur, mem.key)
                     cur.execute(
                         _INSERT_MEMORY_SQL,
                         (

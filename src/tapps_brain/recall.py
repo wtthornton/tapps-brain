@@ -208,8 +208,12 @@ class RecallOrchestrator:
 
         # Hive recall: merge local + Hive results (EPIC-011)
         hive_count = 0
+        hive_quality_warning: str | None = None
         if self._hive_store is not None:
+            self._hive_search_error = False
             hive_memories, hive_count = self._search_hive(message, memories)
+            if getattr(self, "_hive_search_error", False):
+                hive_quality_warning = "hive_search_unavailable"
             if hive_memories:
                 memories = self._merge_hive_results(memories, hive_memories)
                 # Rebuild section to include Hive results
@@ -282,6 +286,7 @@ class RecallOrchestrator:
             memory_count=len(memories),
             hive_memory_count=hive_count,
             recall_diagnostics=recall_diag,
+            quality_warning=hive_quality_warning,
             entities=_as_list("entities", KGEntityView),
             edges=_as_list("edges", KGEdgeView),
             evidence=_as_list("evidence", KGEvidenceView),
@@ -367,8 +372,11 @@ class RecallOrchestrator:
             )
         except Exception:
             logger.warning("hive_recall_search_failed", exc_info=True)
+            # Stash so recall() can surface quality_warning (empty ≠ healthy).
+            self._hive_search_error = True
             return [], 0
 
+        self._hive_search_error = False
         hive_memories: list[dict[str, object]] = []
         for entry in hive_results:
             key = str(entry.get("key", ""))

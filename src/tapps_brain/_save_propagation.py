@@ -33,27 +33,28 @@ def propagate_group_save(
     groups: list[str],
     hive_store: HiveBackend | None,
 ) -> None:
-    """Route a saved entry to the appropriate group namespace(s).
+    """Route a bare ``agent_scope=="group"`` save to every declared group namespace.
 
     STORY-056.3.  ``agent_scope == "group"`` fans out to every declared group
-    membership; ``agent_scope == "group:<name>"`` targets a single namespace
-    (membership is validated earlier in the save path).  A ``None`` hive or
-    empty groups list is a no-op.
+    membership.  Named ``group:<name>`` scopes are handled exclusively by
+    :class:`~tapps_brain.backends.PropagationEngine` (namespace = bare group
+    name, matching :meth:`HiveBackend.search_with_groups`).  A ``None`` hive
+    or empty groups list is a no-op.
     """
     if hive_store is None or not groups:
         return
-    if not (agent_scope == "group" or agent_scope.startswith("group:")):
+    # Named group scopes are written by PropagationEngine; writing again here
+    # with a ``group:`` prefix caused split-brain (invisible to group recall).
+    if agent_scope != "group":
         return
 
     tier = _tier_str(entry)
     src = _source_str(entry)
 
-    targets: list[str] = list(groups) if agent_scope == "group" else [agent_scope[6:]]
-
-    for group_name in targets:
+    for group_name in groups:
         try:
             hive_store.save(
-                namespace=f"group:{group_name}",
+                namespace=group_name,
                 key=entry.key,
                 value=entry.value,
                 tier=tier,

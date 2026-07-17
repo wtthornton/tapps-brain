@@ -172,3 +172,41 @@ class TestUndoConsolidationMergeLockSafety:
             "concurrent saves write only unique keys and cannot remove the consolidated entry, "
             "so undo must succeed."
         )
+
+
+def test_persist_consolidated_rolls_back_on_source_mark_failure(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If marking a source fails after save, the consolidated row is deleted."""
+    from tapps_brain.auto_consolidation import _persist_consolidated_entry
+    from tapps_brain.models import ConsolidatedEntry, MemorySource, MemoryTier
+
+    store.save(key="src-a", value="alpha shared content about JWT RS256", skip_consolidation=True)
+    store.save(key="src-b", value="beta shared content about JWT RS256", skip_consolidation=True)
+
+    consolidated = ConsolidatedEntry(
+        key="consolidated-jwt",
+        value="merged JWT RS256 guidance",
+        tier=MemoryTier.architectural,
+        source=MemorySource.agent,
+        source_keys=["src-a", "src-b"],
+        consolidation_reason="similarity",
+        confidence=0.9,
+    )
+
+    real_update = store.update_fields
+
+    def _fail_second(key: str, **kwargs: object):
+        if key == "src-b":
+            return None
+        return real_update(key, **kwargs)
+
+    monkeypatch.setattr(store, "update_fields", _fail_second)
+
+    with pytest.raises(KeyError, match="src-b"):
+        _persist_consolidated_entry(store, consolidated, ["src-a", "src-b"])
+
+    assert store.get("consolidated-jwt") is None
+    # First source may have been marked before the failure; leave that as-is.
+    assert store.get("src-a") is not None
+    assert store.get("src-b") is not None

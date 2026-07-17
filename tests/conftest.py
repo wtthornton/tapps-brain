@@ -166,6 +166,10 @@ class InMemoryPrivateBackend:
             entries = list(self._entries.values())
             return entries[:limit] if limit is not None else entries
 
+    def load_one(self, key: str) -> Any | None:
+        with self._lock:
+            return self._entries.get(key)
+
     def delete(self, key: str) -> bool:
         with self._lock:
             return self._entries.pop(key, None) is not None

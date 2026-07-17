@@ -280,6 +280,29 @@ class TestBackfillEmbeddings:
         assert result == {"backfilled": 0, "skipped_existing": 0, "failed": 0}
         store.close()
 
+    def test_backfill_persist_failure_rolls_back_cache(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path, embedding_provider=None)
+        store.save("a", "needs embed", tier="pattern")
+        store._embedding_provider = _StubProvider(dimension=384, model_id="stub")
+
+        real_save = store._persistence.save
+        calls = {"n": 0}
+
+        def _boom(entry: object) -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("persist down")
+            real_save(entry)
+
+        store._persistence.save = _boom  # type: ignore[method-assign]
+        result = store.backfill_embeddings()
+        assert result["failed"] == 1
+        assert result["backfilled"] == 0
+        loaded = store.get("a")
+        assert loaded is not None
+        assert loaded.embedding is None
+        store.close()
+
 
 # ---------------------------------------------------------------------------
 # SentenceTransformerProvider (mocked — no real model download)

@@ -396,7 +396,7 @@ def _agent_scope_counts_from_aggregates(aggregates: SnapshotAggregates) -> dict[
 def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
     """Best-effort Hive hub stats (matches health_check spirit; never raises)."""
     try:
-        from tapps_brain.backends import AgentRegistry, resolve_hive_backend_from_env
+        from tapps_brain.backends import resolve_hive_backend_from_env
 
         hive = resolve_hive_backend_from_env()
         if hive is None:
@@ -421,7 +421,9 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
                 ]
             ns_rows_sorted = sorted(ns_rows, key=lambda d: d.name)
             total_entries = sum(d.entry_count for d in ns_rows_sorted)
-            registry = AgentRegistry()
+            from tapps_brain.backends import resolve_agent_registry
+
+            registry = resolve_agent_registry(hive)
             return HiveHealthSummary(
                 connected=True,
                 status="ok",

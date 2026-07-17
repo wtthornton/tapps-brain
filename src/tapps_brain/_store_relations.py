@@ -68,7 +68,14 @@ class RelationsMixin(_MemoryStoreBase):
             List of relation dicts with subject, predicate, object_entity,
             source_entry_keys, confidence, and created_at.
         """
-        return list(self._relations.get(key, []))
+        with self._lock:
+            cached = self._relations.get(key)
+            if cached is not None:
+                return list(cached)
+        loaded = self._persistence.load_relations(key)
+        with self._lock:
+            self._relations[key] = list(loaded)
+            return list(loaded)
 
     def get_relations_batch(self, keys: list[str]) -> dict[str, list[dict[str, Any]]]:
         """Return relations for multiple keys in one call (STORY-048.2).
@@ -80,7 +87,7 @@ class RelationsMixin(_MemoryStoreBase):
             Dict mapping each requested key to its list of relation dicts.
             Keys with no relations map to an empty list.
         """
-        return {key: list(self._relations.get(key, [])) for key in keys}
+        return {key: self.get_relations(key) for key in keys}
 
     # ------------------------------------------------------------------
     # Health-check helpers (TAP-722)
@@ -101,62 +108,70 @@ class RelationsMixin(_MemoryStoreBase):
         yield from entries
 
     def count_orphaned_relations(self) -> int:
-        """Count relation records that reference keys no longer in the store.
+        """Count ``source_entry_keys`` refs that point at missing store entries.
 
-        Uses the in-memory ``_relations`` cache (kept in sync with the
-        persistence layer by :meth:`save_relations` / :meth:`load_relations`)
-        to avoid a Postgres round-trip and to eliminate the TOCTOU window
-        that would arise from fetching relations outside ``_lock`` and then
-        snapshotting entry keys inside it (TAP-722).
-
-        Returns:
-            Number of ``source_entry_keys`` references in any cached relation
-            that have no corresponding entry in the in-memory store.  Relations
-            are indexed by ``source_entry_key`` in the cache, so a relation
-            with two missing source keys contributes 2 to the count — matching
-            the semantics of the original per-reference count.
+        Scans every cached relation's ``source_entry_keys`` list so a single
+        relation that names two missing keys contributes 2 (documented
+        per-reference semantics).
         """
+        self._merge_durable_entries()
+        list_rels = getattr(self._persistence, "list_relations", None)
+        if callable(list_rels):
+            all_relations = list_rels()
+            with self._serialized():
+                rebuilt: dict[str, list[dict[str, Any]]] = {}
+                for rel in all_relations:
+                    for src_key in rel.get("source_entry_keys") or []:
+                        rebuilt.setdefault(str(src_key), []).append(rel)
+                self._relations.update(rebuilt)
+
         with self._serialized():
             entry_keys = set(self._entries.keys())
-            return sum(
-                len(rels) for src_key, rels in self._relations.items() if src_key not in entry_keys
-            )
+            orphaned = 0
+            seen_rel_ids: set[int] = set()
+            for rels in self._relations.values():
+                for rel in rels:
+                    rid = id(rel)
+                    if rid in seen_rel_ids:
+                        continue
+                    seen_rel_ids.add(rid)
+                    for src in rel.get("source_entry_keys", []):
+                        if src not in entry_keys:
+                            orphaned += 1
+            return orphaned
 
     def count_expired_entries(self, now: datetime | None = None) -> int:
-        """Count entries whose ``valid_at`` timestamp lies in the past.
+        """Count entries whose validity window has ended.
 
-        Uses a proper :class:`~datetime.datetime` comparison instead of
-        ISO string lexicographic ordering, so the count is correct even
-        for timestamps with varying timezone representations (TAP-722).
-
-        Args:
-            now: Reference timestamp (UTC).  Defaults to
-                ``datetime.now(UTC)`` when *None*.
-
-        Returns:
-            Number of entries whose ``valid_at`` field is non-*None* and
-            falls before *now*.
+        An entry is expired when ``invalid_at`` (or ``valid_until``) is set and
+        lies at or before *now*.  ``valid_at`` / ``valid_from`` are start-of-
+        truth fields and must not be treated as expiry.
         """
         from datetime import UTC
         from datetime import datetime as _datetime
 
         _now = now if now is not None else _datetime.now(tz=UTC)
 
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
 
         expired = 0
         for entry in entries:
-            valid_at_str: str | None = getattr(entry, "valid_at", None)
-            if valid_at_str is None:
+            end_str: str | None = getattr(entry, "invalid_at", None)
+            if not end_str:
+                end_str = getattr(entry, "valid_until", None) or None
+                if end_str == "":
+                    end_str = None
+            if end_str is None:
                 continue
             try:
-                valid_at_dt = _datetime.fromisoformat(valid_at_str)
-                if valid_at_dt.tzinfo is None:
-                    valid_at_dt = valid_at_dt.replace(tzinfo=UTC)
+                end_dt = _datetime.fromisoformat(end_str)
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=UTC)
             except (ValueError, TypeError):
                 continue
-            if valid_at_dt < _now:
+            if end_dt <= _now:
                 expired += 1
         return expired
 
@@ -183,10 +198,21 @@ class RelationsMixin(_MemoryStoreBase):
         Raises:
             KeyError: If *key* does not exist in the store.
         """
-        with self._serialized():
-            if key not in self._entries:
-                raise KeyError(key)
+        if self._ensure_entry_cached(key) is None:
+            raise KeyError(key)
 
+        # Refresh relation graph from durable store so cold/missed edges participate.
+        list_rels = getattr(self._persistence, "list_relations", None)
+        if callable(list_rels):
+            all_relations = list_rels()
+            with self._serialized():
+                rebuilt: dict[str, list[dict[str, Any]]] = {}
+                for rel in all_relations:
+                    for src_key in rel.get("source_entry_keys") or []:
+                        rebuilt.setdefault(str(src_key), []).append(rel)
+                self._relations.update(rebuilt)
+
+        with self._serialized():
             # Build entity -> set[entry_key] index from all relations
             entity_to_keys: dict[str, set[str]] = {}
             for entry_key, rels in self._relations.items():
@@ -202,7 +228,6 @@ class RelationsMixin(_MemoryStoreBase):
             for hop in range(1, max_hops + 1):
                 next_frontier: set[str] = set()
                 for current_key in frontier:
-                    # Collect entities from current_key's relations
                     for rel in self._relations.get(current_key, []):
                         for entity in (rel["subject"].lower(), rel["object_entity"].lower()):
                             for neighbor_key in entity_to_keys.get(entity, set()):
@@ -211,6 +236,8 @@ class RelationsMixin(_MemoryStoreBase):
                                     result.append((neighbor_key, hop))
                                     next_frontier.add(neighbor_key)
                 frontier = next_frontier
+                if not frontier:
+                    break
 
         # Sort by hop distance, then key name for determinism
         result.sort(key=lambda t: (t[1], t[0]))

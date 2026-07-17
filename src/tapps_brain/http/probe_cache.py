@@ -29,19 +29,41 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
     if cached is not None and now < cached[0]:
         return cached[1]
     try:
-        from tapps_brain.postgres_migrations import get_hive_schema_status
+        from tapps_brain.postgres_migrations import (
+            get_federation_schema_status,
+            get_hive_schema_status,
+            get_private_schema_status,
+        )
 
-        status_ = get_hive_schema_status(dsn)
-        version = status_.current_version if status_.current_version else None
-        pending = len(status_.pending_migrations)
+        hive_status = get_hive_schema_status(dsn)
+        private_status = get_private_schema_status(dsn)
+        federation_status = get_federation_schema_status(dsn)
+        version = hive_status.current_version if hive_status.current_version else None
+        pending = (
+            len(hive_status.pending_migrations)
+            + len(private_status.pending_migrations)
+            + len(federation_status.pending_migrations)
+        )
+        priv_ver = private_status.current_version
+        fed_ver = federation_status.current_version
         if pending > 0:
             result: tuple[bool, int | None, str] = (
-                True,
+                False,
                 version,
-                f"ready (migration_version={version}, pending={pending})",
+                (
+                    f"not ready (hive_migration={version}, private_migration={priv_ver}, "
+                    f"federation_migration={fed_ver}, pending={pending})"
+                ),
             )
         else:
-            result = (True, version, f"ready (migration_version={version})")
+            result = (
+                True,
+                version,
+                (
+                    f"ready (hive_migration={version}, private_migration={priv_ver}, "
+                    f"federation_migration={fed_ver})"
+                ),
+            )
     except Exception as exc:
         err_str = str(exc)
         try:

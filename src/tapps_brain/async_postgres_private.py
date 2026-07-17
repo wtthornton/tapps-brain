@@ -85,6 +85,8 @@ class AsyncPostgresPrivateBackend:
 
         # TAP-2728: HNSW query-time GUC — read once at construction.
         self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
+        self.knn_search_degraded: bool = False
+        self.index_verify_unknown: bool = False
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS via async_project_context
@@ -199,6 +201,16 @@ class AsyncPostgresPrivateBackend:
                         return results
         return results
 
+    async def load_one(self, key: str) -> MemoryEntry | None:
+        """Load a single entry by key (async parity with sync ``load_one``)."""
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(_sql.LOAD_ONE_SQL, (self._project_id, self._agent_id, key))
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            col_names = [desc[0] for desc in cur.description]
+        return PostgresPrivateBackend._row_to_entry(dict(zip(col_names, row, strict=False)))
+
     async def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""
         async with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -276,16 +288,21 @@ class AsyncPostgresPrivateBackend:
         if not query_embedding:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-        async with self._scoped_conn() as conn, conn.cursor() as cur:
-            # TAP-2728: HNSW GUCs for filtered recall correctness.
-            await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
-            await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
-            await cur.execute(
-                _sql.build_knn_search_sql(include_expired=include_expired),
-                (vec_str, self._project_id, self._agent_id, k),
-            )
-            rows = await cur.fetchall()
-        return [(str(r[0]), float(r[1])) for r in rows]
+        try:
+            async with self._scoped_conn() as conn, conn.cursor() as cur:
+                # TAP-2728: HNSW GUCs for filtered recall correctness.
+                await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+                await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
+                await cur.execute(
+                    _sql.build_knn_search_sql(include_expired=include_expired),
+                    (vec_str, self._project_id, self._agent_id, k),
+                )
+                rows = await cur.fetchall()
+            return [(str(r[0]), float(r[1])) for r in rows]
+        except Exception:
+            self.knn_search_degraded = True
+            logger.warning("async_postgres_private.knn_search_failed", exc_info=True)
+            raise
 
     async def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
@@ -300,9 +317,18 @@ class AsyncPostgresPrivateBackend:
 
     async def verify_expected_indexes(self) -> list[str]:
         """Async parity for :meth:`PostgresPrivateBackend.verify_expected_indexes`."""
-        async with self._scoped_conn() as conn, conn.cursor() as cur:
-            await cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
-            present = {str(row[0]) for row in await cur.fetchall()}
+        try:
+            async with self._scoped_conn() as conn, conn.cursor() as cur:
+                await cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
+                present = {str(row[0]) for row in await cur.fetchall()}
+        except Exception:
+            self.index_verify_unknown = True
+            logger.warning(
+                "async_postgres_private.verify_expected_indexes.db_error",
+                exc_info=True,
+                hint="index status unknown — not treating as healthy",
+            )
+            return ["__index_verify_unavailable__"]
 
         missing = sorted(_sql.EXPECTED_PRIVATE_INDEXES - present)
         if missing:
@@ -435,7 +461,7 @@ class AsyncPostgresPrivateBackend:
                 key=key,
                 exc_info=True,
             )
-            return 0
+            raise
 
     # ------------------------------------------------------------------
     # Schema / version
@@ -447,10 +473,10 @@ class AsyncPostgresPrivateBackend:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
                 await cur.execute(_sql.GET_SCHEMA_VERSION_SQL)
                 row = await cur.fetchone()
-            return int(row[0]) if row and row[0] is not None else _sql.PRIVATE_SCHEMA_VERSION
+            return int(row[0]) if row and row[0] is not None else 0
         except Exception:
             logger.warning("async_postgres_private.get_schema_version_failed", exc_info=True)
-            return _sql.PRIVATE_SCHEMA_VERSION
+            raise
 
     # ------------------------------------------------------------------
     # Audit
@@ -543,7 +569,7 @@ class AsyncPostgresPrivateBackend:
         return str(row[0]) if row else None
 
     async def flywheel_meta_set(self, key: str, value: str) -> None:
-        """Best-effort flywheel meta upsert; failures log and swallow."""
+        """Upsert flywheel meta; failures log and re-raise."""
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
                 await cur.execute(
@@ -556,6 +582,7 @@ class AsyncPostgresPrivateBackend:
                 key=key,
                 exc_info=True,
             )
+            raise
 
     # ------------------------------------------------------------------
     # GC archive

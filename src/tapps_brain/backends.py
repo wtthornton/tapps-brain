@@ -131,14 +131,37 @@ def _resolve_propagation_namespace(
         return "universal", None
     if effective_scope == "domain":
         return agent_profile, None
+    if effective_scope == "group":
+        # Bare ``group`` fan-out is owned by propagate_group_save — do not
+        # silently write into the profile/domain namespace.
+        return None, {
+            "propagated": False,
+            "decision": "deferred_to_group_fanout",
+            "reason": "bare agent_scope='group' is handled by group fan-out",
+            "rule_applied": "group_fanout",
+            "requested_scope": requested_scope,
+            "effective_scope": "group",
+            "tier": tier,
+            "key": key,
+            "would_require": None,
+        }
     logger.warning(
         "hive.propagate.unknown_scope",
         effective_scope=effective_scope,
         agent_id=agent_id,
         key=key,
-        fallback="domain",
     )
-    return agent_profile, None
+    return None, {
+        "propagated": False,
+        "decision": "refused_unknown_scope",
+        "reason": f"unknown agent_scope={effective_scope!r}",
+        "rule_applied": "unknown_scope",
+        "requested_scope": requested_scope,
+        "effective_scope": effective_scope,
+        "tier": tier,
+        "key": key,
+        "would_require": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +295,8 @@ class PropagationEngine:
     refused_private_tier       False       private
     refused_client_scope       False       private
     refused_group_not_member   False       private
+    deferred_to_group_fanout   False       group
+      (bare ``agent_scope='group'`` — fan-out owned by propagate_group_save)
 
     Additional fields on every outcome:
 
@@ -772,6 +797,33 @@ def create_agent_registry_backend(
         return PostgresAgentRegistry(cm)
     path = Path(registry_path) if registry_path else None
     return FileAgentRegistryBackend(registry_path=path)
+
+
+def resolve_agent_registry(
+    hive: Any | None = None,
+) -> AgentRegistryBackend:
+    """Prefer Postgres ``agent_registry`` when Hive DSN / ``hive._cm`` is available.
+
+    Production Hive stacks store agents in Postgres.  YAML
+    :class:`AgentRegistry` is only the offline/dev fallback when no Postgres
+    DSN is configured.
+    """
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+
+    cm = getattr(hive, "_cm", None) if hive is not None else None
+    if isinstance(cm, PostgresConnectionManager):
+        from tapps_brain.postgres_hive import PostgresAgentRegistry
+
+        return PostgresAgentRegistry(cm)
+
+    import os
+
+    dsn = (
+        os.environ.get("TAPPS_BRAIN_HIVE_DSN") or os.environ.get("TAPPS_BRAIN_DATABASE_URL") or ""
+    ).strip()
+    if dsn and is_postgres_dsn(dsn):
+        return create_agent_registry_backend(dsn)
+    return AgentRegistry()
 
 
 # ---------------------------------------------------------------------------

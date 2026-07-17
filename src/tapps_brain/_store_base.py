@@ -60,6 +60,8 @@ class _MemoryStoreBase:
         _hive_store: HiveBackend | None
         _hive_agent_id: str
         _entries: dict[str, MemoryEntry]
+
+        def _propagate_to_hive(self, entry: MemoryEntry) -> None: ...
         _bloom: Any
         _entity_index: dict[str, set[str]]
         _relations: dict[str, list[dict[str, Any]]]

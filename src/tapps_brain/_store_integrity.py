@@ -10,7 +10,6 @@ persisting the rehash); it now persists via ``self._persistence``.
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 
 import structlog
@@ -48,6 +47,8 @@ class IntegrityMixin(_MemoryStoreBase):
 
         self._metrics.increment("store.verify_integrity")
 
+        # Include durable overflow beyond the cold-start cache cap.
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -207,17 +208,22 @@ class IntegrityMixin(_MemoryStoreBase):
                 update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
             )
             with self._lock:
+                previous = entry
                 self._entries[key] = upgraded_entry
 
-            if self._hive_store is not None:
-                with contextlib.suppress(Exception):
-                    self._hive_store.save(upgraded_entry)  # type: ignore[call-arg,arg-type,misc]
-
             # TAP-2857: persist the rehash to the private backend so the v2 hash
-            # survives restarts.  Best-effort (suppressed) — a single failed
-            # write must not abort the rest of the migration.
-            with contextlib.suppress(Exception):
+            # survives restarts. Count only after a durable write succeeds.
+            try:
                 self._persistence.save(upgraded_entry)
+            except Exception:
+                with self._lock:
+                    if self._entries.get(key) is upgraded_entry:
+                        self._entries[key] = previous
+                logger.warning("rehash_integrity_v1.persist_failed", key=key, exc_info=True)
+                continue
+
+            if self._hive_store is not None:
+                self._propagate_to_hive(upgraded_entry)
 
             upgraded += 1
             logger.debug("rehash_integrity_v1.upgraded", key=key)
@@ -259,6 +265,7 @@ class IntegrityMixin(_MemoryStoreBase):
             compute_integrity_hash,
         )
 
+        self._merge_durable_entries()
         with self._serialized():
             keys = list(self._entries.keys())
 
@@ -286,14 +293,20 @@ class IntegrityMixin(_MemoryStoreBase):
                 update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
             )
             with self._lock:
+                previous = entry
                 self._entries[key] = resigned_entry
 
-            if self._hive_store is not None:
-                with contextlib.suppress(Exception):
-                    self._hive_store.save(resigned_entry)  # type: ignore[call-arg,arg-type,misc]
-
-            with contextlib.suppress(Exception):
+            try:
                 self._persistence.save(resigned_entry)
+            except Exception:
+                with self._lock:
+                    if self._entries.get(key) is resigned_entry:
+                        self._entries[key] = previous
+                logger.warning("resign_integrity.persist_failed", key=key, exc_info=True)
+                continue
+
+            if self._hive_store is not None:
+                self._propagate_to_hive(resigned_entry)
 
             resigned += 1
 

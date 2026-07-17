@@ -540,7 +540,10 @@ def _import_memory_md_sync(
     truncated = 0
 
     for key, value, tier_str in sections:
-        if store.get(key) is not None:
+        # Prefer read-only existence checks — store.get() mutates access_count.
+        ensure = getattr(store, "_ensure_entry_cached", None)
+        existing = ensure(key) if callable(ensure) else store.get(key)
+        if existing is not None:
             logger.debug("markdown_sync.skip_existing", key=key)
             skipped += 1
             continue
@@ -599,7 +602,9 @@ def _import_daily_notes_sync(
         date_str = match.group(1)
         key = f"daily-{date_str}"
 
-        if store.get(key) is not None:
+        ensure = getattr(store, "_ensure_entry_cached", None)
+        existing = ensure(key) if callable(ensure) else store.get(key)
+        if existing is not None:
             logger.debug("markdown_sync.skip_daily_existing", key=key)
             skipped += 1
             continue

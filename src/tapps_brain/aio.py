@@ -30,9 +30,12 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import threading
 from typing import TYPE_CHECKING, Any, TypeVar
+
+import structlog
 
 from tapps_brain.postgres_connection import is_postgres_dsn
 from tapps_brain.store import MemoryStore
@@ -45,6 +48,8 @@ if TYPE_CHECKING:
     from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
 
 _T = TypeVar("_T")
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
 class _CapturePersistenceBackend:
@@ -64,6 +69,7 @@ class _CapturePersistenceBackend:
         self._real = real
         self._saved: list[MemoryEntry] = []
         self._deleted: list[str] = []
+        self._deleted_relations: list[str] = []
         self._relations: list[tuple[str, list[Any]]] = []
         self._audit: list[tuple[str, str, dict[str, Any] | None]] = []
         self._lock = threading.Lock()
@@ -85,7 +91,16 @@ class _CapturePersistenceBackend:
         with self._lock:
             self._saved = [e for e in self._saved if e.key != key]
             self._deleted.append(key)
+            self._deleted_relations.append(key)
+            self._relations = [(k, r) for k, r in self._relations if k != key]
         return True
+
+    def delete_relations(self, key: str) -> None:
+        """Queue relation deletion so async flush mirrors sync QueryMixin.delete."""
+        with self._lock:
+            self._relations = [(k, r) for k, r in self._relations if k != key]
+            if key not in self._deleted_relations:
+                self._deleted_relations.append(key)
 
     # --- Captured secondary writes ------------------------------------------
 
@@ -103,6 +118,8 @@ class _CapturePersistenceBackend:
             return 0
         with self._lock:
             self._relations.append((key, list(relations)))
+            # Drop any pending delete for this key — a later save wins.
+            self._deleted_relations = [k for k in self._deleted_relations if k != key]
         return len(relations)
 
     # --- Read operations (delegate to real backend) -------------------------
@@ -126,6 +143,28 @@ class _CapturePersistenceBackend:
         return int(self._real.count_relations())
 
     def load_relations(self, key: str) -> list[Any]:
+        with self._lock:
+            for rel_key, rels in reversed(self._relations):
+                if rel_key == key:
+                    out: list[Any] = []
+                    for rel in rels:
+                        if isinstance(rel, dict):
+                            out.append(rel)
+                        else:
+                            out.append(
+                                {
+                                    "subject": getattr(rel, "subject", ""),
+                                    "predicate": getattr(rel, "predicate", ""),
+                                    "object_entity": getattr(rel, "object_entity", ""),
+                                    "source_entry_keys": list(
+                                        getattr(rel, "source_entry_keys", []) or []
+                                    ),
+                                    "confidence": float(getattr(rel, "confidence", 0.8)),
+                                }
+                            )
+                    return out
+            if key in self._deleted_relations:
+                return []
         return list(self._real.load_relations(key))
 
     def get_schema_version(self) -> int:
@@ -186,6 +225,7 @@ class _CapturePersistenceBackend:
     ) -> tuple[
         list[MemoryEntry],
         list[str],
+        list[str],
         list[tuple[str, list[Any]]],
         list[tuple[str, str, dict[str, Any] | None]],
     ]:
@@ -193,13 +233,15 @@ class _CapturePersistenceBackend:
         with self._lock:
             saves = list(self._saved)
             deletes = list(self._deleted)
+            deleted_relations = list(self._deleted_relations)
             relations = list(self._relations)
             audit = list(self._audit)
             self._saved.clear()
             self._deleted.clear()
+            self._deleted_relations.clear()
             self._relations.clear()
             self._audit.clear()
-        return saves, deletes, relations, audit
+        return saves, deletes, deleted_relations, relations, audit
 
 
 class AsyncMemoryStore:
@@ -386,6 +428,8 @@ class AsyncMemoryStore:
         async with self._write_sem:
             self._write_inflight += 1
             try:
+                with self._store._serialized():
+                    prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 async with self._lock:
                     old = self._store._persistence
@@ -394,7 +438,15 @@ class AsyncMemoryStore:
                         result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
                     finally:
                         self._store._persistence = old
-                await self._flush_capture(capture)
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    with self._store._serialized():
+                        if prior is None:
+                            self._store._entries.pop(key, None)
+                        else:
+                            self._store._entries[key] = prior
+                    raise
                 return result
             finally:
                 self._write_inflight -= 1
@@ -419,6 +471,9 @@ class AsyncMemoryStore:
         async with self._write_sem:
             self._write_inflight += 1
             try:
+                with self._store._serialized():
+                    prior = self._store._entries.get(key)
+                    prior_rels = list(self._store._relations.get(key, []))
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 async with self._lock:
                     old = self._store._persistence
@@ -427,7 +482,15 @@ class AsyncMemoryStore:
                         result = await asyncio.to_thread(self._store.delete, key)
                     finally:
                         self._store._persistence = old
-                await self._flush_capture(capture)
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    if prior is not None:
+                        with self._store._serialized():
+                            self._store._entries[key] = prior
+                            if prior_rels:
+                                self._store._relations[key] = prior_rels
+                    raise
                 return result
             finally:
                 self._write_inflight -= 1
@@ -442,19 +505,53 @@ class AsyncMemoryStore:
         # unreachable: callers guard on _async_backend is not None before calling
         if self._async_backend is None:  # pragma: no cover
             raise RuntimeError("aio: _async_backend not initialised before write")
-        saves, deletes, relations, audit = capture.flush()
-        for entry in saves:
-            await self._async_backend.save(entry)
-        for k in deletes:
-            await self._async_backend.delete(k)
+        saves, deletes, deleted_relations, relations, audit = capture.flush()
+        # Prefer atomic batch when available so a mid-list failure cannot leave
+        # a partial durable write against an already-updated in-memory cache.
+        try:
+            if saves:
+                save_many = getattr(self._async_backend, "save_many", None)
+                batch_done = False
+                if callable(save_many):
+                    maybe_batch = save_many(saves)
+                    if inspect.isawaitable(maybe_batch):
+                        await maybe_batch
+                        batch_done = True
+                if not batch_done:
+                    for entry in saves:
+                        await self._async_backend.save(entry)
+            for k in deletes:
+                await self._async_backend.delete(k)
+            for rel_key in deleted_relations:
+                del_rels = getattr(self._async_backend, "delete_relations", None)
+                if callable(del_rels):
+                    maybe = del_rels(rel_key)
+                    if inspect.isawaitable(maybe):
+                        await maybe
+        except Exception:
+            logger.warning(
+                "aio.flush_capture_failed",
+                save_count=len(saves),
+                delete_count=len(deletes),
+                exc_info=True,
+            )
+            raise
         for rel_key, rels in relations:
             save_rels = getattr(self._async_backend, "save_relations", None)
             if save_rels is not None:
-                await save_rels(rel_key, rels)
+                try:
+                    await save_rels(rel_key, rels)
+                except Exception:
+                    logger.warning("aio.flush_relations_failed", key=rel_key, exc_info=True)
+                    raise
         for action, audit_key, extra in audit:
             append = getattr(self._async_backend, "append_audit", None)
             if append is not None:
-                await append(action, audit_key, extra)
+                try:
+                    await append(action, audit_key, extra)
+                except Exception:
+                    logger.warning("aio.flush_audit_failed", key=audit_key, exc_info=True)
+                    raise
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.search`."""
@@ -489,6 +586,8 @@ class AsyncMemoryStore:
         async with self._write_sem:
             self._write_inflight += 1
             try:
+                with self._store._serialized():
+                    prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 async with self._lock:
                     old = self._store._persistence
@@ -497,18 +596,77 @@ class AsyncMemoryStore:
                         result = await asyncio.to_thread(self._store.reinforce, key, **kwargs)
                     finally:
                         self._store._persistence = old
-                await self._flush_capture(capture)
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    with self._store._serialized():
+                        if prior is None:
+                            self._store._entries.pop(key, None)
+                        else:
+                            self._store._entries[key] = prior
+                    raise
                 return result
             finally:
                 self._write_inflight -= 1
 
     async def ingest_context(self, context: str, **kwargs: Any) -> list[str]:
         """Async version of :meth:`MemoryStore.ingest_context`."""
-        return await self._write_thread(self._store.ingest_context, context, **kwargs)
+        if self._async_backend is None:
+            return await self._write_thread(self._store.ingest_context, context, **kwargs)
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                with self._store._serialized():
+                    prior_keys = set(self._store._entries)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(
+                            self._store.ingest_context, context, **kwargs
+                        )
+                    finally:
+                        self._store._persistence = old
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    with self._store._serialized():
+                        for k in list(self._store._entries):
+                            if k not in prior_keys:
+                                self._store._entries.pop(k, None)
+                    raise
+                return result
+            finally:
+                self._write_inflight -= 1
 
     async def record_access(self, key: str, was_useful: bool) -> None:
         """Async version of :meth:`MemoryStore.record_access`."""
-        await self._write_thread(self._store.record_access, key, was_useful)
+        if self._async_backend is None:
+            await self._write_thread(self._store.record_access, key, was_useful)
+            return
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                with self._store._serialized():
+                    prior = self._store._entries.get(key)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        await asyncio.to_thread(self._store.record_access, key, was_useful)
+                    finally:
+                        self._store._persistence = old
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    if prior is not None:
+                        with self._store._serialized():
+                            self._store._entries[key] = prior
+                    raise
+            finally:
+                self._write_inflight -= 1
 
     async def history(self, key: str) -> list[Any]:
         """Async version of :meth:`MemoryStore.history`."""
@@ -564,11 +722,61 @@ class AsyncMemoryStore:
 
     async def gc(self, *, dry_run: bool = False) -> Any:
         """Async version of :meth:`MemoryStore.gc` (STORY-070.10)."""
-        return await self._write_thread(self._store.gc, dry_run=dry_run)
+        if self._async_backend is None:
+            return await self._write_thread(self._store.gc, dry_run=dry_run)
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                with self._store._serialized():
+                    prior = dict(self._store._entries)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(self._store.gc, dry_run=dry_run)
+                    finally:
+                        self._store._persistence = old
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    with self._store._serialized():
+                        self._store._entries.clear()
+                        self._store._entries.update(prior)
+                    raise
+                return result
+            finally:
+                self._write_inflight -= 1
 
     async def supersede(self, old_key: str, new_value: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.supersede` (STORY-070.10)."""
-        return await self._write_thread(self._store.supersede, old_key, new_value, **kwargs)
+        if self._async_backend is None:
+            return await self._write_thread(self._store.supersede, old_key, new_value, **kwargs)
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                with self._store._serialized():
+                    prior_old = self._store._entries.get(old_key)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(
+                            self._store.supersede, old_key, new_value, **kwargs
+                        )
+                    finally:
+                        self._store._persistence = old
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    if prior_old is not None:
+                        with self._store._serialized():
+                            self._store._entries[old_key] = prior_old
+                    raise
+                return result
+            finally:
+                self._write_inflight -= 1
 
     async def get_gc_config(self) -> Any:
         """Async version of :meth:`MemoryStore.get_gc_config` (STORY-070.10)."""
@@ -608,7 +816,31 @@ class AsyncMemoryStore:
 
     async def update_tags(self, key: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.update_tags` (STORY-070.10)."""
-        return await self._write_thread(self._store.update_tags, key, **kwargs)
+        if self._async_backend is None:
+            return await self._write_thread(self._store.update_tags, key, **kwargs)
+        async with self._write_sem:
+            self._write_inflight += 1
+            try:
+                with self._store._serialized():
+                    prior = self._store._entries.get(key)
+                capture = _CapturePersistenceBackend(self._store._persistence)
+                async with self._lock:
+                    old = self._store._persistence
+                    self._store._persistence = capture
+                    try:
+                        result = await asyncio.to_thread(self._store.update_tags, key, **kwargs)
+                    finally:
+                        self._store._persistence = old
+                try:
+                    await self._flush_capture(capture)
+                except Exception:
+                    if prior is not None:
+                        with self._store._serialized():
+                            self._store._entries[key] = prior
+                    raise
+                return result
+            finally:
+                self._write_inflight -= 1
 
     async def entries_by_tag(self, tag: str, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.entries_by_tag` (STORY-070.10)."""

@@ -275,6 +275,13 @@ class TestCheckConsolidationOnSave:
             tier=MemoryTier.architectural,
             tags=["security", "jwt"],
         )
+        mock_store.save(
+            key=new_entry.key,
+            value=new_entry.value,
+            tier=new_entry.tier.value,
+            tags=new_entry.tags,
+            skip_consolidation=True,
+        )
         result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
         assert result.triggered is True
         assert result.consolidated_entry is not None
@@ -297,6 +304,13 @@ class TestCheckConsolidationOnSave:
             "JWT tokens use RS256 algorithm for security.",
             tier=MemoryTier.architectural,
             tags=["security", "jwt"],
+        )
+        mock_store.save(
+            key=new_entry.key,
+            value=new_entry.value,
+            tier=new_entry.tier.value,
+            tags=new_entry.tags,
+            skip_consolidation=True,
         )
         result = check_consolidation_on_save(new_entry, mock_store, threshold=0.3, min_entries=2)
         assert result.triggered is True

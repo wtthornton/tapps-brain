@@ -160,8 +160,8 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert len(result) == len(CODER_TOOLS)
 
-    def test_unknown_profile_fails_open_returns_all_tools(self) -> None:
-        """Unknown profile falls open for list_tools (returns all tools)."""
+    def test_unknown_profile_fails_closed_returns_no_tools(self) -> None:
+        """Unknown profile fails closed for list_tools (returns empty list)."""
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
         )
@@ -172,7 +172,7 @@ class TestListToolsFilter:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert {t.name for t in result} == set(ALL_TOOLS)
+        assert result == []
 
     def test_bundled_coder_profile_returns_21_tools(self) -> None:
         """Real ProfileRegistry.get('coder') must return exactly 21 tools."""
@@ -344,8 +344,10 @@ class TestCallToolEnforcement:
         assert "coder" in msg
 
     @pytest.mark.asyncio
-    async def test_unknown_profile_fails_open_allows_call(self) -> None:
-        """Unknown profile fails open for call_tool (allows the call)."""
+    async def test_unknown_profile_fails_closed_denies_call(self) -> None:
+        """Unknown profile fails closed for call_tool (denies the call)."""
+        from mcp.shared.exceptions import McpError
+
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
         )
@@ -355,9 +357,8 @@ class TestCallToolEnforcement:
 
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
-        # Should not raise — fails open
-        result = await mcp._tool_manager.call_tool("memory_delete", {})
-        assert result == "ok"
+        with pytest.raises(McpError):
+            await mcp._tool_manager.call_tool("memory_delete", {})
 
     @pytest.mark.asyncio
     async def test_kwargs_forwarded_to_original_call_tool(self) -> None:
@@ -637,7 +638,9 @@ class TestProfileFilterMetrics:
 
     @pytest.mark.asyncio
     async def test_unknown_profile_call_increments_error_counter(self) -> None:
-        """Unknown profile fail-open increments error counter."""
+        """Unknown profile fail-closed increments error counter."""
+        from mcp.shared.exceptions import McpError
+
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile_metrics7", default=None
         )
@@ -646,7 +649,8 @@ class TestProfileFilterMetrics:
         registry = _make_registry(RESTRICTED_REGISTRY)
 
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
-        await mcp._tool_manager.call_tool("memory_delete", {})
+        with pytest.raises(McpError):
+            await mcp._tool_manager.call_tool("memory_delete", {})
 
         snap = get_profile_filter_metrics_snapshot()
         call_total = snap["call_total"]

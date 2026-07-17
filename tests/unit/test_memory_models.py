@@ -250,6 +250,21 @@ class TestTemporalFields:
         assert entry.is_temporally_valid("2025-06-15T00:00:00+00:00") is False
         assert entry.is_temporally_valid("2027-06-15T00:00:00+00:00") is False
 
+    def test_is_temporally_valid_malformed_bounds_return_false(self) -> None:
+        """Garbage valid_at/invalid_at must not raise during recall filtering."""
+        entry = MemoryEntry(
+            key="bad-ts",
+            value="has garbage timestamps",
+            valid_at="not-a-timestamp",
+        )
+        assert entry.is_temporally_valid("2026-06-15T00:00:00+00:00") is False
+        entry2 = MemoryEntry(
+            key="bad-as-of",
+            value="ok bounds",
+            valid_at="2026-01-01T00:00:00+00:00",
+        )
+        assert entry2.is_temporally_valid("also-not-iso") is False
+
     def test_is_temporally_valid_only_valid_at(self) -> None:
         entry = MemoryEntry(
             key="future",

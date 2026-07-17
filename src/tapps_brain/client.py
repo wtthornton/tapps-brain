@@ -267,6 +267,7 @@ def _detect_scheme(url: str) -> str:
 _WRITE_TOOLS: frozenset[str] = frozenset(
     {
         "brain_remember",
+        "brain_forget",
         "brain_learn_success",
         "brain_learn_failure",
         "memory_save",
@@ -274,6 +275,7 @@ _WRITE_TOOLS: frozenset[str] = frozenset(
         "memory_save_many",
         "memory_reinforce_many",
         "memory_supersede",
+        "memory_delete",
     }
 )
 
