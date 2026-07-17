@@ -1,52 +1,46 @@
 {
   "mcpServers": {
     "nlt-build": {
-      "type": "http",
-      "url": "http://127.0.0.1:8760/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        "type": "http",
+        "url": "http://127.0.0.1:8760/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
       },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
-    },
-    "nlt-memory": {
-      "type": "http",
-      "url": "http://127.0.0.1:8761/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      "nlt-memory": {
+        "type": "http",
+        "url": "http://127.0.0.1:8761/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
       },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
-    },
-    "nlt-setup": {
-      "type": "http",
-      "url": "http://127.0.0.1:8762/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      "nlt-setup": {
+        "type": "http",
+        "url": "http://127.0.0.1:8762/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
       },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
-    },
-    "nlt-linear-issues": {
-      "type": "http",
-      "url": "http://127.0.0.1:8763/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      "nlt-linear-issues": {
+        "type": "http",
+        "url": "http://127.0.0.1:8763/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
       },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
-    },
-    "nlt-project-docs": {
-      "type": "http",
-      "url": "http://127.0.0.1:8764/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      "nlt-project-docs": {
+        "type": "http",
+        "url": "http://127.0.0.1:8764/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
       },
-      "instructions": "Documentation MCP: epic/story/prompt generators, artifact validation, and planning helpers for Markdown docs in this repo."
-    },
-    "nlt-release-ship": {
-      "type": "http",
-      "url": "http://127.0.0.1:8765/mcp",
-      "headers": {
-        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-      },
-      "instructions": "Code quality scoring (0-100 across 7 categories), security scanning (Bandit + secret detection), quality gates (pass/fail against configurable presets), documentation lookup, domain expert consultation, and project profiling for Python projects."
-    }
+      "nlt-release-ship": {
+        "type": "http",
+        "url": "http://127.0.0.1:8765/mcp",
+        "headers": {
+          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+        }
+      }
   }
 }
