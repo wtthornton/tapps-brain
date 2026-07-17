@@ -410,20 +410,17 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             try:
                 allowed: frozenset[str] = profile_registry.get(profile)
             except Exception:
-                # Unknown profile — fail open for list_tools; return full list.
-                # Do NOT cache: the unknown profile may be a transient registration
-                # race; a subsequent call after the profile is registered should
-                # see the filtered view.
+                # Unknown profile — fail closed (empty tool list). Spoofed or
+                # mistyped profiles must not receive the full operator surface.
                 logger.warning(
                     "tool_filter.list_tools.unknown_profile",
                     profile=profile,
-                    action="fail_open",
+                    action="fail_closed",
                 )
-                visible_count = len(all_tools)
                 with _METRICS_LOCK:
                     _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
-                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = visible_count
-                return all_tools
+                    _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = 0
+                return []
             filtered = [t for t in all_tools if t.name in allowed and t.name not in deferred]
             with _METRICS_LOCK:
                 _MCP_TOOLS_LIST_TOTAL[profile] = _MCP_TOOLS_LIST_TOTAL.get(profile, 0) + 1
@@ -449,24 +446,34 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
 
         Raises :class:`mcp.shared.exceptions.McpError` (code ``-32601``) when
         *name* is not in the caller's allowed tool set.  On unknown profile,
-        fails open (allows the call) to avoid denying legitimate operators who
-        may have a profile that the server hasn't reloaded yet.
+        fails closed (denies the call) so a spoofed profile cannot bypass the
+        allowlist.
         """
         profile: str = profile_contextvar.get() or default_profile
         if profile != default_profile:
             try:
                 allowed = profile_registry.get(profile)
             except Exception:
-                # Unknown profile — fail open for call_tool.
+                from mcp.shared.exceptions import McpError
+                from mcp.types import INVALID_PARAMS, ErrorData
+
                 logger.warning(
                     "tool_filter.call_tool.unknown_profile",
                     tool=name,
                     profile=profile,
-                    action="fail_open",
+                    action="fail_closed",
                 )
                 with _METRICS_LOCK:
                     key = (profile, name, "error")
                     _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                raise McpError(
+                    ErrorData(
+                        code=INVALID_PARAMS,
+                        message=(
+                            f"Unknown brain profile {profile!r}; tool {name!r} denied."
+                        ),
+                    )
+                ) from None
             else:
                 if name not in allowed:
                     # Lazy imports: keep the ``mcp`` package optional at
@@ -615,10 +622,28 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             try:
                 allowed = profile_registry.get(profile)
             except Exception:
-                # Unknown profile — fail open (matches list_tools / call_tool
-                # behaviour above).  Delegate to the original handler so the
-                # error metric and any other downstream effects still happen.
-                return await _orig_request_handler(req)
+                from mcp.shared.exceptions import McpError
+                from mcp.types import INVALID_PARAMS, ErrorData
+
+                # Unknown profile — fail closed (deny). Matches list_tools /
+                # call_tool behaviour above.
+                logger.warning(
+                    "tool_filter.request_handler.unknown_profile",
+                    profile=profile,
+                    action="fail_closed",
+                )
+                tool_name = req.params.name
+                with _METRICS_LOCK:
+                    key = (profile, tool_name, "error")
+                    _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                raise McpError(
+                    ErrorData(
+                        code=INVALID_PARAMS,
+                        message=(
+                            f"Unknown brain profile {profile!r}; tool {tool_name!r} denied."
+                        ),
+                    )
+                ) from None
 
             tool_name = req.params.name
             if tool_name not in allowed:

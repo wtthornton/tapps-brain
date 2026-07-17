@@ -157,6 +157,10 @@ class PostgresPrivateBackend:
         # TAP-2728: HNSW query-time GUC — read once at construction so env-var
         # parsing is not repeated on every knn_search call.
         self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
+        # Set when knn_search hits a DB error so health/metrics can distinguish
+        # "no neighbours" from "semantic recall degraded".
+        self.knn_search_degraded: bool = False
+        self.index_verify_unknown: bool = False
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS (EPIC-069 STORY-069.8)
@@ -286,6 +290,20 @@ class PostgresPrivateBackend:
                         return results
         return results
 
+    def load_one(self, key: str) -> MemoryEntry | None:
+        """Load a single entry by key for this ``(project_id, agent_id)`` scope.
+
+        Used to hydrate the write-through cache when rows were written outside
+        ``MemoryStore.save`` (e.g. experience-event upserts).
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.LOAD_ONE_SQL, (self._project_id, self._agent_id, key))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            col_names = [desc[0] for desc in cur.description]
+        return self._row_to_entry(dict(zip(col_names, row, strict=False)))
+
     def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""
         with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -400,8 +418,9 @@ class PostgresPrivateBackend:
                 rows = cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
+            self.knn_search_degraded = True
             logger.warning("postgres_private.knn_search_failed", exc_info=True)
-            return []
+            raise
 
     def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
@@ -515,9 +534,10 @@ class PostgresPrivateBackend:
 
         Returns the list of missing index names (empty when all present).
 
-        This is a best-effort check — any DB error is caught, logged at
-        DEBUG level, and treated as "no missing indexes" so a transient
-        connection hiccup at startup does not abort the store.
+        This is a best-effort check — any DB error is caught and logged.
+        On probe failure the sentinel ``__index_verify_unavailable__`` is
+        returned (and ``index_verify_unknown`` set) so callers do **not**
+        treat a failed probe as "all indexes present".
 
         Likely cause of a non-empty result: migration 002 (HNSW upgrade) was
         never applied.  The embedding recall path still works but falls back
@@ -532,11 +552,13 @@ class PostgresPrivateBackend:
                 cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
                 present = {str(row[0]) for row in cur.fetchall()}
         except Exception:
+            self.index_verify_unknown = True
             logger.warning(
                 "postgres_private.verify_expected_indexes.db_error",
                 exc_info=True,
+                hint="index status unknown — not treating as healthy",
             )
-            return []
+            return ["__index_verify_unavailable__"]
 
         missing = sorted(_sql.EXPECTED_PRIVATE_INDEXES - present)
         if missing:
@@ -677,7 +699,7 @@ class PostgresPrivateBackend:
                 key=key,
                 exc_info=True,
             )
-            return 0
+            raise
 
     # ------------------------------------------------------------------
     # Schema / version
@@ -689,10 +711,10 @@ class PostgresPrivateBackend:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(_sql.GET_SCHEMA_VERSION_SQL)
                 row = cur.fetchone()
-            return int(row[0]) if row and row[0] is not None else _sql.PRIVATE_SCHEMA_VERSION
+            return int(row[0]) if row and row[0] is not None else 0
         except Exception:
             logger.warning("postgres_private.get_schema_version_failed", exc_info=True)
-            return _sql.PRIVATE_SCHEMA_VERSION
+            raise
 
     # ------------------------------------------------------------------
     # Audit
@@ -756,7 +778,7 @@ class PostgresPrivateBackend:
                 rows = cur.fetchall()
         except Exception:
             logger.warning("postgres_private.audit_query_failed", exc_info=True)
-            return []
+            raise
 
         results: list[dict[str, Any]] = []
         for r in rows:
@@ -789,8 +811,9 @@ class PostgresPrivateBackend:
     def flywheel_meta_get(self, key: str) -> str | None:
         """Return the stored flywheel metadata value for *key*, or ``None``.
 
-        Best-effort: failures log and return ``None`` so the flywheel pipeline
-        can still run (it will just reprocess from the beginning).
+        Best-effort empty result when the key is absent.  Postgres failures
+        raise so callers (e.g. flywheel) do not treat a failed cursor read as
+        "start from beginning" and double-apply confidence updates.
         """
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -799,13 +822,13 @@ class PostgresPrivateBackend:
                 return str(row[0]) if row else None
         except Exception:
             logger.warning("postgres_private.flywheel_meta_get_failed", key=key, exc_info=True)
-            return None
+            raise
 
     def flywheel_meta_set(self, key: str, value: str) -> None:
         """Upsert a flywheel metadata value for *key*.
 
-        Best-effort: failures log and are swallowed so a transient DB issue
-        can't break the feedback pipeline's in-memory state.
+        Failures are logged and re-raised so callers (e.g. the flywheel
+        confidence pipeline) do not advance a cursor after a failed durable write.
         """
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -815,6 +838,7 @@ class PostgresPrivateBackend:
                 )
         except Exception:
             logger.warning("postgres_private.flywheel_meta_set_failed", key=key, exc_info=True)
+            raise
 
     # ------------------------------------------------------------------
     # GC archive (migration 006, STORY-066.3)
@@ -1068,6 +1092,8 @@ class AsyncPostgresPrivateBackend:
 
         # TAP-2728: HNSW query-time GUC — read once at construction.
         self._hnsw_ef_search: int = _resolve_hnsw_ef_search()
+        self.knn_search_degraded: bool = False
+        self.index_verify_unknown: bool = False
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS (async parity of _scoped_conn)
@@ -1144,6 +1170,16 @@ class AsyncPostgresPrivateBackend:
                     if limit is not None and len(results) >= limit:
                         return results
         return results
+
+    async def load_one(self, key: str) -> MemoryEntry | None:
+        """Load a single entry by key (async parity with sync ``load_one``)."""
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(_sql.LOAD_ONE_SQL, (self._project_id, self._agent_id, key))
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            col_names = [desc[0] for desc in cur.description]
+        return self._row_to_entry(dict(zip(col_names, row, strict=False)))
 
     async def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns ``True`` if a row was removed."""
@@ -1227,8 +1263,9 @@ class AsyncPostgresPrivateBackend:
                 rows = await cur.fetchall()
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
+            self.knn_search_degraded = True
             logger.warning("async_postgres_private.knn_search_failed", exc_info=True)
-            return []
+            raise
 
     async def vector_row_count(self) -> int:
         """Number of entries with a non-NULL embedding vector."""
@@ -1248,11 +1285,13 @@ class AsyncPostgresPrivateBackend:
                 await cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
                 present = {str(row[0]) for row in await cur.fetchall()}
         except Exception:
+            self.index_verify_unknown = True
             logger.warning(
                 "async_postgres_private.verify_expected_indexes.db_error",
                 exc_info=True,
+                hint="index status unknown — not treating as healthy",
             )
-            return []
+            return ["__index_verify_unavailable__"]
         missing = sorted(_sql.EXPECTED_PRIVATE_INDEXES - present)
         if missing:
             logger.warning(
@@ -1376,7 +1415,7 @@ class AsyncPostgresPrivateBackend:
                 key=key,
                 exc_info=True,
             )
-            return 0
+            raise
 
     # ------------------------------------------------------------------
     # Schema / version
@@ -1388,10 +1427,10 @@ class AsyncPostgresPrivateBackend:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
                 await cur.execute(_sql.GET_SCHEMA_VERSION_SQL)
                 row = await cur.fetchone()
-            return int(row[0]) if row and row[0] is not None else _sql.PRIVATE_SCHEMA_VERSION
+            return int(row[0]) if row and row[0] is not None else 0
         except Exception:
             logger.warning("async_postgres_private.get_schema_version_failed", exc_info=True)
-            return _sql.PRIVATE_SCHEMA_VERSION
+            raise
 
     # ------------------------------------------------------------------
     # Audit
@@ -1447,7 +1486,7 @@ class AsyncPostgresPrivateBackend:
                 rows = await cur.fetchall()
         except Exception:
             logger.warning("async_postgres_private.audit_query_failed", exc_info=True)
-            return []
+            raise
         results: list[dict[str, Any]] = []
         for r in rows:
             ts = r[0]
@@ -1490,10 +1529,10 @@ class AsyncPostgresPrivateBackend:
             logger.warning(
                 "async_postgres_private.flywheel_meta_get_failed", key=key, exc_info=True
             )
-            return None
+            raise
 
     async def flywheel_meta_set(self, key: str, value: str) -> None:
-        """Upsert a flywheel metadata value for *key*.  Best-effort."""
+        """Upsert a flywheel metadata value for *key*. Failures log and re-raise."""
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
                 await cur.execute(
@@ -1504,6 +1543,7 @@ class AsyncPostgresPrivateBackend:
             logger.warning(
                 "async_postgres_private.flywheel_meta_set_failed", key=key, exc_info=True
             )
+            raise
 
     # ------------------------------------------------------------------
     # GC archive

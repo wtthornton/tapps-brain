@@ -101,6 +101,12 @@ class RateLimiterConfig:
     a lot over time" signal, not as a per-request or per-session gate.
     """
     enabled: bool = True
+    enforce: bool = False
+    """When True, minute-limit breaches set ``allowed=False`` and callers must block.
+
+    Default remains warn-only (``allowed`` always True). Opt in via constructor
+    or ``TAPPS_BRAIN_RATE_LIMIT_ENFORCE=1`` when building config from env.
+    """
 
     def __post_init__(self) -> None:
         if self.writes_per_minute < 1:
@@ -219,12 +225,22 @@ class SlidingWindowRateLimiter:
                 self._stats.lifetime_anomalies += 1
 
         # Build result
+        allowed = True
+        if self._config.enforce and minute_exceeded:
+            allowed = False
+            # Do not count the rejected write toward the window / lifetime.
+            with self._lock:
+                if self._timestamps and self._timestamps[-1] == now:
+                    self._timestamps.pop()
+                self._lifetime_writes = max(0, self._lifetime_writes - 1)
+                self._stats.total_writes = max(0, self._stats.total_writes - 1)
+
         result = RateLimitResult(
-            allowed=True,  # Warn-only: never block
+            allowed=allowed,
             minute_exceeded=minute_exceeded,
             lifetime_exceeded=lifetime_exceeded,
-            current_minute_count=minute_count,
-            current_lifetime_count=lifetime_writes,
+            current_minute_count=minute_count if allowed else max(0, minute_count - 1),
+            current_lifetime_count=lifetime_writes if allowed else max(0, lifetime_writes - 1),
         )
 
         # Log warnings for exceeded limits

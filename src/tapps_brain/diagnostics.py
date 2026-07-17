@@ -492,7 +492,7 @@ def run_diagnostics(
             scores[d.name] = d.check(store)
         except Exception:
             logger.warning("diagnostics_dimension_failed", dimension=d.name, exc_info=True)
-            scores[d.name] = DimensionScore(name=d.name, score=0.5, raw_details={"error": True})
+            scores[d.name] = DimensionScore(name=d.name, score=0.0, raw_details={"error": True})
     composite = sum(weights.get(n, 0) * scores[n].score for n in scores)
     composite = clamp01(composite)
     hive_diag, hive_comp = _hive_namespace_scores(store)

@@ -192,17 +192,23 @@ class TestIdempotencyStoreCheck:
         assert status == 200
         assert returned_body == body
 
-    def test_decode_error_treated_as_miss(self) -> None:
-        istore, _ = self._store_with_row((200, "NOT_VALID_JSON"))
-        assert istore.check("proj", "key-123") is None
+    def test_decode_error_raises_unavailable(self) -> None:
+        from tapps_brain.idempotency import IdempotencyUnavailableError
 
-    def test_exception_treated_as_miss(self) -> None:
+        istore, _ = self._store_with_row((200, "NOT_VALID_JSON"))
+        with pytest.raises(IdempotencyUnavailableError):
+            istore.check("proj", "key-123")
+
+    def test_exception_raises_unavailable(self) -> None:
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         store = IdempotencyStore.__new__(IdempotencyStore)
         cm = MagicMock()
         cm.get_connection.side_effect = RuntimeError("db down")
         store._cm = cm
         store.ttl_hours = 24
-        assert store.check("proj", "key") is None
+        with pytest.raises(IdempotencyUnavailableError):
+            store.check("proj", "key")
 
 
 class TestIdempotencyStoreSave:
@@ -236,14 +242,16 @@ class TestIdempotencyStoreSave:
         # execute should NOT have been called for the INSERT
         assert not cur.execute.called
 
-    def test_exception_silenced(self) -> None:
+    def test_exception_raises_unavailable(self) -> None:
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         store = IdempotencyStore.__new__(IdempotencyStore)
         cm = MagicMock()
         cm.get_connection.side_effect = RuntimeError("db down")
         store._cm = cm
         store.ttl_hours = 24
-        # Should not raise
-        store.save("proj", "ikey", 200, {"ok": True})
+        with pytest.raises(IdempotencyUnavailableError):
+            store.save("proj", "ikey", 200, {"ok": True})
 
 
 class TestIdempotencyStoreSweep:

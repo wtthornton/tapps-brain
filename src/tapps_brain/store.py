@@ -13,7 +13,7 @@ import os
 import threading
 import time
 from collections import deque
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -296,6 +296,14 @@ def _preserved_fields_for_update(
             "superseded_by": None,
             "temporal_sensitivity": None,
             "failed_approaches": [],
+            "useful_access_count": 0,
+            "total_access_count": 0,
+            "positive_feedback_count": 0.0,
+            "negative_feedback_count": 0.0,
+            "stability": 0.0,
+            "difficulty": 0.0,
+            "embedding": None,
+            "embedding_model_id": None,
         }
     return {
         "created_at": existing.created_at,
@@ -310,6 +318,14 @@ def _preserved_fields_for_update(
         "superseded_by": existing.superseded_by,
         "temporal_sensitivity": existing.temporal_sensitivity,
         "failed_approaches": existing.failed_approaches,
+        "useful_access_count": existing.useful_access_count,
+        "total_access_count": existing.total_access_count,
+        "positive_feedback_count": existing.positive_feedback_count,
+        "negative_feedback_count": existing.negative_feedback_count,
+        "stability": existing.stability,
+        "difficulty": existing.difficulty,
+        "embedding": existing.embedding,
+        "embedding_model_id": existing.embedding_model_id,
     }
 
 
@@ -393,6 +409,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._agent_id = agent_id
         self._groups = groups or []
         self._expert_domains = expert_domains or []
+        if rate_limiter_config is None:
+            enforce = os.environ.get("TAPPS_BRAIN_RATE_LIMIT_ENFORCE", "").strip() in (
+                "1",
+                "true",
+                "TRUE",
+                "yes",
+                "YES",
+            )
+            rate_limiter_config = RateLimiterConfig(enforce=enforce)
         self._rate_limiter = SlidingWindowRateLimiter(rate_limiter_config)
         # Profile before persistence so lexical FTS/BM25 settings apply at open.
         self._profile = self._resolve_profile(project_root, profile)
@@ -683,13 +708,19 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         registry.register(agent)
 
     def _setup_group_memberships(self) -> None:
-        """Auto-create and join declared groups in the Hive (STORY-056.1)."""
+        """Auto-create and join declared groups in the Hive (STORY-056.1).
+
+        Fail-closed: groups that cannot be joined are dropped from
+        ``self._groups`` so later scope checks do not assume membership.
+        """
         if self._hive_store is None or not self._agent_id:
             return
+        joined: list[str] = []
         for group_name in self._groups:
             try:
                 self._hive_store.create_group(group_name)
                 self._hive_store.add_group_member(group_name, self._agent_id)
+                joined.append(group_name)
             except Exception:
                 logger.warning(
                     "group_auto_join_failed",
@@ -697,6 +728,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     agent_id=self._agent_id,
                     exc_info=True,
                 )
+        if len(joined) != len(self._groups):
+            self._groups = joined
 
     @contextmanager
     def _serialized(self) -> Iterator[None]:
@@ -726,9 +759,59 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Return the agent identity used for storage isolation, or ``None``."""
         return self._agent_id
 
+    def _postgres_session_index(self) -> Any:  # noqa: ANN401
+        """Return a Postgres :class:`SessionIndex` when the private backend exposes one.
+
+        Falls back to ``None`` for non-Postgres backends / missing tenant ids so
+        callers can use the in-process session helpers.
+        """
+        cm = getattr(self._persistence, "_cm", None)
+        project_id = self._project_id
+        if cm is None or not project_id:
+            return None
+        from tapps_brain.session_index import SessionIndex
+
+        # Prefer the private backend's agent_id so session chunks share the
+        # same tenant key as private_memories / FeedbackStore.
+        backend_agent = getattr(self._persistence, "_agent_id", None)
+        agent_id = (
+            str(backend_agent)
+            if backend_agent is not None and str(backend_agent)
+            else (self._agent_id or "unknown")
+        )
+        return SessionIndex(
+            cm,
+            project_id=str(project_id),
+            agent_id=agent_id,
+        )
+
+    def _merge_durable_entries(self, *, limit: int | None = None) -> None:
+        """Fill cache misses from ``load_all`` (durable overflow beyond cold-start).
+
+        Never overwrites keys already present in ``_entries`` so in-memory
+        mutations (and write-through newer cache state) are preserved.
+        """
+        durable = self._persistence.load_all(limit=limit)
+        with self._serialized():
+            for entry in durable:
+                if entry.key not in self._entries:
+                    self._entries[entry.key] = entry
+
     @property
     def groups(self) -> list[str]:
         """Return declared group memberships (EPIC-056)."""
+        return list(self._groups)
+
+    def refresh_group_membership(self) -> list[str]:
+        """Reload group membership from ``TAPPS_BRAIN_GROUPS`` (scope-audit G-2).
+
+        ``_groups`` is captured at construction; call this after Hive group
+        membership changes so orphaned namespace writes are less likely.
+        Returns the refreshed membership list.
+        """
+        raw = os.environ.get("TAPPS_BRAIN_GROUPS", "")
+        refreshed = [g.strip() for g in raw.split(",") if g.strip()] if raw else []
+        self._groups = refreshed
         return list(self._groups)
 
     @property
@@ -827,6 +910,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         except Exception:
             # Any transport-level hiccup falls back to legacy resolution;
             # strict mode still surfaces the structured error above.
+            logger.warning(
+                "profile_registry_resolve_failed",
+                project_id=project_id,
+                exc_info=True,
+            )
             return None
         finally:
             cm.close()
@@ -1466,7 +1554,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     # ------------------------------------------------------------------
 
     def _check_rate_limit(self, key: str) -> None:
-        """Emit a warn-only rate-limit log; never blocks the save (H6a)."""
+        """Emit a rate-limit log; raise when the limiter is in enforce mode."""
         rate_result = self._rate_limiter.check()
         if rate_result.minute_exceeded or rate_result.lifetime_exceeded:
             logger.warning(
@@ -1474,6 +1562,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 key=key,
                 minute_count=rate_result.current_minute_count,
                 lifetime_count=rate_result.current_lifetime_count,
+                allowed=rate_result.allowed,
+            )
+        if not rate_result.allowed:
+            from tapps_brain.errors import BrainRateLimitedError
+
+            raise BrainRateLimitedError(
+                rate_result.message
+                or (
+                    f"Rate limit exceeded: {rate_result.current_minute_count} writes/min "
+                    f"(limit: {self._rate_limiter.config.writes_per_minute})"
+                )
             )
 
     def _apply_write_policy(  # noqa: PLR0911
@@ -1493,6 +1592,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         from tapps_brain.write_policy import WriteDecision
 
+        # Refresh from durable store so policy decisions are not cache-only.
+        self._merge_durable_entries()
         with self._serialized():
             candidates = list(self._entries.values())
         result = self._write_policy.decide(key, value, candidates)
@@ -1583,6 +1684,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return None
         normalized = normalize_for_dedup(value)
         if self._bloom.might_contain(normalized):
+            # Bloom positives are confirmed against durable rows when possible.
+            self._merge_durable_entries()
             dup_key: str | None = None
             with self._serialized():
                 for existing in self._entries.values():
@@ -1615,6 +1718,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if not conflict_check:
             return None
 
+        # Conflict detection must see durable rows, not only the cold-start cap.
+        self._merge_durable_entries()
         with self._serialized():
             entries_snapshot = list(self._entries.values())
         similarity_threshold = resolve_similarity_threshold(self._profile, tier)
@@ -1639,9 +1744,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         for conflict_key, reason in plan.invalidations:
             invalidated: MemoryEntry | None = None
+            previous: MemoryEntry | None = None
             with self._serialized():
                 current = self._entries.get(conflict_key)
                 if current is not None and current.invalid_at is None:
+                    previous = current
                     invalidated = current.model_copy(
                         update={
                             "invalid_at": plan.now,
@@ -1651,15 +1758,21 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                         }
                     )
                     self._entries[conflict_key] = invalidated
-            if invalidated is not None:
+            if invalidated is not None and previous is not None:
                 try:
                     self._persistence.save(invalidated)
                 except Exception:
+                    with self._serialized():
+                        if self._entries.get(conflict_key) is invalidated:
+                            self._entries[conflict_key] = previous
                     logger.warning(
                         "conflict_invalidate_persist_failed",
                         conflict_key=conflict_key,
                         exc_info=True,
                     )
+                    # Do not advertise a shared conflict timestamp when any
+                    # invalidation failed to persist — abort the conflict plan.
+                    return None
 
         return plan.now
 
@@ -1696,6 +1809,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         timer.  Returns ``(new_entry, existing_entry_or_None)`` so the caller
         can still distinguish inserts from updates for audit + propagation.
         """
+        # Hydrate durable-only rows before treating this as an insert.
+        self._ensure_entry_cached(key)
         with (
             MetricsTimer(self._metrics, "store.save.phase.lock_build_ms"),
             self._serialized(),
@@ -1806,6 +1921,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             updated_at=now,
             last_accessed=now,
             access_count=preserved["access_count"],
+            useful_access_count=preserved["useful_access_count"],
+            total_access_count=preserved["total_access_count"],
+            positive_feedback_count=preserved["positive_feedback_count"],
+            negative_feedback_count=preserved["negative_feedback_count"],
+            stability=preserved["stability"],
+            difficulty=preserved["difficulty"],
+            embedding=preserved["embedding"],
+            embedding_model_id=preserved["embedding_model_id"],
             branch=branch,
             last_reinforced=preserved["last_reinforced"],
             reinforce_count=preserved["reinforce_count"],
@@ -1844,7 +1967,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         return entry.model_copy(update={"integrity_hash": h, "integrity_hash_v": 2})
 
     def _embed_entry(self, key: str, value: str, entry: MemoryEntry) -> MemoryEntry:
-        """Compute + attach the embedding when a provider is configured (Epic 65.7)."""
+        """Compute + attach the embedding when a provider is configured (Epic 65.7).
+
+        When no provider is configured or embed fails, keep any preserved
+        embedding from the prior row so a re-save does not NULL the vector.
+        """
         if self._embedding_provider is None:
             return entry
         with MetricsTimer(self._metrics, "store.save.phase.embed_ms"):
@@ -1896,6 +2023,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             mid_raw.strip() if isinstance(mid_raw, str) and mid_raw.strip() else None
         )
 
+        # Include durable rows beyond the cold-start cache cap.
+        self._merge_durable_entries()
         with self._serialized():
             keys = list(self._entries.keys())
 
@@ -1924,19 +2053,24 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 current = self._entries.get(key)
                 if current is None:
                     continue
+                previous = current
                 updated = current.model_copy(update=update)
                 self._entries[key] = updated
 
-            if self._hive_store is not None:
-                with suppress(Exception):
-                    self._hive_store.save(updated)  # type: ignore[call-arg,arg-type,misc]
-
             try:
                 self._persistence.save(updated)
-                backfilled += 1
             except Exception:
                 failed += 1
+                with self._lock:
+                    if self._entries.get(key) is updated:
+                        self._entries[key] = previous
                 logger.warning("backfill_embeddings.persist_failed", key=key, exc_info=True)
+                continue
+
+            backfilled += 1
+            # Sync embedding to Hive only after private persist succeeds (scoped rules).
+            if self._hive_store is not None:
+                self._propagate_to_hive(updated)
 
         logger.info(
             "backfill_embeddings.complete",
@@ -2091,6 +2225,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 )
         except Exception:
             logger.warning("auto_consolidation_check_failed", exc_info=True)
+            raise
         finally:
             self._consolidation_in_progress = False
 
@@ -2167,6 +2302,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 )
         except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)
+            # Private row is already durable by design; surface the split via metrics
+            # so operators can alert without rolling back local memory.
+            self._metrics.increment("store.hive_propagation_failed")
+            if entry.agent_scope and entry.agent_scope != "private":
+                self._metrics.increment("store.hive_propagation_failed_visible")
 
     def update_fields(self, key: str, **fields: Any) -> MemoryEntry | None:  # noqa: ANN401
         """Partial update of specific fields on an existing entry.
@@ -2176,6 +2316,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """
         with self._serialized():
             entry = self._entries.get(key)
+            if entry is None:
+                load_one = getattr(self._persistence, "load_one", None)
+                if callable(load_one):
+                    entry = load_one(key)
+                    if entry is not None:
+                        self._entries[key] = entry
             if entry is None:
                 return None
 
@@ -2203,11 +2349,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
     def count(self) -> int:
         """Return the total number of memory entries."""
+        self._merge_durable_entries()
         with self._serialized():
             return len(self._entries)
 
     def snapshot(self) -> MemorySnapshot:
         """Return a serializable snapshot of the full memory state."""
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -2240,7 +2388,24 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
     @property
     def vector_index_enabled(self) -> bool:
-        """Always True under the Postgres backend (pgvector is a hard dependency)."""
+        """True when pgvector KNN is usable for this store.
+
+        False when expected indexes are missing or the last knn_search marked
+        the backend as degraded.
+        """
+        persistence = self._persistence
+        if getattr(persistence, "knn_search_degraded", False):
+            return False
+        if getattr(persistence, "index_verify_unknown", False):
+            return False
+        verify = getattr(persistence, "verify_expected_indexes", None)
+        if callable(verify):
+            try:
+                missing = verify()
+            except Exception:
+                return False
+            if missing:
+                return False
         return True
 
     @property
@@ -2277,11 +2442,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         decay_cfg = self._get_decay_config()
 
         with start_span(SPAN_REINFORCE, {"gen_ai.operation.name": GEN_AI_OPERATION_EXECUTE_TOOL}):
-            with self._serialized():
-                entry = self._entries.get(key)
-                if entry is None:
-                    raise KeyError(key)
+            entry = self._ensure_entry_cached(key)
+            if entry is None:
+                raise KeyError(key)
 
+            with self._serialized():
+                # Re-read under lock in case another writer raced after hydrate.
+                entry = self._entries.get(key) or entry
                 updates = dict(_reinforce(entry, decay_cfg, confidence_boost=confidence_boost))
                 updates.update(self._reinforce_stability_updates(entry, decay_cfg))
                 updated = entry.model_copy(update=updates)
@@ -2361,7 +2528,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             )
             with self._serialized():
                 self._entries[key] = promoted
-            self._persistence.save(promoted)
+            try:
+                self._persistence.save(promoted)
+            except Exception:
+                with self._serialized():
+                    if self._entries.get(key) is promoted:
+                        self._entries[key] = updated
+                raise
             self._persistence.append_audit(
                 action="promote",
                 key=key,
@@ -2393,6 +2566,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             key: The memory entry key.
             was_useful: Whether this retrieval was useful to the caller.
         """
+        if self._ensure_entry_cached(key) is None:
+            return
+
         with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
@@ -2514,41 +2690,88 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         Returns:
             Number of chunks stored.
+
+        Raises:
+            Exception: Propagates backend failures (no silent ``0`` swallow).
         """
+        pg_index = self._postgres_session_index()
+        if pg_index is not None:
+            try:
+                return int(pg_index.save_chunks(session_id, chunks))
+            except Exception:
+                logger.warning("session_index_failed", session_id=session_id, exc_info=True)
+                raise
+
         from tapps_brain.session_index import index_session as _index_session
 
         try:
-            return _index_session(self._project_root, session_id, chunks)
+            return _index_session(
+                self._project_root,
+                session_id,
+                chunks,
+                agent_id=self._agent_id or "",
+            )
         except Exception:
             logger.warning("session_index_failed", session_id=session_id, exc_info=True)
-            return 0
+            raise
 
     def search_sessions(self, query: str, *, limit: int = 10) -> list[dict[str, Any]]:
         """Search session index by query.
 
         Returns list of dicts with keys: session_id, chunk_index, content, created_at.
+
+        Raises:
+            Exception: Propagates backend failures (no silent empty swallow).
         """
+        pg_index = self._postgres_session_index()
+        if pg_index is not None:
+            try:
+                return list(pg_index.search(query, limit=limit))
+            except Exception:
+                logger.warning("session_search_failed", query=query, exc_info=True)
+                raise
+
         from tapps_brain.session_index import search_session_index
 
         try:
-            return search_session_index(self._project_root, query, limit=limit)
+            return search_session_index(
+                self._project_root,
+                query,
+                limit=limit,
+                agent_id=self._agent_id or "",
+            )
         except Exception:
             logger.warning("session_search_failed", query=query, exc_info=True)
-            return []
+            raise
 
     def cleanup_sessions(self, *, ttl_days: int = 90) -> int:
         """Delete session chunks older than ttl_days.
 
         Returns:
             Count of deleted chunks.
+
+        Raises:
+            Exception: Propagates backend failures (no silent ``0`` swallow).
         """
+        pg_index = self._postgres_session_index()
+        if pg_index is not None:
+            try:
+                return int(pg_index.delete_expired(ttl_days))
+            except Exception:
+                logger.warning("session_cleanup_failed", exc_info=True)
+                raise
+
         try:
             from tapps_brain.session_index import delete_expired_sessions
 
-            return delete_expired_sessions(self._project_root, ttl_days)
+            return delete_expired_sessions(
+                self._project_root,
+                ttl_days,
+                agent_id=self._agent_id or "",
+            )
         except Exception:
             logger.warning("session_cleanup_failed", exc_info=True)
-            return 0
+            raise
 
     # ------------------------------------------------------------------
     # Doc validation (Story 002.1)
@@ -2590,7 +2813,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         validator = MemoryDocValidator(self._lookup_engine)
 
-        # Collect entries to validate
+        # Collect entries to validate (hydrate so durable overflow is included).
+        if keys is not None:
+            for k in keys:
+                self._ensure_entry_cached(k)
+        else:
+            self._merge_durable_entries()
+
         with self._serialized():
             if keys is not None:
                 entries = [self._entries[k] for k in keys if k in self._entries]
@@ -2634,11 +2863,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._metrics.increment("store.supersede")
         now = _utc_now_iso()
 
-        with self._serialized():
-            old_entry = self._entries.get(old_key)
-            if old_entry is None:
-                raise KeyError(old_key)
+        old_entry = self._ensure_entry_cached(old_key)
+        if old_entry is None:
+            raise KeyError(old_key)
 
+        with self._serialized():
+            old_entry = self._entries.get(old_key) or old_entry
             if old_entry.invalid_at is not None:
                 msg = (
                     f"Entry '{old_key}' is already superseded (invalid_at={old_entry.invalid_at})."
@@ -2659,7 +2889,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             self._entries[old_key] = invalidated
 
         # Persist the invalidated entry
-        self._persistence.save(invalidated)
+        try:
+            self._persistence.save(invalidated)
+        except Exception:
+            with self._serialized():
+                if self._entries.get(old_key) is invalidated:
+                    self._entries[old_key] = old_entry
+            raise
 
         # Create the new entry
         new_kwargs: dict[str, Any] = {
@@ -2673,16 +2909,38 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         }
         new_kwargs.update(kwargs)
 
-        new_entry = self.save(key=new_key, value=new_value, **new_kwargs)
+        try:
+            new_entry = self.save(key=new_key, value=new_value, **new_kwargs)
+        except Exception:
+            with self._serialized():
+                self._entries[old_key] = old_entry
+            try:
+                self._persistence.save(old_entry)
+            except Exception:
+                logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
+            raise
         if isinstance(new_entry, dict):
+            with self._serialized():
+                self._entries[old_key] = old_entry
+            try:
+                self._persistence.save(old_entry)
+            except Exception:
+                logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
             msg = f"Failed to create superseding entry: {new_entry.get('message', '')}"
             raise ValueError(msg)
 
         # Set valid_at on the new entry
         with self._serialized():
+            previous_new = new_entry
             updated_new = new_entry.model_copy(update={"valid_at": now})
             self._entries[new_key] = updated_new
-        self._persistence.save(updated_new)
+        try:
+            self._persistence.save(updated_new)
+        except Exception:
+            with self._serialized():
+                if self._entries.get(new_key) is updated_new:
+                    self._entries[new_key] = previous_new
+            raise
 
         # Transfer relations from old entry to new entry
         old_relations = self.get_relations(old_key)
@@ -2700,6 +2958,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             self._persistence.save_relations(new_key, transferred)
             with self._serialized():
                 self._relations[new_key] = self._persistence.load_relations(new_key)
+            try:
+                self._persistence.delete_relations(old_key)
+            except Exception:
+                logger.warning("supersede_delete_old_relations_failed", old_key=old_key, exc_info=True)
+            with self._serialized():
+                self._relations.pop(old_key, None)
 
         return updated_new
 
@@ -2719,10 +2983,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Raises:
             KeyError: If *key* does not exist.
         """
-        with self._serialized():
-            if key not in self._entries:
-                raise KeyError(key)
+        if self._ensure_entry_cached(key) is None:
+            raise KeyError(key)
 
+        # Predecessors may live only in durable store beyond the cold-start cap.
+        self._merge_durable_entries()
+
+        with self._serialized():
             # Build reverse index: superseded_by -> source key
             reverse: dict[str, str] = {}
             for e in self._entries.values():
@@ -2740,21 +3007,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     break
                 backward_visited.add(root)
 
-            # Walk forward from root collecting the chain.
-            # Track visited keys to guard against corrupted cyclic superseded_by chains.
-            chain: list[MemoryEntry] = []
-            chain_visited: set[str] = set()
-            current: str | None = root
-            while current is not None:
-                if current in chain_visited:
-                    logger.warning("history_cycle_detected", key=key, cycle_key=current)
-                    break
-                entry = self._entries.get(current)
-                if entry is None:
-                    break
-                chain_visited.add(current)
-                chain.append(entry)
-                current = entry.superseded_by
+        # Walk forward from root, hydrating each hop from durable store.
+        chain: list[MemoryEntry] = []
+        chain_visited: set[str] = set()
+        current: str | None = root
+        while current is not None:
+            if current in chain_visited:
+                logger.warning("history_cycle_detected", key=key, cycle_key=current)
+                break
+            entry = self._ensure_entry_cached(current)
+            if entry is None:
+                break
+            chain_visited.add(current)
+            chain.append(entry)
+            current = entry.superseded_by
 
         # Sort by valid_at (None sorts first)
         chain.sort(key=lambda e: e.valid_at or "")
@@ -2817,7 +3083,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         qw = self._recall_quality_warning()
         if qw is not None:
-            result = result.model_copy(update={"quality_warning": qw})
+            existing_qw = getattr(result, "quality_warning", None)
+            merged = qw if not existing_qw else f"{existing_qw}; {qw}"
+            result = result.model_copy(update={"quality_warning": merged})
 
         if not getattr(result, "memory_count", 0) and message.strip():
             with self._serialized():
@@ -2984,6 +3252,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         from tapps_brain.gc import MemoryGarbageCollector
         from tapps_brain.similarity import find_consolidation_groups
 
+        # Include durable overflow so health counts match verify_integrity.
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -3150,6 +3420,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             config=self._get_decay_config(),
             gc_config=self._gc_config,
         )
+        # Include durable overflow beyond the cold-start cache cap.
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
         now = datetime.now(tz=UTC)
@@ -3174,17 +3446,28 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             )
 
         # Archive to Postgres gc_archive table (STORY-066.3) and delete from store.
-        # archive_entry() is best-effort — returns 0 on failure so we accumulate
-        # only successfully written bytes.
-        appended = 0
+        # Only delete keys that were successfully archived — archive_entry() returns
+        # 0 on failure; deleting those would silently destroy data.
+        archived_keys: list[str] = []
+        archive_bytes = 0
         for entry in candidates:
-            appended += self._persistence.archive_entry(entry)
-        for key in candidate_keys:
+            nbytes = self._persistence.archive_entry(entry)
+            if nbytes > 0:
+                archived_keys.append(entry.key)
+                archive_bytes += nbytes
+            else:
+                logger.warning(
+                    "gc.archive_failed_skip_delete",
+                    key=entry.key,
+                    hint="entry left in store until archive succeeds",
+                )
+
+        for key in archived_keys:
             self.delete(key)
 
-        self._metrics.increment("store.gc.archived", len(candidate_keys))
-        if appended:
-            self._metrics.increment("store.gc.archive_bytes", appended)
+        self._metrics.increment("store.gc.archived", len(archived_keys))
+        if archive_bytes:
+            self._metrics.increment("store.gc.archive_bytes", archive_bytes)
 
         # Prune session index (FTS5) rows aligned with GC retention policy.
         session_chunks_deleted = self.cleanup_sessions(
@@ -3212,12 +3495,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             self._bloom.rebuild(surviving_values)
 
         return GCResult(
-            archived_count=len(candidate_keys),
-            remaining_count=len(entries) - len(candidate_keys),
-            archived_keys=candidate_keys,
+            archived_count=len(archived_keys),
+            remaining_count=len(self._entries),
+            archived_keys=archived_keys,
             dry_run=False,
             reason_counts=reason_counts,
-            archive_bytes=appended,
+            archive_bytes=archive_bytes,
             session_chunks_deleted=session_chunks_deleted,
         )
 
@@ -3314,6 +3597,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     pass  # hive pool stats unavailable; best-effort metrics skip
 
         # tapps_brain.* gauges — STORY-032.6
+        self._merge_durable_entries()
         with self._serialized():
             _entry_count = len(self._entries)
             # TAP-645: expose per-session log size so growth is visible in metrics.
@@ -3438,7 +3722,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             logger.warning("diagnostics_audit_failed", exc_info=True)
 
     def diagnostics_history(self, *, limit: int = 100) -> list[dict[str, Any]]:
-        """Return recent diagnostics snapshots from SQLite (EPIC-030).
+        """Return recent diagnostics snapshots from Postgres (EPIC-030).
 
         STORY-069.7: each returned row carries ``project_id`` (or ``None``
         for legacy single-tenant backends) so downstream filters and the
@@ -3465,6 +3749,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Returns:
             Dict mapping tag → count of entries that carry that tag.
         """
+        self._merge_durable_entries()
         with self._serialized():
             entries = list(self._entries.values())
         counts: dict[str, int] = {}
@@ -3496,6 +3781,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         add_set = set(add or [])
         remove_set = set(remove or [])
 
+        if self._ensure_entry_cached(key) is None:
+            return {"error": "not_found", "message": f"Entry '{key}' not found."}
+
         with self._serialized():
             entry = self._entries.get(key)
             if entry is None:
@@ -3519,9 +3807,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             from tapps_brain.models import _utc_now_iso
 
             updated = entry.model_copy(update={"tags": updated_tags, "updated_at": _utc_now_iso()})
+            previous = entry
             self._entries[key] = updated
 
-        self._persistence.save(updated)
+        try:
+            self._persistence.save(updated)
+        except Exception:
+            with self._serialized():
+                if self._entries.get(key) is updated:
+                    self._entries[key] = previous
+            raise
         return updated
 
     def entries_by_tag(
@@ -3816,7 +4111,47 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
     def _count_entries_in_memory_group(self, memory_group: str | None) -> int:
         """Count live rows whose ``memory_group`` matches (``None`` = ungrouped)."""
+        # Caller holds the store lock; merge durable overflow so caps see
+        # experience/out-of-band rows that never entered the cold-start cache.
+        durable = self._persistence.load_all()
+        for entry in durable:
+            if entry.key not in self._entries:
+                self._entries[entry.key] = entry
         return sum(1 for e in self._entries.values() if e.memory_group == memory_group)
+
+    def _evict_entry_key(self, key: str, *, reason: str, memory_group: str | None = None) -> None:
+        """Remove one key from cache + durable store with full cleanup parity.
+
+        Mirrors :meth:`QueryMixin.delete` ordering: durable row first, then
+        relations, with cache restore on any persistence failure so a
+        mid-eviction error cannot leave relations deleted while the row remains
+        (or a cache miss for a still-durable row).
+        """
+        entry = self._entries.pop(key, None)
+        try:
+            self._persistence.delete(key)
+        except Exception:
+            if entry is not None:
+                self._entries[key] = entry
+            raise
+        try:
+            self._persistence.delete_relations(key)
+        except Exception:
+            if entry is not None:
+                self._entries[key] = entry
+                try:
+                    self._persistence.save(entry)
+                except Exception:
+                    logger.warning("evict_rollback_failed", key=key, exc_info=True)
+            raise
+        self._relations.pop(key, None)
+        self._remove_entry_entities(key)
+        logger.info(
+            "memory_evicted",
+            key=key,
+            reason=reason,
+            memory_group=memory_group,
+        )
 
     def _evict_lowest_confidence_in_group(self, memory_group: str | None) -> None:
         """Evict lowest-confidence row within one ``memory_group`` bucket."""
@@ -3824,14 +4159,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if not candidates:
             return
         lowest_key = min(candidates, key=lambda k: self._entries[k].confidence)
-        del self._entries[lowest_key]
-        self._persistence.delete(lowest_key)
-        logger.info(
-            "memory_evicted",
-            key=lowest_key,
-            reason="max_entries_per_group",
-            memory_group=memory_group,
-        )
+        self._evict_entry_key(lowest_key, reason="max_entries_per_group", memory_group=memory_group)
 
     def _evict_lowest_confidence_prefer_group(self, memory_group: str | None) -> None:
         """Global cap: prefer evicting from the same bucket as the incoming save."""
@@ -3839,13 +4167,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             in_group = [k for k, e in self._entries.items() if e.memory_group == memory_group]
             if in_group:
                 lowest_key = min(in_group, key=lambda k: self._entries[k].confidence)
-                del self._entries[lowest_key]
-                self._persistence.delete(lowest_key)
-                logger.info(
-                    "memory_evicted",
-                    key=lowest_key,
-                    reason="max_entries_fair",
-                    memory_group=memory_group,
+                self._evict_entry_key(
+                    lowest_key, reason="max_entries_fair", memory_group=memory_group
                 )
                 return
         self._evict_lowest_confidence()
@@ -3885,9 +4208,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return
 
         lowest_key = min(self._entries, key=lambda k: self._entries[k].confidence)
-        del self._entries[lowest_key]
-        self._persistence.delete(lowest_key)
-        logger.info("memory_evicted", key=lowest_key, reason="max_entries")
+        self._evict_entry_key(lowest_key, reason="max_entries")
 
     def _resolve_scope(self, key: str, scope: str, branch: str) -> MemoryEntry | None:
         """Resolve scope precedence: session > branch > project.

@@ -271,15 +271,15 @@ class TestGroupScopedSave:
             tier="pattern",
             agent_scope="group",
         )
-        # Should propagate to both group namespaces
+        # Should propagate to both group namespaces (bare names — searchable)
         group_calls = [
             c
             for c in hive.save.call_args_list
-            if c.kwargs.get("namespace", "").startswith("group:")
+            if c.kwargs.get("namespace") in {"dev-pipeline", "qa-team"}
         ]
         namespaces = {c.kwargs["namespace"] for c in group_calls}
-        assert "group:dev-pipeline" in namespaces
-        assert "group:qa-team" in namespaces
+        assert "dev-pipeline" in namespaces
+        assert "qa-team" in namespaces
 
     def test_group_scoped_save_to_specific_group(self, tmp_path: Path) -> None:
         hive = _make_hive_mock()
@@ -300,10 +300,10 @@ class TestGroupScopedSave:
         group_calls = [
             c
             for c in hive.save.call_args_list
-            if c.kwargs.get("namespace", "").startswith("group:")
+            if c.kwargs.get("namespace") == "dev-pipeline"
         ]
-        assert len(group_calls) == 1
-        assert group_calls[0].kwargs["namespace"] == "group:dev-pipeline"
+        assert len(group_calls) >= 1
+        assert group_calls[0].kwargs["namespace"] == "dev-pipeline"
 
     def test_save_to_nonmember_group_fails(self, tmp_path: Path) -> None:
         hive = _make_hive_mock()

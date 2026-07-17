@@ -27,10 +27,10 @@ def agent_register(
     if not new_agent_id or not new_agent_id.strip():
         return {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
     try:
-        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.backends import resolve_agent_registry
         from tapps_brain.models import AgentRegistration
 
-        registry = AgentRegistry()
+        registry = resolve_agent_registry(getattr(store, "_hive_store", None))
         skill_list = [s.strip() for s in skills.split(",") if s.strip()]
         agent = AgentRegistration(id=new_agent_id, profile=profile, skills=skill_list)
         registry.register(agent)
@@ -58,7 +58,7 @@ def agent_create(
     if not new_agent_id or not new_agent_id.strip():
         return {"error": "invalid_agent_id", "message": "agent_id must not be empty"}
     try:
-        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.backends import resolve_agent_registry
         from tapps_brain.models import AgentRegistration
         from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
 
@@ -74,7 +74,7 @@ def agent_create(
 
         skill_list = [s.strip() for s in skills.split(",") if s.strip()]
         agent = AgentRegistration(id=new_agent_id, profile=profile, skills=skill_list)
-        registry = AgentRegistry()
+        registry = resolve_agent_registry(getattr(store, "_hive_store", None))
         registry.register(agent)
 
         namespace = profile
@@ -103,9 +103,9 @@ def agent_create(
 def agent_list(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
     """Return all registered agents with their profile and skill metadata."""
     try:
-        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.backends import resolve_agent_registry
 
-        registry = AgentRegistry()
+        registry = resolve_agent_registry(getattr(store, "_hive_store", None))
         agents = [a.model_dump(mode="json") for a in registry.list_agents()]
         return {"agents": agents, "count": len(agents)}
     except Exception as exc:
@@ -118,9 +118,9 @@ def agent_delete(
 ) -> dict[str, Any]:
     """Unregister an agent by ID; returns deleted=False if the agent was not found."""
     try:
-        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.backends import resolve_agent_registry
 
-        registry = AgentRegistry()
+        registry = resolve_agent_registry(getattr(store, "_hive_store", None))
         removed = registry.unregister(target_agent_id)
         if removed:
             return {"deleted": True, "agent_id": target_agent_id}

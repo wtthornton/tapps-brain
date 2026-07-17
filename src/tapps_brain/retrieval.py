@@ -1007,7 +1007,17 @@ class MemoryRetriever:
         for key, rrf_score in fused:
             entry = entry_by_key.get(key)
             if entry is None:
-                continue
+                # Experience / out-of-band writes may be durable but not cached.
+                # Read-only hydrate — do not use get() (mutates access_count).
+                ensure = getattr(store, "_ensure_entry_cached", None)
+                if callable(ensure):
+                    try:
+                        entry = ensure(key)
+                    except Exception:
+                        entry = None
+                if entry is None:
+                    continue
+                entry_by_key[key] = entry
             relevance_raw = rrf_score / max_rrf if max_rrf > 0 else 0.0
             results.append((entry, relevance_raw))
 
@@ -1038,7 +1048,7 @@ class MemoryRetriever:
         except ImportError:
             logger.debug("vector_search_embedder_unavailable")
             return empty
-        if embedder is None or not store.list_all(memory_group=memory_group):
+        if embedder is None:
             return empty
 
         try:
@@ -1049,11 +1059,24 @@ class MemoryRetriever:
         if not q:
             return empty
 
-        # pgvector HNSW KNN (ADR-007) — always available under the Postgres
-        # private backend.  Returns cosine distance; map to a bounded similarity
-        # score for RRF (monotonic for dist >= 0).
-        if len(q) == 384:  # pgvector schema is vector(384) — see migration 001
-            knn = store.knn_search(q, limit)
+        # pgvector HNSW KNN (ADR-007) — schema column is vector(384) (migration 001).
+        # Skip the DB round-trip when the query dim cannot match, so we do not
+        # sticky-flag knn_search_degraded on expected dimension mismatches.
+        # Do not gate on list_all() — cold/empty cache can still have vectors in DB.
+        if len(q) == 384:
+            try:
+                knn = store.knn_search(q, limit)
+            except Exception as e:
+                logger.warning("vector_search_knn_failed", error=str(e), exc_info=True)
+                # Surface degradation so health/injection do not treat this as
+                # "vector channel empty" — mirror PostgresPrivateBackend sticky flag.
+                persistence = getattr(store, "_persistence", None)
+                if persistence is not None:
+                    try:
+                        persistence.knn_search_degraded = True
+                    except Exception:
+                        pass
+                knn = []
             if knn:
                 scored_knn: list[tuple[str, float]] = []
                 for key, dist in knn:
@@ -1061,14 +1084,30 @@ class MemoryRetriever:
                     scored_knn.append((key, sim))
                 scored_knn.sort(key=lambda x: x[1], reverse=True)
                 if memory_group is not None:
-                    with store._lock:
-                        allowed = {
-                            k for k, e in store._entries.items() if e.memory_group == memory_group
-                        }
-                    scored_knn = [(k, s) for k, s in scored_knn if k in allowed]
+                    filtered: list[tuple[str, float]] = []
+                    for k, s in scored_knn:
+                        # Read-only hydrate — do not use get() (mutates access_count).
+                        entry = None
+                        ensure = getattr(store, "_ensure_entry_cached", None)
+                        if callable(ensure):
+                            entry = ensure(k)
+                        elif hasattr(store, "_entries"):
+                            entry = store._entries.get(k)
+                        if entry is not None and entry.memory_group == memory_group:
+                            filtered.append((k, s))
+                    scored_knn = filtered
                 return scored_knn[:limit]
+        else:
+            logger.info(
+                "vector_search_knn_skipped_dim",
+                query_dim=len(q),
+                expected_dim=384,
+                hint="pgvector column is vector(384); falling back to corpus scoring",
+            )
 
         all_entries = store.list_all(memory_group=memory_group)
+        if not all_entries:
+            return empty
         texts = [self._entry_to_document(e) for e in all_entries]
         try:
             entry_embs = embedder.embed_batch(texts)

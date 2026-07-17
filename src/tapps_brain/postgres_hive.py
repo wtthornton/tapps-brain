@@ -66,6 +66,11 @@ class PostgresHiveBackend:
         Uses INSERT ... ON CONFLICT for upsert semantics.
         Conflict policies are evaluated in Python to match SQLite backend behavior.
 
+        **Trusted-caller contract (scope-audit G-1):** this method does **not**
+        validate namespace membership. Callers must be ``PropagationEngine`` or
+        other store-layer code that has already enforced agent/group scope.
+        Direct use with an arbitrary ``namespace`` bypasses app-layer checks.
+
         ``embedding`` is the dense vector (already computed by the caller's
         embedding provider) persisted to the ``embedding`` column so Hive
         semantic recall has signal — ``None`` leaves the column NULL.
@@ -247,7 +252,7 @@ class PostgresHiveBackend:
                 memory_group = EXCLUDED.memory_group,
                 conflict_policy = EXCLUDED.conflict_policy,
                 updated_at = EXCLUDED.updated_at,
-                embedding = EXCLUDED.embedding
+                embedding = COALESCE(EXCLUDED.embedding, hive_memories.embedding)
             """,
             (
                 namespace,
@@ -294,13 +299,26 @@ class PostgresHiveBackend:
             "memory_group": memory_group,
         }
 
-    def get(self, key: str, namespace: str = "universal") -> dict[str, Any] | None:
-        """Retrieve a single entry by (namespace, key)."""
+    def get(
+        self, key: str, namespace: str = "universal", *, include_superseded: bool = False
+    ) -> dict[str, Any] | None:
+        """Retrieve a single entry by (namespace, key).
+
+        By default skips rows with ``invalid_at`` set (matches :meth:`search`).
+        Pass ``include_superseded=True`` to return historical rows.
+        """
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
-                (namespace, key),
-            )
+            if include_superseded:
+                cur.execute(
+                    "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
+                    (namespace, key),
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s "
+                    "AND invalid_at IS NULL",
+                    (namespace, key),
+                )
             row = cur.fetchone()
             if row is None:
                 return None
@@ -324,6 +342,7 @@ class PostgresHiveBackend:
                         WHERE search_vector @@ plainto_tsquery('english', %s)
                           AND confidence >= %s
                           AND namespace = ANY(%s)
+                          AND invalid_at IS NULL
                         ORDER BY rank DESC
                         LIMIT %s
                         """,
@@ -336,6 +355,7 @@ class PostgresHiveBackend:
                         FROM hive_memories
                         WHERE search_vector @@ plainto_tsquery('english', %s)
                           AND confidence >= %s
+                          AND invalid_at IS NULL
                         ORDER BY rank DESC
                         LIMIT %s
                         """,
@@ -357,7 +377,7 @@ class PostgresHiveBackend:
             cur.execute(
                 """
                     UPDATE hive_memories SET confidence = %s, updated_at = %s
-                    WHERE namespace = %s AND key = %s
+                    WHERE namespace = %s AND key = %s AND invalid_at IS NULL
                     """,
                 (c, now, namespace, key),
             )
@@ -562,7 +582,10 @@ class PostgresHiveBackend:
 
     def count_by_namespace(self) -> dict[str, int]:
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT namespace, COUNT(*) FROM hive_memories GROUP BY namespace")
+            cur.execute(
+                "SELECT namespace, COUNT(*) FROM hive_memories "
+                "WHERE invalid_at IS NULL GROUP BY namespace"
+            )
             return {row[0]: row[1] for row in cur.fetchall()}
 
     def namespace_detail_list(self) -> list[dict[str, Any]]:
@@ -577,6 +600,7 @@ class PostgresHiveBackend:
                         MAX(updated_at), MAX(created_at)
                     )::text AS last_write_at
                 FROM hive_memories
+                WHERE invalid_at IS NULL
                 GROUP BY namespace
                 ORDER BY namespace
                 """
@@ -592,7 +616,10 @@ class PostgresHiveBackend:
 
     def count_by_agent(self) -> dict[str, int]:
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT source_agent, COUNT(*) FROM hive_memories GROUP BY source_agent")
+            cur.execute(
+                "SELECT source_agent, COUNT(*) FROM hive_memories "
+                "WHERE invalid_at IS NULL GROUP BY source_agent"
+            )
             return {row[0]: row[1] for row in cur.fetchall()}
 
     # ------------------------------------------------------------------

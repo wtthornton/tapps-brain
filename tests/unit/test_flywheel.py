@@ -172,7 +172,8 @@ class TestKnowledgeGaps:
         store = MemoryStore(root)
         try:
             store.query_feedback = MagicMock(side_effect=RuntimeError("db"))  # type: ignore[method-assign]
-            assert GapTracker().analyze_gaps(store) == []
+            with pytest.raises(RuntimeError, match="db"):
+                GapTracker().analyze_gaps(store)
         finally:
             store.close()
 

@@ -161,8 +161,7 @@ class FeedbackProcessor:
                 for ek, d_pos, d_neg in _feedback_deltas(ev):
                     if not ek:
                         continue
-                    with store._lock:
-                        entry = store._entries.get(ek)
+                    entry = store.get(ek)
                     if entry is None:
                         continue
                     new_pos = float(entry.positive_feedback_count) + d_pos
@@ -192,15 +191,25 @@ class FeedbackProcessor:
                         },
                     )
                     adjustments += 1
-                # Advance cursor only for applied events — a ``since`` filter must
-                # not skip confidence updates on a later call without ``since``.
-                last_ts, last_id = ev.timestamp, ev.id
+                # Advance cursor only when not using a ``since`` filter — advancing
+                # past since-skipped events would permanently drop them on retry.
+                if since is None:
+                    last_ts, last_id = ev.timestamp, ev.id
+                    if last_ts is not None and last_id is not None:
+                        try:
+                            store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
+                                _FEEDBACK_CURSOR_KEY,
+                                json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
+                            )
+                        except Exception:
+                            logger.warning(
+                                "flywheel.cursor_persist_failed",
+                                ts=last_ts,
+                                event_id=last_id,
+                                exc_info=True,
+                            )
+                            raise
             processed += 1
-        if last_ts is not None and last_id is not None:
-            store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
-                _FEEDBACK_CURSOR_KEY,
-                json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
-            )
         return {"processed_events": processed, "confidence_adjustments": adjustments}
 
 
@@ -238,8 +247,9 @@ class GapTracker:
         # (query, ts, weight, desc_parts)
         try:
             evs = store.query_feedback(event_type="gap_reported", limit=10_000)
-        except Exception:  # nosec B110 — gap analysis is best-effort; query failure yields empty gap list
-            evs = []
+        except Exception:
+            logger.warning("flywheel.gap_query_feedback_failed", exc_info=True)
+            raise
         for ev in evs:
             if since is not None and ev.timestamp < since:
                 continue

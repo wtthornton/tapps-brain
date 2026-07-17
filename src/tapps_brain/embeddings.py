@@ -74,8 +74,10 @@ _INT8_QUANT_SCALE = 127.0
 # Process-wide singleton cache for embedding providers (STORY-078.3).
 # Keyed by (model_name, revision) so concurrent MCP tool calls share one
 # SentenceTransformer load instead of blocking threads per request.
-_provider_cache: dict[tuple[str, str | None], SentenceTransformerProvider] = {}
+# ``None`` values mean a prior init failed — sticky degraded (do not retry).
+_provider_cache: dict[tuple[str, str | None], SentenceTransformerProvider | None] = {}
 _provider_cache_lock = threading.Lock()
+_provider_degraded: set[tuple[str, str | None]] = set()
 
 
 def quantize_embedding_int8(embedding: list[float]) -> bytes:
@@ -266,6 +268,16 @@ def reset_embedding_provider_cache() -> None:
     """Clear the process-wide embedding provider singleton (tests only)."""
     with _provider_cache_lock:
         _provider_cache.clear()
+        _provider_degraded.clear()
+
+
+def embedding_provider_is_degraded(
+    model: str = _DEFAULT_MODEL,
+    *,
+    revision: str | None = _DEFAULT_MODEL_REVISION,
+) -> bool:
+    """Return True when a prior ``get_embedding_provider`` call failed for this key."""
+    return (model, revision) in _provider_degraded
 
 
 def get_embedding_provider(
@@ -288,18 +300,19 @@ def get_embedding_provider(
     BM25-only when this returns None; the WARNING makes that observable without
     requiring DEBUG logging.
 
+    Failed loads are sticky for the process lifetime so health checks and
+    hot paths do not repeatedly re-attempt a broken model download.
+
     The underlying ``SentenceTransformer`` weights load at most once per process
     per ``(model, revision)`` pair (STORY-078.3).
     """
     cache_key = (model, revision)
-    cached = _provider_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if cache_key in _provider_cache:
+        return _provider_cache[cache_key]
 
     with _provider_cache_lock:
-        cached = _provider_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if cache_key in _provider_cache:
+            return _provider_cache[cache_key]
         try:
             provider = SentenceTransformerProvider(model_name=model, revision=revision)
         except ImportError:
@@ -309,9 +322,13 @@ def get_embedding_provider(
                 install_hint="pip install 'tapps-brain[all]'",
                 embedding_degraded=True,
             )
+            _provider_cache[cache_key] = None
+            _provider_degraded.add(cache_key)
             return None
         except (OSError, RuntimeError, ValueError) as e:
             logger.warning("embedding_provider_init_failed", error=str(e), embedding_degraded=True)
+            _provider_cache[cache_key] = None
+            _provider_degraded.add(cache_key)
             return None
         _provider_cache[cache_key] = provider
         return provider

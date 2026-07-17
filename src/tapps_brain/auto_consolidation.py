@@ -85,7 +85,9 @@ def find_last_consolidation_merge_audit(
                 limit=1000,
             )
         except Exception:
-            rows = []
+            # Do not fall through to JSONL on a Postgres failure — that can
+            # return a stale/ghost merge record and corrupt undo.
+            raise
         if rows:
             last_row = rows[-1]
             details = last_row.get("details") or {}
@@ -164,6 +166,26 @@ def undo_consolidation_merge(  # noqa: PLR0911
     threshold = float(threshold_val) if isinstance(threshold_val, (int, float)) else None
 
     expected_reason = f"consolidated into {consolidated_key}"
+
+    if store._ensure_entry_cached(consolidated_key) is None:
+        return ConsolidationUndoResult(
+            ok=False,
+            reason="consolidated_entry_missing",
+            consolidated_key=consolidated_key,
+            source_keys=source_keys,
+            trigger=trigger,
+            threshold=threshold,
+        )
+    for sk in source_keys:
+        if store._ensure_entry_cached(sk) is None:
+            return ConsolidationUndoResult(
+                ok=False,
+                reason=f"source_entry_missing:{sk}",
+                consolidated_key=consolidated_key,
+                source_keys=source_keys,
+                trigger=trigger,
+                threshold=threshold,
+            )
 
     with store._serialized():
         if consolidated_key not in store._entries:
@@ -492,48 +514,89 @@ def _persist_consolidated_entry(
     STORY-SC03 (TAP-559): *audit_similarity_score* and *audit_merge_rule* are
     forwarded to :func:`_append_consolidation_audit` for operator traceability.
     """
-    with batch_exempt_scope("consolidate"):
-        store.save(
-            key=consolidated.key,
-            value=consolidated.value,
-            tier=_get_enum_value(consolidated.tier),
-            source=_get_enum_value(consolidated.source),
-            source_agent=consolidated.source_agent,
-            scope=_get_enum_value(consolidated.scope),
-            tags=consolidated.tags,
-            confidence=consolidated.confidence,
-            skip_consolidation=True,
-        )
-
-    # Merge relations from all source entries onto the consolidated entry.
-    relation_lists = [store.get_relations(k) for k in source_keys]
-    merged_relations = merge_entry_relations(relation_lists, consolidated.key)
-    if merged_relations:
-        store.save_relations(consolidated.key, merged_relations)
-
-    now = _utc_now_iso()
-    for key in source_keys:
-        if key != consolidated.key:
-            store.update_fields(
-                key,
-                contradicted=True,
-                contradiction_reason=f"consolidated into {consolidated.key}",
-                # EPIC-004: set temporal fields for bi-temporal versioning
-                invalid_at=now,
-                superseded_by=consolidated.key,
+    consolidated_saved = False
+    try:
+        with batch_exempt_scope("consolidate"):
+            store.save(
+                key=consolidated.key,
+                value=consolidated.value,
+                tier=_get_enum_value(consolidated.tier),
+                source=_get_enum_value(consolidated.source),
+                source_agent=consolidated.source_agent,
+                scope=_get_enum_value(consolidated.scope),
+                tags=consolidated.tags,
+                confidence=consolidated.confidence,
+                skip_consolidation=True,
             )
+        consolidated_saved = True
 
-    if audit_trigger is not None and audit_threshold is not None:
-        _append_consolidation_audit(
-            store,
-            consolidated_key=consolidated.key,
-            source_keys=source_keys,
-            trigger=audit_trigger,
-            threshold=audit_threshold,
-            consolidation_reason=_consolidation_reason_str(consolidated),
-            similarity_score=audit_similarity_score,
-            merge_rule=audit_merge_rule,
-        )
+        # Merge relations from all source entries onto the consolidated entry.
+        relation_lists = [store.get_relations(k) for k in source_keys]
+        merged_relations = merge_entry_relations(relation_lists, consolidated.key)
+        if merged_relations:
+            store.save_relations(consolidated.key, merged_relations)
+
+        now = _utc_now_iso()
+        for key in source_keys:
+            if key != consolidated.key:
+                updated = store.update_fields(
+                    key,
+                    contradicted=True,
+                    contradiction_reason=f"consolidated into {consolidated.key}",
+                    # EPIC-004: set temporal fields for bi-temporal versioning
+                    invalid_at=now,
+                    superseded_by=consolidated.key,
+                )
+                if updated is None:
+                    msg = (
+                        f"Failed to mark source '{key}' as consolidated into "
+                        f"'{consolidated.key}' (entry missing from store)"
+                    )
+                    raise KeyError(msg)
+
+        if audit_trigger is not None and audit_threshold is not None:
+            _append_consolidation_audit(
+                store,
+                consolidated_key=consolidated.key,
+                source_keys=source_keys,
+                trigger=audit_trigger,
+                threshold=audit_threshold,
+                consolidation_reason=_consolidation_reason_str(consolidated),
+                similarity_score=audit_similarity_score,
+                merge_rule=audit_merge_rule,
+            )
+    except Exception:
+        if consolidated_saved:
+            # Roll back source marks + consolidated row so we do not leave a
+            # split-brain where the merge exists or sources stay invalidated.
+            try:
+                for key in source_keys:
+                    if key == consolidated.key:
+                        continue
+                    try:
+                        store.update_fields(
+                            key,
+                            contradicted=False,
+                            contradiction_reason=None,
+                            invalid_at=None,
+                            superseded_by=None,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "consolidation_source_unmark_failed",
+                            source_key=key,
+                            consolidated_key=consolidated.key,
+                            exc_info=True,
+                        )
+                store.delete(consolidated.key)
+            except Exception:
+                logger.warning(
+                    "consolidation_rollback_failed",
+                    consolidated_key=consolidated.key,
+                    source_keys=source_keys,
+                    exc_info=True,
+                )
+        raise
 
 
 def run_periodic_consolidation_scan(

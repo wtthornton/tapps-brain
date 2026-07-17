@@ -83,11 +83,11 @@ def _client(settings: _Settings):
 @pytest.fixture(autouse=True)
 def _clear_probe_db_cache() -> Any:
     """Clear the _probe_db TTL cache before and after every test in this module."""
-    import tapps_brain.http_adapter as _had
+    import tapps_brain.http.probe_cache as _pc
 
-    _had._PROBE_CACHE.clear()
+    _pc._PROBE_CACHE.clear()
     yield
-    _had._PROBE_CACHE.clear()
+    _pc._PROBE_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -109,9 +109,19 @@ class TestProbeDb:
 
     def test_exception_returns_not_ready(self) -> None:
         """Any exception in get_hive_schema_status maps to degraded."""
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status",
-            side_effect=RuntimeError("connection refused"),
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status",
+                side_effect=RuntimeError("connection refused"),
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                side_effect=RuntimeError("connection refused"),
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                side_effect=RuntimeError("connection refused"),
+            ),
         ):
             is_ready, version, msg = _probe_db("postgres://localhost/testdb")
         assert not is_ready
@@ -122,33 +132,51 @@ class TestProbeDb:
         mock_status = MagicMock()
         mock_status.current_version = 3
         mock_status.pending_migrations = []
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+            ),
         ):
             is_ready, version, msg = _probe_db("postgres://localhost/testdb")
         assert is_ready
         assert version == 3
         assert "ready" in msg
 
-    def test_pending_migrations_still_ready(self) -> None:
+    def test_pending_migrations_not_ready(self) -> None:
         mock_status = MagicMock()
         mock_status.current_version = 2
         mock_status.pending_migrations = [("3", "003_foo.sql")]
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+        priv = MagicMock()
+        priv.current_version = 1
+        priv.pending_migrations = []
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=priv
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=priv
+            ),
         ):
             is_ready, version, msg = _probe_db("postgres://localhost/testdb")
-        # Still ready — pending does not mean broken, just out-of-date
-        assert is_ready
+        assert not is_ready
         assert version == 2
         assert "pending=1" in msg
 
     def test_ttl_cache_deduplicates_calls(self) -> None:
         """TAP-552: 100 calls within 1 s must trigger exactly one underlying connect."""
-        import tapps_brain.http_adapter as _had
+        import tapps_brain.http.probe_cache as _pc
 
         dsn = "postgres://localhost/ttl-test-db"
-        _had._PROBE_CACHE.pop(dsn, None)  # ensure clean slate
+        _pc._PROBE_CACHE.pop(dsn, None)  # ensure clean slate
 
         call_count = 0
 
@@ -160,24 +188,34 @@ class TestProbeDb:
             s.pending_migrations = []
             return s
 
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status",
-            side_effect=_fake_probe,
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status",
+                side_effect=_fake_probe,
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                side_effect=_fake_probe,
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                side_effect=_fake_probe,
+            ),
         ):
             for _ in range(100):
                 _probe_db(dsn)
 
-        assert call_count == 1, f"expected 1 underlying connect, got {call_count}"
+        assert call_count == 3, f"expected 1 hive+private+federation trio, got {call_count} status calls"
 
         # Clean up cache so other tests aren't affected.
-        _had._PROBE_CACHE.pop(dsn, None)
+        _pc._PROBE_CACHE.pop(dsn, None)
 
     def test_ttl_cache_refreshes_after_expiry(self) -> None:
         """TAP-552: result is re-fetched once the TTL window expires."""
-        import tapps_brain.http_adapter as _had
+        import tapps_brain.http.probe_cache as _pc
 
         dsn = "postgres://localhost/ttl-expiry-db"
-        _had._PROBE_CACHE.pop(dsn, None)
+        _pc._PROBE_CACHE.pop(dsn, None)
         call_count = 0
 
         def _fake_probe(d: str) -> Any:
@@ -188,18 +226,28 @@ class TestProbeDb:
             s.pending_migrations = []
             return s
 
-        with patch(
-            "tapps_brain.postgres_migrations.get_hive_schema_status",
-            side_effect=_fake_probe,
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.get_hive_schema_status",
+                side_effect=_fake_probe,
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                side_effect=_fake_probe,
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status",
+                side_effect=_fake_probe,
+            ),
         ):
             _probe_db(dsn)  # first call — populates cache
             # Force expiry by back-dating the entry.
-            expires_at, result = _had._PROBE_CACHE[dsn]
-            _had._PROBE_CACHE[dsn] = (expires_at - _had._PROBE_CACHE_TTL - 1.0, result)
+            expires_at, result = _pc._PROBE_CACHE[dsn]
+            _pc._PROBE_CACHE[dsn] = (expires_at - _pc._PROBE_CACHE_TTL - 1.0, result)
             _probe_db(dsn)  # second call — cache expired, should re-fetch
 
-        assert call_count == 2, f"expected 2 calls after expiry, got {call_count}"
-        _had._PROBE_CACHE.pop(dsn, None)
+        assert call_count == 6, f"expected 2 hive+private+federation trios after expiry, got {call_count}"
+        _pc._PROBE_CACHE.pop(dsn, None)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +369,12 @@ class TestReadyEndpointDbHealthy:
             patch(
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
             ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
+            ),
             _client(settings) as c,
         ):
             resp = c.get("/ready")
@@ -337,6 +391,12 @@ class TestReadyEndpointDbHealthy:
         with (
             patch(
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
             ),
             _client(settings) as c,
         ):
@@ -406,6 +466,12 @@ class TestHealthzEndpoint:
         with (
             patch(
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
             ),
             _client(settings) as c,
         ):
@@ -1346,6 +1412,12 @@ class TestSnapshotColdBuildConcurrency:
         with (
             patch(
                 "tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_federation_schema_status", return_value=mock_status
             ),
             patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_slow_build),
         ):

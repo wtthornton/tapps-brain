@@ -281,15 +281,14 @@ class TestAsyncSchemaVersion:
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
         assert asyncio.run(b.get_schema_version()) == 5
 
-    def test_returns_module_default_on_db_error(self) -> None:
-        from tapps_brain import _postgres_private_sql as _sql
+    def test_returns_zero_on_db_error(self) -> None:
         from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
 
         cur = _make_async_cursor()
         cur.execute = AsyncMock(side_effect=RuntimeError("db down"))
         cm = _make_manager(cur)
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
-        assert asyncio.run(b.get_schema_version()) == _sql.PRIVATE_SCHEMA_VERSION
+        assert asyncio.run(b.get_schema_version()) == 0
 
 
 class TestAsyncFlywheelMeta:
@@ -309,15 +308,15 @@ class TestAsyncFlywheelMeta:
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
         assert asyncio.run(b.flywheel_meta_get("ck")) is None
 
-    def test_set_swallows_db_errors(self) -> None:
+    def test_set_raises_on_db_errors(self) -> None:
         from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
 
         cur = _make_async_cursor()
         cur.execute = AsyncMock(side_effect=RuntimeError("db down"))
         cm = _make_manager(cur)
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
-        # Must not raise — flywheel set is best-effort.
-        asyncio.run(b.flywheel_meta_set("ck", "v"))
+        with pytest.raises(RuntimeError, match="db down"):
+            asyncio.run(b.flywheel_meta_set("ck", "v"))
 
 
 class TestAsyncArchive:

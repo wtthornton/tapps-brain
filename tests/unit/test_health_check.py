@@ -233,7 +233,9 @@ def test_run_health_check_hive_pool_saturation_populated(
 
     monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
     monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+    monkeypatch.setattr(
+        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_registry
+    )
 
     # Skip migration version lookup to keep this test focused on pool_saturation.
     import tapps_brain.postgres_migrations as _pm
@@ -262,7 +264,9 @@ def test_run_health_check_hive_pool_stats_runtime_error_ignored(
 
     monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
     monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+    monkeypatch.setattr(
+        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_registry
+    )
 
     import tapps_brain.postgres_migrations as _pm
 
@@ -291,7 +295,9 @@ def test_run_health_check_hive_migration_version_populated(
 
     monkeypatch.setenv("TAPPS_BRAIN_HIVE_DSN", "postgres://localhost/test")
     monkeypatch.setattr("tapps_brain.backends.create_hive_backend", lambda dsn: mock_hive)
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_registry)
+    monkeypatch.setattr(
+        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_registry
+    )
 
     schema_status = SchemaStatus(current_version=5, applied_versions=[1, 2, 3, 4, 5])
     import tapps_brain.postgres_migrations as _pm
@@ -333,7 +339,7 @@ def test_run_health_check_hive_uses_database_url_fallback(
 
     create = MagicMock(return_value=mock_hive)
     monkeypatch.setattr(_backends, "create_hive_backend", create)
-    monkeypatch.setattr(_backends, "AgentRegistry", lambda **_: mock_reg)
+    monkeypatch.setattr(_backends, "resolve_agent_registry", lambda hive=None: mock_reg)
     monkeypatch.setattr("tapps_brain.store.MemoryStore", lambda *a, **k: _make_mock_store(tmp_path))
 
     report = run_health_check(project_root=tmp_path, check_hive=True)
@@ -353,8 +359,9 @@ def test_run_health_check_hive_no_agents_warning(
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = []
 
-    # Patch AgentRegistry in backends (where health_check.py imports it from)
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda **_: mock_reg)
+    monkeypatch.setattr(
+        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg
+    )
 
     report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
     assert report.hive.connected is True
@@ -370,8 +377,9 @@ def test_run_health_check_hive_store_parameter(
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = ["agent-a"]
 
-    # Patch AgentRegistry in backends (where health_check.py imports it from)
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda **_: mock_reg)
+    monkeypatch.setattr(
+        "tapps_brain.backends.resolve_agent_registry", lambda hive=None: mock_reg
+    )
 
     report = run_health_check(project_root=tmp_path, check_hive=True, hive_store=mock_hive)
 

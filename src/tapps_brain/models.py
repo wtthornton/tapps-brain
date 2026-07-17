@@ -442,16 +442,23 @@ class MemoryEntry(BaseModel):
         different-but-equivalent representations (``+00:00`` vs ``Z`` vs naïve
         assumed-UTC) produce the same result.
         """
-        ts_dt = _parse_iso(as_of) if as_of else datetime.now(tz=UTC)
-        # Check valid_at / invalid_at (bi-temporal EPIC-004 fields)
-        if self.valid_at is not None and ts_dt < _parse_iso(self.valid_at):
+        try:
+            ts_dt = _parse_iso(as_of) if as_of else datetime.now(tz=UTC)
+        except ValueError:
             return False
-        if self.invalid_at is not None and ts_dt >= _parse_iso(self.invalid_at):
+        # Check valid_at / invalid_at (bi-temporal EPIC-004 fields).
+        # Malformed timestamps must not abort an entire recall filter loop.
+        try:
+            if self.valid_at is not None and ts_dt < _parse_iso(self.valid_at):
+                return False
+            if self.invalid_at is not None and ts_dt >= _parse_iso(self.invalid_at):
+                return False
+            # Check valid_from / valid_until (human-friendly alias fields, GitHub #29)
+            if self.valid_from and ts_dt < _parse_iso(self.valid_from):
+                return False
+            return not (self.valid_until and ts_dt >= _parse_iso(self.valid_until))
+        except ValueError:
             return False
-        # Check valid_from / valid_until (human-friendly alias fields, GitHub #29)
-        if self.valid_from and ts_dt < _parse_iso(self.valid_from):
-            return False
-        return not (self.valid_until and ts_dt >= _parse_iso(self.valid_until))
 
     @property
     def is_superseded(self) -> bool:

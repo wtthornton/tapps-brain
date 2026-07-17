@@ -159,7 +159,8 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
     try:
         all_entries = store.list_all()
     except Exception:
-        return None
+        logger.warning("prefix_duplicate_list_failed", new_key=new_key, exc_info=True)
+        raise
 
     for entry in all_entries:
         if entry.key == new_key:
@@ -381,10 +382,10 @@ def audit_consumers(
 
     effective_pid = target_project_id or project_id
 
-    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.backends import resolve_agent_registry
     from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
 
-    registry = AgentRegistry()
+    registry = resolve_agent_registry(getattr(store, "_hive_store", None))
     registered_ids = {a.id for a in registry.list_agents()}
 
     counts = get_tool_call_counts_snapshot()

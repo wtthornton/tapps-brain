@@ -1157,46 +1157,53 @@ class TestHealthCheckHelpers:
         assert store.count_orphaned_relations() == 0
 
     def test_count_expired_entries_none_expired(self, store: MemoryStore) -> None:
-        """count_expired_entries() returns 0 when no entries have valid_at set."""
+        """count_expired_entries() returns 0 when no entries have invalid_at set."""
         store.save(key="timeless", value="no expiry")
         assert store.count_expired_entries() == 0
 
-    def test_count_expired_entries_with_past_valid_at(self, store: MemoryStore) -> None:
-        """count_expired_entries() counts entries whose valid_at is in the past."""
+    def test_count_expired_entries_with_past_invalid_at(self, store: MemoryStore) -> None:
+        """count_expired_entries() counts entries whose invalid_at is in the past."""
         from datetime import UTC, datetime, timedelta
 
-        store.save(
-            key="past",
-            value="old entry",
-            valid_at=(datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        store.save(key="past", value="old entry")
+        entry = store.get("past")
+        assert entry is not None
+        updated = entry.model_copy(
+            update={"invalid_at": (datetime.now(UTC) - timedelta(days=1)).isoformat()}
         )
-        store.save(key="present", value="no valid_at")
+        with store._serialized():
+            store._entries["past"] = updated
+        store.save(key="present", value="no invalid_at")
         assert store.count_expired_entries() == 1
 
-    def test_count_expired_entries_future_valid_at_not_counted(self, store: MemoryStore) -> None:
-        """count_expired_entries() does not count entries with future valid_at."""
+    def test_count_expired_entries_future_invalid_at_not_counted(self, store: MemoryStore) -> None:
+        """count_expired_entries() does not count entries with future invalid_at."""
         from datetime import UTC, datetime, timedelta
 
-        store.save(
-            key="future",
-            value="upcoming entry",
-            valid_at=(datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        store.save(key="future", value="upcoming entry")
+        entry = store.get("future")
+        assert entry is not None
+        updated = entry.model_copy(
+            update={"invalid_at": (datetime.now(UTC) + timedelta(days=1)).isoformat()}
         )
+        with store._serialized():
+            store._entries["future"] = updated
         assert store.count_expired_entries() == 0
 
     def test_count_expired_entries_custom_now(self, store: MemoryStore) -> None:
         """count_expired_entries(now=...) uses the provided reference time."""
         from datetime import UTC, datetime
 
-        store.save(
-            key="entry",
-            value="v",
-            valid_at="2020-01-01T00:00:00+00:00",
-        )
-        # Before the valid_at — should not be counted as expired
+        store.save(key="entry", value="v")
+        entry = store.get("entry")
+        assert entry is not None
+        updated = entry.model_copy(update={"invalid_at": "2020-01-01T00:00:00+00:00"})
+        with store._serialized():
+            store._entries["entry"] = updated
+        # Before the invalid_at — should not be counted as expired
         far_past = datetime(2000, 1, 1, tzinfo=UTC)
         assert store.count_expired_entries(now=far_past) == 0
-        # After the valid_at — should be counted
+        # After the invalid_at — should be counted
         far_future = datetime(2030, 1, 1, tzinfo=UTC)
         assert store.count_expired_entries(now=far_future) == 1
 

@@ -28,14 +28,14 @@ def hive_status(
 ) -> dict[str, Any]:
     """Return Hive namespace counts, total entries, and per-agent contribution stats."""
     try:
-        from tapps_brain.backends import AgentRegistry
+        from tapps_brain.backends import resolve_agent_registry
 
         hive, should_close = hive_resolver()
         try:
             ns_counts = hive.count_by_namespace()
             agent_counts = hive.count_by_agent()
 
-            registry = AgentRegistry()
+            registry = resolve_agent_registry(hive)
             agents = [
                 {
                     "id": a.id,
@@ -67,12 +67,41 @@ def hive_search(
     query: str,
     namespace: str | None = None,
 ) -> dict[str, Any]:
-    """Search Hive memory by query string, optionally scoped to a single namespace."""
+    """Search Hive memory by query string, optionally scoped to a single namespace.
+
+    Always membership-scoped: without *namespace*, searches only universal +
+    the caller's domain + groups the agent belongs to.  A caller-supplied
+    namespace is refused unless it is in that allowed set.
+    """
     try:
         hive, should_close = hive_resolver()
         try:
-            ns_list = [namespace] if namespace else None
-            results = hive.search(query, namespaces=ns_list, limit=20)
+            hive_agent_id = getattr(store, "_hive_agent_id", None) or agent_id or "unknown"
+            own_ns = getattr(store, "_hive_agent_profile", None) or hive_agent_id
+            allowed = {own_ns, "universal", *hive.get_agent_groups(hive_agent_id)}
+            if namespace is not None:
+                ns = namespace.strip()
+                if ns not in allowed:
+                    # Bare group names and group:<name> both need membership.
+                    bare = ns.removeprefix("group:") if ns.startswith("group:") else ns
+                    if bare not in allowed and not hive.agent_is_group_member(bare, hive_agent_id):
+                        return {
+                            "error": "forbidden",
+                            "message": (
+                                f"Agent {hive_agent_id!r} is not allowed to search "
+                                f"namespace {ns!r}."
+                            ),
+                            "results": [],
+                            "count": 0,
+                        }
+                    allowed_ns = [ns]
+                else:
+                    allowed_ns = [ns]
+                results = hive.search(query, namespaces=allowed_ns, limit=20)
+            else:
+                results = hive.search_with_groups(
+                    query, hive_agent_id, agent_namespace=own_ns, limit=20
+                )
         finally:
             if should_close:
                 hive.close()

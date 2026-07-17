@@ -59,6 +59,7 @@ def index_session(
     max_chunks: int = _MAX_CHUNKS_DEFAULT,
     max_chars_per_chunk: int = _MAX_CHARS_DEFAULT,
     _max_in_memory: int = _MAX_IN_MEMORY_CHUNKS_PER_KEY,
+    agent_id: str = "",
 ) -> int:
     """Index session chunks for later search (in-memory fallback).
 
@@ -77,6 +78,8 @@ def index_session(
         max_chunks: Maximum number of chunks to store per call.
         max_chars_per_chunk: Maximum characters per chunk.
         _max_in_memory: Per-bucket size cap (internal / testing use).
+        agent_id: Optional agent identity so concurrent agents on the same
+            project root do not share the in-memory bucket.
 
     Returns:
         Number of chunks actually stored.
@@ -87,7 +90,7 @@ def index_session(
     if not trimmed:
         return 0
 
-    key = str(project_root)
+    key = f"{project_root}\x00{agent_id}" if agent_id else str(project_root)
     now = datetime.now(UTC).isoformat()
     with _in_memory_lock:
         bucket: dict[tuple[str, int], dict[str, Any]] = _in_memory_index.setdefault(key, {})
@@ -121,6 +124,7 @@ def search_session_index(
     query: str,
     *,
     limit: int = 10,
+    agent_id: str = "",
 ) -> list[dict[str, Any]]:
     """Search the in-memory session index by plain-text query.
 
@@ -142,7 +146,7 @@ def search_session_index(
     if limit <= 0:
         return []
     q_words = set(query.lower().split())
-    key = str(project_root)
+    key = f"{project_root}\x00{agent_id}" if agent_id else str(project_root)
     scored: list[tuple[int, dict[str, Any]]] = []
     with _in_memory_lock:
         # Iterate dict values directly — no full-bucket copy.
@@ -158,7 +162,12 @@ def search_session_index(
     return [r for _, r in scored[:limit]]
 
 
-def delete_expired_sessions(project_root: Path, ttl_days: int) -> int:
+def delete_expired_sessions(
+    project_root: Path,
+    ttl_days: int,
+    *,
+    agent_id: str = "",
+) -> int:
     """Delete session chunks older than *ttl_days* from the in-memory index.
 
     Returns count of deleted chunks.
@@ -168,7 +177,7 @@ def delete_expired_sessions(project_root: Path, ttl_days: int) -> int:
     from datetime import timedelta
 
     cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
-    key = str(project_root)
+    key = f"{project_root}\x00{agent_id}" if agent_id else str(project_root)
     with _in_memory_lock:
         bucket = _in_memory_index.get(key)
         if not bucket:

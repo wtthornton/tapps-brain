@@ -170,9 +170,13 @@ class LLMWritePolicy:
                 key=key,
                 rate_limit=self._rate_limit_per_minute,
             )
+            # Fall back to deterministic policy — never silently ADD when the
+            # LLM path was selected but cannot run.
+            det = DeterministicWritePolicy().decide(key, value, candidates)
             return WritePolicyResult(
-                decision=WriteDecision.ADD,
-                reasoning="rate limit exceeded — fallback to ADD",
+                decision=det.decision,
+                target_key=det.target_key,
+                reasoning=f"rate limit exceeded — fallback to deterministic: {det.reasoning}",
             )
 
         top_candidates = sorted(
@@ -188,9 +192,11 @@ class LLMWritePolicy:
                 key=key,
                 exc_info=True,
             )
+            det = DeterministicWritePolicy().decide(key, value, candidates)
             return WritePolicyResult(
-                decision=WriteDecision.ADD,
-                reasoning="llm error — fallback to ADD",
+                decision=det.decision,
+                target_key=det.target_key,
+                reasoning=f"llm error — fallback to deterministic: {det.reasoning}",
             )
 
     def _build_prompt(
@@ -247,11 +253,12 @@ class LLMWritePolicy:
         try:
             data: dict[str, Any] = json.loads(raw_text)
         except (json.JSONDecodeError, ValueError):
-            # Judge returned its payload as the raw score — try the whole text.
             logger.debug("write_policy.llm.parse_fallback", key=key)
+            det = DeterministicWritePolicy().decide(key, value, candidates)
             return WritePolicyResult(
-                decision=WriteDecision.ADD,
-                reasoning="json parse failed — fallback to ADD",
+                decision=det.decision,
+                target_key=det.target_key,
+                reasoning=f"json parse failed — fallback to deterministic: {det.reasoning}",
             )
 
         action = str(data.get("action", "ADD")).upper()
@@ -261,8 +268,14 @@ class LLMWritePolicy:
         try:
             decision = WriteDecision(action.lower())
         except ValueError:
-            decision = WriteDecision.ADD
-            reasoning = f"unknown action {action!r} — fallback to ADD"
+            det = DeterministicWritePolicy().decide(key, value, candidates)
+            return WritePolicyResult(
+                decision=det.decision,
+                target_key=det.target_key,
+                reasoning=(
+                    f"unknown action {action!r} — fallback to deterministic: {det.reasoning}"
+                ),
+            )
 
         logger.info(
             "write_policy.llm.decision",

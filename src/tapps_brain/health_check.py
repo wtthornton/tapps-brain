@@ -296,7 +296,10 @@ def run_health_check(  # noqa: PLR0915
                     store_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                     store_health.pool_idle = int(_ps.get("pool_available", 0))
                 except Exception:
-                    pass  # pool stats unavailable; health check continues without them
+                    logger.warning(
+                        "health_check.pool_stats_unavailable",
+                        exc_info=True,
+                    )
 
             # Last applied private-memory migration version.
             import os as _os
@@ -308,8 +311,11 @@ def run_health_check(  # noqa: PLR0915
 
                     _schema = get_private_schema_status(_db_url)
                     store_health.last_migration_version = _schema.current_version
-                except Exception:  # nosec B110 — best-effort; missing migration info must not abort health check
-                    pass
+                except Exception:
+                    logger.warning(
+                        "health_check.migration_status_unavailable",
+                        exc_info=True,
+                    )
 
             # Embedding provider availability (import check only — no model load).
             try:
@@ -321,6 +327,15 @@ def run_health_check(  # noqa: PLR0915
                 warnings.append(
                     "sentence-transformers not installed — semantic recall degraded to BM25-only. "
                     "Install with: pip install 'tapps-brain[all]'"
+                )
+
+            if getattr(_priv_backend, "knn_search_degraded", False):
+                warnings.append(
+                    "pgvector knn_search previously failed — semantic recall may be degraded"
+                )
+            if getattr(_priv_backend, "index_verify_unknown", False):
+                warnings.append(
+                    "private index verification failed — HNSW presence unknown"
                 )
 
             # Checks
@@ -351,8 +366,6 @@ def run_health_check(  # noqa: PLR0915
     if check_hive:
         try:
             import os
-
-            from tapps_brain.backends import AgentRegistry
 
             # Resolve which backend to probe:
             #   1. Explicit hive_store parameter
@@ -388,7 +401,9 @@ def run_health_check(  # noqa: PLR0915
                     hive_health.namespaces = sorted(ns_counts.keys())
                     hive_health.entries = sum(ns_counts.values())
 
-                    registry = AgentRegistry()
+                    from tapps_brain.backends import resolve_agent_registry
+
+                    registry = resolve_agent_registry(hive)
                     hive_health.agents = len(registry.list_agents())
 
                     if hive_health.agents == 0:
@@ -404,7 +419,10 @@ def run_health_check(  # noqa: PLR0915
                             hive_health.pool_saturation = float(_ps.get("pool_saturation", 0.0))
                             hive_health.pool_idle = int(_ps.get("pool_available", 0))
                         except Exception:
-                            pass  # hive pool stats unavailable; health check continues without them
+                            logger.warning(
+                                "health_check.hive_pool_stats_unavailable",
+                                exc_info=True,
+                            )
 
                     # Migration version: last applied Hive schema version.
                     if _hive_dsn:
@@ -413,8 +431,11 @@ def run_health_check(  # noqa: PLR0915
 
                             _schema = get_hive_schema_status(_hive_dsn)
                             hive_health.migration_version = _schema.current_version
-                        except Exception:  # nosec B110 — best-effort; missing hive migration info must not abort health check
-                            pass
+                        except Exception:
+                            logger.warning(
+                                "health_check.hive_migration_status_unavailable",
+                                exc_info=True,
+                            )
 
                 finally:
                     if _owns_hive and hasattr(hive, "close"):
@@ -460,7 +481,8 @@ def run_health_check(  # noqa: PLR0915
                 warnings.append(f"{orphaned} orphaned relation(s) pointing to missing entries")
             if expired > 0:
                 warnings.append(
-                    f"{expired} entry/entries past valid_at — consider running maintenance"
+                    f"{expired} entry/entries past invalid_at/valid_until — "
+                    "consider running maintenance"
                 )
         finally:
             if _integrity_owns_store:

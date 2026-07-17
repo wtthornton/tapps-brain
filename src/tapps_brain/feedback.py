@@ -367,7 +367,8 @@ class FeedbackStore:
                     )
                 )
             except Exception:
-                logger.warning("feedback.query_row_skipped", row_id=row[0])
+                logger.warning("feedback.query_row_skipped", row_id=row[0], exc_info=True)
+                raise
         return results
 
     def close(self) -> None:

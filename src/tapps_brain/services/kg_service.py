@@ -452,7 +452,7 @@ def record_events_batch(
     # any failure rolls back every event (no partial commits).
     batch_results = recorder.record_many(event_objs)
     results: list[dict[str, Any]] = []
-    for record_result, warns in zip(batch_results, per_event_warnings, strict=False):
+    for record_result, warns in zip(batch_results, per_event_warnings, strict=True):
         result_dict = record_result.model_dump()
         merged_warnings = list(warns)
         if record_result.warnings:
@@ -926,8 +926,12 @@ def explain_connection(
                 current_id, path = queue.popleft()
                 try:
                     neighbors = kg.get_neighbors(current_id, direction="both", limit=fanout)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    return {
+                        "error": "kg_unavailable",
+                        "message": str(exc),
+                        "found": False,
+                    }
                 for n in neighbors:
                     neighbor_id = str(n.get("neighbor_id", ""))
                     if not neighbor_id or neighbor_id in visited:

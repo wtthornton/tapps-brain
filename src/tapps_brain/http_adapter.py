@@ -419,56 +419,8 @@ async def _parse_json_object_body(request: Request) -> dict[str, Any]:
     return body
 
 
-# TAP-552: cache _probe_db results for 2 s so that Docker healthcheck (every 10 s)
-# and Prometheus scrape (every 15 s) don't each open a new standalone Postgres
-# connection.  Key = DSN string; value = (expires_at, result_tuple).
-_PROBE_CACHE: dict[str, tuple[float, tuple[bool, int | None, str]]] = {}  # type: ignore[no-redef]  # noqa: F811
-_PROBE_CACHE_TTL: float = 2.0  # type: ignore[no-redef]  # noqa: F811
-
 # TAP-2866: deep-probe cache for the experience write path (table + partitions).
 _EXPERIENCE_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
-
-
-def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:  # type: ignore[no-redef]  # noqa: F811
-    if not dsn:
-        return False, None, "no DSN configured (set TAPPS_BRAIN_DATABASE_URL)"
-    now = time.monotonic()
-    cached = _PROBE_CACHE.get(dsn)
-    if cached is not None and now < cached[0]:
-        return cached[1]
-    try:
-        from tapps_brain.postgres_migrations import get_hive_schema_status
-
-        status_ = get_hive_schema_status(dsn)
-        version = status_.current_version if status_.current_version else None
-        pending = len(status_.pending_migrations)
-        if pending > 0:
-            result: tuple[bool, int | None, str] = (
-                True,
-                version,
-                f"ready (migration_version={version}, pending={pending})",
-            )
-        else:
-            result = (True, version, f"ready (migration_version={version})")
-    except Exception as exc:
-        err_str = str(exc)
-        try:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(dsn)
-            if parsed.hostname:
-                err_str = err_str.replace(parsed.hostname, "[host]")
-            if parsed.port:
-                err_str = err_str.replace(str(parsed.port), "[port]")
-            if parsed.username:
-                err_str = err_str.replace(parsed.username, "[user]")
-            if parsed.password:
-                err_str = err_str.replace(parsed.password, "[pass]")
-        except Exception:
-            err_str = "database unreachable"
-        result = (False, None, f"db_error: {err_str}")
-    _PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
-    return result
 
 
 def _probe_experience_schema(dsn: str | None) -> tuple[bool, str]:
@@ -1779,7 +1731,7 @@ def create_app(
         store_pid = getattr(base, "_project_id", None) or ""
         store_aid = getattr(base, "_agent_id", None) or ""
         eff_agent = (agent_id or "").strip() or "unknown"
-        agent_ok = eff_agent in {store_aid, "unknown"} or not store_aid
+        agent_ok = bool(store_aid) and eff_agent == store_aid
         return bool(store_pid) and store_pid == project_id and agent_ok
 
     def _get_async_store_or_none() -> Any:
@@ -1829,6 +1781,12 @@ def create_app(
         if lk is not None and not lk.locked():
             _idem_guards.pop(gk, None)
 
+    def _idempotency_check(
+        istore: Any, project_id: str, ikey: str
+    ) -> tuple[int, dict[str, Any]] | None:
+        """Run idempotency check (raises IdempotencyUnavailableError on failure)."""
+        return istore.check(project_id, ikey)
+
     def _get_ikey_and_istore(request: Request) -> tuple[str | None, Any]:
         """Extract idempotency key + singleton store, or (None, None).
 
@@ -1847,14 +1805,23 @@ def create_app(
         if not ikey:
             return ikey, None
         istore = getattr(cfg, "idempotency_store", None)
+        if istore is None:
+            # Feature enabled + client key present but store failed to init —
+            # refuse rather than silently allowing duplicate writes.
+            from tapps_brain.idempotency import IdempotencyUnavailableError
+
+            raise IdempotencyUnavailableError(
+                "Idempotency is enabled but the idempotency store is unavailable"
+            )
         return ikey, istore
 
     def _idempotency_save(project_id: str, ikey: str, status: int, body: dict[str, Any]) -> None:
         """Persist idempotency key → response when enabled.
 
-        TAP-548: writes through the process-wide
-        ``cfg.idempotency_store`` singleton; silent no-op when absent so
-        boot-time failures don't bubble up into write-path 500s.
+        TAP-548: writes through the process-wide ``cfg.idempotency_store``
+        singleton.  Failures raise :class:`IdempotencyUnavailableError` so
+        callers map them to HTTP 503 instead of allowing silent duplicate
+        writes on retry.
         """
         from tapps_brain.idempotency import is_idempotency_enabled
 
@@ -1862,7 +1829,11 @@ def create_app(
             return
         istore = getattr(cfg, "idempotency_store", None)
         if istore is None:
-            return
+            from tapps_brain.idempotency import IdempotencyUnavailableError
+
+            raise IdempotencyUnavailableError(
+                "Idempotency is enabled but the idempotency store is unavailable"
+            )
         istore.save(project_id, ikey, status, body)
 
     @app.post("/v1/remember", dependencies=[Depends(require_data_plane_auth)])
@@ -1906,7 +1877,20 @@ def create_app(
             # Cache check — inside the guard so we observe the result
             # stored by whichever concurrent duplicate ran first.
             if ikey and istore is not None:
-                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2005,7 +1989,18 @@ def create_app(
             # Persist idempotency result inside the guard so that waiting
             # duplicates see the stored response when they re-check.
             if ikey and istore is not None:
-                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2051,7 +2046,20 @@ def create_app(
         try:
             # Cache check inside the guard.
             if ikey and istore is not None:
-                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2131,7 +2139,18 @@ def create_app(
                 status_code = 200
 
             if ikey and istore is not None:
-                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2150,6 +2169,7 @@ def create_app(
         Request headers:
           - ``X-Project-Id`` (required): project identifier.
           - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
 
         Request body (JSON):
           ``{ "entries": [{"key": str, "value": str, ...}, ...] }``
@@ -2166,52 +2186,98 @@ def create_app(
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
         store = _get_tenant_store_or_503(project_id, agent_id)
 
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.read_body_failed")
+            ikey, istore = _get_ikey_and_istore(request)
+        except IdempotencyUnavailableError as exc:
             raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        if len(raw) > 10 * 1_048_576:  # 10 MiB
-            raise HTTPException(
-                status_code=413,
-                detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
-            )
+                status_code=503,
+                detail={"error": "idempotency_unavailable", "detail": str(exc)},
+            ) from exc
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
         try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            logger.exception("http_adapter.invalid_json")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            if ikey and istore is not None:
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        entries = body.get("entries")
-        if not isinstance(entries, list):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "entries must be a JSON array."},
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                )
+            if len(raw) > 10 * 1_048_576:  # 10 MiB
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
+
+            entries = body.get("entries")
+            if not isinstance(entries, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "entries must be a JSON array."},
+                )
+
+            from tapps_brain.services import memory_service as _ms
+
+            # TAP-1099: offload batch DB work to a worker thread.
+            result = await asyncio.to_thread(
+                _ms.memory_save_many, store, project_id, agent_id, entries=entries
             )
-
-        from tapps_brain.services import memory_service as _ms
-
-        # TAP-1099: offload batch DB work to a worker thread.
-        result = await asyncio.to_thread(
-            _ms.memory_save_many, store, project_id, agent_id, entries=entries
-        )
-        status_code = 400 if "error" in result else 200
-        return JSONResponse(status_code=status_code, content=result)
+            status_code = 400 if "error" in result else 200
+            if ikey and istore is not None:
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+            return JSONResponse(status_code=status_code, content=result)
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     @app.post("/v1/recall:batch", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_recall_batch(request: Request) -> JSONResponse:
@@ -2290,6 +2356,7 @@ def create_app(
         Request headers:
           - ``X-Project-Id`` (required): project identifier.
           - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
+          - ``X-Idempotency-Key`` (optional): idempotency UUID.
 
         Request body (JSON):
           ``{ "entries": [{"key": str, "confidence_boost"?: float}, ...] }``
@@ -2306,60 +2373,106 @@ def create_app(
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
         store = _get_tenant_store_or_503(project_id, agent_id)
 
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.read_body_failed")
+            ikey, istore = _get_ikey_and_istore(request)
+        except IdempotencyUnavailableError as exc:
             raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        if len(raw) > 10 * 1_048_576:
-            raise HTTPException(
-                status_code=413,
-                detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
-            )
+                status_code=503,
+                detail={"error": "idempotency_unavailable", "detail": str(exc)},
+            ) from exc
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
         try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            logger.exception("http_adapter.invalid_json")
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            if ikey and istore is not None:
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        entries = body.get("entries")
-        if not isinstance(entries, list):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "entries must be a JSON array."},
-            )
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                )
+            if len(raw) > 10 * 1_048_576:
+                raise HTTPException(
+                    status_code=413,
+                    detail={"error": "payload_too_large", "detail": "Max 10 MiB for batch requests."},
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.exception("http_adapter.invalid_json")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
 
-        from tapps_brain.services import memory_service as _ms
+            entries = body.get("entries")
+            if not isinstance(entries, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "entries must be a JSON array."},
+                )
 
-        _async_store = _get_async_store_or_none()
-        if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
-            # TAP-1566: async-native batch reinforce — each per-item write
-            # goes through AsyncPostgresPrivateBackend.
-            result = await _ms.async_memory_reinforce_many(
-                _async_store, project_id, agent_id, entries=entries
-            )
-        else:
-            # TAP-1099: offload batch DB work to a worker thread.
-            result = await asyncio.to_thread(
-                _ms.memory_reinforce_many, store, project_id, agent_id, entries=entries
-            )
-        status_code = 400 if "error" in result else 200
-        return JSONResponse(status_code=status_code, content=result)
+            from tapps_brain.services import memory_service as _ms
+
+            _async_store = _get_async_store_or_none()
+            if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
+                # TAP-1566: async-native batch reinforce — each per-item write
+                # goes through AsyncPostgresPrivateBackend.
+                result = await _ms.async_memory_reinforce_many(
+                    _async_store, project_id, agent_id, entries=entries
+                )
+            else:
+                # TAP-1099: offload batch DB work to a worker thread.
+                result = await asyncio.to_thread(
+                    _ms.memory_reinforce_many, store, project_id, agent_id, entries=entries
+                )
+            status_code = 400 if "error" in result else 200
+            if ikey and istore is not None:
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+            return JSONResponse(status_code=status_code, content=result)
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     # -------- agent-brain data-plane routes (TAP-993; AgentForge HTTP-only) --------
 
@@ -2487,7 +2600,20 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2553,7 +2679,18 @@ def create_app(
             status_code = 200
 
             if ikey and istore is not None:
-                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2597,7 +2734,20 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2672,7 +2822,18 @@ def create_app(
             status_code = 200
 
             if ikey and istore is not None:
-                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2717,7 +2878,20 @@ def create_app(
 
         try:
             if ikey and istore is not None:
-                _cached = await asyncio.to_thread(istore.check, project_id, ikey)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
                 if _cached is not None:
                     _status, _body = _cached
                     return JSONResponse(
@@ -2794,7 +2968,18 @@ def create_app(
             status_code = 200
 
             if ikey and istore is not None:
-                await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                from tapps_brain.idempotency import IdempotencyUnavailableError
+
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "idempotency_unavailable",
+                            "detail": str(exc),
+                        },
+                    ) from exc
 
             return JSONResponse(status_code=status_code, content=result)
 
@@ -2859,74 +3044,135 @@ def create_app(
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.kg.read_body_failed")
+            ikey, istore = _get_ikey_and_istore(request)
+        except IdempotencyUnavailableError as exc:
             raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        # TAP-1940: /v1/experience uses a higher 256 KB ceiling than the 64 KB
-        # default applied to /v1/kg/* endpoints, so evidence payloads (stack
-        # traces + log slices + tool output) fit without consumer-side glue.
-        if len(raw) > _EXPERIENCE_MAX_BODY_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail={
-                    "error": "payload_too_large",
-                    "detail": f"Max {_EXPERIENCE_MAX_BODY_BYTES} bytes.",
-                },
-            )
+                status_code=503,
+                detail={"error": "idempotency_unavailable", "detail": str(exc)},
+            ) from exc
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
         try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            if ikey and istore is not None:
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        event_type = (body.get("event_type") or "").strip()
-        if not event_type:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "event_type is required."},
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.kg.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                )
+            # TAP-1940: /v1/experience uses a higher 256 KB ceiling than the 64 KB
+            # default applied to /v1/kg/* endpoints, so evidence payloads (stack
+            # traces + log slices + tool output) fit without consumer-side glue.
+            if len(raw) > _EXPERIENCE_MAX_BODY_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": f"Max {_EXPERIENCE_MAX_BODY_BYTES} bytes.",
+                    },
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
+
+            event_type = (body.get("event_type") or "").strip()
+            if not event_type:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "event_type is required."},
+                )
+
+            cm = _get_kg_cm_or_503()
+            from tapps_brain.services import kg_service as _kg_svc
+
+            result = await asyncio.to_thread(
+                _kg_svc.record_event,
+                cm,
+                project_id,
+                _kg_brain_id(),
+                agent_id,
+                event_type=event_type,
+                subject_key=body.get("subject_key") or None,
+                utility_score=float(body.get("utility_score", 0.0)),
+                payload=body.get("payload") or {},
+                entities=list(body.get("entities") or []),
+                edges=list(body.get("edges") or []),
+                evidence=list(body.get("evidence") or []),
+                memory_key=body.get("memory_key") or None,
+                memory_value=body.get("memory_value") or None,
+                memory_tier=str(body.get("memory_tier") or "pattern"),
+                session_id=body.get("session_id") or None,
+                workflow_run_id=body.get("workflow_run_id") or None,
             )
-
-        cm = _get_kg_cm_or_503()
-        from tapps_brain.services import kg_service as _kg_svc
-
-        result = await asyncio.to_thread(
-            _kg_svc.record_event,
-            cm,
-            project_id,
-            _kg_brain_id(),
-            agent_id,
-            event_type=event_type,
-            subject_key=body.get("subject_key") or None,
-            utility_score=float(body.get("utility_score", 0.0)),
-            payload=body.get("payload") or {},
-            entities=list(body.get("entities") or []),
-            edges=list(body.get("edges") or []),
-            evidence=list(body.get("evidence") or []),
-            memory_key=body.get("memory_key") or None,
-            memory_value=body.get("memory_value") or None,
-            memory_tier=str(body.get("memory_tier") or "pattern"),
-            session_id=body.get("session_id") or None,
-            workflow_run_id=body.get("workflow_run_id") or None,
-        )
-        # TAP-2727: data-plane writes return 200 (matches /v1/remember,
-        # /v1/learn_*, /v1/reinforce and the documented OpenAPI contract).
-        return JSONResponse(status_code=200, content=result)
+            # Hydrate tenant MemoryStore cache after out-of-band private_memories write.
+            mem_key = result.get("memory_key") if isinstance(result, dict) else None
+            if mem_key:
+                try:
+                    store = _get_tenant_store_or_503(project_id, agent_id)
+                    ensure = getattr(store, "_ensure_entry_cached", None)
+                    if callable(ensure):
+                        ensure(str(mem_key))
+                except Exception:
+                    logger.warning(
+                        "http_adapter.experience_cache_hydrate_failed",
+                        project_id=project_id,
+                        memory_key=mem_key,
+                        exc_info=True,
+                    )
+            if ikey and istore is not None:
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, 200, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+            # TAP-2727: data-plane writes return 200 (matches /v1/remember,
+            # /v1/learn_*, /v1/reinforce and the documented OpenAPI contract).
+            return JSONResponse(status_code=200, content=result)
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     @app.post("/v1/experience:batch", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_experience_batch(request: Request) -> JSONResponse:
@@ -2961,70 +3207,131 @@ def create_app(
             )
         agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
 
+        from tapps_brain.idempotency import IdempotencyUnavailableError
+
         try:
-            raw = await request.body()
-        except Exception:
-            logger.exception("http_adapter.kg.batch.read_body_failed")
+            ikey, istore = _get_ikey_and_istore(request)
+        except IdempotencyUnavailableError as exc:
             raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Failed to read request body."},
-            )
-        if not raw:
-            raise HTTPException(
-                status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
-            )
-        if len(raw) > _EXPERIENCE_BATCH_MAX_BODY_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail={
-                    "error": "payload_too_large",
-                    "detail": f"Max {_EXPERIENCE_BATCH_MAX_BODY_BYTES} bytes for batch requests.",
-                },
-            )
+                status_code=503,
+                detail={"error": "idempotency_unavailable", "detail": str(exc)},
+            ) from exc
+        guard: asyncio.Lock | None = None
+        if ikey and istore is not None:
+            guard = _ensure_idem_guard(project_id, ikey)
+            await guard.acquire()
+
         try:
-            body = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
-            )
-        if not isinstance(body, dict):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
-            )
+            if ikey and istore is not None:
+                try:
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey
+                    )
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+                if _cached is not None:
+                    _status, _body = _cached
+                    return JSONResponse(
+                        status_code=_status,
+                        content=_body,
+                        headers={"Idempotency-Replayed": "true"},
+                    )
 
-        events = body.get("events")
-        if not isinstance(events, list):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "events must be a JSON array."},
-            )
-        if len(events) > _EXPERIENCE_BATCH_MAX_ITEMS:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "bad_request",
-                    "detail": f"Max {_EXPERIENCE_BATCH_MAX_ITEMS} events per batch.",
-                },
-            )
+            try:
+                raw = await request.body()
+            except Exception:
+                logger.exception("http_adapter.kg.batch.read_body_failed")
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Failed to read request body."},
+                )
+            if not raw:
+                raise HTTPException(
+                    status_code=400, detail={"error": "bad_request", "detail": "Empty request body."}
+                )
+            if len(raw) > _EXPERIENCE_BATCH_MAX_BODY_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": f"Max {_EXPERIENCE_BATCH_MAX_BODY_BYTES} bytes for batch requests.",
+                    },
+                )
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be valid JSON."},
+                )
+            if not isinstance(body, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
+                )
 
-        cm = _get_kg_cm_or_503()
-        from tapps_brain.services import kg_service as _kg_svc
+            events = body.get("events")
+            if not isinstance(events, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "bad_request", "detail": "events must be a JSON array."},
+                )
+            if len(events) > _EXPERIENCE_BATCH_MAX_ITEMS:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": f"Max {_EXPERIENCE_BATCH_MAX_ITEMS} events per batch.",
+                    },
+                )
 
-        result = await asyncio.to_thread(
-            _kg_svc.record_events_batch,
-            cm,
-            project_id,
-            _kg_brain_id(),
-            agent_id,
-            events=events,
-        )
-        if isinstance(result, dict) and result.get("error"):
-            raise HTTPException(status_code=400, detail=result)
-        # TAP-2727: data-plane writes return 200 (matches the single-event
-        # /v1/experience endpoint and the documented OpenAPI contract).
-        return JSONResponse(status_code=200, content=result)
+            cm = _get_kg_cm_or_503()
+            from tapps_brain.services import kg_service as _kg_svc
+
+            result = await asyncio.to_thread(
+                _kg_svc.record_events_batch,
+                cm,
+                project_id,
+                _kg_brain_id(),
+                agent_id,
+                events=events,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                raise HTTPException(status_code=400, detail=result)
+            # Hydrate cache for any memory keys written by the batch.
+            if isinstance(result, dict):
+                try:
+                    store = _get_tenant_store_or_503(project_id, agent_id)
+                    ensure = getattr(store, "_ensure_entry_cached", None)
+                    if callable(ensure):
+                        for item in result.get("results") or []:
+                            if isinstance(item, dict) and item.get("memory_key"):
+                                ensure(str(item["memory_key"]))
+                except Exception:
+                    logger.warning(
+                        "http_adapter.experience_batch_cache_hydrate_failed",
+                        project_id=project_id,
+                        exc_info=True,
+                    )
+            if ikey and istore is not None:
+                try:
+                    await asyncio.to_thread(istore.save, project_id, ikey, 200, result)
+                except IdempotencyUnavailableError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"error": "idempotency_unavailable", "detail": str(exc)},
+                    ) from exc
+            # TAP-2727: data-plane writes return 200 (matches the single-event
+            # /v1/experience endpoint and the documented OpenAPI contract).
+            return JSONResponse(status_code=200, content=result)
+        finally:
+            if guard is not None:
+                guard.release()
+                if ikey:
+                    _drop_idem_guard(project_id, ikey)
 
     @app.post("/v1/experience:query", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_experience_query(request: Request) -> JSONResponse:
