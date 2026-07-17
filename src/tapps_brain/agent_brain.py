@@ -148,15 +148,18 @@ class AgentBrain:
         # MemoryStore.__init__ also performs this check, but we call it here so
         # AgentBrain users see the error before the backend is constructed.
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
-        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
-            try:
-                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+        if _auto_migrate_dsn:
+            from tapps_brain.postgres_connection import is_postgres_dsn
 
-                maybe_auto_migrate_private(_auto_migrate_dsn)
-            except Exception:
-                # MigrationDowngradeError and ImportError propagate; other
-                # transient errors are logged and deferred to the store.
-                raise
+            if is_postgres_dsn(_auto_migrate_dsn):
+                try:
+                    from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+                    maybe_auto_migrate_private(_auto_migrate_dsn)
+                except Exception:
+                    # MigrationDowngradeError and ImportError propagate; other
+                    # transient errors are logged and deferred to the store.
+                    raise
 
         # ADR-007: resolve the Postgres private backend from
         # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is

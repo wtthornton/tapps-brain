@@ -208,7 +208,9 @@ class QueryAnalysis:
 # Public API
 # ---------------------------------------------------------------------------
 
-_EMPTY_ANALYSIS = QueryAnalysis()
+def _empty_analysis() -> QueryAnalysis:
+    """Return a fresh empty analysis (never share a mutable singleton)."""
+    return QueryAnalysis()
 
 
 def analyze_query(
@@ -229,11 +231,11 @@ def analyze_query(
         recall pipeline degrades gracefully.
     """
     if kg_backend is None:
-        return _EMPTY_ANALYSIS
+        return _empty_analysis()
 
     candidates = _extract_candidates(query)
     if not candidates:
-        return _EMPTY_ANALYSIS
+        return _empty_analysis()
 
     try:
         resolved = kg_backend.batch_resolve_entities(candidates)
@@ -243,7 +245,7 @@ def analyze_query(
             candidate_count=len(candidates),
             exc_info=True,
         )
-        return _EMPTY_ANALYSIS
+        return _empty_analysis()
 
     mentions: list[EntityMention] = []
     unmatched: list[str] = []

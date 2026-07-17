@@ -50,6 +50,12 @@ class TestFtsQueryTerms:
     def test_dots_in_segment(self) -> None:
         assert fts_query_terms("foo.py", fts_path_splits=True) == ["foo", "py"]
 
+    def test_ascii_fold_matches_bm25_tokenization(self) -> None:
+        """When ascii_fold is on, FTS terms must not truncate accents to ``caf``."""
+        assert fts_query_terms("café", fts_path_splits=True, ascii_fold=False) == ["caf"]
+        assert fts_query_terms("café", fts_path_splits=True, ascii_fold=True) == ["cafe"]
+        assert build_fts_match_query("café", fts_path_splits=True, ascii_fold=True) == '"cafe"'
+
 
 class TestBuildFtsMatchQuery:
     def test_two_terms(self) -> None:

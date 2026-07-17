@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from tapps_brain.agent_scope import hive_group_name_from_scope
 from tapps_brain.models import AgentRegistration
+from tapps_brain.postgres_connection import is_postgres_dsn
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -574,7 +575,7 @@ def create_hive_backend(
             "(postgres:// or postgresql://). SQLite backends are removed (ADR-007)."
         )
         raise ValueError(msg)
-    if not str(dsn_or_path).startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(str(dsn_or_path)):
         msg = "Hive backend requires a PostgreSQL DSN. SQLite backends are removed (ADR-007)."
         raise ValueError(msg)
     from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -595,7 +596,7 @@ def create_federation_backend(dsn_or_path: str | None = None) -> FederationBacke
             "(postgres:// or postgresql://). SQLite backends are removed (ADR-007)."
         )
         raise ValueError(msg)
-    if not str(dsn_or_path).startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(str(dsn_or_path)):
         msg = "Federation backend requires a PostgreSQL DSN. SQLite backends are removed (ADR-007)."
         raise ValueError(msg)
     from tapps_brain.postgres_connection import PostgresConnectionManager
@@ -652,7 +653,7 @@ def create_private_backend(
             "supported in v3 (ADR-007)."
         )
         raise ValueError(msg)
-    if not dsn.startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(dsn):
         msg = (
             "Private memory backend requires a PostgreSQL DSN. "
             "SQLite backends are not supported in v3 (ADR-007)."
@@ -693,7 +694,7 @@ def create_async_private_backend(
             "supported in v3 (ADR-007)."
         )
         raise ValueError(msg)
-    if not dsn.startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(dsn):
         msg = (
             "Async private memory backend requires a PostgreSQL DSN. "
             "SQLite backends are not supported in v3 (ADR-007)."
@@ -763,7 +764,7 @@ def create_agent_registry_backend(
     - ``None`` or a file path -> :class:`FileAgentRegistryBackend` (YAML file)
     - ``postgres://...`` or ``postgresql://...`` -> :class:`PostgresAgentRegistry` (EPIC-055)
     """
-    if registry_path is not None and registry_path.startswith(("postgres://", "postgresql://")):
+    if registry_path is not None and is_postgres_dsn(registry_path):
         from tapps_brain.postgres_connection import PostgresConnectionManager
         from tapps_brain.postgres_hive import PostgresAgentRegistry
 
@@ -807,7 +808,7 @@ def create_kg_backend(
             "supported (ADR-007)."
         )
         raise ValueError(msg)
-    if not dsn.startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(dsn):
         msg = (
             "KnowledgeGraphBackend requires a PostgreSQL DSN. "
             "SQLite backends are not supported (ADR-007)."
@@ -847,7 +848,7 @@ def create_async_kg_backend(
             "supported (ADR-007)."
         )
         raise ValueError(msg)
-    if not dsn.startswith(("postgres://", "postgresql://")):
+    if not is_postgres_dsn(dsn):
         msg = (
             "Async KnowledgeGraphBackend requires a PostgreSQL DSN. "
             "SQLite backends are not supported (ADR-007)."

@@ -12,3 +12,14 @@ def test_load_tapps_brain_skill_contract() -> None:
     assert payload["name"] == "tapps-brain"
     assert payload["version"] == __version__
     assert "/tapps-brain" in payload["body"]
+
+
+def test_load_tapps_brain_skill_returns_fresh_dict() -> None:
+    """Mutating a returned dict must not poison the cache for later callers."""
+    load_tapps_brain_skill.cache_clear()
+    first = load_tapps_brain_skill()
+    original_body = first["body"]
+    first["body"] = "POISON"
+    second = load_tapps_brain_skill()
+    assert second["body"] == original_body
+    assert first is not second

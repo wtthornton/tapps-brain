@@ -217,3 +217,25 @@ class TestSyncToMarkdownFsync:
             f"Expected exactly 2 fsync calls (MEMORY.md + sync_state.json); "
             f"got {len(fsync_calls)}: {fsync_calls}"
         )
+
+
+class TestSyncToMarkdownSkipsEphemeralTiers:
+    """Ephemeral/session rows must not be dumped into the durable context bucket."""
+
+    def test_ephemeral_and_session_not_exported_as_context(self, tmp_path: Path) -> None:
+        from tapps_brain.models import MemoryTier
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path / "store")
+        store.save(key="eph-1", value="momentary", tier=MemoryTier.ephemeral.value, source="agent")
+        store.save(key="sess-1", value="session", tier=MemoryTier.session.value, source="agent")
+        store.save(key="ctx-1", value="context", tier=MemoryTier.context.value, source="agent")
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+
+        result = sync_to_markdown(store, workspace)
+        text = (workspace / "MEMORY.md").read_text(encoding="utf-8")
+        assert result["exported"] == 1
+        assert "ctx-1" in text
+        assert "eph-1" not in text
+        assert "sess-1" not in text

@@ -107,6 +107,19 @@ _TIER_ORDER: list[str] = [
     MemoryTier.context,
 ]
 
+# Ephemeral / session tiers are intentionally omitted from MEMORY.md: the
+# H2-H5 heading map only round-trips the four durable tiers, and dumping
+# short-lived rows into the context bucket silently promotes them to
+# durable context on the next sync_from_markdown.
+_SKIP_EXPORT_TIERS: frozenset[str] = frozenset(
+    {
+        MemoryTier.ephemeral,
+        MemoryTier.session,
+        str(MemoryTier.ephemeral),
+        str(MemoryTier.session),
+    }
+)
+
 # Parsing helpers (mirrors markdown_import.py)
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9._-]+")
@@ -366,10 +379,12 @@ def sync_to_markdown(store: MemoryStore, workspace_dir: Path) -> dict[str, Any]:
     grouped: dict[str, list[Any]] = {t: [] for t in _TIER_ORDER}
     for entry in entries:
         tier_str = str(entry.tier)
+        if tier_str in _SKIP_EXPORT_TIERS:
+            continue
         if tier_str in grouped:
             grouped[tier_str].append(entry)
         else:
-            # Unknown tier — fall back to context bucket
+            # Unknown durable tier — fall back to context bucket
             grouped[MemoryTier.context].append(entry)
 
     # Build MEMORY.md content — YAML front matter first, then the document body.

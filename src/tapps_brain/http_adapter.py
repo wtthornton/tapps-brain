@@ -1187,7 +1187,9 @@ def create_app(
                 from tapps_brain.backends import create_async_private_backend
 
                 _dsn = (cfg.dsn or "").strip()
-                if _dsn.startswith(("postgres://", "postgresql://")):
+                from tapps_brain.postgres_connection import is_postgres_dsn
+
+                if is_postgres_dsn(_dsn):
                     _project_id = getattr(cfg.store, "_project_id", None) or ""
                     _agent_id = getattr(cfg.store, "_agent_id", None) or ""
                     if (

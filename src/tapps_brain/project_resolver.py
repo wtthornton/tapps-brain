@@ -7,7 +7,8 @@ Precedence (first non-empty value wins):
 
 1. Per-call override — MCP tool call's ``_meta.project_id`` or an HTTP
    request body field.
-2. HTTP header ``X-Tapps-Project`` (Streamable HTTP / SSE transport).
+2. HTTP header ``X-Tapps-Project`` or ``X-Project-Id`` (Streamable HTTP /
+   SSE / REST transport — either name is accepted).
 3. Env var ``TAPPS_BRAIN_PROJECT`` (stdio transport — the MCP client
    sets it in ``.mcp.json`` ``env``).
 4. The literal ``"default"``.  Strict-mode deployments reject this at
@@ -29,6 +30,10 @@ logger = structlog.get_logger(__name__)
 
 DEFAULT_PROJECT_ID = "default"
 HEADER_NAME = "X-Tapps-Project"
+# HTTP / OpenAPI canonical tenant header (ADR-010 evolution). Accepted as an
+# alias of ``HEADER_NAME`` so callers that only set ``X-Project-Id`` still
+# resolve correctly through :func:`resolve_project_id`.
+HTTP_HEADER_NAME = "X-Project-Id"
 ENV_VAR = "TAPPS_BRAIN_PROJECT"
 
 # Mirrors the project_profiles_id_shape CHECK constraint (migration 008):
@@ -77,6 +82,8 @@ def resolve_project_id(
     source = "meta"
     if not candidate and headers is not None:
         candidate = _lookup_header(headers, HEADER_NAME)
+        if not candidate:
+            candidate = _lookup_header(headers, HTTP_HEADER_NAME)
         source = "header"
     if not candidate:
         env_map = env if env is not None else os.environ

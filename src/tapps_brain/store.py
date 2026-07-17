@@ -464,10 +464,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         first connection.
         """
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
-        if _auto_migrate_dsn and _auto_migrate_dsn.startswith(("postgres://", "postgresql://")):
-            from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+        if _auto_migrate_dsn:
+            from tapps_brain.postgres_connection import is_postgres_dsn
 
-            maybe_auto_migrate_private(_auto_migrate_dsn)
+            if is_postgres_dsn(_auto_migrate_dsn):
+                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+
+                maybe_auto_migrate_private(_auto_migrate_dsn)
 
     @staticmethod
     def _resolve_private_backend(
@@ -799,7 +802,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """
         project_id = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
         dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
-        if not project_id or not dsn.startswith(("postgres://", "postgresql://")):
+        from tapps_brain.postgres_connection import is_postgres_dsn
+
+        if not project_id or not is_postgres_dsn(dsn):
             return None
         try:
             from tapps_brain.postgres_connection import PostgresConnectionManager

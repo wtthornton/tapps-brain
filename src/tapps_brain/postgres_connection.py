@@ -26,6 +26,18 @@ import structlog
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
+def is_postgres_dsn(dsn: str | None) -> bool:
+    """Return True when *dsn* uses a Postgres URI scheme (case-insensitive).
+
+    ADR-007 requires ``postgres://`` or ``postgresql://``. Scheme matching is
+    case-insensitive because URI schemes are case-insensitive per RFC 3986 and
+    operators commonly paste ``PostgreSQL://...`` from docs.
+    """
+    if not dsn:
+        return False
+    return dsn.lower().startswith(("postgres://", "postgresql://"))
+
+
 class PostgresConnectionManager:
     """Connection pool manager using psycopg + psycopg_pool.
 
@@ -77,8 +89,8 @@ class PostgresConnectionManager:
         max_lifetime: float | None = None,
     ) -> None:
         # Validate DSN scheme at construction time (ADR-007 — Postgres-only).
-        if not dsn or not dsn.startswith(("postgres://", "postgresql://")):
-            scheme = dsn.split("://")[0] if "://" in dsn else "(no scheme)"
+        if not is_postgres_dsn(dsn):
+            scheme = dsn.split("://")[0] if dsn and "://" in dsn else "(no scheme)"
             raise ValueError(
                 f"Invalid PostgreSQL DSN: must begin with 'postgres://' or 'postgresql://' "
                 f"(ADR-007 — Postgres-only). Got scheme '{scheme}'. "

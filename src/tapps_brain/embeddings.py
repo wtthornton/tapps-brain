@@ -96,9 +96,12 @@ def quantize_embedding_int8(embedding: list[float]) -> bytes:
     packed: list[int] = []
     for x in embedding:
         xf = float(x)
-        if xf > 1.0:
+        if math.isnan(xf):
+            # NaN would crash ``round`` / ``struct.pack``; treat as 0.
+            xf = 0.0
+        elif xf > 1.0:  # includes +inf
             xf = 1.0
-        elif xf < -1.0:
+        elif xf < -1.0:  # includes -inf
             xf = -1.0
         q = round(xf * _INT8_QUANT_SCALE)
         q = max(-127, min(127, q))

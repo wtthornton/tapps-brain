@@ -74,8 +74,9 @@ def _budget_fractions(scoring_config: object | None) -> tuple[float, float, floa
     """Return (memories, entities, edges, evidence) budget fractions.
 
     Reads optional profile overrides from *scoring_config*; falls back to
-    module defaults.  Fractions are returned as-is — callers multiply by the
-    total token budget.
+    module defaults.  Fractions are normalised to sum to ``1.0`` so a
+    misconfigured profile cannot inflate (or starve) the injection budget.
+    Non-positive totals fall back to the module defaults.
     """
 
     def _frac(attr: str, default: float) -> float:
@@ -87,12 +88,19 @@ def _budget_fractions(scoring_config: object | None) -> tuple[float, float, floa
         except (TypeError, ValueError):
             return default
 
-    return (
-        _frac("token_budget_memories", _DEFAULT_BUDGET_MEMORIES),
-        _frac("token_budget_entities", _DEFAULT_BUDGET_ENTITIES),
-        _frac("token_budget_edges", _DEFAULT_BUDGET_EDGES),
-        _frac("token_budget_evidence", _DEFAULT_BUDGET_EVIDENCE),
-    )
+    mem = _frac("token_budget_memories", _DEFAULT_BUDGET_MEMORIES)
+    ent = _frac("token_budget_entities", _DEFAULT_BUDGET_ENTITIES)
+    edge = _frac("token_budget_edges", _DEFAULT_BUDGET_EDGES)
+    evid = _frac("token_budget_evidence", _DEFAULT_BUDGET_EVIDENCE)
+    total = mem + ent + edge + evid
+    if total <= 0.0:
+        return (
+            _DEFAULT_BUDGET_MEMORIES,
+            _DEFAULT_BUDGET_ENTITIES,
+            _DEFAULT_BUDGET_EDGES,
+            _DEFAULT_BUDGET_EVIDENCE,
+        )
+    return (mem / total, ent / total, edge / total, evid / total)
 
 
 def _visible_entry_count(store: MemoryStore, memory_group: str | None) -> int:
