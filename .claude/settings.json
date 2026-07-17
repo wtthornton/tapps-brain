@@ -92,6 +92,15 @@
             "command": ".claude/hooks/tapps-pre-linear-list.sh"
           }
         ]
+      },
+      {
+        "matcher": "mcp__(nlt-build|nlt-memory|nlt-setup|nlt-code-quality|nlt-platform-admin|tapps-mcp)__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-session-start-gate.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -149,6 +158,15 @@
           {
             "type": "command",
             "command": ".claude/hooks/tapps-post-linear-snapshot-get.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*__tapps_session_start",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-session-start.sh"
           }
         ]
       }
@@ -210,8 +228,7 @@
           }
         ]
       }
-    ],
-    "PostToolUseFailure": []
+    ]
   },
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "enableAllProjectMcpServers": true,

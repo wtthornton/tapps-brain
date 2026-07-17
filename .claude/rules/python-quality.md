@@ -4,11 +4,14 @@ paths:
 ---
 # Python Quality Rules (TappsMCP)
 
-Run `tapps_quick_check(file_path)` after editing Python files.
+Run tools in this order when editing Python:
 
-Use `tapps_lookup_docs(library, topic)` before using unfamiliar library APIs.
+1. **`tapps_lookup_docs(library, topic)` before the first edit** that uses an external
+   library API. Skipping triggers `lookup_docs_underused` in checklist `usage_gaps`.
+2. **`tapps_quick_check(file_path)` after each edit**
+3. **`tapps_validate_changed(file_paths="file1.py,file2.py")`** with explicit paths before declaring work complete. Never call without `file_paths`. Default is quick mode; only use `quick=false` as a last resort.
 
-Call `tapps_validate_changed(file_paths="file1.py,file2.py")` with explicit paths before declaring work complete. Never call without `file_paths`. Default is quick mode; only use `quick=false` as a last resort.
+Do not guess API signatures from training data.
 
 ## Quality Scoring (7 Categories, 0-100 each)
 

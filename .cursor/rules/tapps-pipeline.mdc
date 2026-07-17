@@ -12,6 +12,12 @@ Call `tapps_session_start()` as the FIRST action in every session.
 Brain memory is bridge-only: use `uv run tapps-mcp memory search --query "..."` or pinned keys in `.tapps-mcp.yaml` → `memory_hooks.auto_recall.recall_keys`. When `nlt-memory` is enabled, `tapps_memory` MCP is a slim facade on that server.
 Read `.tapps-mcp/session-handoff.md` when continuing work.
 
+## Before Editing External Library APIs (REQUIRED)
+
+Call `tapps_lookup_docs(library, topic)` **before the first edit** that uses an
+external library API (`reportlab`, `pytest`, `yaml`, …). Cache hits are free.
+Skipping this triggers `lookup_docs_underused` in `tapps_checklist` `usage_gaps`.
+
 ## After Editing Python Files (REQUIRED)
 
 Call `tapps_quick_check(file_path)` after editing any Python file.

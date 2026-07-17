@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.46
-# tapps-mcp-hook-content-sha: e92d2dbd
+# tapps-mcp-hook-version: 3.12.52
+# tapps-mcp-hook-content-sha: e5be634c
 # TappsMCP afterFileEdit hook (fire-and-forget) — TAP-1330 import parity
 # Detects external imports requiring tapps_lookup_docs. Advisory only.
 INPUT=$(cat)
@@ -67,7 +67,7 @@ case "$FILE" in
   *.py|*.pyi|*.ts|*.tsx|*.js|*.jsx|*.go|*.rs)
     echo "Edited: $FILE — run tapps_quick_check after this edit." >&2
     if [ -n "$LIBS" ]; then
-      echo "Imports detected ($LIBS) — call tapps_lookup_docs(library=..., topic=...) before using those APIs in this session (TAP-1330)." >&2
+      echo "Imports detected ($LIBS) — call tapps_lookup_docs(library=..., topic=...) **before editing** code that uses those APIs (TAP-1330). Retrospective lookups at finish-task do not excuse skipped pre-edit lookups." >&2
     fi
     if [ "$API" = "1" ]; then
       echo "Public API change detected ($FILE) — call docs_check_drift and docs_api_surface on nlt-project-docs when documenting (warn-only)." >&2
