@@ -80,11 +80,22 @@ class RelationEntry(BaseModel):
 #
 # Subject: 1-6 words before the verb.
 # Object: 1-8 words after the verb, stopping at sentence punctuation.
-# Words are alpha-start tokens of 1+ word chars (letters, digits, underscore).
-# Dots/slashes excluded so sentence boundaries terminate matches naturally.
-_WORD = r"[A-Za-z]\w*"
+# Words are alpha-start tokens of 1+ word chars (letters, digits, underscore),
+# with internal hyphens allowed so entity names like "tapps-brain" survive
+# intact instead of being mangled to a suffix ("brain").
+# Subject/object word runs must not absorb conjunctions or other relation
+# verbs — without the lookahead, "The backend uses Redis and the frontend
+# uses GraphQL" collapses into one garbage triple instead of two facts.
+_STOPWORD = r"(?:and|but|or|manages|owns|handles|uses|depends|creates|provides)"
+# \b prefix: tokens must start at a word boundary, otherwise the engine
+# recovers from an excluded stopword by matching its suffix ("and" -> "nd").
+_WORD = r"\b(?!" + _STOPWORD + r"\b)[A-Za-z]\w*(?:-\w+)*"
 _SUBJ = r"((?:" + _WORD + r"\s+){0,5}" + _WORD + r")"
 _OBJ = r"(" + _WORD + r"(?:\s+" + _WORD + r"){0,7})"
+
+# Split values into sentence/line segments before matching so unpunctuated
+# newlines (headings, agent notes) don't merge into one clause.
+_SEGMENT_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n+")
 
 _RELATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(_SUBJ + r"\s+manages\s+" + _OBJ, re.I), "manages"),
@@ -96,8 +107,9 @@ _RELATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(_SUBJ + r"\s+provides\s+" + _OBJ, re.I), "provides"),
 ]
 
-# Query patterns that indicate relationship lookups
-_QUERY_PATTERNS: list[tuple[re.Pattern[str], str | None]] = [
+# Query patterns that indicate relationship lookups. Every pattern carries
+# a concrete predicate — there is no "match any predicate" query form.
+_QUERY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?:who|what)\s+handles\s+(.+)", re.I), "handles"),
     (re.compile(r"(?:who|what)\s+manages\s+(.+)", re.I), "manages"),
     (re.compile(r"(?:who|what)\s+owns\s+(.+)", re.I), "owns"),
@@ -153,43 +165,56 @@ def extract_relations(
     if not value or not value.strip():
         return []
 
+    # Collect (text_position, subject, predicate, object) candidates across
+    # all patterns, then cap in *text order* — filling the cap in pattern-list
+    # order starved later predicates ("depends on" stated in the first
+    # sentence lost to a fifth "manages" from the last sentence).
+    candidates: list[tuple[int, str, str, str]] = []
+    seg_start = 0
+    segments: list[tuple[int, str]] = []
+    for boundary in _SEGMENT_BOUNDARY.finditer(value):
+        segments.append((seg_start, value[seg_start : boundary.start()]))
+        seg_start = boundary.end()
+    segments.append((seg_start, value[seg_start:]))
+
+    for offset, segment in segments:
+        for pattern, predicate in _RELATION_PATTERNS:
+            for match in pattern.finditer(segment):
+                subject = _clean_entity(match.group(1))
+                obj = _clean_entity(match.group(2))
+
+                # Skip empty or trivially short entities
+                if (
+                    len(subject) < RelationEntry.MIN_ENTITY_LENGTH
+                    or len(obj) < RelationEntry.MIN_ENTITY_LENGTH
+                ):
+                    continue
+
+                candidates.append((offset + match.start(), subject, predicate, obj))
+
+    candidates.sort(key=lambda c: c[0])
+
     results: list[RelationEntry] = []
     seen_triples: set[tuple[str, str, str]] = set()
+    for _, subject, predicate, obj in candidates:
+        triple_key = (subject.lower(), predicate.lower(), obj.lower())
+        if triple_key in seen_triples:
+            continue
+        seen_triples.add(triple_key)
 
-    for pattern, predicate in _RELATION_PATTERNS:
-        for match in pattern.finditer(value):
-            subject = _clean_entity(match.group(1))
-            obj = _clean_entity(match.group(2))
-
-            # Skip empty or trivially short entities
-            if (
-                len(subject) < RelationEntry.MIN_ENTITY_LENGTH
-                or len(obj) < RelationEntry.MIN_ENTITY_LENGTH
-            ):
-                continue
-
-            triple_key = (subject.lower(), predicate.lower(), obj.lower())
-            if triple_key in seen_triples:
-                continue
-            seen_triples.add(triple_key)
-
-            extra: dict[str, Any] = {}
-            if created_at is not None:
-                extra["created_at"] = created_at
-            results.append(
-                RelationEntry(
-                    subject=subject,
-                    predicate=predicate,
-                    object_entity=obj,
-                    source_entry_keys=[entry_key],
-                    confidence=0.8,
-                    **extra,
-                )
+        extra: dict[str, Any] = {}
+        if created_at is not None:
+            extra["created_at"] = created_at
+        results.append(
+            RelationEntry(
+                subject=subject,
+                predicate=predicate,
+                object_entity=obj,
+                source_entry_keys=[entry_key],
+                confidence=0.8,
+                **extra,
             )
-
-            if len(results) >= RelationEntry.MAX_RELATIONS_PER_ENTRY:
-                break
-
+        )
         if len(results) >= RelationEntry.MAX_RELATIONS_PER_ENTRY:
             break
 
@@ -294,10 +319,10 @@ def expand_via_relations(
     seen: set[str] = set()
 
     # --- Hop 1: direct matches -------------------------------------------------
-    hop1_subjects: list[str] = []
+    hop1_frontier: list[str] = []
     for rel in relations:
-        # Match predicate if we identified one, otherwise match any
-        if target_predicate and rel.predicate.lower() != target_predicate:
+        # Every query pattern carries a concrete predicate.
+        if rel.predicate.lower() != target_predicate:
             continue
 
         # Object matches target -> subject is the answer
@@ -306,7 +331,7 @@ def expand_via_relations(
             if subj.lower() not in seen:
                 seen.add(subj.lower())
                 expanded.append(subj)
-                hop1_subjects.append(subj)
+                hop1_frontier.append(subj)
 
         # Subject matches target -> object is related
         if rel.subject.lower() == target_lower:
@@ -314,9 +339,13 @@ def expand_via_relations(
             if obj.lower() not in seen:
                 seen.add(obj.lower())
                 expanded.append(obj)
+                # Objects join the hop-2 frontier too — otherwise expansion
+                # depth depends on edge direction (subject-side targets never
+                # reached hop 2).
+                hop1_frontier.append(obj)
 
     # --- Hop 2: entities related to hop-1 results ------------------------------
-    for hop1_entity in hop1_subjects:
+    for hop1_entity in hop1_frontier:
         hop1_lower = hop1_entity.lower()
         for rel in relations:
             # Find what hop1 entities are also connected to

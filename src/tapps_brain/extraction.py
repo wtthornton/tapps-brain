@@ -88,12 +88,14 @@ _PA_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bremind\s+me\b", re.I), "short-term"),
 ]
 
-# Sentence boundary for splitting
-_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n+")
+# Sentence boundary for splitting. The lookbehinds keep "e.g." / "i.e."
+# from being treated as sentence ends — the same abbreviation class that
+# produced false positives in contradictions._check_file_existence.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])(?<![eE]\.[gG]\.)(?<![iI]\.[eE]\.)\s+|\n+")
 
 
 def _slugify(text: str, max_len: int = 64) -> str:
-    """Convert text to a valid memory key slug (lowercase, alphanumeric, dots, hyphens)."""
+    """Convert text to a valid key slug (lowercase alphanumeric, dots, hyphens, underscores)."""
     # Normalize unicode
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("ascii", "ignore").decode("ascii")
@@ -128,8 +130,15 @@ def _truncate(value: str, max_chars: int) -> str:
         return value
     if max_chars <= _TRUNCATE_ELLIPSIS_LEN:
         return value[:max_chars]
-    cut = value[: max_chars - _TRUNCATE_ELLIPSIS_LEN].rsplit(maxsplit=1)
-    head = cut[0] if cut and cut[0] else value[: max_chars - _TRUNCATE_ELLIPSIS_LEN]
+    budget = max_chars - _TRUNCATE_ELLIPSIS_LEN
+    prefix = value[:budget]
+    if value[budget].isspace():
+        # Cut landed exactly on a word boundary — the prefix already ends
+        # with a complete word, so dropping the last word would waste budget.
+        head = prefix.rstrip()
+    else:
+        cut = prefix.rsplit(maxsplit=1)
+        head = cut[0] if cut and cut[0] else prefix
     return head + "..."
 
 

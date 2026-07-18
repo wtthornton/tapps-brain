@@ -2262,7 +2262,55 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
             from tapps_brain.relations import RelationEntry, detect_relation_cycles
 
-            cycles = detect_relation_cycles(relations)
+            # Include cached relations touching the new triples' entities so
+            # cross-entry direct cycles (k1: "A manages B", later k2:
+            # "B manages A") warn too — detection over only the fresh
+            # extractions could never see the first edge.
+            new_entities = {r.subject.lower() for r in relations} | {
+                r.object_entity.lower() for r in relations
+            }
+
+            def _as_relation(cached: object) -> RelationEntry | None:
+                # The cache holds RelationEntry objects on the extract path
+                # but raw dict rows when hydrated from the durable backend.
+                if isinstance(cached, RelationEntry):
+                    return cached
+                if isinstance(cached, dict):
+                    try:
+                        return RelationEntry.model_validate(cached)
+                    except Exception:  # malformed cached row; skip
+                        return None
+                return None
+
+            with self._serialized():
+                cached_flat = [
+                    cached
+                    for cached_key, cached_rels in self._relations.items()
+                    if cached_key != key
+                    for cached in cached_rels
+                ]
+            neighborhood = [
+                rel
+                for rel in (_as_relation(c) for c in cached_flat)
+                if rel is not None
+                and (
+                    rel.subject.lower() in new_entities
+                    or rel.object_entity.lower() in new_entities
+                )
+            ]
+
+            # Neighborhood first: a direct cycle then reports the *new* edge.
+            # Filter to new triples so pre-existing self-loops/cycles in the
+            # neighborhood don't re-warn on every unrelated save.
+            new_triples = {
+                (r.subject.lower(), r.predicate.lower(), r.object_entity.lower())
+                for r in relations
+            }
+            cycles = [
+                c
+                for c in detect_relation_cycles(neighborhood + relations)
+                if (c[0].lower(), c[1].lower(), c[2].lower()) in new_triples
+            ]
             if cycles:
                 logger.warning(
                     "relations.cycles_detected",
