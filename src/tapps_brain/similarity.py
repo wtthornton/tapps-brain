@@ -203,7 +203,7 @@ def compute_similarity_with_embeddings(
     entry_a: MemoryEntry,
     entry_b: MemoryEntry,
     *,
-    tag_weight: float = DEFAULT_EMBEDDING_TAG_WEIGHT,
+    tag_weight: float | None = None,
     text_weight: float = DEFAULT_TEXT_WEIGHT,
     embedding_weight: float = DEFAULT_EMBEDDING_WEIGHT,
 ) -> SimilarityResult:
@@ -218,7 +218,9 @@ def compute_similarity_with_embeddings(
     Args:
         entry_a: First memory entry.
         entry_b: Second memory entry.
-        tag_weight: Weight for Jaccard tag similarity in the embedding path.
+        tag_weight: Weight for Jaccard tag similarity. ``None`` (default) picks
+            the path-appropriate default: 0.3 on the embedding path, 0.4 on the
+            fallback path. An explicit value is honoured on both paths.
         text_weight: Weight for TF-cosine text similarity in the fallback path.
         embedding_weight: Weight for embedding cosine similarity (primary signal).
 
@@ -231,14 +233,15 @@ def compute_similarity_with_embeddings(
     text_score = text_similarity(entry_a, entry_b)
 
     if entry_a.embedding and entry_b.embedding:
+        emb_tag_weight = DEFAULT_EMBEDDING_TAG_WEIGHT if tag_weight is None else tag_weight
         emb_score = embedding_cosine_similarity(entry_a.embedding, entry_b.embedding)
         # Primary: embedding cosine; secondary: Jaccard tag similarity.
-        total = embedding_weight + tag_weight
+        total = embedding_weight + emb_tag_weight
         if total <= 0.0:
             # Degenerate weights — fall back to equal blend of available signals.
             combined = 0.5 * emb_score + 0.5 * tag_score
         else:
-            combined = (emb_score * embedding_weight + tag_score * tag_weight) / total
+            combined = (emb_score * embedding_weight + tag_score * emb_tag_weight) / total
         return SimilarityResult(
             entry_key=entry_b.key,
             combined_score=round(combined, 4),
@@ -248,16 +251,12 @@ def compute_similarity_with_embeddings(
             used_embeddings=True,
         )
 
-    # Fallback: Jaccard tag + TF-cosine (original path).
-    # Honour an explicitly passed non-default *tag_weight*; otherwise use the
-    # text-path default (0.4) rather than the embedding-path default (0.3).
-    fallback_tag_weight = (
-        tag_weight if tag_weight != DEFAULT_EMBEDDING_TAG_WEIGHT else DEFAULT_TAG_WEIGHT
-    )
+    # Fallback: Jaccard tag + TF-cosine (original path). ``None`` means the
+    # caller did not choose a weight, so use the text-path default (0.4).
     return compute_similarity(
         entry_a,
         entry_b,
-        tag_weight=fallback_tag_weight,
+        tag_weight=DEFAULT_TAG_WEIGHT if tag_weight is None else tag_weight,
         text_weight=text_weight,
     )
 
@@ -267,7 +266,7 @@ def find_similar(
     candidates: list[MemoryEntry],
     *,
     threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-    tag_weight: float = DEFAULT_TAG_WEIGHT,
+    tag_weight: float | None = None,
     text_weight: float = DEFAULT_TEXT_WEIGHT,
     exclude_self: bool = True,
     use_embeddings: bool = True,
@@ -278,7 +277,9 @@ def find_similar(
         entry: The reference entry to compare against.
         candidates: List of candidate entries to check.
         threshold: Minimum combined similarity score (default 0.7).
-        tag_weight: Weight for tag similarity (default 0.4).
+        tag_weight: Weight for tag similarity. ``None`` (default) uses the
+            path-appropriate default (0.3 embedding path, 0.4 text path); an
+            explicit value is honoured on both paths.
         text_weight: Weight for text similarity (default 0.6).
         exclude_self: If True, exclude entries with the same key.
         use_embeddings: When True (default), use :func:`compute_similarity_with_embeddings`
@@ -296,15 +297,10 @@ def find_similar(
             continue
 
         if use_embeddings and entry.embedding and candidate.embedding:
-            # Embedding path uses its own tag/embedding weight defaults unless
-            # the caller overrode tag_weight away from the text-path default.
-            emb_tag = (
-                tag_weight if tag_weight != DEFAULT_TAG_WEIGHT else DEFAULT_EMBEDDING_TAG_WEIGHT
-            )
             result = compute_similarity_with_embeddings(
                 entry,
                 candidate,
-                tag_weight=emb_tag,
+                tag_weight=tag_weight,
                 text_weight=text_weight,
             )
         else:
@@ -313,7 +309,7 @@ def find_similar(
             result = compute_similarity(
                 entry,
                 candidate,
-                tag_weight=tag_weight,
+                tag_weight=DEFAULT_TAG_WEIGHT if tag_weight is None else tag_weight,
                 text_weight=text_weight,
             )
 
@@ -334,7 +330,7 @@ def find_consolidation_groups(
     entries: list[MemoryEntry],
     *,
     threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-    tag_weight: float = DEFAULT_TAG_WEIGHT,
+    tag_weight: float | None = None,
     text_weight: float = DEFAULT_TEXT_WEIGHT,
     min_group_size: int = 2,
     use_embeddings: bool = True,
@@ -347,7 +343,7 @@ def find_consolidation_groups(
     Args:
         entries: All memory entries to analyze.
         threshold: Minimum similarity to include in group.
-        tag_weight: Weight for tag similarity.
+        tag_weight: Weight for tag similarity (``None`` = path-appropriate default).
         text_weight: Weight for text similarity.
         min_group_size: Minimum entries required to form a group.
         use_embeddings: When True (default), prefer embedding cosine similarity

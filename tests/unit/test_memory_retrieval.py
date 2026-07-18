@@ -544,12 +544,12 @@ class TestBM25Integration:
         # First search builds index for 1 entry
         store_v1 = _make_store(entries_v1)
         retriever.search("alpha", store_v1)
-        assert retriever._bm25_corpus_size == 1
+        assert len(retriever._bm25_entries) == 1
 
         # Second search with 2 entries should rebuild
         store_v2 = _make_store(entries_v2)
         retriever.search("beta", store_v2)
-        assert retriever._bm25_corpus_size == 2
+        assert len(retriever._bm25_entries) == 2
 
     def test_empty_store_returns_no_results(self) -> None:
         """An empty store should return no results."""

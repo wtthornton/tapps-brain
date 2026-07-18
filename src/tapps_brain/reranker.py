@@ -164,25 +164,37 @@ def _flashrank_available() -> bool:
     return importlib.util.find_spec("flashrank") is not None
 
 
+# Process-wide FlashRank reranker cache keyed by model name. A fresh instance
+# per recall would defeat the sticky-degradation flag (a broken model download
+# would be retried on every call) and reload the model repeatedly — mirror the
+# get_embedding_provider singleton instead.
+_FLASHRANK_CACHE: dict[str, FlashRankReranker] = {}
+
+
 def get_reranker(
     enabled: bool,
     model: str | None = None,
 ) -> Reranker:
-    """Create a Reranker based on availability.
+    """Create (or reuse) a Reranker based on availability.
 
     Args:
         enabled: Whether reranking is enabled.
         model: Optional FlashRank model name override.
 
     Returns:
-        FlashRankReranker when enabled and flashrank installed;
-        NoopReranker otherwise.
+        A process-cached FlashRankReranker when enabled and flashrank is
+        installed; NoopReranker otherwise.
     """
     if not enabled:
         return NoopReranker()
 
     if _flashrank_available():
-        return FlashRankReranker(model=model or _DEFAULT_FLASHRANK_MODEL)
+        model_name = model or _DEFAULT_FLASHRANK_MODEL
+        cached = _FLASHRANK_CACHE.get(model_name)
+        if cached is None:
+            cached = FlashRankReranker(model=model_name)
+            _FLASHRANK_CACHE[model_name] = cached
+        return cached
 
     # WARNING (not DEBUG): the operator explicitly enabled reranking, so the
     # degradation must be visible at default log levels (same rationale as

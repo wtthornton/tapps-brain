@@ -209,14 +209,18 @@ class InjectionConfig:
     Standalone replacement for reading TappsMCP settings.
     Consumers pass this to control reranker and token budget behavior.
 
+    ``min_score``: optional composite-score floor for injected results. When
+    ``None``, the module default (0.2) applies. ``RecallConfig.min_score``
+    (profile ``recall.min_score``) is threaded through here.
+
     ``count_tokens``: optional callable ``(text) -> int`` for tokenizer-aligned
     budgets (caller supplies tiktoken or another backend). When ``None``, the
     built-in ``estimate_tokens`` heuristic is used.
     """
 
     reranker_enabled: bool = True
-    reranker_top_k: int = 10
     injection_max_tokens: int = 2000
+    min_score: float | None = None
     count_tokens: Callable[[str], int] | None = None
 
 
@@ -387,9 +391,16 @@ def inject_memories(  # noqa: PLR0915
     visible = _visible_entry_count(store, memory_group)
     n_retriever = len(results)
 
-    # Filter by minimum score
-    dropped_below_min_score = n_retriever - sum(1 for r in results if r.score >= _MIN_SCORE)
-    results = [r for r in results if r.score >= _MIN_SCORE]
+    # Recall diagnostics: counts of candidates the retriever dropped for
+    # lifecycle staleness / decayed confidence during this search.
+    filter_stats = getattr(retriever, "last_filter_stats", None) or {}
+    dropped_stale_count = int(filter_stats.get("dropped_stale", 0))
+    dropped_low_conf_count = int(filter_stats.get("dropped_low_confidence", 0))
+
+    # Filter by minimum score (config/profile override, else module default)
+    min_score = config.min_score if config.min_score is not None else _MIN_SCORE
+    dropped_below_min_score = n_retriever - sum(1 for r in results if r.score >= min_score)
+    results = [r for r in results if r.score >= min_score]
     telem["dropped_below_min_score"] = dropped_below_min_score
 
     if not results:
@@ -445,9 +456,12 @@ def inject_memories(  # noqa: PLR0915
         )
 
     # Token budget split across categories (STORY-076.3: memories/entities/edges/evidence).
+    # Evidence retrieval is not implemented yet (``evidence`` is always []), so its
+    # reserved fraction is folded into the memory budget — otherwise 10% of
+    # ``injection_max_tokens`` would be permanently unspendable.
     max_tokens = config.injection_max_tokens
-    frac_mem, frac_ent, frac_edge, _frac_ev = _budget_fractions(scoring_config)
-    memory_budget = max(1, int(max_tokens * frac_mem))
+    frac_mem, frac_ent, frac_edge, frac_ev = _budget_fractions(scoring_config)
+    memory_budget = max(1, int(max_tokens * (frac_mem + frac_ev)))
     entity_budget = max(1, int(max_tokens * frac_ent))
     edge_budget = max(1, int(max_tokens * frac_edge))
 
@@ -504,8 +518,6 @@ def inject_memories(  # noqa: PLR0915
     entity_views: list[KGEntityView] = []
     edge_views: list[KGEdgeView] = []
     graph_hits = 0
-    dropped_stale_count = 0
-    dropped_low_conf_count = 0
 
     if kg_backend is not None and kg_analysis.mentions:
         # Build KGEntityView objects from resolved mentions (entity budget).

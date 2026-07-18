@@ -98,14 +98,23 @@ _MIN_STEM_LENGTH = 3
 
 
 def stem(word: str) -> str:
-    """Apply basic suffix stripping to *word*.
+    """Apply basic suffix stripping to *word* until a fixpoint.
 
-    Strips the first matching suffix from ``_SUFFIX_ORDER`` provided
-    the remaining stem has at least ``_MIN_STEM_LENGTH`` characters.
+    Repeatedly strips the first matching suffix from ``_SUFFIX_ORDER``
+    (provided the remaining stem has at least ``_MIN_STEM_LENGTH``
+    characters) until no suffix matches. Iterating to a fixpoint keeps
+    the function idempotent so query and document tokens converge to the
+    same stem — e.g. ``settings`` → ``setting`` → ``sett`` matches the
+    query token ``setting`` → ``sett`` (single-pass stripping left them
+    at ``setting`` vs ``sett`` and the terms never matched).
     """
-    for suffix in _SUFFIX_ORDER:
-        if word.endswith(suffix) and len(word) - len(suffix) >= _MIN_STEM_LENGTH:
-            return word[: -len(suffix)]
+    prev = ""
+    while word != prev:
+        prev = word
+        for suffix in _SUFFIX_ORDER:
+            if word.endswith(suffix) and len(word) - len(suffix) >= _MIN_STEM_LENGTH:
+                word = word[: -len(suffix)]
+                break
     return word
 
 

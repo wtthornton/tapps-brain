@@ -211,7 +211,8 @@ def score_edge(edge: dict[str, Any]) -> float:
     confidence = float(edge.get("edge_confidence") or 0.0)
     confidence = max(0.0, min(1.0, confidence))
 
-    # Recency: half-life ~30 days for edges; 1.0 = just reinforced, 0.0 = very stale
+    # Recency: exp(-age/30) — a 30-day 1/e lifetime (half-life ≈ 21 days);
+    # 1.0 = just reinforced, → 0.0 as the edge goes stale.
     last_reinforced = edge.get("last_reinforced")
     if last_reinforced is not None:
         try:
@@ -295,6 +296,29 @@ def _hybrid_adaptive_fusion_enabled(hybrid_config: object | None) -> bool:
     return raw is not False
 
 
+def _build_temporal_kwargs(
+    *,
+    since: str | None,
+    until: str | None,
+    time_field: str,
+    as_of: str | None,
+    include_superseded: bool,
+) -> dict[str, Any]:
+    """Assemble the temporal kwargs forwarded to candidate retrieval."""
+    kw: dict[str, Any] = {}
+    if since is not None:
+        kw["since"] = since
+    if until is not None:
+        kw["until"] = until
+    if time_field != "created_at":
+        kw["time_field"] = time_field
+    if as_of is not None:
+        kw["as_of"] = as_of
+    if include_superseded:
+        kw["include_superseded"] = True
+    return kw
+
+
 # ---------------------------------------------------------------------------
 # MemoryRetriever
 # ---------------------------------------------------------------------------
@@ -326,8 +350,13 @@ class MemoryRetriever:
             camel_case_tokenization=_lex.camel_case_tokenization,
         )
         self._bm25_entries: list[MemoryEntry] = []
-        self._bm25_corpus_size: int = 0
-        self._bm25_fingerprint: int = 0
+        # Per-group index cache: group_key -> (scorer, entries, fingerprint).
+        # Keying by group prevents full re-tokenization thrash when grouped and
+        # ungrouped queries alternate (they index different corpora).
+        self._bm25_cache: dict[str | None, tuple[BM25Scorer, list[MemoryEntry], int]] = {}
+        # Fallback corpus-embedding cache: (group_key, fingerprint) -> embeddings.
+        self._emb_cache_key: tuple[str | None, int] | None = None
+        self._emb_cache: list[list[float]] = []
         self._semantic_enabled = semantic_enabled
         self._hybrid_config = hybrid_config
         self._reranker = reranker
@@ -386,6 +415,9 @@ class MemoryRetriever:
 
         # EPIC-042.6: set by ``search()`` when rerank runs; read by injection/recall telemetry.
         self.last_rerank_stats: dict[str, Any] | None = None
+        # Set by ``search()``: counts of candidates dropped by lifecycle status /
+        # decayed confidence, read by injection recall diagnostics.
+        self.last_filter_stats: dict[str, int] | None = None
 
     # ------------------------------------------------------------------
     # Private helpers for search()
@@ -408,7 +440,13 @@ class MemoryRetriever:
         Returns a list of ``(entry, relevance_raw, eff_conf, stale_flag,
         temporally_valid)`` tuples for candidates that pass all filters.
         Extracted from ``search()`` to reduce its cyclomatic complexity.
+
+        Side effect: sets ``self.last_filter_stats`` with ``dropped_stale``
+        (lifecycle-status exclusions) and ``dropped_low_confidence`` (decayed
+        confidence below the floor) so recall diagnostics can report them.
         """
+        dropped_stale = 0
+        dropped_low_confidence = 0
         pending: list[tuple[MemoryEntry, float, float, bool, bool]] = []
         for entry, relevance_raw in candidates:
             # Filter source entries of consolidated memories (Epic 58.5)
@@ -419,6 +457,7 @@ class MemoryRetriever:
             if not include_stale:
                 entry_status = getattr(entry, "status", MemoryStatus.active)
                 if entry_status in _EXCLUDED_LIFECYCLE_STATUSES:
+                    dropped_stale += 1
                     continue
 
             # Filter contradicted entries (sources already handled above)
@@ -434,6 +473,7 @@ class MemoryRetriever:
             # Calculate effective confidence
             eff_conf = calculate_decayed_confidence(entry, self._config, now=now)
             if eff_conf < min_confidence:
+                dropped_low_confidence += 1
                 continue
 
             stale_flag = is_stale(entry, self._config, now=now)
@@ -442,6 +482,10 @@ class MemoryRetriever:
                 stale_flag = True
 
             pending.append((entry, relevance_raw, eff_conf, stale_flag, temporally_valid))
+        self.last_filter_stats = {
+            "dropped_stale": dropped_stale,
+            "dropped_low_confidence": dropped_low_confidence,
+        }
         return pending
 
     def _build_scored_memory_item(
@@ -487,16 +531,20 @@ class MemoryRetriever:
             + self._w_provenance * provenance_trust
         )
 
-        # M2: Apply per-source trust multiplier (same key, no double-lookup needed)
-        composite *= self._source_trust.get(source_key, 1.0)
+        # M2: Apply per-source trust multiplier — but only when the profile does
+        # not already blend provenance as a weighted signal, otherwise the same
+        # trust value would be counted twice (added and then multiplied).
+        if self._w_provenance == 0.0:
+            composite *= self._source_trust.get(source_key, 1.0)
 
         # Penalty for superseded entries included via include_superseded
         if not temporally_valid:
             composite *= 0.5
 
-        # Bonus for exact key match (capped at 1.0 to keep score in valid range)
+        # Bonus for exact key match. Capped at 1.0, but never *reduces* a score
+        # that legitimately exceeds 1.0 (profile weight sums may reach 1.05).
         if entry.key == query.lower().replace(" ", "-"):
-            composite = min(composite + 0.1, 1.0)
+            composite = max(composite, min(composite + 0.1, 1.0))
 
         return ScoredMemory(
             entry=entry,
@@ -557,16 +605,18 @@ class MemoryRetriever:
                 forwarded to the store's candidate search (Issue #70).
             time_field: Column the ``since``/``until`` window filters on —
                 ``created_at`` (default), ``updated_at``, or ``last_accessed``.
-            memory_filter: Optional structured pre-filter applied before BM25/vector scoring
-                (TAP-733).  When ``None`` or all fields are unset, no pre-filtering is done
-                (preserves existing behaviour).  Filters are applied as hard AND conditions
-                over the full candidate pool *before* IDF / vector scoring — cheaper fields
-                (tier, memory_class, tags) narrow the pool first.
+            memory_filter: Optional structured filter (TAP-733). When ``None`` or all
+                fields are unset, no filtering is done (preserves existing behaviour).
+                Filters are applied as hard AND conditions over the retrieved candidate
+                pool — after BM25/vector candidate scoring but before composite ranking.
+                Note: in hybrid mode the pool is already truncated to the fusion top-k,
+                so a narrow filter can return fewer results than exist in the store.
 
         Returns:
             Scored memories sorted by composite score (descending).
         """
         self.last_rerank_stats = None
+        self.last_filter_stats = None
         if not query or not query.strip():
             return []
         # include_historical is an alias for include_superseded (GitHub #29)
@@ -585,14 +635,17 @@ class MemoryRetriever:
         if self._relations_enabled and self._expand_queries:
             effective_query = self._expand_query_via_relations(query, store)
 
-        # Epic 65.8: hybrid path when semantic enabled
-        _temporal_kw: dict[str, Any] = {}
-        if since is not None:
-            _temporal_kw["since"] = since
-        if until is not None:
-            _temporal_kw["until"] = until
-        if time_field != "created_at":
-            _temporal_kw["time_field"] = time_field
+        # Epic 65.8: hybrid path when semantic enabled.
+        # as_of / include_superseded are forwarded so the FTS path honours
+        # point-in-time and historical queries the same way the ranking
+        # filters below do.
+        _temporal_kw = _build_temporal_kwargs(
+            since=since,
+            until=until,
+            time_field=time_field,
+            as_of=as_of,
+            include_superseded=include_superseded,
+        )
 
         if self._semantic_enabled:
             candidates = self._get_hybrid_candidates(
@@ -603,10 +656,17 @@ class MemoryRetriever:
                 effective_query, store, memory_group=effective_group, **_temporal_kw
             )
 
-        # TAP-733: Apply structured pre-filters before BM25/vector scoring.
-        # This narrows the candidate pool using cheap equality checks on structured
-        # fields (tier, memory_class, tags, min_confidence) so that IDF and vector
-        # scoring only run over the relevant subset.
+        # Enforce the since/until window on every channel. The FTS path applies
+        # it in SQL, but the vector channel and the full-scan fallback do not —
+        # re-checking here keeps the documented contract on all paths.
+        if since is not None or until is not None:
+            candidates = self._filter_time_window(
+                candidates, store, since=since, until=until, time_field=time_field
+            )
+
+        # TAP-733: Apply structured filters to the candidate pool using cheap
+        # equality checks on structured fields (tier, memory_class, tags,
+        # min_confidence) before composite ranking.
         if memory_filter is not None:
             filtered_entries = self._apply_filters([e for e, _ in candidates], memory_filter)
             filtered_keys = {e.key for e in filtered_entries}
@@ -730,20 +790,28 @@ class MemoryRetriever:
             return scored
 
         key_to_scored = {sm.entry.key: sm for sm in scored}
+        # The noop provider is a pure passthrough: it preserves order but its
+        # "scores" are just positions (1.0, 1-1/n, …). Overwriting the composite
+        # score with those would make downstream min-score gates vacuous and
+        # inflate top_score telemetry, so keep the original scores for noop.
+        keep_original_scores = self._reranker_provider == "noop"
         result: list[ScoredMemory] = []
         for key, rerank_score in reranked:
             sm = key_to_scored.get(key)
             if sm is not None:
-                # Use reranker score as primary relevance; preserve other fields
-                result.append(
-                    ScoredMemory(
-                        entry=sm.entry,
-                        score=round(rerank_score, 4),
-                        effective_confidence=sm.effective_confidence,
-                        bm25_relevance=sm.bm25_relevance,
-                        stale=sm.stale,
+                if keep_original_scores:
+                    result.append(sm)
+                else:
+                    # Use reranker score as primary relevance; preserve other fields
+                    result.append(
+                        ScoredMemory(
+                            entry=sm.entry,
+                            score=round(rerank_score, 4),
+                            effective_confidence=sm.effective_confidence,
+                            bm25_relevance=sm.bm25_relevance,
+                            stale=sm.stale,
+                        )
                     )
-                )
         # Append any from original not in reranker result (e.g. API dropped some)
         seen = {sm.entry.key for sm in result}
         for sm in scored:
@@ -822,6 +890,66 @@ class MemoryRetriever:
         return query
 
     # -----------------------------------------------------------------------
+    # Temporal window enforcement (Issue #70)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _filter_time_window(
+        candidates: list[tuple[MemoryEntry, float]],
+        store: MemoryStore,
+        *,
+        since: str | None,
+        until: str | None,
+        time_field: str,
+    ) -> list[tuple[MemoryEntry, float]]:
+        """Drop candidates whose *time_field* falls outside ``[since, until)``.
+
+        Accepts the same values as ``store.search`` — ISO-8601 strings or
+        relative shorthands (``7d`` / ``2w`` / ``1m``) when the store exposes
+        ``_parse_relative_time``. Entries with a missing or unparseable
+        timestamp are kept (defensive — never silently lose data on a
+        malformed row).
+        """
+
+        def _parse(value: str | None) -> datetime | None:
+            if value is None:
+                return None
+            expand = getattr(store, "_parse_relative_time", None)
+            raw = expand(value) if callable(expand) else value
+            try:
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+            return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+        lo = _parse(since)
+        hi = _parse(until)
+        if lo is None and hi is None:
+            return candidates
+
+        field_name = time_field if time_field in {"updated_at", "last_accessed"} else "created_at"
+        kept: list[tuple[MemoryEntry, float]] = []
+        for entry, score in candidates:
+            raw_ts = getattr(entry, field_name, None)
+            ts: datetime | None = None
+            if isinstance(raw_ts, str) and raw_ts:
+                try:
+                    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    ts = None
+                if ts is not None and ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+            if ts is None:
+                kept.append((entry, score))
+                continue
+            if lo is not None and ts < lo:
+                continue
+            if hi is not None and ts >= hi:
+                continue
+            kept.append((entry, score))
+        return kept
+
+    # -----------------------------------------------------------------------
     # TAP-733: Structured pre-filter
     # -----------------------------------------------------------------------
 
@@ -870,17 +998,40 @@ class MemoryRetriever:
         """Compute a fingerprint that changes when any entry is added, removed, or updated."""
         return hash(tuple((e.key, e.updated_at if e.updated_at else "") for e in entries))
 
-    def _ensure_bm25_index(self, entries: list[MemoryEntry]) -> None:
-        """Build or rebuild the BM25 index when the corpus changes."""
+    def _ensure_bm25_index(
+        self, entries: list[MemoryEntry], *, group_key: str | None = None
+    ) -> None:
+        """Build or rebuild the BM25 index for *group_key* when its corpus changes.
+
+        Indexes are cached per ``group_key`` (``None`` = full corpus) so that
+        alternating grouped and ungrouped queries do not thrash a single
+        shared index with full re-tokenization on every call.
+        """
         fingerprint = self._corpus_fingerprint(entries)
-        if len(entries) == self._bm25_corpus_size and fingerprint == self._bm25_fingerprint:
-            return
+        cached = self._bm25_cache.get(group_key)
+        if cached is not None:
+            scorer, cached_entries, cached_fp = cached
+            if len(cached_entries) == len(entries) and cached_fp == fingerprint:
+                self._bm25 = scorer
+                self._bm25_entries = cached_entries
+                return
+            scorer_to_use = scorer
+        elif not self._bm25_cache:
+            # First corpus indexed by this retriever: reuse the constructor-built
+            # scorer so callers/tests holding a reference to ``_bm25`` see it.
+            scorer_to_use = self._bm25
+        else:
+            scorer_to_use = BM25Scorer(
+                apply_stem=self._bm25.apply_stem,
+                ascii_fold=self._bm25.ascii_fold,
+                camel_case_tokenization=self._bm25.camel_case_tokenization,
+            )
         documents = [self._entry_to_document(e) for e in entries]
-        self._bm25.build_index(documents)
+        scorer_to_use.build_index(documents)
+        self._bm25 = scorer_to_use
         self._bm25_entries = list(entries)
-        self._bm25_corpus_size = len(entries)
-        self._bm25_fingerprint = fingerprint
-        logger.debug("bm25_index_rebuilt", corpus_size=self._bm25_corpus_size)
+        self._bm25_cache[group_key] = (scorer_to_use, self._bm25_entries, fingerprint)
+        logger.debug("bm25_index_rebuilt", corpus_size=len(entries), group_key=group_key)
 
     # -----------------------------------------------------------------------
     # Candidate retrieval
@@ -895,6 +1046,8 @@ class MemoryRetriever:
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
+        as_of: str | None = None,
+        include_superseded: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
@@ -902,6 +1055,11 @@ class MemoryRetriever:
         first for candidate filtering, then scores them using BM25. Falls
         back to full in-memory BM25 scan if FTS returns no results, and to
         word overlap if BM25 scoring fails entirely.
+
+        ``as_of`` / ``include_superseded`` are forwarded to the store so the
+        FTS channel honours point-in-time and historical queries — otherwise
+        entries valid at *as_of* but expired now would be filtered at the DB
+        before ranking ever sees them.
         """
         # Try FTS via store.search() for candidate filtering
         try:
@@ -911,6 +1069,8 @@ class MemoryRetriever:
                 since=since,
                 until=until,
                 time_field=time_field,
+                as_of=as_of,
+                include_historical=include_superseded,
             )
             if fts_results:
                 results = self._bm25_score_entries(query, fts_results, store)
@@ -933,6 +1093,8 @@ class MemoryRetriever:
         since: str | None = None,
         until: str | None = None,
         time_field: str = "created_at",
+        as_of: str | None = None,
+        include_superseded: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
 
@@ -960,21 +1122,24 @@ class MemoryRetriever:
             bm25_w, vector_w = hybrid_rrf_weights_for_query(query)
 
         bm25_keys: list[str] = []
+        bm25_candidates: list[tuple[MemoryEntry, float]] = []
         vector_keys: list[str] = []
 
         def run_bm25() -> None:
-            nonlocal bm25_keys
-            candidates = self._get_candidates(
+            nonlocal bm25_keys, bm25_candidates
+            bm25_candidates = self._get_candidates(
                 query,
                 store,
                 memory_group=memory_group,
                 since=since,
                 until=until,
                 time_field=time_field,
+                as_of=as_of,
+                include_superseded=include_superseded,
             )
             # Take top top_k_lexical by score
             sorted_cands = sorted(
-                candidates,
+                bm25_candidates,
                 key=lambda x: x[1],
                 reverse=True,
             )[:top_k_lexical]
@@ -1006,14 +1171,10 @@ class MemoryRetriever:
         )
 
         if not fused:
-            return self._get_candidates(
-                query,
-                store,
-                memory_group=memory_group,
-                since=since,
-                until=until,
-                time_field=time_field,
-            )
+            # Fusion is empty only when both channels returned nothing (or the
+            # lexical pool size is 0). Reuse the BM25 candidates already fetched
+            # by run_bm25 instead of re-running the identical search.
+            return bm25_candidates
 
         entry_by_key = {e.key: e for e in store.list_all(memory_group=memory_group)}
         max_rrf = fused[0][1]
@@ -1100,10 +1261,15 @@ class MemoryRetriever:
                     filtered: list[tuple[str, float]] = []
                     for k, s in scored_knn:
                         # Read-only hydrate — do not use get() (mutates access_count).
+                        # Guarded: one failed row load must degrade, not abort search()
+                        # (matches the hydrate in _get_hybrid_candidates).
                         entry = None
                         ensure = getattr(store, "_ensure_entry_cached", None)
                         if callable(ensure):
-                            entry = ensure(k)
+                            try:
+                                entry = ensure(k)
+                            except Exception:
+                                entry = None
                         elif hasattr(store, "_entries"):
                             entry = store._entries.get(k)
                         if entry is not None and entry.memory_group == memory_group:
@@ -1121,12 +1287,21 @@ class MemoryRetriever:
         all_entries = store.list_all(memory_group=memory_group)
         if not all_entries:
             return empty
-        texts = [self._entry_to_document(e) for e in all_entries]
-        try:
-            entry_embs = embedder.embed_batch(texts)
-        except Exception as e:
-            logger.warning("vector_search_embed_failed_batch", error=str(e), exc_info=True)
-            return empty
+        # Corpus embeddings are the most expensive computation in this module —
+        # cache them by (group, corpus fingerprint) so repeated fallback queries
+        # against an unchanged corpus do not re-embed every entry.
+        cache_key = (memory_group, self._corpus_fingerprint(all_entries))
+        if cache_key == self._emb_cache_key and len(self._emb_cache) == len(all_entries):
+            entry_embs = self._emb_cache
+        else:
+            texts = [self._entry_to_document(e) for e in all_entries]
+            try:
+                entry_embs = embedder.embed_batch(texts)
+            except Exception as e:
+                logger.warning("vector_search_embed_failed_batch", error=str(e), exc_info=True)
+                return empty
+            self._emb_cache_key = cache_key
+            self._emb_cache = entry_embs
 
         if len(entry_embs) != len(all_entries):
             return empty
@@ -1155,7 +1330,7 @@ class MemoryRetriever:
         """
         try:
             all_entries = store.list_all()
-            self._ensure_bm25_index(all_entries)
+            self._ensure_bm25_index(all_entries, group_key=None)
 
             # Build a lookup: entry key -> index in corpus
             key_to_idx = {e.key: i for i, e in enumerate(self._bm25_entries)}
@@ -1190,7 +1365,7 @@ class MemoryRetriever:
             return []
 
         try:
-            self._ensure_bm25_index(all_entries)
+            self._ensure_bm25_index(all_entries, group_key=memory_group)
             scores = self._bm25.score(query)
             return [
                 (entry, score)
@@ -1247,14 +1422,17 @@ class MemoryRetriever:
     ) -> float:
         """Normalize relevance score to 0.0-1.0 range using per-query min-max.
 
-        Returns ``(raw - rmin) / (rmax - rmin)`` clamped to [0, 1], or ``1.0``
-        when ``rmax <= rmin`` (degenerate spread) or bounds are not provided.
+        Returns ``(raw - rmin) / (rmax - rmin)`` clamped to [0, 1]. In the
+        degenerate equal-spread case (``rmax <= rmin``) returns ``1.0`` only
+        when the shared raw score is positive — an all-zero pool means no
+        candidate had any text relevance, and awarding 1.0 would grant every
+        one of them the full relevance weight.
         """
         if rmin is not None and rmax is not None:
             if rmax > rmin:
                 scaled = (raw_score - rmin) / (rmax - rmin)
                 return min(1.0, max(0.0, scaled))
-            return 1.0
+            return 1.0 if rmax > 0 else 0.0
         if raw_score <= 0:
             return 0.0
         return 1.0
@@ -1339,8 +1517,10 @@ class MemoryRetriever:
         the active scoring config, and returns a sorted list of
         :class:`ScoredEdge` objects (highest ``blended_score`` first).
 
-        Stale + contradicted + superseded edges are excluded by default;
-        ``include_historical=True`` overrides this.
+        Non-active (stale / contradicted / superseded) edges are excluded by
+        default *by the backend query* — this method forwards
+        ``include_historical`` to ``get_neighbors_multi`` and does not filter
+        edges itself; ``include_historical=True`` includes them.
 
         Args:
             entity_ids:       Resolved entity UUID strings (from :func:`analyze_query`).

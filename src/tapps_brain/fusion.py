@@ -81,7 +81,7 @@ def hybrid_rrf_weights_for_query(query: str) -> tuple[float, float]:
             "tell me ",
             "find anything ",
         )
-    ) or lower.startswith(("what's ", "how's ")):
+    ) or lower.startswith(("what's ", "how's ", "where's ", "who's ", "why's ", "when's ")):
         bias -= 1
     if any(p in lower for p in ("similar to", "anything about", "related to")):
         bias -= 1
@@ -90,9 +90,13 @@ def hybrid_rrf_weights_for_query(query: str) -> tuple[float, float]:
         bias += 1
     if "::" in q or "->" in q:
         bias += 1
-    if re.search(r"\.\w{2,6}\b", q):
+    # File-extension-like suffix: require a letter after the dot so plain
+    # decimal numbers ("3.14") do not read as code-like.
+    if re.search(r"\.[A-Za-z]\w{1,5}\b", q):
         bias += 1
-    if any(re.match(r"^[A-Za-z]+[A-Z][a-zA-Z0-9]*", t) for t in tokens):
+    # camelCase: a lowercase→uppercase transition. ALL-CAPS words ("SELECT",
+    # "SQL") are ordinary prose/acronyms, not code identifiers.
+    if any(re.search(r"[a-z][A-Z]", t) for t in tokens):
         bias += 1
     if (
         sum(1 for t in tokens if any(c.isdigit() for c in t) and any(c.isalpha() for c in t))
@@ -127,7 +131,9 @@ def reciprocal_rank_fusion_weighted(
         bm25_weight / (k + rank_bm25(d)) + vector_weight / (k + rank_vector(d))
 
     with the term omitted when *d* is absent from that list. Ranks are **1-based**
-    (best document has rank 1). See module docstring for citation and notation.
+    (best document has rank 1) and computed over the deduplicated list — a key
+    repeated within one list contributes only its best rank. See module
+    docstring for citation and notation.
 
     Args:
         bm25_ranked: Entry keys ordered by BM25 relevance (best first).
@@ -148,11 +154,21 @@ def reciprocal_rank_fusion_weighted(
 
     fused: dict[str, float] = {}
 
-    for rank, key in enumerate(bm25_ranked, start=1):
-        fused[key] = fused.get(key, 0.0) + bm25_weight / (k + rank)
+    # Deduplicate within each list (first = best rank wins) so a key repeated
+    # in one channel does not accumulate multiple contributions from it, and
+    # duplicates do not inflate the ranks of the keys that follow them.
+    def _accumulate(ranked: list[str], weight: float) -> None:
+        seen: set[str] = set()
+        rank = 0
+        for key in ranked:
+            if key in seen:
+                continue
+            seen.add(key)
+            rank += 1
+            fused[key] = fused.get(key, 0.0) + weight / (k + rank)
 
-    for rank, key in enumerate(vector_ranked, start=1):
-        fused[key] = fused.get(key, 0.0) + vector_weight / (k + rank)
+    _accumulate(bm25_ranked, bm25_weight)
+    _accumulate(vector_ranked, vector_weight)
 
     return sorted(
         fused.items(),

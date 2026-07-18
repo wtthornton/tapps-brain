@@ -72,10 +72,13 @@ def tokenize_lexical(
     When *camel_case_tokenization* is True, boundaries are inserted so
     ``fooBar`` yields ``foo`` and ``bar``. Underscores and punctuation act as
     separators (``foo_bar`` → ``foo``, ``bar``).
+
+    Input is NFC-normalized first so canonically equivalent Unicode forms
+    (e.g. NFC ``é`` vs NFD ``e`` + combining accent) tokenize identically.
     """
     if not text:
         return []
-    raw = ascii_fold_text(text) if ascii_fold else text
+    raw = ascii_fold_text(text) if ascii_fold else unicodedata.normalize("NFC", text)
     raw = insert_camel_boundaries(raw) if camel_case_tokenization else raw.lower()
     return _TOKEN_RUN.findall(raw)
 
@@ -98,8 +101,8 @@ def fts_query_terms(
     s = query.strip()
     if not s:
         return []
-    if ascii_fold:
-        s = ascii_fold_text(s)
+    # NFC-normalize (or fold) so NFC/NFD forms of the same query match equally.
+    s = ascii_fold_text(s) if ascii_fold else unicodedata.normalize("NFC", s)
     chunks = re.split(r"[\s/\\]+", s) if fts_path_splits else s.split()
     terms: list[str] = []
     for ch in chunks:

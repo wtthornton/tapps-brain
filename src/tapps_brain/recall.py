@@ -45,6 +45,9 @@ T = TypeVar("T")
 
 logger = structlog.get_logger(__name__)
 
+# Default weight applied to Hive confidence when merging into local recall.
+_DEFAULT_HIVE_RECALL_WEIGHT = 0.8
+
 
 def _compute_recall_quality(
     memories: list[dict[str, object]],
@@ -136,7 +139,7 @@ class RecallOrchestrator:
         config: RecallConfig | None = None,
         decay_config: DecayConfig | None = None,
         hive_store: HiveBackend | None = None,
-        hive_recall_weight: float = 0.8,
+        hive_recall_weight: float | None = None,
         hive_agent_profile: str = "repo-brain",
         hive_agent_id: str = "unknown",
         kg_backend: KnowledgeGraphBackend | None = None,
@@ -175,6 +178,7 @@ class RecallOrchestrator:
         # weight overrides from the active profile are applied consistently.
         injection_config = InjectionConfig(
             injection_max_tokens=cfg.max_tokens,
+            min_score=cfg.min_score,
         )
         profile = getattr(self._store, "profile", None)
         scoring_config = getattr(profile, "scoring", None) if profile is not None else None
@@ -209,6 +213,7 @@ class RecallOrchestrator:
 
         # Hive recall: merge local + Hive results (EPIC-011)
         hive_count = 0
+        hive_truncated = False
         hive_quality_warning: str | None = None
         if self._hive_store is not None:
             hive_memories, hive_count, hive_search_failed = self._search_hive(
@@ -218,6 +223,11 @@ class RecallOrchestrator:
                 hive_quality_warning = "hive_search_unavailable"
             if hive_memories:
                 memories = self._merge_hive_results(memories, hive_memories)
+                # Enforce the recall token budget on the merged list — the
+                # injection budget only covered local results, so unbounded
+                # Hive additions could otherwise blow past cfg.max_tokens.
+                memories, hive_truncated = self._truncate_to_budget(memories, cfg.max_tokens)
+                hive_count = sum(1 for m in memories if m.get("source") == "hive")
                 # Rebuild section to include Hive results
                 memory_section = self._rebuild_section(memories)
 
@@ -292,7 +302,7 @@ class RecallOrchestrator:
             memories=memories,
             token_count=token_count,
             recall_time_ms=round(elapsed_ms, 2),
-            truncated=result.get("truncated", False),
+            truncated=bool(result.get("truncated", False)) or hive_truncated,
             memory_count=len(memories),
             hive_memory_count=hive_count,
             recall_diagnostics=recall_diag,
@@ -357,13 +367,19 @@ class RecallOrchestrator:
             return [], 0, False
         effective_cfg = cfg if cfg is not None else self._config
 
-        eff_weight = self._hive_recall_weight
-        _getter = getattr(self._store, "get_hive_recall_weight", None)
-        if callable(_getter):
-            try:
-                eff_weight = float(_getter())
-            except (TypeError, ValueError):
-                eff_weight = self._hive_recall_weight
+        # An explicitly passed constructor weight wins; otherwise consult the
+        # store's profile-backed getter, falling back to the 0.8 default.
+        # (Previously the getter unconditionally shadowed the constructor arg.)
+        if self._hive_recall_weight is not None:
+            eff_weight = self._hive_recall_weight
+        else:
+            eff_weight = _DEFAULT_HIVE_RECALL_WEIGHT
+            _getter = getattr(self._store, "get_hive_recall_weight", None)
+            if callable(_getter):
+                try:
+                    eff_weight = float(_getter())
+                except (TypeError, ValueError):
+                    eff_weight = _DEFAULT_HIVE_RECALL_WEIGHT
 
         local_keys = {str(m.get("key", "")) for m in local_memories}
 
@@ -426,6 +442,30 @@ class RecallOrchestrator:
 
         merged.sort(key=_score, reverse=True)
         return merged
+
+    @staticmethod
+    def _truncate_to_budget(
+        memories: list[dict[str, object]],
+        max_tokens: int,
+    ) -> tuple[list[dict[str, object]], bool]:
+        """Cut the merged memory list to fit *max_tokens* (estimate-based).
+
+        Walks the list in ranked order, accumulating the estimated token cost
+        of each formatted line, and stops once the budget is exceeded. Always
+        keeps at least the first memory (mirrors the injection budget rule).
+        Returns ``(kept_memories, truncated)``.
+        """
+        kept: list[dict[str, object]] = []
+        used = 0
+        for mem in memories:
+            key = str(mem.get("key", ""))
+            value = str(mem.get("value", key))
+            cost = estimate_tokens(f"- **{key}**: {value}")
+            if kept and used + cost > max_tokens:
+                break
+            kept.append(mem)
+            used += cost
+        return kept, len(kept) < len(memories)
 
     @staticmethod
     def _rebuild_section(memories: list[dict[str, object]]) -> str:
