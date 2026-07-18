@@ -330,7 +330,8 @@ def flywheel_hive_feedback_cmd(
     try:
         hs = getattr(store, "_hive_store", None)
         agg = aggregate_hive_feedback(hs)
-        proc = process_hive_feedback(hs, threshold=threshold)
+        # Reuse the aggregate built above — avoids a second 50k-row scan.
+        proc = process_hive_feedback(hs, threshold=threshold, report=agg)
         out = {"aggregate": None if agg is None else agg.model_dump(mode="json"), "process": proc}
         _output(out, as_json=as_json)
     finally:

@@ -29,6 +29,8 @@ class _GapSearchStore(Protocol):
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 _FEEDBACK_CURSOR_KEY = "feedback_cursor"
+# Persist the feedback cursor every N processed events (plus a final flush).
+_CURSOR_FLUSH_INTERVAL = 500
 
 _DEFAULT_TIER_VOLATILITY: dict[str, float] = {
     "architectural": 0.3,
@@ -92,9 +94,13 @@ def _parse_cursor(raw: str | None) -> tuple[str | None, str | None]:
         return None, None
     try:
         d = json.loads(raw)
-        return (d.get("ts"), d.get("id"))
     except (json.JSONDecodeError, TypeError):
         return None, None
+    # Valid JSON that is not an object ("123", "[1,2]") is equally corrupt —
+    # treat it like unparseable text instead of raising AttributeError below.
+    if not isinstance(d, dict):
+        return None, None
+    return (d.get("ts"), d.get("id"))
 
 
 def _event_after_cursor(ev: FeedbackEvent, ts: str | None, eid: str | None) -> bool:
@@ -147,7 +153,12 @@ class FeedbackProcessor:
             raise TypeError("store must be MemoryStore")
         raw = store._persistence.flywheel_meta_get(_FEEDBACK_CURSOR_KEY)  # type: ignore[attr-defined]
         cur_ts, cur_id = _parse_cursor(raw)
-        events = store.query_feedback(limit=100_000)
+        # Push the cursor timestamp into the query — query_feedback returns the
+        # *oldest* rows first with a LIMIT, so without `since` the fetch window
+        # never advances: past 100k total events every run would re-fetch the
+        # same already-processed oldest rows and newer events were never reached.
+        # The id tie-break for same-timestamp events stays in Python.
+        events = store.query_feedback(since=cur_ts, limit=100_000)
         events.sort(key=lambda e: (e.timestamp, e.id))
         processed = 0
         adjustments = 0
@@ -161,7 +172,12 @@ class FeedbackProcessor:
                 for ek, d_pos, d_neg in _feedback_deltas(ev):
                     if not ek:
                         continue
-                    entry = store.get(ek)
+                    # Peek without access tracking: store.get() bumps
+                    # access_count/last_accessed and persists the bump, so a
+                    # maintenance run would inflate the frequency/recency
+                    # signals of every entry with feedback — including
+                    # negatively rated ones.
+                    entry = store._ensure_entry_cached(ek)
                     if entry is None:
                         continue
                     new_pos = float(entry.positive_feedback_count) + d_pos
@@ -195,22 +211,30 @@ class FeedbackProcessor:
                 # past since-skipped events would permanently drop them on retry.
                 if since is None:
                     last_ts, last_id = ev.timestamp, ev.id
-                    if last_ts is not None and last_id is not None:
-                        try:
-                            store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
-                                _FEEDBACK_CURSOR_KEY,
-                                json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
-                            )
-                        except Exception:
-                            logger.warning(
-                                "flywheel.cursor_persist_failed",
-                                ts=last_ts,
-                                event_id=last_id,
-                                exc_info=True,
-                            )
-                            raise
+                    # Persist every N events for mid-run crash safety (deltas
+                    # are not idempotent) without one meta upsert per event.
+                    if processed % _CURSOR_FLUSH_INTERVAL == _CURSOR_FLUSH_INTERVAL - 1:
+                        self._persist_cursor(store, last_ts, last_id)
             processed += 1
+        if since is None and last_ts is not None and last_id is not None:
+            self._persist_cursor(store, last_ts, last_id)
         return {"processed_events": processed, "confidence_adjustments": adjustments}
+
+    @staticmethod
+    def _persist_cursor(store: MemoryStore, last_ts: str, last_id: str) -> None:
+        try:
+            store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
+                _FEEDBACK_CURSOR_KEY,
+                json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
+            )
+        except Exception:
+            logger.warning(
+                "flywheel.cursor_persist_failed",
+                ts=last_ts,
+                event_id=last_id,
+                exc_info=True,
+            )
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +439,7 @@ def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:
     for e in hits:
         t = _tier_str(e.tier)
         best = max(best, _TIER_GAP_WEIGHT.get(t, 1.0))
-    return best if best > 0.0 else 1.0
+    return best
 
 
 def knowledge_gap_summary_for_diagnostics(store: MemoryStore) -> str | None:
@@ -633,7 +657,10 @@ def generate_report(
         period_end=end,
     )
 
-    reg = registry or default_report_registry()
+    # Work on a copy when the caller supplied a registry — registering the
+    # config/extra sections into the caller's object made them accumulate
+    # across calls (rendered once on the first report, twice on the second, …).
+    reg = ReportRegistry(registry.sections_sorted()) if registry else default_report_registry()
     for s in cfg.custom_report_sections:
         reg.register(s)
     if extra_sections:
@@ -713,7 +740,12 @@ def aggregate_hive_feedback(
     issue_projects: dict[str, set[str]] = defaultdict(set)
 
     for r in chronological:
-        ts = str(r.get("timestamp", ""))
+        # Normalize datetime timestamps (real Postgres Hive backend returns
+        # TIMESTAMPTZ as datetime) to ISO-8601: str(datetime) uses a space
+        # separator which sorts before "T", silently dropping every same-day
+        # event from the `since` comparison below.
+        ts_raw = r.get("timestamp", "")
+        ts = ts_raw.isoformat() if hasattr(ts_raw, "isoformat") else str(ts_raw)
         if since is not None and ts < since:
             continue
         sp = str(r.get("source_project", "") or "")
@@ -774,13 +806,29 @@ class _HiveGapStoreStub:
 def process_hive_feedback(
     hive_store: Any,
     *,
-    threshold: int = 3,
+    threshold: int | None = None,
     penalty_factor: float = 0.85,
+    config: FlywheelConfig | None = None,
+    report: HiveFeedbackReport | None = None,
 ) -> dict[str, Any]:
-    """Lower Hive entry confidence when many projects report negative ratings."""
+    """Lower Hive entry confidence when many projects report negative ratings.
+
+    Args:
+        hive_store: Hive backend (or ``None`` to skip).
+        threshold: Minimum distinct projects reporting negative ratings before
+            an entry is penalized. Defaults to
+            ``FlywheelConfig.hive_negative_project_threshold``.
+        penalty_factor: Multiplier applied to the entry's confidence.
+        config: Source of the default *threshold*.
+        report: Pre-computed :class:`HiveFeedbackReport` — pass the one already
+            built for display to avoid a second 50k-row feedback scan (and the
+            non-atomicity of two independent scans).
+    """
     if hive_store is None:
         return {"updated": 0, "skipped": True}
-    rep = aggregate_hive_feedback(hive_store)
+    if threshold is None:
+        threshold = (config or FlywheelConfig()).hive_negative_project_threshold
+    rep = report if report is not None else aggregate_hive_feedback(hive_store)
     if rep is None:
         return {"updated": 0, "skipped": True}
     updated = 0

@@ -69,7 +69,9 @@ def flywheel_hive_feedback(
 
     hs = getattr(store, "_hive_store", None)
     agg = aggregate_hive_feedback(hs)
-    proc = process_hive_feedback(hs, threshold=threshold)
+    # Reuse the aggregate built above — a second scan would re-read up to 50k
+    # feedback rows and could disagree with the displayed aggregate.
+    proc = process_hive_feedback(hs, threshold=threshold, report=agg)
     return {
         "aggregate": None if agg is None else agg.model_dump(mode="json"),
         "process": proc,

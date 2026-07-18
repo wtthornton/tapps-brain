@@ -318,8 +318,8 @@ class FeedbackStore:
             conditions.append("timestamp <= %s")
             params.append(until)
 
-        # Postgres treats a negative LIMIT as LIMIT ALL — clamp so callers cannot
-        # accidentally dump the full table via a bad limit argument.
+        # Negative LIMIT is a Postgres error (LIMIT NULL is what means ALL) —
+        # clamp so <= 0 has deterministic empty-result semantics instead.
         if limit <= 0:
             return []
 
@@ -367,7 +367,10 @@ class FeedbackStore:
                     )
                 )
             except Exception:
-                logger.warning("feedback.query_row_skipped", row_id=row[0], exc_info=True)
+                # Fail-closed: one invalid row aborts the whole query (the
+                # previous event name "query_row_skipped" predated the raise
+                # and falsely implied skip-and-continue semantics).
+                logger.error("feedback.query_row_invalid", row_id=row[0], exc_info=True)
                 raise
         return results
 
@@ -379,6 +382,23 @@ class FeedbackStore:
 # ---------------------------------------------------------------------------
 # In-memory store (unit tests / no-Postgres environments)
 # ---------------------------------------------------------------------------
+
+
+def _timestamp_sort_key(ts: str) -> tuple[int, Any]:
+    """Comparable key treating equivalent ISO-8601 forms as the same instant.
+
+    Postgres ``TIMESTAMPTZ`` parses ``...Z`` and ``...+00:00`` identically,
+    but plain string comparison orders them by literal suffix (``'.' < 'Z'``),
+    so the in-memory store dropped/misordered events near a ``since``/``until``
+    bound. Unparseable strings sort after parseable ones, lexically.
+    """
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return (1, str(ts))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return (0, dt)
 
 
 class InMemoryFeedbackStore:
@@ -443,11 +463,13 @@ class InMemoryFeedbackStore:
         if session_id is not None:
             results = [e for e in results if e.session_id == session_id]
         if since is not None:
-            results = [e for e in results if e.timestamp >= since]
+            since_key = _timestamp_sort_key(since)
+            results = [e for e in results if _timestamp_sort_key(e.timestamp) >= since_key]
         if until is not None:
-            results = [e for e in results if e.timestamp <= until]
+            until_key = _timestamp_sort_key(until)
+            results = [e for e in results if _timestamp_sort_key(e.timestamp) <= until_key]
         # Match FeedbackStore: ORDER BY timestamp ASC before applying LIMIT.
-        results.sort(key=lambda e: e.timestamp)
+        results.sort(key=lambda e: _timestamp_sort_key(e.timestamp))
         return results[:limit]
 
     def close(self) -> None:
