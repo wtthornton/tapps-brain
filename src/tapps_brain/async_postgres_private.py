@@ -179,8 +179,10 @@ class AsyncPostgresPrivateBackend:
     async def load_all(self, *, limit: int | None = None) -> list[MemoryEntry]:
         """Load entries for this ``(project_id, agent_id)`` scope.
 
-        Streams rows in chunks of 1 000 to avoid materialising the full
-        result set at once.  Pass *limit* to apply early-cutoff.
+        Consumes rows in chunks of 1 000.  psycopg's default client-side
+        cursor buffers the full result set at ``execute()`` time, so chunking
+        only bounds Python ``MemoryEntry`` construction — not raw-row memory.
+        Pass *limit* to apply early-cutoff.
         """
         chunk_size = 1000
         results: list[MemoryEntry] = []
@@ -526,9 +528,14 @@ class AsyncPostgresPrivateBackend:
             until=until,
         )
         params: list[Any] = [self._project_id, self._agent_id, *extra_params, limit]
-        async with self._scoped_conn() as conn, conn.cursor() as cur:
-            await cur.execute(stmt, params)
-            rows = await cur.fetchall()
+        try:
+            async with self._scoped_conn() as conn, conn.cursor() as cur:
+                await cur.execute(stmt, params)
+                rows = await cur.fetchall()
+        except Exception:
+            # Match the sync backend's contract: log for operators, then raise.
+            logger.warning("async_postgres_private.audit_query_failed", exc_info=True)
+            raise
 
         results: list[dict[str, Any]] = []
         for r in rows:
@@ -559,13 +566,25 @@ class AsyncPostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     async def flywheel_meta_get(self, key: str) -> str | None:
-        """Flywheel meta lookup for this ``(project_id, agent_id)`` scope."""
-        async with self._scoped_conn() as conn, conn.cursor() as cur:
-            await cur.execute(
-                _sql.FLYWHEEL_META_GET_SQL,
-                (self._project_id, self._agent_id, key),
+        """Flywheel meta lookup for this ``(project_id, agent_id)`` scope.
+
+        Postgres failures log and re-raise (matching the sync backend) so
+        callers do not treat a failed cursor read as "start from beginning".
+        """
+        try:
+            async with self._scoped_conn() as conn, conn.cursor() as cur:
+                await cur.execute(
+                    _sql.FLYWHEEL_META_GET_SQL,
+                    (self._project_id, self._agent_id, key),
+                )
+                row = await cur.fetchone()
+        except Exception:
+            logger.warning(
+                "async_postgres_private.flywheel_meta_get_failed",
+                key=key,
+                exc_info=True,
             )
-            row = await cur.fetchone()
+            raise
         return str(row[0]) if row else None
 
     async def flywheel_meta_set(self, key: str, value: str) -> None:

@@ -466,13 +466,21 @@ class PrivateBackend(Protocol):
 
         Each dict contains at minimum ``key``, ``archived_at`` (ISO-8601), and
         ``byte_count``.  The ``payload`` field may be included for inspection.
+
+        Error contract is implementation-defined: the sync backend logs and
+        returns ``[]`` (best-effort, so metrics/GC reporting never block),
+        while the async-native backend propagates DB errors (da0cb4e) so HTTP
+        callers surface a real failure instead of "archive empty".
         """
         ...
 
     def total_archive_bytes(self) -> int:
         """Return ``SUM(byte_count)`` across all rows in ``gc_archive`` for this
-        ``(project_id, agent_id)`` scope.  Returns 0 on any error or when the
-        table is empty.
+        ``(project_id, agent_id)`` scope.  Returns 0 when the table is empty.
+
+        Error contract is implementation-defined: the sync backend logs and
+        returns 0 on failure (``MemoryStore.get_metrics`` must not raise),
+        while the async-native backend propagates DB errors (da0cb4e).
         """
         ...
 

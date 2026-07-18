@@ -44,8 +44,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
     from tapps_brain.models import MemoryEntry
-    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
 
 _T = TypeVar("_T")
 
@@ -259,7 +259,7 @@ class AsyncMemoryStore:
     / ``max_concurrent_reads``).  Both bounds make back-pressure explicit and
     observable via :attr:`write_queue_depth` / :attr:`read_queue_depth`.
 
-    When an :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`
+    When an :class:`~tapps_brain.async_postgres_private.AsyncPostgresPrivateBackend`
     is wired, write-path Postgres I/O also goes through the async pool instead
     of a thread-pool thread.  When no async backend is wired (sync-only embedded
     setups), writes fall back to ``to_thread`` under the same semaphore.

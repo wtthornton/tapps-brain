@@ -88,9 +88,10 @@ class TestAsyncPostgresPrivateBackendInit:
         from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
 
         backend = AsyncPostgresPrivateBackend(_make_cm(), project_id="proj", agent_id="agent")
-        # relations lock must be asyncio.Lock, not threading.Lock
+        # relations lock must be asyncio.Lock (created lazily inside a running
+        # loop by _ensure_relations_table), never threading.Lock
         assert not isinstance(backend._relations_lock, type(threading.Lock()))
-        assert isinstance(backend._relations_lock, asyncio.Lock)
+        assert backend._relations_lock is None or isinstance(backend._relations_lock, asyncio.Lock)
 
 
 class TestAsyncPostgresPrivateBackendCRUD:

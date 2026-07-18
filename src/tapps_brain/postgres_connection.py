@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -157,6 +158,10 @@ class PostgresConnectionManager:
                 f"Check TAPPS_BRAIN_PG_POOL_MIN / TAPPS_BRAIN_PG_POOL_MAX."
             )
         self._pool: Any = None
+        # Serialises first-open of the sync pool (mirrors _async_init_lock):
+        # without it two threads racing get_connection() on first use could
+        # each build a ConnectionPool and leak the loser's connections.
+        self._pool_init_lock = threading.Lock()
         # STORY-072.1: async-native pool slot.  Lifecycle is independent from
         # the sync pool — created lazily on first ``get_async_connection`` /
         # ``get_async_pool`` call inside an event loop, closed by
@@ -198,49 +203,58 @@ class PostgresConnectionManager:
         conn.commit()
 
     def _ensure_pool(self) -> None:
-        """Create the connection pool on first use (lazy initialisation)."""
+        """Create the connection pool on first use (lazy, thread-safe).
+
+        First-open is serialised behind ``_pool_init_lock`` (double-checked)
+        — the same pattern ``_ensure_async_pool`` uses — so concurrent first
+        calls from multiple threads cannot each build a pool and leak the
+        overwritten one's connections.
+        """
         if self._pool is not None:
             return
-        try:
-            from psycopg_pool import ConnectionPool
-        except ImportError:
-            raise ImportError(
-                "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
-                "Install with: pip install 'psycopg[binary]' psycopg_pool"
-            ) from None
+        with self._pool_init_lock:
+            if self._pool is not None:
+                return
+            try:
+                from psycopg_pool import ConnectionPool
+            except ImportError:
+                raise ImportError(
+                    "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
+                    "Install with: pip install 'psycopg[binary]' psycopg_pool"
+                ) from None
 
-        kwargs: dict[str, Any] = {
-            "min_size": self._min_size,
-            "max_size": self._max_size,
-            "timeout": self._connect_timeout,
-            "max_waiting": self._max_waiting,
-            "reset": self._reset_session_vars,
-        }
-        if self._idle_timeout > 0:
-            kwargs["max_idle"] = self._idle_timeout
-        if self._max_lifetime > 0:
-            kwargs["max_lifetime"] = self._max_lifetime
-        self._pool = ConnectionPool(self._dsn, **kwargs)
-        logger.info(
-            "postgres.pool_created",
-            min_size=self._min_size,
-            max_size=self._max_size,
-            max_waiting=self._max_waiting,
-            max_lifetime=self._max_lifetime,
-        )
+            kwargs: dict[str, Any] = {
+                "min_size": self._min_size,
+                "max_size": self._max_size,
+                "timeout": self._connect_timeout,
+                "max_waiting": self._max_waiting,
+                "reset": self._reset_session_vars,
+            }
+            if self._idle_timeout > 0:
+                kwargs["max_idle"] = self._idle_timeout
+            if self._max_lifetime > 0:
+                kwargs["max_lifetime"] = self._max_lifetime
+            self._pool = ConnectionPool(self._dsn, **kwargs)
+            logger.info(
+                "postgres.pool_created",
+                min_size=self._min_size,
+                max_size=self._max_size,
+                max_waiting=self._max_waiting,
+                max_lifetime=self._max_lifetime,
+            )
 
-        # TAP-512: fail fast if the connected role can bypass RLS.  RLS is
-        # only meaningful when the runtime role is non-owner with
-        # BYPASSRLS=false; deploying as the table owner (tapps_migrator) or
-        # a superuser silently disables tenant isolation.  Operators that
-        # genuinely need a privileged role (CI, dev, one-off maintenance)
-        # set TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 to acknowledge the risk.
-        try:
-            self._assert_non_privileged_role()
-        except Exception:
-            self._pool.close()
-            self._pool = None
-            raise
+            # TAP-512: fail fast if the connected role can bypass RLS.  RLS is
+            # only meaningful when the runtime role is non-owner with
+            # BYPASSRLS=false; deploying as the table owner (tapps_migrator) or
+            # a superuser silently disables tenant isolation.  Operators that
+            # genuinely need a privileged role (CI, dev, one-off maintenance)
+            # set TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 to acknowledge the risk.
+            try:
+                self._assert_non_privileged_role()
+            except Exception:
+                self._pool.close()
+                self._pool = None
+                raise
 
     def _assert_non_privileged_role(self) -> None:
         """Verify the connected role cannot bypass RLS on tenanted tables.

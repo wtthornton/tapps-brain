@@ -241,14 +241,38 @@ def build_save_params(
     )
 
 
+#: Explicit column list for row-to-entry hydration.  Deliberately excludes
+#: ``embedding`` (dense vector, hundreds of bytes to KBs per row — never read
+#: by ``_row_to_entry``; semantic recall fetches it on demand via
+#: ``knn_search``) and the trigger-maintained ``search_vector``.  ``SELECT *``
+#: previously shipped both over the wire on every load/search only for Python
+#: to discard them.
+ENTRY_COLUMNS_SQL = (
+    "key, value, tier, confidence, source, source_agent, "
+    "scope, agent_scope, memory_group, tags, "
+    "created_at, updated_at, last_accessed, "
+    "access_count, useful_access_count, total_access_count, "
+    "branch, last_reinforced, reinforce_count, "
+    "contradicted, contradiction_reason, seeded_from, "
+    "valid_at, invalid_at, superseded_by, "
+    "valid_from, valid_until, "
+    "source_session_id, source_channel, source_message_id, triggered_by, "
+    "stability, difficulty, "
+    "positive_feedback_count, negative_feedback_count, "
+    "integrity_hash, integrity_hash_v, embedding_model_id, "
+    "temporal_sensitivity, failed_approaches, "
+    "status, stale_reason, stale_date, memory_class"
+)
+
 LOAD_ALL_SQL = (
-    "SELECT * FROM private_memories"
+    f"SELECT {ENTRY_COLUMNS_SQL} FROM private_memories"
     " WHERE project_id = %s AND agent_id = %s"
     " ORDER BY updated_at DESC"
 )
 
 LOAD_ONE_SQL = (
-    "SELECT * FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s LIMIT 1"
+    f"SELECT {ENTRY_COLUMNS_SQL} FROM private_memories"
+    " WHERE project_id = %s AND agent_id = %s AND key = %s LIMIT 1"
 )
 
 DELETE_BY_KEY_SQL = (
@@ -261,7 +285,8 @@ DELETE_BY_KEY_SQL = (
 # ---------------------------------------------------------------------------
 
 _SEARCH_BASE_SQL = (
-    "SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS _rank "
+    f"SELECT {ENTRY_COLUMNS_SQL}, "
+    "ts_rank(search_vector, plainto_tsquery('english', %s)) AS _rank "
     "FROM private_memories "
     "WHERE project_id = %s AND agent_id = %s "
     "  AND search_vector @@ plainto_tsquery('english', %s)"
@@ -278,11 +303,20 @@ _SEARCH_BASE_SQL = (
 #: in the past marks the row expired.  Uses ``now()`` and ``IS NULL`` — no
 #: bound parameters — so it composes into existing param tuples unchanged.
 #: Deliberately touches NO tenant/RLS predicate (``project_id``/``agent_id``).
+#:
+#: The ``::timestamptz`` cast is guarded by a CASE + shape regex: ``valid_until``
+#: is free text (unvalidated ``str`` on ``MemoryEntry``), and a bare cast would
+#: abort the *entire* recall query for the tenant the moment one row holds a
+#: non-timestamp value (e.g. ``"never"``).  CASE guarantees the cast is only
+#: evaluated for timestamp-shaped values; non-conforming values are treated as
+#: expired, mirroring ``MemoryEntry.is_temporally_valid`` which returns False
+#: for unparseable ``valid_until`` instead of raising.
 _LIVE_ROW_PREDICATE_SQL = (
     " AND superseded_by IS NULL"
     " AND ("
     "valid_until IS NULL OR valid_until = ''"
-    " OR valid_until::timestamptz > now()"
+    " OR (CASE WHEN valid_until ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'"
+    " THEN valid_until::timestamptz > now() ELSE false END)"
     ")"
 )
 _SEARCH_FILTER_MEMORY_GROUP_SQL = " AND memory_group = %s"
