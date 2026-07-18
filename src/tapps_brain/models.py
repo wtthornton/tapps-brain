@@ -708,7 +708,11 @@ class ConsolidatedEntry(MemoryEntry):
     """A memory entry that consolidates multiple source entries.
 
     Inherits all MemoryEntry fields and adds provenance tracking.
-    Source entries are marked as `consolidated: true` but retained.
+    Source entries are retained but marked ``contradicted`` with
+    ``superseded_by`` pointing at the consolidated key (see
+    ``auto_consolidation._persist_consolidated_entry``). Note: rows persisted
+    via ``store.save()`` are plain ``MemoryEntry`` instances — the provenance
+    fields below live only on in-memory instances and the audit trail.
     """
 
     source_ids: list[str] = Field(

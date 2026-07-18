@@ -42,6 +42,8 @@ logger = structlog.get_logger(__name__)
 
 CONSOLIDATION_STATE_FILE = ".tapps-brain/memory/consolidation-state.json"
 MIN_CONSOLIDATION_ENTRIES = 2
+# Page size for audit-log lookups in find_last_consolidation_merge_audit.
+_AUDIT_PAGE_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -82,8 +84,28 @@ def find_last_consolidation_merge_audit(
             rows = persistence.query_audit(
                 key=consolidated_key,
                 event_type="consolidation_merge",
-                limit=1000,
+                limit=_AUDIT_PAGE_LIMIT,
             )
+            # query_audit orders oldest-first with a LIMIT, so a full page may
+            # have truncated the *newest* rows — page forward via the inclusive
+            # `since` cursor until the final (partial) page is reached.
+            while len(rows) == _AUDIT_PAGE_LIMIT:
+                tail_ts = rows[-1].get("timestamp")
+                if not tail_ts:
+                    break
+                nxt = persistence.query_audit(
+                    key=consolidated_key,
+                    event_type="consolidation_merge",
+                    since=str(tail_ts),
+                    limit=_AUDIT_PAGE_LIMIT,
+                )
+                if not nxt:
+                    break
+                if len(nxt) == _AUDIT_PAGE_LIMIT and nxt[-1].get("timestamp") == tail_ts:
+                    # Pathological page of identical timestamps — cannot advance.
+                    rows = nxt
+                    break
+                rows = nxt
         except Exception:
             # Do not fall through to JSONL on a Postgres failure — that can
             # return a stale/ghost merge record and corrupt undo.
@@ -121,6 +143,41 @@ def find_last_consolidation_merge_audit(
             continue
         last = rec
     return last
+
+
+def _strip_key_from_relations(store: MemoryStore, consolidated_key: str) -> None:
+    """Detach *consolidated_key* from relation rows without destroying source linkage.
+
+    ``delete_relations(key)`` removes every row whose ``source_entry_keys``
+    *contains* the key — but after a merge those rows also carry the source
+    entries' linkage, so outright deletion would permanently orphan the
+    sources' relations. Instead, rows still referenced by other entries are
+    re-upserted with the consolidated key stripped; only rows referenced
+    exclusively by the consolidated entry are deleted.
+    """
+    from tapps_brain.relations import RelationEntry
+
+    rows = store._persistence.load_relations(consolidated_key)
+    survivors: list[RelationEntry] = []
+    for r in rows:
+        remaining = [str(k) for k in r.get("source_entry_keys", []) if k != consolidated_key]
+        if remaining:
+            confidence = float(r.get("confidence", 0.8))
+            survivors.append(
+                RelationEntry(
+                    subject=r["subject"],
+                    predicate=r["predicate"],
+                    object_entity=r["object_entity"],
+                    source_entry_keys=remaining,
+                    confidence=confidence,
+                    confidence_history=list(r.get("confidence_history") or [confidence]),
+                )
+            )
+    store._persistence.delete_relations(consolidated_key)
+    for rel in survivors:
+        # save_relations upserts on the triple; anchoring on the first
+        # remaining key is a no-op addition since it is already present.
+        store._persistence.save_relations(rel.source_entry_keys[0], [rel])
 
 
 def undo_consolidation_merge(  # noqa: PLR0911
@@ -259,7 +316,7 @@ def undo_consolidation_merge(  # noqa: PLR0911
         try:
             for sk in source_keys:
                 store._persistence.save(store._entries[sk])
-            store._persistence.delete_relations(consolidated_key)
+            _strip_key_from_relations(store, consolidated_key)
             deleted = store._persistence.delete(consolidated_key)
             if not deleted:
                 msg = "consolidated_row_delete_failed"
@@ -517,7 +574,7 @@ def _persist_consolidated_entry(
     consolidated_saved = False
     try:
         with batch_exempt_scope("consolidate"):
-            store.save(
+            saved = store.save(
                 key=consolidated.key,
                 value=consolidated.value,
                 tier=_get_enum_value(consolidated.tier),
@@ -531,7 +588,21 @@ def _persist_consolidated_entry(
                 # ungrouped (None), silently dropping the partition.
                 memory_group=consolidated.memory_group,
                 skip_consolidation=True,
+                # The merged value frequently equals the newest source's value
+                # verbatim; the dedup fast-path would then return that existing
+                # entry WITHOUT creating the merge row, and conflict_check could
+                # collaterally invalidate similar neighbors. Both must be off so
+                # the row the sources are about to be superseded by actually exists.
+                dedup=False,
+                conflict_check=False,
             )
+        if isinstance(saved, dict) or saved.key != consolidated.key:
+            # Write policy or another save-path guard rejected/short-circuited
+            # the row. Abort BEFORE marking sources superseded by a key that
+            # was never created (phantom merge with no undo path).
+            detail = saved.get("error", saved) if isinstance(saved, dict) else saved.key
+            msg = f"consolidated entry save did not create '{consolidated.key}': {detail}"
+            raise RuntimeError(msg)
         consolidated_saved = True
 
         # Merge relations from all source entries onto the consolidated entry.
@@ -656,11 +727,23 @@ def run_periodic_consolidation_scan(
             skipped_reason="not_enough_active_entries",
         )
 
-    groups = find_consolidation_groups(
-        active_entries,
-        threshold=threshold,
-        min_group_size=min_group_size,
-    )
+    # GitHub #49: partition by project-local memory_group before grouping —
+    # the on-save path (should_consolidate) never merges across groups, and
+    # a cross-group merge would silently move knowledge out of its partition
+    # (consolidate() assigns the newest entry's group to the merged row).
+    by_group: dict[str | None, list[MemoryEntry]] = {}
+    for e in active_entries:
+        by_group.setdefault(e.memory_group, []).append(e)
+
+    groups: list[list[str]] = []
+    for _group_name in sorted(by_group, key=lambda g: (g is not None, g or "")):
+        groups.extend(
+            find_consolidation_groups(
+                by_group[_group_name],
+                threshold=threshold,
+                min_group_size=min_group_size,
+            )
+        )
 
     if not groups:
         _update_last_scan_time(project_root)

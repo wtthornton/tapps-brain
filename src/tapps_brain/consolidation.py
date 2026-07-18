@@ -155,8 +155,12 @@ def merge_values(entries: list[MemoryEntry]) -> str:
         unique_sentences = [s for s in new_sentences if s not in seen_sentences]
 
         if unique_sentences:
-            merged_parts.append(f"[From {entry.key}]: " + " ".join(unique_sentences[:2]))
-            seen_sentences.update(unique_sentences)
+            emitted = unique_sentences[:2]
+            merged_parts.append(f"[From {entry.key}]: " + " ".join(emitted))
+            # Only mark *emitted* sentences as seen — marking all unique
+            # sentences suppressed content (position >= 3 here) from every
+            # later entry even though it was never included in the merge.
+            seen_sentences.update(emitted)
 
     merged = " ".join(merged_parts)
 
@@ -395,14 +399,20 @@ def should_consolidate(
         threshold: Similarity threshold for consolidation.
 
     Returns:
-        List of entries that should be consolidated with the given entry.
-        Returns empty list if no consolidation needed.
+        List of entries that should be consolidated with the given entry,
+        best match first. Returns empty list if no consolidation needed.
     """
-    # Filter out already-consolidated entries from candidates; same project-local group (#49)
+    # Filter out already-consolidated / retired entries; same project-local group (#49).
+    # ``contradicted`` excludes sources already superseded by an earlier merge —
+    # re-consolidating them would overwrite their ``superseded_by`` linkage and
+    # break undo of the original merge (the periodic scan applies the same filter).
+    # Note: ``is_consolidated`` only guards in-memory ConsolidatedEntry instances;
+    # rows persisted via store.save() are plain MemoryEntry and re-mergeable.
     active_candidates = [
         c
         for c in candidates
         if not getattr(c, "is_consolidated", False)
+        and not getattr(c, "contradicted", False)
         and c.key != entry.key
         and c.memory_group == entry.memory_group
     ]
@@ -410,14 +420,18 @@ def should_consolidate(
     if not active_candidates:
         return []
 
-    # Check for same-topic entries first (stricter match)
+    # Check for same-topic entries first. NOTE: this path matches on tier +
+    # tag overlap only and deliberately bypasses *threshold* — same-topic
+    # entries merge even when their text similarity is low.
     same_topic_matches = [c for c in active_candidates if is_same_topic(entry, c)]
     if same_topic_matches:
         return same_topic_matches
 
-    # Fall back to similarity-based detection
+    # Fall back to similarity-based detection, preserving find_similar's
+    # best-first ordering so callers that truncate keep the strongest matches.
+    key_to_candidate = {c.key: c for c in active_candidates}
     similar = find_similar(entry, active_candidates, threshold=threshold)
-    return [c for c in active_candidates if any(r.entry_key == c.key for r in similar)]
+    return [key_to_candidate[r.entry_key] for r in similar if r.entry_key in key_to_candidate]
 
 
 def merge_entry_relations(
@@ -455,9 +469,16 @@ def merge_entry_relations(
             dup_confidence = float(r.get("confidence", 0.8))
             # Use existing history from the dict if present, else seed from confidence.
             dup_history: list[float] = list(r.get("confidence_history") or [dup_confidence])
+            # Carry the contributors' existing key linkage forward. Dropping it
+            # (previous behavior: always [target_key]) meant the Postgres upsert
+            # on the shared triple overwrote the sources' linkage, detaching
+            # their relations permanently.
+            contributor_keys = [str(k) for k in (r.get("source_entry_keys") or [])]
             if triple in seen:
                 existing = seen[triple]
-                merged_keys = list(dict.fromkeys([*existing.source_entry_keys, target_key]))
+                merged_keys = list(
+                    dict.fromkeys([*existing.source_entry_keys, *contributor_keys, target_key])
+                )
                 merged_history = [*existing.confidence_history, *dup_history]
                 seen[triple] = existing.model_copy(
                     update={
@@ -471,7 +492,7 @@ def merge_entry_relations(
                     subject=r["subject"],
                     predicate=r["predicate"],
                     object_entity=r["object_entity"],
-                    source_entry_keys=[target_key],
+                    source_entry_keys=list(dict.fromkeys([*contributor_keys, target_key])),
                     confidence=dup_confidence,
                     confidence_history=dup_history,
                 )
