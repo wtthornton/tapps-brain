@@ -175,6 +175,7 @@ def extract_durable_facts(
 
     facts: list[dict[str, str]] = []
     seen_values: set[str] = set()
+    used_keys: set[str] = set()
 
     # Split into candidate sentences/paragraphs.
     # _SENTENCE_BOUNDARY matches both sentence-ending whitespace and newlines
@@ -194,10 +195,10 @@ def extract_durable_facts(
                 # Ensure unique key
                 base_key = key
                 idx = 1
-                existing_keys = {f["key"] for f in facts}
-                while key in existing_keys:
+                while key in used_keys:
                     key = f"{base_key}.{idx}"
                     idx += 1
+                used_keys.add(key)
                 facts.append({"key": key, "value": value, "tier": tier})
                 break  # One match per chunk
         if len(facts) >= max_facts:

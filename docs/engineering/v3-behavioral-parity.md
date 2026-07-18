@@ -56,7 +56,7 @@ Composite scoring formula unchanged:
 score = 0.40 × relevance + 0.30 × confidence + 0.15 × recency + 0.15 × frequency
 ```
 
-BM25 (Okapi, pure Python) and Reciprocal Rank Fusion (hybrid BM25 + vector) are unchanged.
+BM25 (pure Python; BM25+ variant with delta=1.0, see `bm25.BM25Scorer`) and Reciprocal Rank Fusion (hybrid BM25 + vector) are unchanged.
 Profile-tunable `hybrid_fusion` parameters (`pool_size`, `rrf_k`) are still supported.
 
 ### Entry Limits

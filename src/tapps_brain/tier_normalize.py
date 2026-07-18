@@ -52,10 +52,6 @@ def normalize_save_tier(raw: str | None, profile: object | None) -> str:
     try:
         return MemoryTier(t).value
     except ValueError:
-        pass
-
-    for mt in MemoryTier:
-        if mt.value.lower() == t:
-            return mt.value
-
-    return MemoryTier.pattern.value
+        # *t* is already lowercase and every MemoryTier value is lowercase,
+        # so a failed enum lookup means the tier is genuinely unknown.
+        return MemoryTier.pattern.value

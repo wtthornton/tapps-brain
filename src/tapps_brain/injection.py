@@ -59,6 +59,9 @@ _MAX_INJECT_MEDIUM = 3
 # (~0.36 raw) would score ~0.25 after the multiplier, which still deserves inclusion.
 _MIN_SCORE = 0.2
 _MIN_CONFIDENCE_MEDIUM = 0.5
+# High-engagement confidence floor. Kept as its own constant so retuning the
+# composite-score cutoff above does not silently change the confidence gate.
+_MIN_CONFIDENCE_HIGH = 0.2
 
 # Token budget split across recall categories (STORY-076.3).
 # Fractions must sum to 1.0.  Profile can override via
@@ -254,10 +257,20 @@ def inject_memories(  # noqa: PLR0915
         scoring_config: Optional scoring configuration (weights + source_trust
             multipliers). When ``None``, the store's active profile scoring
             config is used if available, otherwise module defaults apply.
-        memory_group: When set, restrict ranked retrieval to this project-local
-            group (GitHub #49). Hive merge in recall is unchanged.
         lexical_config: BM25 / lexical options. When ``None``, uses the store's
             active profile ``lexical`` block when present.
+        memory_group: When set, restrict ranked retrieval to this project-local
+            group (GitHub #49). Hive merge in recall is unchanged.
+        since: ISO-8601 UTC lower bound (inclusive) on *time_field*,
+            forwarded to ranked retrieval (Issue #70).
+        until: ISO-8601 UTC upper bound (exclusive) on *time_field*,
+            forwarded to ranked retrieval (Issue #70).
+        time_field: Column the ``since``/``until`` window filters on —
+            ``created_at`` (default), ``updated_at``, or ``last_accessed``.
+        kg_backend: Optional KG backend for entity-mention extraction (STORY-076.1).
+            When provided, candidate entity mentions are extracted from *question*
+            and resolved against the KG; counts are reported in ``recall_diagnostics``.
+            When ``None``, mention extraction is skipped (memory-only recall path).
 
     Returns:
         Dict with:
@@ -276,10 +289,8 @@ def inject_memories(  # noqa: PLR0915
         - ``recall_diagnostics``: ``empty_reason`` (code or null), ``retriever_hits``,
           ``visible_entries``, ``mentions_matched``, ``mentions_unmatched`` —
           for agents when recall is empty or when entity mentions were extracted.
-        kg_backend: Optional KG backend for entity-mention extraction (STORY-076.1).
-          When provided, candidate entity mentions are extracted from *question*
-          and resolved against the KG; counts are reported in ``recall_diagnostics``.
-          When ``None``, mention extraction is skipped (memory-only recall path).
+        - ``entities`` / ``edges`` / ``evidence``: KG recall views (STORY-076.3);
+          empty lists when no ``kg_backend`` is provided.
     """
     config = config or InjectionConfig()
     tlabel = _telemetry_token_label(config.count_tokens)
@@ -336,7 +347,7 @@ def inject_memories(  # noqa: PLR0915
         min_confidence = _MIN_CONFIDENCE_MEDIUM
     else:
         max_inject = _MAX_INJECT_HIGH
-        min_confidence = _MIN_SCORE
+        min_confidence = _MIN_CONFIDENCE_HIGH
 
     try:
         results = retriever.search(

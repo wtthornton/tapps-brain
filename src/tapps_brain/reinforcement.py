@@ -52,9 +52,12 @@ def reinforce(
     else:
         boost = max(0.0, min(confidence_boost, _MAX_CONFIDENCE_BOOST))
 
-    # Calculate new confidence with ceiling enforcement
+    # Calculate new confidence with ceiling enforcement. If the entry's
+    # confidence already exceeds its source ceiling (e.g. ceilings were
+    # lowered after the entry was written), reinforcement must never
+    # *reduce* confidence — cap the boost, keep the existing value.
     ceiling = _get_ceiling(entry.source, config)
-    new_confidence = min(entry.confidence + boost, ceiling)
+    new_confidence = min(entry.confidence + boost, max(ceiling, entry.confidence))
 
     now_iso = now.isoformat()
 

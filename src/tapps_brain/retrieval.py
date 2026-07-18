@@ -4,7 +4,8 @@ Upgrades memory search from simple keyword matching to scored,
 ranked retrieval combining text relevance with memory-specific
 signals (confidence, recency, access frequency).
 
-Uses BM25 (Okapi) for text relevance scoring with automatic
+Uses BM25 (BM25+ variant — Okapi with a lower-bound delta, see
+``bm25.BM25Scorer``) for text relevance scoring with automatic
 index building and invalidation. Epic 65.8: hybrid BM25 + vector
 search with RRF when semantic_search.enabled.
 
@@ -526,9 +527,9 @@ class MemoryRetriever:
     ) -> list[ScoredMemory]:
         """Search memories with ranked scoring.
 
-        Uses the store's FTS5-backed search for candidate retrieval,
-        then applies composite scoring with confidence, recency, and
-        frequency signals.
+        Uses the store's FTS-backed search (Postgres tsvector) for candidate
+        retrieval, then applies composite scoring with confidence, recency,
+        and frequency signals.
 
         Args:
             query: Search query string.
@@ -544,12 +545,18 @@ class MemoryRetriever:
             as_of: ISO-8601 timestamp for point-in-time queries. When set,
                 only entries valid at that time are returned.
             include_superseded: When True, include temporally invalid entries
-                (marked with ``stale=True`` and a 0.5x relevance penalty).
+                (marked with ``stale=True`` and a 0.5x composite-score penalty).
             include_historical: Alias for ``include_superseded`` (GitHub #29, task 040.3).
                 When True, include expired/superseded entries in results.
             include_stale: When True, include entries whose lifecycle ``status``
                 is ``stale``, ``superseded``, or ``archived`` (TAP-732). Default
                 excludes them so inject/recall match ``brain_recall``.
+            since: ISO-8601 UTC lower bound (inclusive) on *time_field*,
+                forwarded to the store's candidate search (Issue #70).
+            until: ISO-8601 UTC upper bound (exclusive) on *time_field*,
+                forwarded to the store's candidate search (Issue #70).
+            time_field: Column the ``since``/``until`` window filters on —
+                ``created_at`` (default), ``updated_at``, or ``last_accessed``.
             memory_filter: Optional structured pre-filter applied before BM25/vector scoring
                 (TAP-733).  When ``None`` or all fields are unset, no pre-filtering is done
                 (preserves existing behaviour).  Filters are applied as hard AND conditions
@@ -891,12 +898,12 @@ class MemoryRetriever:
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
-        Tries the store's FTS5-backed search first for candidate
-        filtering, then scores them using BM25. Falls back to full
-        in-memory BM25 scan if FTS5 returns no results, and to word
-        overlap if BM25 scoring fails entirely.
+        Tries the store's FTS-backed search (Postgres tsvector, ADR-007)
+        first for candidate filtering, then scores them using BM25. Falls
+        back to full in-memory BM25 scan if FTS returns no results, and to
+        word overlap if BM25 scoring fails entirely.
         """
-        # Try FTS5 via store.search() for candidate filtering
+        # Try FTS via store.search() for candidate filtering
         try:
             fts_results = store.search(
                 query,
@@ -910,7 +917,7 @@ class MemoryRetriever:
                 rm_add_bm25_candidates(len(results))
                 return results
         except Exception:
-            logger.warning("fts5_search_failed", query=query, exc_info=True)
+            logger.warning("fts_search_failed", query=query, exc_info=True)
 
         # Fallback: full corpus BM25 scan
         results = self._bm25_full_scan(query, store, memory_group=memory_group)
@@ -999,10 +1006,17 @@ class MemoryRetriever:
         )
 
         if not fused:
-            return self._get_candidates(query, store, memory_group=memory_group)
+            return self._get_candidates(
+                query,
+                store,
+                memory_group=memory_group,
+                since=since,
+                until=until,
+                time_field=time_field,
+            )
 
         entry_by_key = {e.key: e for e in store.list_all(memory_group=memory_group)}
-        max_rrf = fused[0][1] if fused else 1.0
+        max_rrf = fused[0][1]
 
         results: list[tuple[MemoryEntry, float]] = []
         for key, rrf_score in fused:
@@ -1118,8 +1132,6 @@ class MemoryRetriever:
             return empty
         scored: list[tuple[str, float]] = []
         for i, entry in enumerate(all_entries):
-            if i >= len(entry_embs):
-                break
             emb = entry_embs[i]
             if len(emb) == len(q):
                 sim = sum(a * b for a, b in zip(q, emb, strict=True))

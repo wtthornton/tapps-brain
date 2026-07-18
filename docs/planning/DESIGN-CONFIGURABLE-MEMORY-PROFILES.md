@@ -41,7 +41,7 @@
 | **LangMem** | Semantic, Episodic, Procedural | Pluggable via LangGraph namespaces | Namespace-scoped; user_id segmentation | Procedural = updated prompt instructions |
 | **AWS AgentCore** | Semantic, User Preference, Summary (3 strategies) | Managed cloud service | Parallel strategy extraction; ~200ms retrieval | Streaming notifications via Kinesis |
 | **OpenClaw** | Markdown files (MEMORY.md + daily notes) | SQLite via sqlite-vec + FTS5 | 70% vector + 30% BM25 | Pre-compaction memory flush; ContextEngine plugin slot |
-| **tapps-brain (current)** | Architectural, Pattern, Procedural, Context | SQLite WAL + FTS5 + in-memory cache | 40% relevance + 30% confidence + 15% recency + 15% frequency | Exponential decay with tier half-lives; deterministic (no LLM) |
+| **tapps-brain (as of this design, 2025 — storage since moved to Postgres, ADR-007)** | Architectural, Pattern, Procedural, Context | SQLite WAL + FTS5 + in-memory cache | 40% relevance + 30% confidence + 15% recency + 15% frequency | Exponential decay with tier half-lives; deterministic (no LLM) |
 
 ### 1.2 Emerging consensus (2026)
 

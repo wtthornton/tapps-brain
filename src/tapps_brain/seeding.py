@@ -135,154 +135,113 @@ def reseed_from_profile(
     return _with_seed_version(store, result)
 
 
-def _do_seed(  # noqa: PLR0915
+def _seed_one(
+    store: MemoryStore,
+    *,
+    key: str,
+    value: str,
+    tier: MemoryTier,
+    tag: str,
+    confidence: float = _DEFAULT_CONFIDENCE,
+) -> int:
+    """Save one seed memory; return 1 on success, 0 on failure (logged)."""
+    saved = store.save(
+        key=key,
+        value=value,
+        tier=tier.value,
+        source=MemorySource.system.value,
+        source_agent=_SOURCE_AGENT,
+        scope=MemoryScope.project.value,
+        tags=_make_seed_tags(tag),
+        confidence=confidence,
+    )
+    if isinstance(saved, dict):
+        logger.warning("seed_save_failed", key=key, error=saved.get("error"))
+        return 0
+    _set_seeded_from(store, key)
+    return 1
+
+
+def _do_seed(
     store: MemoryStore,
     profile: ProjectProfileLike,
 ) -> dict[str, Any]:
     """Internal: create seed memories from profile data."""
     seeded = 0
 
-    # Project type
     if profile.project_type:
-        confidence = max(_DEFAULT_CONFIDENCE, profile.project_type_confidence)
-        saved = store.save(
+        seeded += _seed_one(
+            store,
             key="project-type",
             value=f"Project type is {profile.project_type}",
-            tier=MemoryTier.architectural.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("project-type"),
-            confidence=confidence,
+            tier=MemoryTier.architectural,
+            tag="project-type",
+            confidence=max(_DEFAULT_CONFIDENCE, profile.project_type_confidence),
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, "project-type")
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key="project-type", error=saved.get("error"))
 
-    # Languages
     for lang in profile.tech_stack.languages:
         if not lang:
             continue
-        key = f"language-{_slugify(lang)}"
-        saved = store.save(
-            key=key,
+        seeded += _seed_one(
+            store,
+            key=f"language-{_slugify(lang)}",
             value=f"Project uses {lang}",
-            tier=MemoryTier.architectural.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("language"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.architectural,
+            tag="language",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, key)
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key=key, error=saved.get("error"))
 
-    # Frameworks
     for fw in profile.tech_stack.frameworks:
         if not fw:
             continue
-        key = f"framework-{_slugify(fw)}"
-        saved = store.save(
-            key=key,
+        seeded += _seed_one(
+            store,
+            key=f"framework-{_slugify(fw)}",
             value=f"Project uses {fw} framework",
-            tier=MemoryTier.architectural.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("framework"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.architectural,
+            tag="framework",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, key)
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key=key, error=saved.get("error"))
 
-    # Test frameworks
     for tf in profile.test_frameworks:
         if not tf:
             continue
-        key = f"test-framework-{_slugify(tf)}"
-        saved = store.save(
-            key=key,
+        seeded += _seed_one(
+            store,
+            key=f"test-framework-{_slugify(tf)}",
             value=f"Project uses {tf} for testing",
-            tier=MemoryTier.pattern.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("test-framework"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.pattern,
+            tag="test-framework",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, key)
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key=key, error=saved.get("error"))
 
-    # Package managers
     for pm in profile.package_managers:
         if not pm:
             continue
-        key = f"package-manager-{_slugify(pm)}"
-        saved = store.save(
-            key=key,
+        seeded += _seed_one(
+            store,
+            key=f"package-manager-{_slugify(pm)}",
             value=f"Package manager is {pm}",
-            tier=MemoryTier.pattern.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("package-manager"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.pattern,
+            tag="package-manager",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, key)
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key=key, error=saved.get("error"))
 
-    # CI systems
     for ci in profile.ci_systems:
         if not ci:
             continue
-        key = f"ci-system-{_slugify(ci)}"
-        saved = store.save(
-            key=key,
+        seeded += _seed_one(
+            store,
+            key=f"ci-system-{_slugify(ci)}",
             value=f"Project uses {ci} for CI/CD",
-            tier=MemoryTier.architectural.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("ci-system"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.architectural,
+            tag="ci-system",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, key)
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key=key, error=saved.get("error"))
 
-    # Docker
     if profile.has_docker:
-        saved = store.save(
+        seeded += _seed_one(
+            store,
             key="has-docker",
             value="Project uses Docker",
-            tier=MemoryTier.architectural.value,
-            source=MemorySource.system.value,
-            source_agent=_SOURCE_AGENT,
-            scope=MemoryScope.project.value,
-            tags=_make_seed_tags("docker"),
-            confidence=_DEFAULT_CONFIDENCE,
+            tier=MemoryTier.architectural,
+            tag="docker",
         )
-        if not isinstance(saved, dict):
-            _set_seeded_from(store, "has-docker")
-            seeded += 1
-        else:
-            logger.warning("seed_save_failed", key="has-docker", error=saved.get("error"))
 
     logger.info("memory_seeded", count=seeded)
     return {"seeded_count": seeded, "skipped": False}

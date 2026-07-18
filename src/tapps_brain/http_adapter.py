@@ -102,6 +102,7 @@ from tapps_brain.http.metrics_collector import (
     _LABELED_REQUEST_COUNTS_LOCK,
     _MAX_AGENT_ID_CARDINALITY,
     _collect_metrics,
+    _emit_probe_histogram,
     _emit_snapshot_metrics,
     _record_labeled_request,
     record_snapshot_build_duration,
@@ -793,6 +794,9 @@ def _collect_metrics(  # type: ignore[no-redef]  # noqa: F811
                         lines.append(
                             f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
                         )
+
+    # TAP-1849: tools/list probe latency histogram (doctor probe-latency check).
+    _emit_probe_histogram(lines)
 
     _emit_snapshot_metrics(lines)
 

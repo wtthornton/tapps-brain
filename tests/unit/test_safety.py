@@ -694,16 +694,18 @@ class TestEncodedPayloadDetector:
 
     # -- helpers --
 
-    def _assert_encoded_blocked(self, content: str) -> None:
+    _ENCODED_LABELS = ("base64_payload", "urlsafe_base64_payload", "hex_payload")
+
+    def _assert_encoded_blocked(self, content: str, label: str = "base64_payload") -> None:
         result = check_content_safety(content)
         assert result.safe is False, f"Expected blocked, got: {result}"
-        assert "base64_payload" in result.flagged_patterns, result.flagged_patterns
+        assert label in result.flagged_patterns, result.flagged_patterns
         assert "blocked" in (result.warning or "")
 
     def _assert_not_flagged(self, content: str) -> None:
         result = check_content_safety(content)
         assert result.safe is True, f"Expected safe, got: {result}"
-        assert "base64_payload" not in result.flagged_patterns
+        assert not any(lbl in result.flagged_patterns for lbl in self._ENCODED_LABELS)
 
     # -- positive: standard base64 --
 
@@ -731,13 +733,13 @@ class TestEncodedPayloadDetector:
         """Hex-encoded 'ignore all previous instructions' must be blocked."""
         encoded = self._INJECTION.encode().hex()
         assert len(encoded) >= 48, "Hex token must be ≥ 48 chars to hit the regex"
-        self._assert_encoded_blocked(encoded)
+        self._assert_encoded_blocked(encoded, label="hex_payload")
 
     def test_hex_encoded_in_sentence(self):
         """Hex token embedded in surrounding text is caught."""
         encoded = self._INJECTION.encode().hex()
         content = f"raw bytes: {encoded} end"
-        self._assert_encoded_blocked(content)
+        self._assert_encoded_blocked(content, label="hex_payload")
 
     # -- positive: url-safe base64 --
 
@@ -756,7 +758,7 @@ class TestEncodedPayloadDetector:
         )
         # The encoded form must NOT contain the plaintext
         assert self._INJECTION not in encoded
-        self._assert_encoded_blocked(encoded)
+        self._assert_encoded_blocked(encoded, label="urlsafe_base64_payload")
 
     # -- positive: telemetry counter --
 

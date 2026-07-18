@@ -65,7 +65,7 @@ fi
 rm -rf .venv-release-smoke
 
 echo "==> [4/6] Version consistency tests"
-uv run pytest tests/unit/test_version_consistency.py -v --tb=short || fail "version consistency"
+uv run pytest tests/unit/test_version_consistency.py -v --tb=short || fail "version consistency (includes docker/.env.example BRAIN_VERSION)"
 
 if [[ "$SKIP_FULL_PYTEST" == "1" ]]; then
   echo "==> [5/6] Full pytest suite (skipped: SKIP_FULL_PYTEST=1)"

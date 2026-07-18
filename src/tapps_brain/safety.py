@@ -125,19 +125,25 @@ _MAX_HEX_TOKEN_CHARS = 65_536  # 32 KiB decoded * 2 hex chars/byte
 # Regex for standalone standard-base64 tokens (A-Za-z0-9+/).
 # Lookbehind/lookahead on the same charset prevents mid-token matching.
 _B64_TOKEN_RE = re.compile(
-    rf"(?<![A-Za-z0-9+/])([A-Za-z0-9+/]{{24,{_MAX_B64_TOKEN_CHARS}}}={{0,2}})(?![A-Za-z0-9+/=])"
+    rf"(?<![A-Za-z0-9+/])"
+    rf"([A-Za-z0-9+/]{{{_MIN_ENCODED_LENGTH},{_MAX_B64_TOKEN_CHARS}}}={{0,2}})"
+    rf"(?![A-Za-z0-9+/=])"
 )
 
 # Regex for standalone url-safe-base64 tokens (A-Za-z0-9-_).
 # We only process these when the token contains '-' or '_' (otherwise the
 # standard-b64 path already covers them).
 _URLSAFE_B64_TOKEN_RE = re.compile(
-    rf"(?<![A-Za-z0-9\-_])([A-Za-z0-9\-_]{{24,{_MAX_B64_TOKEN_CHARS}}}={{0,2}})(?![A-Za-z0-9\-_=])"
+    rf"(?<![A-Za-z0-9\-_])"
+    rf"([A-Za-z0-9\-_]{{{_MIN_ENCODED_LENGTH},{_MAX_B64_TOKEN_CHARS}}}={{0,2}})"
+    rf"(?![A-Za-z0-9\-_=])"
 )
 
-# Regex for standalone hex strings (even number of hex digits, ≥48 chars = ≥24 raw bytes).
+# Regex for standalone hex strings: pairs of hex digits (even length by
+# construction), ≥48 chars = ≥24 raw bytes.
 _HEX_TOKEN_RE = re.compile(
-    rf"(?<![0-9a-fA-F])([0-9a-fA-F]{{48,{_MAX_HEX_TOKEN_CHARS}}})(?![0-9a-fA-F])"
+    rf"(?<![0-9a-fA-F])((?:[0-9a-fA-F]{{2}}){{{_MIN_ENCODED_LENGTH},{_MAX_HEX_TOKEN_CHARS // 2}}})"
+    rf"(?![0-9a-fA-F])"
 )
 
 
@@ -171,15 +177,17 @@ def _decode_as_text(raw: bytes) -> str | None:
     return text
 
 
-def _has_encoded_injection(
+def _find_encoded_injection(
     content: str,
     patterns: list[tuple[str, re.Pattern[str]]],
-) -> bool:
-    """Return ``True`` if *content* contains an encoded injection payload.
+) -> str | None:
+    """Return the encoding label if *content* contains an encoded injection payload.
 
     Scans for standalone standard-base64, url-safe-base64, and hex tokens,
     decodes each candidate (with size + entropy gates), then re-checks the
-    full injection *patterns* set on the decoded text.
+    full injection *patterns* set on the decoded text.  Returns
+    ``"base64_payload"``, ``"urlsafe_base64_payload"``, ``"hex_payload"``,
+    or ``None`` when no encoded injection is found.
     """
 
     def _matches_any(text: str) -> bool:
@@ -196,7 +204,7 @@ def _has_encoded_injection(
         text = _decode_as_text(raw)
         # NFKC after decode — encoded homographs must match plaintext rules.
         if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
-            return True
+            return "base64_payload"
 
     # --- URL-safe base64 (only tokens that use - or _; others caught above) ---
     for m in _URLSAFE_B64_TOKEN_RE.finditer(content):
@@ -204,25 +212,25 @@ def _has_encoded_injection(
         if "-" not in token and "_" not in token:
             continue
         pad = (4 - len(token) % 4) % 4
+        # Translate to the standard alphabet so validate=True applies on both
+        # base64 paths identically.
+        std_token = token.translate(str.maketrans("-_", "+/"))
         try:
-            raw = base64.urlsafe_b64decode(token + "=" * pad)
+            raw = base64.b64decode(std_token + "=" * pad, validate=True)
         except Exception:
             continue
         text = _decode_as_text(raw)
         if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
-            return True
+            return "urlsafe_base64_payload"
 
-    # --- Hex ---
+    # --- Hex (regex only yields even-length tokens, so fromhex cannot fail) ---
     for m in _HEX_TOKEN_RE.finditer(content):
-        try:
-            raw = bytes.fromhex(m.group(1))
-        except ValueError:
-            continue
+        raw = bytes.fromhex(m.group(1))
         text = _decode_as_text(raw)
         if text is not None and _matches_any(unicodedata.normalize("NFKC", text)):
-            return True
+            return "hex_payload"
 
-    return False
+    return None
 
 
 def resolve_safety_ruleset_version(requested: str | None) -> str:
@@ -295,8 +303,9 @@ def check_content_safety(
     # Encoded-payload check (base64 / url-safe-b64 / hex).
     # Obfuscated injections are always blocked — deliberate encoding is a
     # strong threat signal regardless of plaintext match count / density.
-    if _has_encoded_injection(normalised, patterns):
-        encoded_flagged = [*flagged, "base64_payload"]
+    encoded_label = _find_encoded_injection(normalised, patterns)
+    if encoded_label is not None:
+        encoded_flagged = [*flagged, encoded_label]
         encoded_total = total_matches + 1
         logger.warning(
             "rag_safety_encoded_injection_blocked",

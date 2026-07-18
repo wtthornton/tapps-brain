@@ -348,7 +348,7 @@ class QueryMixin(_MemoryStoreBase):
         max_group_results: int = 20,
         memory_class: str | None = None,
     ) -> list[MemoryEntry]:
-        """Search via FTS5, with optional post-filters.
+        """Search via the Postgres FTS backend, with optional post-filters.
 
         Args:
             query: Search query string.

@@ -62,6 +62,9 @@ That script runs, in order: `uv build`, wheel smoke import, version consistency 
   - `.claude/skills/tapps-brain/SKILL.md` (`version:` frontmatter) — while bumping
     it, review the skill body (tool surface, error shapes, tier table) against this
     release's CHANGELOG section and update any drift, not just the number
+  - `docker/.env.example` (`BRAIN_VERSION=X.Y.Z`) — keeps compose template + visual
+    image pin aligned with the release (local `docker/.env` is gitignored; bump it
+    on the host when rolling the stack)
   - Run `pytest tests/unit/test_version_consistency.py -v` to verify
 - [ ] CHANGELOG.md updated with release notes — heading must be `## X.Y.Z`
       so `release.yml` can extract the section

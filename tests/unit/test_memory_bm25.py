@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from tapps_brain.bm25 import (
     _STOP_WORDS,
     BM25Scorer,
@@ -279,3 +281,36 @@ class TestBM25Scorer:
         scorer = BM25Scorer()
         scorer.build_index([""])
         assert scorer._score_doc(["anything"], 0) == 0.0
+
+    # ------------------------------------------------------------------
+    # BM25+ delta lower bound (default delta=1.0)
+    # ------------------------------------------------------------------
+
+    def test_delta_zero_matches_classic_okapi(self) -> None:
+        """delta=0 removes the BM25+ bonus, lowering scores of matching docs."""
+        docs = ["python web framework", "rust systems language"]
+        plus = BM25Scorer(delta=1.0)
+        plus.build_index(docs)
+        okapi = BM25Scorer(delta=0.0)
+        okapi.build_index(docs)
+
+        plus_scores = plus.score("python")
+        okapi_scores = okapi.score("python")
+
+        # Matching doc scores strictly higher with the delta bonus.
+        assert plus_scores[0] > okapi_scores[0] > 0.0
+        # Non-matching doc is unaffected (no term hit — no delta applied).
+        assert plus_scores[1] == okapi_scores[1] == 0.0
+
+    def test_delta_applied_per_matching_query_term(self) -> None:
+        """The delta bonus is IDF-scaled and added once per matching query term."""
+        docs = ["alpha beta", "gamma delta"]
+        s0 = BM25Scorer(delta=0.0)
+        s0.build_index(docs)
+        s1 = BM25Scorer(delta=1.0)
+        s1.build_index(docs)
+
+        one_term = s1.score("alpha")[0] - s0.score("alpha")[0]
+        two_terms = s1.score("alpha beta")[0] - s0.score("alpha beta")[0]
+        # Two matching terms accrue twice the single-term delta contribution.
+        assert two_terms == pytest.approx(2 * one_term)

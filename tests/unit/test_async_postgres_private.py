@@ -281,14 +281,16 @@ class TestAsyncSchemaVersion:
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
         assert asyncio.run(b.get_schema_version()) == 5
 
-    def test_returns_zero_on_db_error(self) -> None:
+    def test_raises_on_db_error(self) -> None:
+        """Fail closed: DB errors propagate instead of masking as version 0."""
         from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
 
         cur = _make_async_cursor()
         cur.execute = AsyncMock(side_effect=RuntimeError("db down"))
         cm = _make_manager(cur)
         b = AsyncPostgresPrivateBackend(cm, project_id="p", agent_id="a")
-        assert asyncio.run(b.get_schema_version()) == 0
+        with pytest.raises(RuntimeError, match="db down"):
+            asyncio.run(b.get_schema_version())
 
 
 class TestAsyncFlywheelMeta:

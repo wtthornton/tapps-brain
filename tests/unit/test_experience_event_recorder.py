@@ -267,6 +267,15 @@ class TestAsyncRecorderConstructor:
 # ---------------------------------------------------------------------------
 
 
+def _find_memory_insert_params(cur: MagicMock) -> tuple:
+    """Return the params of the INSERT INTO private_memories execute call."""
+    for call_args in cur.execute.call_args_list:
+        sql = call_args[0][0]
+        if "INSERT INTO private_memories" in sql:
+            return call_args[0][1]
+    raise AssertionError("no INSERT INTO private_memories call found")
+
+
 def _make_fake_cm(memory_key: str = "test-key") -> MagicMock:
     """Return a PostgresConnectionManager mock that records cursor.execute calls."""
     cur = MagicMock()
@@ -317,13 +326,11 @@ class TestExperienceEventRecorderEmbedding:
         assert result.memory_key == "test-key"
         provider.embed.assert_called_once_with("task succeeded")
 
-        # Locate the _INSERT_MEMORY_SQL execute call — it is the second
-        # cur.execute call (first is _INSERT_EVENT_SQL).
+        # Locate the _INSERT_MEMORY_SQL execute call by its SQL text —
+        # positional indexing is brittle (capacity checks run before it).
         conn = cm.project_context.return_value.__enter__.return_value
         cur = conn.cursor.return_value.__enter__.return_value
-        assert cur.execute.call_count >= 2
-        mem_call_args = cur.execute.call_args_list[1]
-        params = mem_call_args[0][1]  # positional: (sql, params)
+        params = _find_memory_insert_params(cur)
         # params[-1] is the pgvector string; params[-2] is the model_id.
         assert params[-2] == "test-model"
         assert params[-1] is not None and params[-1].startswith("[")
@@ -346,7 +353,7 @@ class TestExperienceEventRecorderEmbedding:
 
         conn = cm.project_context.return_value.__enter__.return_value
         cur = conn.cursor.return_value.__enter__.return_value
-        params = cur.execute.call_args_list[1][0][1]
+        params = _find_memory_insert_params(cur)
         assert params[-2] is None  # embedding_model_id
         assert params[-1] is None  # embedding
 

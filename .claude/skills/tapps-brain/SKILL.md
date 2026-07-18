@@ -89,8 +89,8 @@ make hive-deploy             # first-time only, or nginx/visual image changes
 From the tapps-brain repo root (token in `.env` or `docker/.env`):
 
 ```bash
-make brain-healthcheck    # MCP wiring + brain_recall round-trip
-make brain-smoke-live     # HTTP: /healthz, experience record + query round-trip
+make brain-smoke-live     # canonical post-deploy HTTP gate
+make brain-healthcheck    # live MCP round-trip (server-mode OK if IDE is bridge-only)
 ```
 
 `make hive-smoke` boots an **isolated** stack on alternate ports and tears it down — use that in CI, not against the live `:8080` server.

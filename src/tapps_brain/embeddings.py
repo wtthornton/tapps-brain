@@ -84,8 +84,8 @@ def quantize_embedding_int8(embedding: list[float]) -> bytes:
     """Lossy symmetric int8 quantization for spike / offline experiments (STORY-042.2).
 
     Each float is clamped to ``[-1, 1]``, scaled by 127, rounded, then clamped to
-    ``[-127, 127]`` and packed as signed bytes. **Not** used for sqlite-vec or on-disk
-    JSON floats today — product storage remains float32 JSON arrays.
+    ``[-127, 127]`` and packed as signed bytes. **Not** used for product storage
+    today — embeddings persist in a Postgres pgvector column (migration 002).
 
     Args:
         embedding: Dense vector (typically L2-normalized).
@@ -177,7 +177,7 @@ class SentenceTransformerProvider:
         if SentenceTransformer is None:
             msg = (
                 "sentence-transformers is required but not installed. "
-                "Install with: pip install 'tapps-brain[all]'"
+                "It is a core dependency — reinstall with: pip install tapps-brain"
             )
             raise ImportError(msg)
 
@@ -319,7 +319,7 @@ def get_embedding_provider(
             logger.warning(
                 "embedding_provider_unavailable",
                 reason="sentence-transformers not installed",
-                install_hint="pip install 'tapps-brain[all]'",
+                install_hint="core dependency missing — reinstall: pip install tapps-brain",
                 embedding_degraded=True,
             )
             _provider_cache[cache_key] = None

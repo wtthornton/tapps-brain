@@ -44,8 +44,8 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make brain-lint` | Ruff lint + format check |
 | `make brain-type` | Strict mypy type check |
 | `make brain-qa` | Full QA: lint + type + tests (mirrors CI) |
-| `make brain-healthcheck` | MCP wiring + recall round-trip against the live brain |
-| `make brain-smoke-live` | HTTP smoke on the live stack (`/healthz`, `experience:query` round-trip) |
+| `make brain-healthcheck` | Live MCP initialize + `brain_recall` (server-mode OK when `.mcp.json` is bridge-only) |
+| `make brain-smoke-live` | **Canonical post-deploy gate** — HTTP smoke (`/healthz`, `experience:query` round-trip) |
 | `make brain-diagnostics-live` | Live stack diagnostics (`/healthz?deep=1`, snapshot, stale, scorecard). Uses `BRAIN_LIVE_*` env (not host `TAPPS_BRAIN_*`). `AUTO_GC=1` archives stale candidates. |
 | `make brain-visual-smoke-live` | Visual dashboard smoke (`:8088/` meta, proxied + direct `/snapshot` schema) |
 | `make dev-deploy` | Fast Docker loop: reload brain + live smoke ([dev-docker-loop.md](docs/guides/dev-docker-loop.md)) |
@@ -64,7 +64,8 @@ When the user asks to **upgrade / redeploy tapps-brain to local Docker**, use th
 | **Code upgrade** (default, 10–20×/day) | `make dev-deploy` — wheel + http image rebuild + `brain-smoke-live` |
 | **SQL migrations** changed | `MIGRATE=1 make dev-deploy` |
 | **`docker/.env` only** (no rebuild) | `docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d --no-deps --force-recreate tapps-brain-http` |
-| **Verify** after deploy | `make brain-smoke-live` (~10s) or `make brain-healthcheck` when MCP wiring changed |
+| **Verify** after deploy | **`make brain-smoke-live`** (~10s). Optional: `make brain-visual-smoke-live`. Use `make brain-healthcheck` for live MCP round-trip / consumer wiring — not as the stack upgrade gate. |
+| **Version bump / visual / all images** | Align `BRAIN_VERSION` in `docker/.env` to `pyproject.toml`, then `make publish-brain-image` + compose `up -d` (see [dev-docker-loop.md](docs/guides/dev-docker-loop.md)) |
 
 **Required in `docker/.env`:** `TAPPS_BRAIN_ALLOWED_ORIGINS` must be a non-empty comma-separated list. Compose sets `TAPPS_BRAIN_STRICT=1`; without origins the `tapps-brain-http` container crash-loops (`Connection reset by peer` on `:8080`). Local dev template value:
 

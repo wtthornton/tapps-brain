@@ -154,7 +154,8 @@ _TEST_TAGS = frozenset({"test", "testing", "test-framework"})
 _PKG_TAGS = frozenset({"package-manager", "build-tool", "tooling"})
 _BRANCH_TAGS = frozenset({"branch", "feature-branch"})
 
-# Minimum claimed library name length to avoid false positives on short words.
+# Claimed library names must be strictly *longer* than this to be flagged —
+# names of <= 3 chars ("uv", "npm", "pip") are skipped to avoid false positives.
 _MIN_CLAIMED_NAME_LENGTH = 3
 
 # Patterns for extracting tech claims from memory values.
@@ -465,6 +466,53 @@ _BOOL_OPPOSITES: dict[str, str] = {
 _NUMERIC_DIVERGENCE_THRESHOLD = 0.15
 
 
+class _EntrySignals(NamedTuple):
+    """Regex-extracted semantic signals for one entry (computed once per entry)."""
+
+    techs: set[str]
+    nums: dict[str, float]
+    bools: dict[str, str]
+
+
+def _extract_signals(entry: MemoryEntry) -> _EntrySignals:
+    """Run all three signal-extraction regexes over one entry's value."""
+    return _EntrySignals(
+        techs={m.lower() for m in _USE_PATTERN.findall(entry.value)},
+        nums={
+            label.strip().lower(): float(val)
+            for label, val in _NUMERIC_LABEL_PATTERN.findall(entry.value)
+        },
+        bools={
+            label.strip().lower(): state.lower()
+            for label, state in _BOOL_PATTERN.findall(entry.value)
+        },
+    )
+
+
+def _keyword_polarity_hit(
+    key_a: str,
+    key_b: str,
+    techs_a: set[str],
+    techs_b: set[str],
+) -> PolarityContradiction | None:
+    if not techs_a or not techs_b:
+        return None
+
+    # Fully disjoint technology claims → contradiction.
+    if not (techs_a & techs_b):
+        rep_a = sorted(techs_a)[0]
+        rep_b = sorted(techs_b)[0]
+        return PolarityContradiction(
+            entry_a_key=key_a,
+            entry_b_key=key_b,
+            reason=f"Conflicting technology claims: '{rep_a}' vs '{rep_b}'",
+            contradiction_type="keyword_polarity",
+            detected_at=datetime.now(tz=UTC).isoformat(),
+        )
+
+    return None
+
+
 def detect_keyword_polarity(
     entry_a: MemoryEntry,
     entry_b: MemoryEntry,
@@ -485,23 +533,7 @@ def detect_keyword_polarity(
     """
     techs_a = {m.lower() for m in _USE_PATTERN.findall(entry_a.value)}
     techs_b = {m.lower() for m in _USE_PATTERN.findall(entry_b.value)}
-
-    if not techs_a or not techs_b:
-        return None
-
-    # Fully disjoint technology claims → contradiction.
-    if not (techs_a & techs_b):
-        rep_a = sorted(techs_a)[0]
-        rep_b = sorted(techs_b)[0]
-        return PolarityContradiction(
-            entry_a_key=entry_a.key,
-            entry_b_key=entry_b.key,
-            reason=f"Conflicting technology claims: '{rep_a}' vs '{rep_b}'",
-            contradiction_type="keyword_polarity",
-            detected_at=datetime.now(tz=UTC).isoformat(),
-        )
-
-    return None
+    return _keyword_polarity_hit(entry_a.key, entry_b.key, techs_a, techs_b)
 
 
 def detect_numeric_divergence(
@@ -532,7 +564,19 @@ def detect_numeric_divergence(
         label.strip().lower(): float(val)
         for label, val in _NUMERIC_LABEL_PATTERN.findall(entry_b.value)
     }
+    return _numeric_divergence_hit(
+        entry_a.key, entry_b.key, nums_a, nums_b, divergence_threshold=divergence_threshold
+    )
 
+
+def _numeric_divergence_hit(
+    key_a: str,
+    key_b: str,
+    nums_a: dict[str, float],
+    nums_b: dict[str, float],
+    *,
+    divergence_threshold: float = _NUMERIC_DIVERGENCE_THRESHOLD,
+) -> PolarityContradiction | None:
     for label, val_a in sorted(nums_a.items()):
         if label not in nums_b:
             continue
@@ -540,8 +584,8 @@ def detect_numeric_divergence(
         base = max(abs(val_a), abs(val_b), 1.0)
         if abs(val_a - val_b) / base > divergence_threshold:
             return PolarityContradiction(
-                entry_a_key=entry_a.key,
-                entry_b_key=entry_b.key,
+                entry_a_key=key_a,
+                entry_b_key=key_b,
                 reason=f"Numeric divergence for '{label}': {val_a} vs {val_b}",
                 contradiction_type="numeric_divergence",
                 detected_at=datetime.now(tz=UTC).isoformat(),
@@ -574,7 +618,15 @@ def detect_boolean_polarity(
         label.strip().lower(): state.lower()
         for label, state in _BOOL_PATTERN.findall(entry_b.value)
     }
+    return _boolean_polarity_hit(entry_a.key, entry_b.key, bools_a, bools_b)
 
+
+def _boolean_polarity_hit(
+    key_a: str,
+    key_b: str,
+    bools_a: dict[str, str],
+    bools_b: dict[str, str],
+) -> PolarityContradiction | None:
     for label in sorted(bools_a):
         if label not in bools_b:
             continue
@@ -582,8 +634,8 @@ def detect_boolean_polarity(
         val_b = bools_b[label]
         if _BOOL_OPPOSITES.get(val_a) == val_b:
             return PolarityContradiction(
-                entry_a_key=entry_a.key,
-                entry_b_key=entry_b.key,
+                entry_a_key=key_a,
+                entry_b_key=key_b,
                 reason=f"Boolean polarity conflict for '{label}': {val_a} vs {val_b}",
                 contradiction_type="boolean_polarity",
                 detected_at=datetime.now(tz=UTC).isoformat(),
@@ -612,18 +664,21 @@ def detect_pairwise_contradictions(
     """
     active = [e for e in entries if not getattr(e, "contradicted", False)]
     sorted_keys = sorted(e.key for e in active)
-    entry_map: dict[str, MemoryEntry] = {e.key: e for e in active}
+    # Extract regex signals once per entry — running the three findall scans
+    # inside the pair loop would repeat each extraction n-1 times (O(n²) regex
+    # work on every scan of a large store).
+    signals: dict[str, _EntrySignals] = {e.key: _extract_signals(e) for e in active}
 
     results: list[PolarityContradiction] = []
 
     for i, key_a in enumerate(sorted_keys):
         for key_b in sorted_keys[i + 1 :]:
-            ea = entry_map[key_a]
-            eb = entry_map[key_b]
+            sig_a = signals[key_a]
+            sig_b = signals[key_b]
             hit = (
-                detect_keyword_polarity(ea, eb)
-                or detect_numeric_divergence(ea, eb)
-                or detect_boolean_polarity(ea, eb)
+                _keyword_polarity_hit(key_a, key_b, sig_a.techs, sig_b.techs)
+                or _numeric_divergence_hit(key_a, key_b, sig_a.nums, sig_b.nums)
+                or _boolean_polarity_hit(key_a, key_b, sig_a.bools, sig_b.bools)
             )
             if hit:
                 results.append(hit)

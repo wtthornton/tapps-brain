@@ -196,6 +196,25 @@ check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 	  echo ""; \
 	  exit 1; \
 	fi
+	@env_ver=$$(grep -E '^BRAIN_VERSION=' docker/.env | head -1 | cut -d= -f2- | tr -d '[:space:]'); \
+	py_ver=$$(grep -E '^version[[:space:]]*=' pyproject.toml | head -1 | sed 's/.*=[[:space:]]*"\(.*\)"/\1/'); \
+	if [ -z "$$env_ver" ]; then \
+	  echo ""; \
+	  echo "ERROR: BRAIN_VERSION is missing from docker/.env."; \
+	  echo "       Set it to match pyproject.toml (currently $$py_ver):"; \
+	  echo "         BRAIN_VERSION=$$py_ver"; \
+	  echo ""; \
+	  exit 1; \
+	fi; \
+	if [ "$$env_ver" != "$$py_ver" ]; then \
+	  echo ""; \
+	  echo "ERROR: BRAIN_VERSION drift — docker/.env has '$$env_ver' but pyproject.toml has '$$py_ver'."; \
+	  echo "       Align the pin so compose rolls http + visual + migrate together:"; \
+	  echo "         sed -i 's/^BRAIN_VERSION=.*/BRAIN_VERSION=$$py_ver/' docker/.env"; \
+	  echo "       Also keep docker/.env.example in sync on version bumps."; \
+	  echo ""; \
+	  exit 1; \
+	fi
 
 TIER ?= balanced
 
@@ -240,10 +259,10 @@ hive-logs:  ## Tail logs from running brain services
 hive-smoke:  ## End-to-end stack smoke test (boots full stack, asserts endpoints, tears down)
 	@bash scripts/hive_smoke.sh
 
-brain-healthcheck:  ## Verify this repo is wired to the deployed tapps-brain and MCP tools work
+brain-healthcheck:  ## Live MCP round-trip (server-mode OK for bridge-only); not the deploy smoke gate
 	@bash scripts/brain-healthcheck.sh
 
-brain-smoke-live:  ## HTTP smoke test against the running tapps-brain stack (no compose boot)
+brain-smoke-live:  ## Canonical post-deploy HTTP smoke (prefer this after hive/dev-deploy)
 	@bash scripts/brain_smoke_live.sh
 
 brain-diagnostics-live:  ## Live-stack diagnostics (healthz, snapshot, stale, report); AUTO_GC=1 archives stale

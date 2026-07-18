@@ -526,7 +526,7 @@ class TestHiveCountAccuracy:
         ]
 
         with (
-            patch.object(orch, "_search_hive", return_value=(fake_hive_memories, 2)),
+            patch.object(orch, "_search_hive", return_value=(fake_hive_memories, 2, False)),
             patch.object(orch, "_hive_store", object()),  # non-None triggers hive path
         ):
             # Apply a dedupe_window that removes one hive entry

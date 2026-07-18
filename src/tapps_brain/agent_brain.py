@@ -99,9 +99,12 @@ def _parse_csv_env(var: str) -> list[str]:
 def _content_key(content: str) -> str:
     """Generate a deterministic key from content."""
     h = hashlib.sha256(content.encode()).hexdigest()[:16]
-    # Create a slug from first few words
+    # Create a slug from first few words.  Restrict to ASCII: str.isalnum()
+    # accepts non-ASCII alphanumerics (e.g. "café"), which would produce keys
+    # that fail models._KEY_SLUG_PATTERN and crash store.save().
     words = content.lower().split()[:4]
-    slug = "-".join(w[:12] for w in words if w.isalnum() or w.replace("-", "").isalnum())[:60]
+    slug = "-".join(w[:12] for w in words if w.isascii() and w.replace("-", "").isalnum())[:60]
+    slug = slug.lstrip("-")
     return f"{slug}-{h}" if slug else h
 
 
@@ -145,7 +148,7 @@ class AgentBrain:
                 # Fail closed: an explicit Hive DSN that cannot open must not
                 # silently degrade share=/hive paths to private-only.
                 msg = f"Failed to open Hive backend for DSN ({type(exc).__name__}): {exc}"
-                raise RuntimeError(msg) from exc
+                raise BrainConfigError(msg) from exc
 
         # STORY-066.8: Auto-migrate private schema if TAPPS_BRAIN_AUTO_MIGRATE=1.
         # MemoryStore.__init__ also performs this check, but we call it here so
@@ -155,14 +158,12 @@ class AgentBrain:
             from tapps_brain.postgres_connection import is_postgres_dsn
 
             if is_postgres_dsn(_auto_migrate_dsn):
-                try:
-                    from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+                # Any failure (MigrationDowngradeError, ImportError, transient
+                # DB errors) propagates to the caller — surfacing schema
+                # problems before the backend is constructed.
+                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
 
-                    maybe_auto_migrate_private(_auto_migrate_dsn)
-                except Exception:
-                    # MigrationDowngradeError and ImportError propagate; other
-                    # transient errors are logged and deferred to the store.
-                    raise
+                maybe_auto_migrate_private(_auto_migrate_dsn)
 
         # ADR-007: resolve the Postgres private backend from
         # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is
@@ -262,12 +263,27 @@ class AgentBrain:
         share: bool = False,
         share_with: str | list[str] | None = None,
     ) -> str:
-        """Save a memory.  Returns the generated key."""
+        """Save a memory.  Returns the generated key.
+
+        Args:
+            fact: The content to remember.
+            tier: Memory tier (``"architectural"``, ``"pattern"``,
+                ``"procedural"``, ``"context"``).
+            share: Share with *all* declared groups.  Mutually exclusive with
+                ``share_with``.
+            share_with: ``"hive"``, a single group name, or a list of group
+                names to share with.
+        """
         try:
             MemoryTier(tier)
         except ValueError as exc:
             valid = [t.value for t in MemoryTier]
             raise BrainValidationError(f"Invalid tier {tier!r}: must be one of {valid}") from exc
+        if share and share_with is not None:
+            raise BrainValidationError(
+                "share and share_with are mutually exclusive: use share=True for all "
+                "declared groups, or share_with for specific targets"
+            )
         if isinstance(share_with, str) and not share_with.strip():
             raise BrainValidationError("share_with must be a non-empty group name or 'hive'")
 
@@ -362,12 +378,8 @@ class AgentBrain:
         return results
 
     def forget(self, key: str) -> bool:
-        """Archive a memory.  Returns ``True`` if found."""
-        entry = self._store.get(key)
-        if entry is None:
-            return False
-        self._store.delete(key)
-        return True
+        """Delete a memory.  Returns ``True`` if found."""
+        return self._store.delete(key)
 
     # --- Learning methods (STORY-057.3) ---------------------------------------
 
@@ -394,12 +406,11 @@ class AgentBrain:
             tags.append(f"task:{tid}")
         self._store.save(key=key, value=task_description, tier="procedural", tags=tags)
 
-        # Reinforce recalled memories
+        # Reinforce recalled memories; reinforce() raises KeyError only when
+        # the entry has since been deleted, which is not an error here.
         for recalled_key in self._last_recalled_keys:
-            entry = self._store.get(recalled_key)
-            if entry is not None:
-                with contextlib.suppress(KeyError):
-                    self._store.reinforce(recalled_key, confidence_boost=boost)
+            with contextlib.suppress(KeyError):
+                self._store.reinforce(recalled_key, confidence_boost=boost)
 
     def learn_from_failure(
         self,

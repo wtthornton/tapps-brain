@@ -1,6 +1,6 @@
 """Project-local memory partition labels (GitHub #49).
 
-``memory_group`` is stored in SQLite as column ``memory_group`` (not Hive namespace,
+``memory_group`` is stored as column ``memory_group`` (not Hive namespace,
 not profile tier). Use :data:`MEMORY_GROUP_UNSET` with :meth:`MemoryStore.save` to
 preserve an existing group on update when the caller omits the parameter.
 """

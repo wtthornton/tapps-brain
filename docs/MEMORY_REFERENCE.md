@@ -63,7 +63,7 @@ Full tool list (operator, KG, maintenance, diagnostics): see manifest JSON above
 
 Composite score in `src/tapps_brain/retrieval.py`:
 
-- Relevance 40%, confidence 30%, recency 15%, frequency 15%
+- Relevance 40%, confidence 30%, recency 15%, frequency 15% (default `repo-brain` profile; profile-tunable)
 - Hybrid path: pgvector HNSW + tsvector fused via RRF (`fusion.py`)
 - Pure-Python BM25 overlay in `bm25.py`
 

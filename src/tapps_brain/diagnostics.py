@@ -1,6 +1,6 @@
 """Quality diagnostics, anomaly detection, and circuit breaker (EPIC-030).
 
-Computes per-dimension scores (0.0–1.0), composite health, optional SQLite
+Computes per-dimension scores (0.0–1.0), composite health, optional Postgres
 history, EWMA-based anomalies, and a four-state circuit breaker.
 """
 

@@ -96,8 +96,8 @@ can query stored metrics without scraping Postgres. Full detail in
 **Smoke from repo root** (live stack on `:8080`):
 
 ```bash
-make brain-smoke-live     # record + query round-trip over HTTP
-make brain-healthcheck    # MCP wiring + brain_recall
+make brain-smoke-live     # canonical post-deploy HTTP gate (record + query)
+make brain-healthcheck    # live MCP round-trip (server-mode OK if IDE is bridge-only)
 ```
 
 ---

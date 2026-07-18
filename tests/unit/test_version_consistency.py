@@ -48,16 +48,30 @@ def _read_skill_version() -> str:
     return match.group(1)
 
 
+def _read_docker_env_example_brain_version() -> str:
+    """Read BRAIN_VERSION from docker/.env.example (compose image pin template)."""
+    path = PROJECT_ROOT / "docker" / ".env.example"
+    match = re.search(
+        r"^BRAIN_VERSION=(.+)$",
+        path.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, "docker/.env.example is missing BRAIN_VERSION="
+    return match.group(1).strip()
+
+
 def test_all_versions_match() -> None:
     """All distribution files must declare the same version string."""
     pyproject_ver = _read_pyproject_version()
     server_json_ver = _read_server_json_version()
     skill_ver = _read_skill_version()
+    docker_env_ver = _read_docker_env_example_brain_version()
 
     versions = {
         "pyproject.toml": pyproject_ver,
         "server.json": server_json_ver,
         ".claude/skills/tapps-brain/SKILL.md": skill_ver,
+        "docker/.env.example BRAIN_VERSION": docker_env_ver,
     }
 
     # All must be non-empty

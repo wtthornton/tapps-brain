@@ -8,7 +8,7 @@ context. Delegates formatting, safety, and token budget enforcement to
 The orchestrator adds quality gates on top of injection:
 - Scope / tier / branch filtering
 - Deduplication against already-in-context memories
-- Minimum confidence threshold
+- Minimum confidence threshold for Hive results (``RecallConfig.min_confidence``)
 - Timing measurement
 
 Thread-safe: multiple concurrent ``recall()`` calls are safe.
@@ -124,7 +124,8 @@ class RecallOrchestrator:
     Delegates formatting/safety/budget to ``inject_memories()`` and adds
     quality gates (scope, tier, branch, deduplication, timing).
 
-    Thread-safe: all mutable state access is guarded by the store lock.
+    Thread-safe: ``recall()`` keeps all per-call state on the stack — the
+    orchestrator instance holds only immutable configuration after init.
     """
 
     def __init__(
@@ -210,9 +211,10 @@ class RecallOrchestrator:
         hive_count = 0
         hive_quality_warning: str | None = None
         if self._hive_store is not None:
-            self._hive_search_error = False
-            hive_memories, hive_count = self._search_hive(message, memories)
-            if getattr(self, "_hive_search_error", False):
+            hive_memories, hive_count, hive_search_failed = self._search_hive(
+                message, memories, cfg
+            )
+            if hive_search_failed:
                 hive_quality_warning = "hive_search_unavailable"
             if hive_memories:
                 memories = self._merge_hive_results(memories, hive_memories)
@@ -277,6 +279,14 @@ class RecallOrchestrator:
             items = result.get(key, [])
             return [x for x in items if isinstance(x, cls)]
 
+        # Merge injection-level warnings (e.g. "memory search failed: ...")
+        # with the hive outage warning so callers see both signals.
+        injection_warning = result.get("quality_warning")
+        warnings = [
+            w for w in (injection_warning, hive_quality_warning) if isinstance(w, str) and w
+        ]
+        quality_warning = "; ".join(warnings) if warnings else None
+
         return RecallResult(
             memory_section=memory_section,
             memories=memories,
@@ -286,7 +296,7 @@ class RecallOrchestrator:
             memory_count=len(memories),
             hive_memory_count=hive_count,
             recall_diagnostics=recall_diag,
-            quality_warning=hive_quality_warning,
+            quality_warning=quality_warning,
             entities=_as_list("entities", KGEntityView),
             edges=_as_list("edges", KGEdgeView),
             evidence=_as_list("evidence", KGEvidenceView),
@@ -335,13 +345,17 @@ class RecallOrchestrator:
         self,
         message: str,
         local_memories: list[dict[str, object]],
-    ) -> tuple[list[dict[str, object]], int]:
+        cfg: RecallConfig | None = None,
+    ) -> tuple[list[dict[str, object]], int, bool]:
         """Search the Hive for relevant memories not already in local results.
 
-        Returns (hive_memories, count).
+        Returns ``(hive_memories, count, search_failed)``. The failure flag is
+        returned (not stashed on ``self``) so concurrent ``recall()`` calls
+        cannot clobber each other's outage signal.
         """
         if self._hive_store is None:
-            return [], 0
+            return [], 0, False
+        effective_cfg = cfg if cfg is not None else self._config
 
         eff_weight = self._hive_recall_weight
         _getter = getattr(self._store, "get_hive_recall_weight", None)
@@ -367,16 +381,14 @@ class RecallOrchestrator:
             hive_results = self._hive_store.search(
                 message,
                 namespaces=namespaces,
-                min_confidence=self._config.min_confidence,
+                min_confidence=effective_cfg.min_confidence,
                 limit=20,
             )
         except Exception:
             logger.warning("hive_recall_search_failed", exc_info=True)
-            # Stash so recall() can surface quality_warning (empty ≠ healthy).
-            self._hive_search_error = True
-            return [], 0
+            # Report failure so recall() can surface quality_warning (empty ≠ healthy).
+            return [], 0, True
 
-        self._hive_search_error = False
         hive_memories: list[dict[str, object]] = []
         for entry in hive_results:
             key = str(entry.get("key", ""))
@@ -398,7 +410,7 @@ class RecallOrchestrator:
                 }
             )
 
-        return hive_memories, len(hive_memories)
+        return hive_memories, len(hive_memories), False
 
     @staticmethod
     def _merge_hive_results(
@@ -441,8 +453,9 @@ class RecallOrchestrator:
 
         For each memory in the result set, find graph-connected entries.
         If a connected entry is also in the result set, boost its score
-        by *boost_factor* (additive, capped at 1.0).  The boosted list
-        is re-sorted by descending score.
+        additively by ``boost_factor / hop_distance`` (a 2-hop neighbour
+        gets half the boost of a 1-hop neighbour), capped at 1.0.  The
+        boosted list is re-sorted by descending score.
         """
         result_keys = {str(m.get("key", "")) for m in memories}
         # Collect all graph-connected keys and their hop distances
@@ -487,23 +500,19 @@ class RecallOrchestrator:
         return boosted
 
     def _effective_config(self, overrides: dict[str, object]) -> RecallConfig:
-        """Build effective config by merging base config with per-call overrides."""
+        """Build effective config by merging base config with per-call overrides.
+
+        Derives the field set from the dataclass definition so newly added
+        ``RecallConfig`` fields (e.g. ``since`` / ``until`` / ``time_field``)
+        are never silently dropped or reset to defaults.
+        """
         if not overrides:
             return self._config
 
-        vals: dict[str, object] = {
-            "engagement_level": self._config.engagement_level,
-            "max_tokens": self._config.max_tokens,
-            "min_score": self._config.min_score,
-            "min_confidence": self._config.min_confidence,
-            "scope_filter": self._config.scope_filter,
-            "tier_filter": self._config.tier_filter,
-            "branch": self._config.branch,
-            "memory_group": self._config.memory_group,
-            "dedupe_window": list(self._config.dedupe_window),
-            "use_graph_boost": self._config.use_graph_boost,
-            "graph_boost_factor": self._config.graph_boost_factor,
-        }
+        import dataclasses
+
+        vals: dict[str, object] = dataclasses.asdict(self._config)
+        vals["dedupe_window"] = list(self._config.dedupe_window)
         for k, v in overrides.items():
             if k in vals:
                 vals[k] = v
@@ -551,13 +560,33 @@ class RecallOrchestrator:
             # Only accept numeric types — strings could raise ValueError in float()
             conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
             tier = str(mem.get("tier", "pattern"))
-            # Reuse cached entry when available; fall back to a fresh lookup.
+            # Reuse cached entry when available; fall back to a read-only lookup.
             store_entry: MemoryEntry | None = (
-                entry_cache[key] if key in entry_cache else (self._store.get(key) if key else None)
+                entry_cache[key] if key in entry_cache else (self._peek_entry(key) if key else None)
             )
-            value = store_entry.value if store_entry else str(key)
-            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}): {value}")
+            # Hive memories are not in the local store — use the carried value
+            # (and origin marker) rather than degrading to the bare key.
+            value = store_entry.value if store_entry is not None else str(mem.get("value") or key)
+            src = str(mem.get("source", "local"))
+            origin = f" [hive:{mem.get('namespace', '')}]" if src == "hive" else ""
+            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): {value}")
         return "\n".join(lines)
+
+    def _peek_entry(self, key: str) -> MemoryEntry | None:
+        """Read-only entry lookup for filtering/formatting.
+
+        Avoids ``store.get()``, which bumps ``access_count`` and resets
+        ``last_accessed`` — filtering must not reinforce entries it may
+        then discard (frequency/recency scoring would be skewed).
+        """
+        ensure = getattr(self._store, "_ensure_entry_cached", None)
+        if callable(ensure):
+            try:
+                entry = ensure(key)
+            except Exception:
+                return None
+            return entry if isinstance(entry, MemoryEntry) else None
+        return self._store.get(key)
 
     def _apply_post_filters(
         self,
@@ -582,9 +611,10 @@ class RecallOrchestrator:
             if key in dedupe_set:
                 continue
 
-            # Scope / tier / branch / memory_group filter: look up entry in store
+            # Scope / tier / branch / memory_group filter: read-only lookup so
+            # filtering does not bump access_count on entries it may discard.
             if cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.memory_group:
-                entry = self._store.get(key) if key else None
+                entry = self._peek_entry(key) if key else None
                 if key:
                     entry_cache[key] = entry  # cache for section rebuild below
                 if entry is None:

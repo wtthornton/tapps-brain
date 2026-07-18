@@ -41,7 +41,7 @@ _SESSION_EXPIRY_DAYS = 7
 # Confidence threshold for contradicted memory archival.
 _CONTRADICTED_ARCHIVE_THRESHOLD = 0.2
 
-# Default TTL for session index (FTS5) rows — pruned during gc().
+# Default TTL for session index (Postgres FTS) rows — pruned during gc().
 _SESSION_INDEX_TTL_DAYS = 90
 
 
@@ -96,7 +96,7 @@ class GCResult(BaseModel):
     session_chunks_deleted: int = Field(
         default=0,
         ge=0,
-        description="Session index (FTS5) rows pruned by TTL this run (live runs only).",
+        description="Session index rows pruned by TTL this run (live runs only).",
     )
 
 

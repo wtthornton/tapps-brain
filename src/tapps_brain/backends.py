@@ -185,7 +185,8 @@ class AgentRegistry:
         if not self._path.exists():
             return
         raw = yaml.safe_load(self._path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict) or "agents" not in raw:
+        if not isinstance(raw, dict) or not isinstance(raw.get("agents"), list):
+            # Tolerate malformed files, including a bare "agents:" key (YAML null).
             return
         for agent_data in raw["agents"]:
             try:
@@ -278,8 +279,9 @@ class PropagationEngine:
     - ``group:<name>`` -> saved to Hive namespace *name* when *agent_id* is a
       member of that group (see ``HiveBackend.create_group`` / ``add_group_member``)
 
-    Auto-propagation: if the entry's tier is in the profile's
-    ``hive.auto_propagate_tiers``, scope is upgraded to ``domain``.
+    Auto-propagation: if the requested scope is ``private`` and the entry's
+    tier is in the profile's ``hive.auto_propagate_tiers``, scope is upgraded
+    to ``domain`` (explicit ``group:<name>``/``hive`` requests are left as-is).
     If the tier is in ``hive.private_tiers``, scope is forced to ``private``.
 
     Outcome contract
@@ -498,8 +500,9 @@ def push_memory_entries_to_hive(
     """Push local *entries* to the Hive using :meth:`PropagationEngine.propagate`.
 
     Returns a JSON-serializable report: ``pushed``, ``skipped``, ``failed``,
-    each a list of per-key records. *skipped* means propagation returned
-    ``None`` (would stay private under current rules).
+    each a list of per-key records. *skipped* means the propagation outcome
+    had ``propagated=False`` (the entry stays private under current rules;
+    see the ``decision`` taxonomy on :class:`PropagationEngine`).
     """
     from tapps_brain.models import MemorySource, tier_str
 
@@ -823,7 +826,9 @@ def resolve_agent_registry(
     ).strip()
     if dsn and is_postgres_dsn(dsn):
         return create_agent_registry_backend(dsn)
-    return AgentRegistry()
+    # Match create_agent_registry_backend: wrap the YAML registry in the
+    # protocol adapter so both paths return the same backend type.
+    return FileAgentRegistryBackend()
 
 
 # ---------------------------------------------------------------------------

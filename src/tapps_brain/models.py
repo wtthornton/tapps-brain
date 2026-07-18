@@ -65,8 +65,8 @@ class MemoryScope(StrEnum):
 
     project = "project"  # visible across the entire project
     branch = "branch"  # scoped to a git branch
-    ephemeral = "ephemeral"  # very fast decay - momentary context (profile: 1 day)
-    session = "session"  # ephemeral, current session only
+    ephemeral = "ephemeral"  # short-lived, momentary visibility
+    session = "session"  # visible in the current session only
     shared = "shared"  # eligible for cross-project federation
 
 
@@ -138,7 +138,7 @@ class MemoryEntry(BaseModel):
     access_count: int = Field(default=0, ge=0, description="Read access count.")
     branch: str | None = Field(default=None, description="Git branch (required when scope=branch).")
 
-    # Reserved for Epic 24 (Memory Intelligence)
+    # Memory Intelligence (Epic 24): reinforcement + contradiction tracking
     last_reinforced: str | None = Field(
         default=None, description="ISO-8601 UTC, set by reinforce action."
     )
@@ -146,7 +146,7 @@ class MemoryEntry(BaseModel):
     contradicted: bool = Field(default=False, description="Set by contradiction detection.")
     contradiction_reason: str | None = Field(default=None, description="Reason for contradiction.")
 
-    # Reserved for Epic 25 (Memory Retrieval & Integration)
+    # Profile seeding provenance (EPIC-044.6)
     seeded_from: str | None = Field(default=None, description="Populated by profile seeding.")
 
     # Optional embedding for semantic search (Epic 65.7)
@@ -406,8 +406,12 @@ class MemoryEntry(BaseModel):
 
     @model_validator(mode="after")
     def _apply_defaults_and_validate(self) -> MemoryEntry:
-        # Apply source-based confidence default
+        # Apply source-based confidence default. Only -1.0 is the documented
+        # sentinel; other negative values are out of the 0.0-1.0 range.
         if self.confidence < 0:
+            if self.confidence != -1.0:
+                msg = "confidence must be in [0.0, 1.0], or -1.0 to use the source default."
+                raise ValueError(msg)
             self.confidence = _SOURCE_CONFIDENCE_DEFAULTS.get(self.source, 0.5)
 
         # Branch required when scope=branch
@@ -462,7 +466,13 @@ class MemoryEntry(BaseModel):
 
     @property
     def is_superseded(self) -> bool:
-        """Return ``True`` if this entry has been superseded (invalid_at in the past)."""
+        """Return ``True`` if this entry has been superseded.
+
+        True when the entry is explicitly marked superseded (``status`` or
+        ``superseded_by``, TAP-732) or its ``invalid_at`` is in the past.
+        """
+        if self.status == MemoryStatus.superseded or self.superseded_by is not None:
+            return True
         if self.invalid_at is None:
             return False
         return datetime.now(tz=UTC) >= _parse_iso(self.invalid_at)
@@ -508,7 +518,7 @@ class KGEdgeView(BaseModel):
     canonical_name: str = Field(
         default="", description="Canonical name of the neighbouring entity."
     )
-    hop: int = Field(default=1, ge=1, description="Distance from focal entity (1 or 2).")
+    hop: int = Field(default=1, ge=1, description="Distance from focal entity in hops (>= 1).")
     score: float = Field(default=0.0, ge=0.0, le=1.0, description="Composite edge score (0-1).")
     edge_confidence: float = Field(
         default=0.0,

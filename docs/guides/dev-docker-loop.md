@@ -10,22 +10,38 @@ For production gates see [`scripts/publish-checklist.md`](../../scripts/publish-
 |------|------|----------|
 | **A — inner loop** | Every code change (10–20×/day) | `make dev-deploy` or `make hive-reload-http` + `make brain-smoke-live` |
 | **B — merge confidence** | 2–4×/day | `make brain-lint`, `make brain-type`, `make brain-test-fast` |
-| **C — pre-tag** | End of day / before release | `make brain-test`, `bash scripts/release-ready.sh`, `make brain-healthcheck` |
+| **C — pre-tag** | End of day / before release | `make brain-test`, `bash scripts/release-ready.sh`, then `make brain-smoke-live` (stack). Optional `make brain-healthcheck` for MCP round-trip. |
 
-Post-deploy smoke: prefer **`make brain-smoke-live`** (~10s). Use **`make brain-healthcheck`** when MCP wiring or `.mcp.json` changed. Use **`make hive-smoke`** in CI only — it boots an isolated stack and tears it down.
+### Deploy vs wiring gates
+
+| Gate | Purpose | When |
+|------|---------|------|
+| **`make brain-smoke-live`** | Canonical **post-deploy** HTTP smoke (`/healthz`, experience round-trip, version match) | After every `dev-deploy` / `hive-reload` / compose roll |
+| **`make brain-visual-smoke-live`** | Dashboard + snapshot proxy | When visual image or nginx config changed |
+| **`make brain-healthcheck`** | Live MCP initialize + `brain_recall` | Consumer IDE wiring, or confirm MCP on the running container |
+
+This **brain-dev** repo is often **bridge-only** (NLT MCP in `.mcp.json`, no direct `tapps-brain` block). `brain-healthcheck` then uses **server-mode**: `http://127.0.0.1:8080/mcp/` + token from `.env` / `docker/.env`. Missing IDE wiring is a **warning**, not a deploy failure. Consumer repos that wire `mcpServers.tapps-brain` still get the strict wiring checks.
+
+Prefer **`make hive-reload-http` / `make dev-deploy`** for Python-only changes. Reserve **`make publish-brain-image`** for version bumps, visual/nginx, or migrate image changes (full three-image rebuild is slow).
+
+Post-deploy smoke: prefer **`make brain-smoke-live`** (~10s). Use **`make hive-smoke`** in CI only — it boots an isolated stack and tears it down.
 
 ## First-time setup
 
 ```bash
 cp docker/.env.example docker/.env   # fill in secrets + keep TAPPS_BRAIN_ALLOWED_ORIGINS
 make hive-deploy                     # full build: wheel + 3 images + migrate + up
-make brain-healthcheck               # once: MCP wiring + project registration
+make brain-smoke-live                # canonical stack gate
+make brain-healthcheck               # optional: MCP round-trip (server-mode OK here)
 ```
 
 `docker/.env` **must** include non-empty `TAPPS_BRAIN_ALLOWED_ORIGINS`. Compose sets
 `TAPPS_BRAIN_STRICT=1`; without origins the brain refuses to start. The template ships a
-local-dev default (`http://127.0.0.1:8088,http://localhost:8088` for tapps-visual). Agents:
-when a user asks to upgrade local Docker, prefer `make dev-deploy` over `hive-deploy`.
+local-dev default (`http://127.0.0.1:8088,http://localhost:8088` for tapps-visual).
+
+`check-brain-env` also requires `BRAIN_VERSION` in `docker/.env` to match `pyproject.toml`
+(prevents http/visual tag drift). Agents: when a user asks to upgrade local Docker, prefer
+`make dev-deploy` over `hive-deploy` unless visual/nginx/all images need a rebuild.
 
 Optional — warm embedding cache so restarts skip Hub download:
 
@@ -120,7 +136,7 @@ BRAIN_TEST_FAST_N=4 make brain-test-fast   # fixed worker count
 
 | Change | Use |
 |--------|-----|
-| Python handlers / MCP tools | `dev-deploy` |
+| Python handlers / MCP tools | `dev-deploy` or `hive-reload-http` (not full `publish-brain-image`) |
 | SQL migrations / roles | `MIGRATE=1 make dev-deploy` or `make hive-reload` |
-| nginx / brain-visual | `make hive-deploy` (visual image) |
+| nginx / brain-visual / version bump | `make publish-brain-image` then compose `up -d`, or `make hive-deploy` |
 | Auth / RLS / tenant headers | Tier C + `TAPPS_BRAIN_CROSS_TENANT_SMOKE=1` on release gate |

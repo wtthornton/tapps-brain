@@ -169,7 +169,21 @@ mcp_servers:
 should see ~17 tools when using the `coder` profile, 10 when using
 `agent_brain`, or 8 (the daily-driver eager budget) on the default `full`
 profile. The healthcheck script (`scripts/brain-healthcheck.sh`) also
-reports the configured profile.
+reports the configured profile when `mcpServers.tapps-brain` is present.
+
+### Bridge-only brain-dev repos (this repository)
+
+The **tapps-brain** source repo often wires **NLT MCP servers only** (no direct
+`tapps-brain` entry in `.mcp.json` / `.cursor/mcp.json`) — memory goes through
+BrainBridge. That is intentional.
+
+| Check | Role |
+|-------|------|
+| `make brain-smoke-live` | Canonical **stack deploy** gate |
+| `make brain-healthcheck` | Live MCP against `:8080/mcp/` via **server-mode** when IDE wiring is absent (warnings for missing `tapps-brain` block; FAIL only if the round-trip fails) |
+
+Do **not** add a direct `tapps-brain` MCP block to this repo just to silence
+healthcheck warnings — use server-mode, or wire consumers per the sections above.
 
 #### Profile wire contract (stable across tapps-brain 3.x) — TAP-1579
 

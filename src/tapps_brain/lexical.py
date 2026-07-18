@@ -1,4 +1,4 @@
-"""Lexical tokenization for BM25 and FTS5 query building (EPIC-042 STORY-042.1).
+"""Lexical tokenization for BM25 and FTS query building (EPIC-042 STORY-042.1).
 
 Deterministic, locale-agnostic helpers: optional ASCII folding (NFKD), camelCase
 boundaries for code-like text, path-style splitting for FTS queries, and basic
@@ -37,7 +37,7 @@ class LexicalRetrievalConfig(BaseModel):
     fts_path_splits: bool = Field(
         default=True,
         description=(
-            "When building FTS5 MATCH strings, also split on / and \\\\ between "
+            "When building FTS match strings, also split on / and \\\\ between "
             "whitespace-separated chunks (path-friendly literals)."
         ),
     )
@@ -86,7 +86,7 @@ def fts_query_terms(
     fts_path_splits: bool,
     ascii_fold: bool = False,
 ) -> list[str]:
-    """Terms for FTS5 literal phrases (AND-combined in :func:`build_fts_match_query`).
+    """Terms for FTS literal phrases (AND-combined in :func:`build_fts_match_query`).
 
     Splits on whitespace; when *fts_path_splits* is True, also splits segments
     on ``/`` and ``\\`` so ``src/models`` becomes ``src``, ``models``. Each
@@ -115,7 +115,11 @@ def build_fts_match_query(
     fts_path_splits: bool,
     ascii_fold: bool = False,
 ) -> str:
-    """Build a safe FTS5 MATCH string: AND of double-quoted literals."""
+    """Build a safe FTS match string: AND of double-quoted literals.
+
+    Legacy SQLite FTS5 helper kept for API compatibility — the Postgres
+    backends (ADR-007) query via ``plainto_tsquery`` and do not use it.
+    """
     tokens = fts_query_terms(query, fts_path_splits=fts_path_splits, ascii_fold=ascii_fold)
     if not tokens:
         return ""

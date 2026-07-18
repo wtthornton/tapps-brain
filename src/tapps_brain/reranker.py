@@ -91,6 +91,10 @@ class FlashRankReranker:
     def __init__(self, model: str = _DEFAULT_FLASHRANK_MODEL) -> None:
         self._model_name = model
         self._ranker: Any = None  # lazy init — avoid model load at factory time
+        # Sticky degradation: a failed model load short-circuits future rerank
+        # calls to the noop fallback instead of re-attempting the (potentially
+        # network-bound) load on every recall (mirrors get_embedding_provider).
+        self._degraded = False
 
     def _get_ranker(self) -> Any:  # noqa: ANN401
         """Lazy-initialize the FlashRank Ranker on first use."""
@@ -110,6 +114,8 @@ class FlashRankReranker:
         """Rerank candidates using FlashRank local cross-encoder."""
         if top_k <= 0 or not candidates:
             return []
+        if self._degraded:
+            return _noop_fallback(candidates, top_k)
 
         keys = [k for k, _ in candidates]
         passages = [{"id": i, "text": v} for i, (_, v) in enumerate(candidates)]
@@ -122,10 +128,14 @@ class FlashRankReranker:
             request = RerankRequest(query=query, passages=passages)
             results = ranker.rerank(request)
         except Exception as e:
+            if self._ranker is None:
+                # Model load failed — do not retry the download on the hot path.
+                self._degraded = True
             logger.warning(
                 "flashrank_reranker_failed",
                 reason=str(e),
                 fallback="noop",
+                sticky_degraded=self._degraded,
             )
             return _noop_fallback(candidates, top_k)
 
@@ -174,7 +184,14 @@ def get_reranker(
     if _flashrank_available():
         return FlashRankReranker(model=model or _DEFAULT_FLASHRANK_MODEL)
 
-    logger.debug("flashrank_not_installed", fallback="noop")
+    # WARNING (not DEBUG): the operator explicitly enabled reranking, so the
+    # degradation must be visible at default log levels (same rationale as
+    # the embeddings provider, TAP-2672).
+    logger.warning(
+        "flashrank_not_installed",
+        fallback="noop",
+        install_hint="pip install 'tapps-brain[reranker]'",
+    )
     return NoopReranker()
 
 

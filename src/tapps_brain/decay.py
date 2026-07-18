@@ -335,7 +335,12 @@ def update_stability(
     *,
     now: datetime | None = None,
 ) -> tuple[float, float]:
-    """Compute updated (stability, difficulty) using FSRS-style rules.
+    """Compute updated stability using FSRS-style rules.
+
+    Only *stability* is adjusted by the access outcome. *Difficulty* is
+    initialized from the tier default when unset (``0.0``) and otherwise
+    passed through unchanged — FSRS difficulty updates are not implemented
+    (see ``docs/guides/memory-decay-and-fsrs.md``).
 
     Args:
         entry: The memory entry being accessed.
@@ -344,7 +349,8 @@ def update_stability(
         now: Optional current time (for testing).
 
     Returns:
-        (new_stability_days, new_difficulty)
+        (new_stability_days, difficulty) — difficulty is the entry's existing
+        value, or the tier default if it was unset.
     """
     tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
 

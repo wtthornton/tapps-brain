@@ -438,7 +438,7 @@ def maintenance_gc_config(
         int | None,
         typer.Option(
             "--session-index-ttl-days",
-            help="Days before session index (FTS5) rows are pruned during gc().",
+            help="Days before session index rows are pruned during gc().",
         ),
     ] = None,
     as_json: JsonFlag = False,

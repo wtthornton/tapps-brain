@@ -159,7 +159,11 @@ _DEFAULT_B = 0.75
 
 @dataclass
 class BM25Scorer:
-    """Okapi BM25 ranking function over a pre-built document index.
+    """BM25 ranking function over a pre-built document index.
+
+    Implements Okapi BM25 with a BM25+ style lower-bound bonus: ``delta``
+    (default 1.0) is added to the TF-saturation term for every query term
+    that occurs in the document. Set ``delta=0.0`` for classic Okapi BM25.
 
     Usage::
 

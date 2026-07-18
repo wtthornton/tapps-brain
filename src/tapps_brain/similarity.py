@@ -67,7 +67,7 @@ def tag_similarity(entry_a: MemoryEntry, entry_b: MemoryEntry) -> float:
 
 
 # ---------------------------------------------------------------------------
-# TF-IDF text similarity
+# TF-cosine text similarity (no IDF weighting — see module docstring)
 # ---------------------------------------------------------------------------
 
 
@@ -150,7 +150,12 @@ class SimilarityResult:
     used_embeddings: bool = False
 
     def __lt__(self, other: SimilarityResult) -> bool:
-        """Allow sorting by combined score (descending)."""
+        """Intentionally inverted so a plain ``sort()`` orders best-first.
+
+        ``a < b`` is True when *a* has the **higher** combined score — i.e.
+        ``sorted(results)`` yields descending scores. Do not use ``<`` for
+        natural score comparison; compare ``combined_score`` directly.
+        """
         return self.combined_score > other.combined_score
 
 
@@ -302,15 +307,9 @@ def find_similar(
                 tag_weight=emb_tag,
                 text_weight=text_weight,
             )
-        elif use_embeddings:
-            # No stored vectors — honour the caller's text-path weights.
-            result = compute_similarity(
-                entry,
-                candidate,
-                tag_weight=tag_weight,
-                text_weight=text_weight,
-            )
         else:
+            # Embeddings disabled, or no stored vectors — honour the caller's
+            # text-path weights.
             result = compute_similarity(
                 entry,
                 candidate,

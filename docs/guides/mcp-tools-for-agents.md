@@ -404,4 +404,4 @@ Resolve entity names to UUIDs before edge writes; batch N events in one MCP call
 - [docs/guides/claude-code-hooks.md](claude-code-hooks.md) — the SessionStart hook that auto-primes `brain_recall` on turn 1.
 - [docs/guides/auto-recall.md](auto-recall.md) — how `memory_recall` ranks and fuses results.
 - [docs/guides/hive.md](hive.md) — cross-agent / cross-repo shared memory model.
-- [scripts/brain-healthcheck.sh](../../scripts/brain-healthcheck.sh) — `make brain-healthcheck` verifies MCP wiring + recall; `make brain-smoke-live` exercises HTTP experience record/query on the live stack.
+- [scripts/brain-healthcheck.sh](../../scripts/brain-healthcheck.sh) — `make brain-healthcheck` runs a live MCP initialize + `brain_recall` (server-mode fallback when `.mcp.json` is bridge-only). **Deploy gate:** `make brain-smoke-live` for HTTP experience record/query on the live stack.

@@ -1,4 +1,4 @@
-"""PostgreSQL connection management with pooling for Hive and Federation backends.
+"""PostgreSQL connection pooling for the private-memory, Hive, and Federation backends.
 
 EPIC-055 STORY-055.2 — provides a connection pool manager using psycopg + psycopg_pool.
 All psycopg imports are lazy so the rest of the package works without Postgres deps.
@@ -64,8 +64,9 @@ class PostgresConnectionManager:
         (or legacy ``TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT``) env var, then ``5``.
     idle_timeout:
         Seconds before an idle connection is closed and evicted from the pool.
-        Falls back to ``TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT`` env var, then ``300`` (5 min).
-        Pass ``0`` to disable idle eviction.
+        Falls back to ``TAPPS_BRAIN_PG_POOL_IDLE_TIMEOUT_SECONDS``
+        (or legacy ``TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT``) env var, then ``300`` (5 min).
+        Pass ``0`` to omit the setting and use psycopg_pool's default (``max_idle=600``).
     max_waiting:
         Maximum number of requests that may queue waiting for a free connection.
         Falls back to ``TAPPS_BRAIN_PG_POOL_MAX_WAITING`` env var, then ``20``.
@@ -74,7 +75,8 @@ class PostgresConnectionManager:
         Maximum lifetime of a connection in seconds; psycopg_pool will close
         and replace connections that exceed this age.  Falls back to
         ``TAPPS_BRAIN_PG_POOL_MAX_LIFETIME_SECONDS`` env var, then ``3600`` (1 hour).
-        Pass ``0`` to disable recycling.
+        Pass ``0`` to omit the setting and use psycopg_pool's default
+        (``max_lifetime=3600``).
     """
 
     def __init__(
@@ -126,8 +128,14 @@ class PostgresConnectionManager:
                 or os.environ.get("TAPPS_BRAIN_HIVE_CONNECT_TIMEOUT", "5")
             )
         )
-        _idle_env = float(os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300"))
-        self._idle_timeout = idle_timeout if idle_timeout is not None else _idle_env
+        self._idle_timeout = (
+            idle_timeout
+            if idle_timeout is not None
+            else float(
+                os.environ.get("TAPPS_BRAIN_PG_POOL_IDLE_TIMEOUT_SECONDS")
+                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300")
+            )
+        )
         self._max_waiting = (
             max_waiting
             if max_waiting is not None
@@ -438,9 +446,9 @@ class PostgresConnectionManager:
         if self._async_pool is not None:
             return
         if self._async_init_lock is None:
-            # Lock is created lazily because creating it requires a running
-            # loop; one manager instance can be reused across loops in tests
-            # so we recreate it if the loop changed.
+            # Lock is created lazily on first use, inside a running loop.
+            # It is created once and never rebound — reusing one manager
+            # instance across different event loops is unsupported.
             self._async_init_lock = asyncio.Lock()
         async with self._async_init_lock:
             if self._async_pool is not None:
@@ -506,11 +514,15 @@ class PostgresConnectionManager:
             else:
                 current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
 
+            # TAP-2673 parity with the sync check: only flag owned tables
+            # without FORCE ROW LEVEL SECURITY — a FORCE-RLS owner is subject
+            # to the policies like any role.
             await cur.execute(
                 "SELECT relname FROM pg_class "
                 "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
                 "WHERE relname IN ('private_memories', 'project_profiles') "
-                "  AND pg_get_userbyid(relowner) = current_user"
+                "  AND pg_get_userbyid(relowner) = current_user "
+                "  AND relforcerowsecurity = false"
             )
             owned = sorted(r[0] for r in await cur.fetchall())
 
@@ -521,7 +533,8 @@ class PostgresConnectionManager:
             violations.append("rolbypassrls=true (BYPASSRLS bypasses RLS)")
         if owned:
             violations.append(
-                f"role owns tenanted tables {owned} (table owners bypass RLS unless FORCE is set)"
+                f"role owns tenanted tables {owned} without FORCE ROW LEVEL "
+                "SECURITY (table owners bypass RLS unless FORCE is set)"
             )
 
         if not violations:

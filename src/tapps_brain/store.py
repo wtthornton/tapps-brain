@@ -370,7 +370,7 @@ _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from
 
 
 class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
-    """In-memory cache with SQLite write-through persistence.
+    """In-memory cache with Postgres write-through persistence (ADR-007).
 
     Thread-safe: one ``threading.Lock`` serializes orchestration and cache access.
     Optional ``lock_timeout_seconds`` or env ``TAPPS_STORE_LOCK_TIMEOUT_S`` (>0) makes
@@ -1138,7 +1138,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Args:
             key: Unique identifier for the memory.
             value: Memory content.
-            tier: Memory tier (architectural, pattern, context).
+            tier: Memory tier (architectural, pattern, procedural, context).
             source: Source of the memory (human, agent, inferred, system).
             source_agent: Identifier of the agent saving the memory.
             scope: Visibility scope (project, branch, session).
@@ -1988,10 +1988,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 entry = entry.model_copy(update=embed_update)
                 with self._serialized():
                     # Re-read to avoid overwriting concurrent update_fields.
+                    # Skip the cache write when the key was deleted in the
+                    # meantime — re-inserting would resurrect a deleted entry.
                     current = self._entries.get(key)
-                    if current is not None and current.key == entry.key:
+                    if current is not None:
                         entry = current.model_copy(update=embed_update)
-                    self._entries[key] = entry
+                        self._entries[key] = entry
             except Exception:
                 logger.warning("embedding_compute_failed", key=key, exc_info=True)
         return entry
@@ -2049,7 +2051,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 continue
 
             update: dict[str, object] = {"embedding": emb, "embedding_model_id": model_id}
-            with self._lock:
+            with self._serialized():
                 current = self._entries.get(key)
                 if current is None:
                     continue
@@ -2061,7 +2063,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 self._persistence.save(updated)
             except Exception:
                 failed += 1
-                with self._lock:
+                with self._serialized():
                     if self._entries.get(key) is updated:
                         self._entries[key] = previous
                 logger.warning("backfill_embeddings.persist_failed", key=key, exc_info=True)
@@ -2224,8 +2226,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     source_keys=result.source_keys,
                 )
         except Exception:
+            # Best-effort like the other post-persist steps (Hive propagation,
+            # group/expert publish): the entry is already durably saved, so a
+            # consolidation failure must not fail the save() that triggered it.
             logger.warning("auto_consolidation_check_failed", exc_info=True)
-            raise
         finally:
             self._consolidation_in_progress = False
 
@@ -3291,6 +3295,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # Federation is now Postgres-only; project count not available from local config.
         federation_project_count = 0
 
+        # Update tapps_brain.gc.candidates gauge — the init comment promises
+        # this is refreshed by health() as well as gc().
+        self._last_gc_candidates = len(gc_candidates)
+
         # Integrity verification (H4c)
         integrity = self.verify_integrity()
 
@@ -3473,7 +3481,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if archive_bytes:
             self._metrics.increment("store.gc.archive_bytes", archive_bytes)
 
-        # Prune session index (FTS5) rows aligned with GC retention policy.
+        # Prune session index rows aligned with GC retention policy.
         session_chunks_deleted = self.cleanup_sessions(
             ttl_days=self._gc_config.session_index_ttl_days
         )
@@ -3844,6 +3852,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Close the underlying persistence layer."""
         if self._feedback_store_instance is not None:
             self._feedback_store_instance.close()
+            self._feedback_store_instance = None
         if self._diagnostics_history_store is not None:
             self._diagnostics_history_store.close()
             self._diagnostics_history_store = None

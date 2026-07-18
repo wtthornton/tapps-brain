@@ -526,6 +526,10 @@ def _persist_consolidated_entry(
                 scope=_get_enum_value(consolidated.scope),
                 tags=consolidated.tags,
                 confidence=consolidated.confidence,
+                # GitHub #49: carry the sources' project-local group onto the
+                # merged row — omitting this would default a *new* key to
+                # ungrouped (None), silently dropping the partition.
+                memory_group=consolidated.memory_group,
                 skip_consolidation=True,
             )
         consolidated_saved = True

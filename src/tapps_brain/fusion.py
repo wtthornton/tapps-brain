@@ -8,7 +8,7 @@ score is:
 
     RRF(d) = sum_i  c_i / (k + r_i(d))
 
-where *k > 0* is a smoothing constant (default **60**) and *c_i* is a non-negative
+where *k ≥ 0* is a smoothing constant (default **60**) and *c_i* is a non-negative
 weight for list *i*. Equal weighting (*c_i = 1*) is the common baseline; this
 package uses *(c_bm25, c_vector)* from ``hybrid_rrf_weights_for_query`` when
 adaptive fusion is enabled (EPIC-040 / GitHub #40).

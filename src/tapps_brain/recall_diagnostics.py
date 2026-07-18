@@ -17,6 +17,9 @@ RECALL_EMPTY_GROUP_EMPTY = "group_empty"
 RECALL_EMPTY_NO_RANKED_MATCHES = "no_ranked_matches"
 RECALL_EMPTY_BELOW_SCORE_THRESHOLD = "below_score_threshold"
 RECALL_EMPTY_RAG_BLOCKED = "rag_safety_blocked"
+# Reserved, currently never emitted: the injection budget loop always admits at
+# least one candidate (``and budgeted_results`` guard in ``inject_memories``),
+# so an injection cannot come back empty *because of* the token budget.
 RECALL_EMPTY_TOKEN_BUDGET = "token_budget_exhausted"
 
 # Recall orchestrator post-step (not from inject_memories)

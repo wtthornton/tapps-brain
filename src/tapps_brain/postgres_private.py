@@ -128,7 +128,8 @@ class PostgresPrivateBackend:
 
     Path sentinels
     --------------
-    ``db_path``, ``store_dir``, and ``audit_path`` return ``Path("/dev/null")``.
+    ``db_path`` and ``audit_path`` return ``Path("/dev/null")``; ``store_dir``
+    returns its parent, ``Path("/dev")``.
     v3 is Postgres-only (ADR-007) — these paths exist for legacy protocol
     compatibility and are not written to.  JSONL audit is a no-op; feedback
     events live in the ``feedback_events`` table (migration 003) via
@@ -391,8 +392,9 @@ class PostgresPrivateBackend:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
         Uses the ``idx_priv_embedding_hnsw`` index (migration 002).  Returns
-        ``(key, distance)`` pairs, lowest distance first.  Returns ``[]`` if
-        the ``embedding`` column is unpopulated or on any DB error.
+        ``(key, distance)`` pairs, lowest distance first, or ``[]`` for an
+        empty *query_embedding*.  DB errors set ``knn_search_degraded`` and
+        re-raise to the caller.
 
         TAP-2728: sets ``hnsw.iterative_scan = 'relaxed_order'`` and a tuned
         ``hnsw.ef_search`` before the query so project/agent-filtered searches

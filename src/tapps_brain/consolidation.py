@@ -148,7 +148,7 @@ def merge_values(entries: list[MemoryEntry]) -> str:
     merged_parts = [newest.value]
 
     # Add context from older entries if they have unique information
-    seen_sentences = _extract_sentences(newest.value)
+    seen_sentences = set(_extract_sentences(newest.value))
 
     for entry in sorted_entries[1:]:
         new_sentences = _extract_sentences(entry.value)
@@ -167,11 +167,18 @@ def merge_values(entries: list[MemoryEntry]) -> str:
     return merged
 
 
-def _extract_sentences(text: str) -> set[str]:
-    """Extract normalized sentences from text for deduplication."""
-    # Simple sentence splitting
+def _extract_sentences(text: str) -> list[str]:
+    """Extract normalized sentences from text, in document order.
+
+    Returns a deduplicated *list* (not a set) so that ``merge_values`` picks
+    the same "first N unique sentences" on every run — set iteration order
+    would make the merged value non-deterministic (hash-seed dependent),
+    violating the deterministic-consolidation guarantee (ADR: no LLM,
+    reproducible merges).
+    """
     sentences = re.split(r"[.!?]+", text)
-    return {s.strip().lower() for s in sentences if s.strip()}
+    normalized = (s.strip().lower() for s in sentences)
+    return list(dict.fromkeys(s for s in normalized if s))
 
 
 # ---------------------------------------------------------------------------

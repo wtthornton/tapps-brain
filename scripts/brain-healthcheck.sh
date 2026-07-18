@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/brain-healthcheck.sh — verify this repo is wired to the deployed
+# scripts/brain-healthcheck.sh — verify MCP reachability against the deployed
 # tapps-brain (container tapps-brain-http) and that the MCP round-trip works.
 #
 # Usage:
@@ -9,9 +9,15 @@
 #
 # Exit codes: 0 all checks passed, 1 warnings only, 2 at least one failure.
 #
-# The script reads .mcp.json for the MCP URL + X-Project-Id + X-Agent-Id and
-# .env (or the current shell) for TAPPS_BRAIN_AUTH_TOKEN. No secrets are ever
-# printed. Companion doc: docs/guides/mcp-client-repo-setup.md.
+# Prefer client wiring from .mcp.json (mcpServers.tapps-brain). When that block
+# is absent (bridge-only brain-dev repos with NLT MCP only), fall back to
+# server-mode: http://127.0.0.1:8080/mcp/ + TAPPS_BRAIN_AUTH_TOKEN from .env or
+# docker/.env, with defaults X-Project-Id=tapps-brain and
+# X-Agent-Id=brain-healthcheck. Missing IDE wiring is WARN (not FAIL) when the
+# live round-trip succeeds.
+#
+# Deploy gate for stack upgrades: make brain-smoke-live (not this script).
+# Companion docs: docs/guides/mcp-client-repo-setup.md, docs/guides/dev-docker-loop.md.
 
 set -uo pipefail
 
@@ -35,13 +41,24 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Load .env if token isn't already exported (covers shells without direnv).
+# Load bearer token: root .env first, then docker/.env (stack secrets).
 if [[ -f .env && -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
     set -o allexport
     # shellcheck disable=SC1091
     source .env
     set +o allexport
 fi
+if [[ -f docker/.env && -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
+    set -o allexport
+    # shellcheck disable=SC1091
+    source docker/.env
+    set +o allexport
+fi
+
+DEFAULT_MCP_URL="${TAPPS_BRAIN_MCP_URL:-http://127.0.0.1:8080/mcp/}"
+DEFAULT_PROJECT_ID="${TAPPS_BRAIN_PROJECT_ID:-tapps-brain}"
+DEFAULT_AGENT_ID="${TAPPS_BRAIN_AGENT_ID:-brain-healthcheck}"
+SERVER_MODE=0
 
 PASS=0
 FAIL=0
@@ -90,8 +107,9 @@ sys.stdout.write("\n".join(lines) if lines else data)
 # valid initialize result but no Mcp-Session-Id header (TAPPS_BRAIN_STATELESS_HTTP=1).
 # Emits empty string on failure.
 mcp_profile_args() {
+    # Prints nothing, or two curl args: -H and the profile header value.
     if [[ -n "${CHECK_PROFILE:-}" && "$CHECK_PROFILE" != "full" ]]; then
-        printf '%s' "-H" "X-Brain-Profile: ${CHECK_PROFILE}"
+        printf '%s\n%s\n' "-H" "X-Brain-Profile: ${CHECK_PROFILE}"
     fi
 }
 
@@ -133,6 +151,8 @@ except Exception:
 
 mcp_notify_initialized() {
     local sid="$1"
+    local -a sess=()
+    [[ -n "$sid" ]] && sess=(-H "Mcp-Session-Id: ${sid}")
     # shellcheck disable=SC2046
     curl -sS -o /dev/null -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
@@ -141,13 +161,15 @@ mcp_notify_initialized() {
         $(mcp_profile_args) \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
-        -H "Mcp-Session-Id: ${sid}" \
+        "${sess[@]}" \
         --data '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' 2>/dev/null || true
 }
 
 # mcp_call <session-id> <json-rpc body> — emits parsed JSON body.
 mcp_call() {
     local sid="$1" body="$2"
+    local -a sess=()
+    [[ -n "$sid" ]] && sess=(-H "Mcp-Session-Id: ${sid}")
     # shellcheck disable=SC2046
     curl -sS -X POST "$MCP_URL" \
         -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
@@ -156,7 +178,7 @@ mcp_call() {
         $(mcp_profile_args) \
         -H 'Content-Type: application/json' \
         -H 'Accept: application/json, text/event-stream' \
-        -H "Mcp-Session-Id: ${sid}" \
+        "${sess[@]}" \
         --data "$body" 2>/dev/null | extract_json_body
 }
 
@@ -175,9 +197,20 @@ MCP_URL="$(jq_path mcpServers tapps-brain url)"
 PROJECT_ID="$(jq_path mcpServers tapps-brain headers X-Project-Id)"
 AGENT_ID="$(jq_path mcpServers tapps-brain headers X-Agent-Id)"
 
-[[ -n "$MCP_URL"    ]] && pass "MCP URL: $MCP_URL"      || fail "tapps-brain.url missing from .mcp.json"
-[[ -n "$PROJECT_ID" ]] && pass "X-Project-Id: $PROJECT_ID" || fail "X-Project-Id missing from .mcp.json"
-[[ -n "$AGENT_ID"   ]] && pass "X-Agent-Id: $AGENT_ID"     || fail "X-Agent-Id missing from .mcp.json"
+if [[ -n "$MCP_URL" && -n "$PROJECT_ID" && -n "$AGENT_ID" ]]; then
+    pass "MCP URL: $MCP_URL"
+    pass "X-Project-Id: $PROJECT_ID"
+    pass "X-Agent-Id: $AGENT_ID"
+else
+    SERVER_MODE=1
+    warn "no direct mcpServers.tapps-brain in .mcp.json (bridge-only or unwired) — server-mode fallback"
+    [[ -z "$MCP_URL" ]] && MCP_URL="$DEFAULT_MCP_URL"
+    [[ -z "$PROJECT_ID" ]] && PROJECT_ID="$DEFAULT_PROJECT_ID"
+    [[ -z "$AGENT_ID" ]] && AGENT_ID="$DEFAULT_AGENT_ID"
+    pass "server-mode MCP URL: $MCP_URL"
+    pass "server-mode X-Project-Id: $PROJECT_ID"
+    pass "server-mode X-Agent-Id: $AGENT_ID"
+fi
 
 if [[ -f .env ]]; then
     mode="$(stat -c '%a' .env 2>/dev/null || stat -f '%Lp' .env 2>/dev/null || echo '???')"
@@ -186,8 +219,10 @@ if [[ -f .env ]]; then
     else
         warn ".env present but chmod is $mode (recommended: 600)"
     fi
+elif [[ -f docker/.env ]]; then
+    warn ".env missing — using docker/.env for TAPPS_BRAIN_AUTH_TOKEN (OK for stack checks)"
 else
-    fail ".env missing — bearer token cannot be loaded"
+    fail ".env and docker/.env missing — bearer token cannot be loaded"
 fi
 
 if grep -qxE '\.env' .gitignore 2>/dev/null; then
@@ -217,11 +252,21 @@ fi
 BRAIN_PROFILE="$(jq_path mcpServers tapps-brain headers X-Brain-Profile)"
 if [[ -n "$BRAIN_PROFILE" ]]; then
     pass ".mcp.json X-Brain-Profile: $BRAIN_PROFILE (tool filter active)"
+elif [[ "$SERVER_MODE" -eq 1 ]]; then
+    warn "server-mode: no X-Brain-Profile (using full) — expected for bridge-only IDE configs"
 else
     warn ".mcp.json: X-Brain-Profile not set — using 'full' profile (all 59 tools). Add header to reduce context bloat."
 fi
 
 if [[ -f .cursor/mcp.json ]]; then
+    cursor_has_brain="$(python3 -c "
+import json
+try:
+    d = json.load(open('.cursor/mcp.json'))
+    print('1' if 'tapps-brain' in d.get('mcpServers', {}) else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)"
     cursor_profile="$(python3 -c "
 import json
 try:
@@ -230,10 +275,16 @@ try:
 except Exception:
     pass
 " 2>/dev/null)"
-    if [[ -n "$cursor_profile" ]]; then
-        pass ".cursor/mcp.json X-Brain-Profile: $cursor_profile"
+    if [[ "$cursor_has_brain" == "1" ]]; then
+        if [[ -n "$cursor_profile" ]]; then
+            pass ".cursor/mcp.json X-Brain-Profile: $cursor_profile"
+        else
+            warn ".cursor/mcp.json: tapps-brain block missing X-Brain-Profile (Cursor gets full tool surface)"
+        fi
+    elif [[ "$SERVER_MODE" -eq 1 ]]; then
+        warn ".cursor/mcp.json: bridge-only (no tapps-brain) — IDE wiring not required for server-mode"
     else
-        warn ".cursor/mcp.json: tapps-brain block missing X-Brain-Profile (Cursor gets full tool surface)"
+        warn ".cursor/mcp.json: tapps-brain block missing"
     fi
 fi
 
@@ -242,6 +293,8 @@ if [[ -n "$CLI_PROFILE" ]]; then
     pass "healthcheck profile override: $CHECK_PROFILE"
 elif [[ -n "$BRAIN_PROFILE" ]]; then
     pass "healthcheck profile from .mcp.json: $CHECK_PROFILE"
+elif [[ "$SERVER_MODE" -eq 1 ]]; then
+    warn "healthcheck profile: full (server-mode default)"
 else
     warn "healthcheck profile: full (no X-Brain-Profile in .mcp.json)"
 fi
@@ -272,6 +325,8 @@ if [[ -n "$MCP_URL" ]]; then
         code="$(curl -s -o /dev/null -w '%{http_code}' "${base_host}${ep}" 2>/dev/null || echo 000)"
         if [[ "$code" == "200" ]]; then
             pass "${base_host}${ep} → 200"
+        elif [[ "$ep" == "/metrics" && ( "$code" == "401" || "$code" == "403" ) ]]; then
+            pass "${base_host}${ep} → $code (auth-protected metrics OK)"
         else
             fail "${base_host}${ep} → $code"
         fi
@@ -381,9 +436,11 @@ except Exception as e:
         esac
 
         # Best-effort session termination; stateful servers may 400 on DELETE.
-        curl -sS -o /dev/null -X DELETE "$MCP_URL" \
-            -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
-            -H "Mcp-Session-Id: ${SID}" 2>/dev/null || true
+        if [[ -n "$SID" ]]; then
+            curl -sS -o /dev/null -X DELETE "$MCP_URL" \
+                -H "Authorization: Bearer ${TAPPS_BRAIN_AUTH_TOKEN}" \
+                -H "Mcp-Session-Id: ${SID}" 2>/dev/null || true
+        fi
     fi
 fi
 
@@ -410,10 +467,18 @@ fi
 # ---------------------------------------------------------------------------
 section "Summary"
 say "passed:${PASS}  warnings:${WARN}  failed:${FAIL}"
+if [[ "$SERVER_MODE" -eq 1 ]]; then
+    say "mode:server (bridge-only IDE wiring — warnings above are expected)"
+fi
 
 if (( FAIL > 0 )); then
     exit 2
 elif (( WARN > 0 )); then
+    # Bridge-only / server-mode: missing IDE tapps-brain block is expected WARN.
+    # Do not fail the Makefile target when the live MCP round-trip passed.
+    if [[ "$SERVER_MODE" -eq 1 ]]; then
+        exit 0
+    fi
     exit 1
 fi
 exit 0
