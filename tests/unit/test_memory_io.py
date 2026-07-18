@@ -46,8 +46,8 @@ def _make_store(entries: list[MemoryEntry] | None = None) -> MagicMock:
         total_count=len(entries),
     )
 
-    # get() returns None by default (no existing key)
-    store.get.return_value = None
+    # Existence peek returns None by default (no existing key)
+    store._ensure_entry_cached.return_value = None
     store.count.return_value = len(entries)
     return store
 
@@ -316,7 +316,7 @@ class TestImport:
 
         store = _make_store()
         # Simulate existing key
-        store.get.return_value = _make_entry("existing-key", "old value")
+        store._ensure_entry_cached.return_value = _make_entry("existing-key", "old value")
         validator = _make_validator(tmp_path)
 
         result = import_memories(store, input_file, validator, overwrite=False)
@@ -333,7 +333,7 @@ class TestImport:
         input_file.write_text(json.dumps(payload))
 
         store = _make_store()
-        store.get.return_value = _make_entry("existing-key", "old value")
+        store._ensure_entry_cached.return_value = _make_entry("existing-key", "old value")
         validator = _make_validator(tmp_path)
 
         result = import_memories(store, input_file, validator, overwrite=True)

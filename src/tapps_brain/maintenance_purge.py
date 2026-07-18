@@ -100,7 +100,13 @@ def purge_by_prefix(
     cleaned = tuple(p for p in prefixes if p)
     if not cleaned:
         return {}
-    patterns = [f"{prefix}%" for prefix in cleaned]
+    # Escape LIKE wildcards so a literal ``_``/``%`` in a (CLI-supplied) prefix
+    # cannot over-match and delete unrelated tenants (``test_`` would otherwise
+    # match ``testX...``). ``\`` is the default LIKE escape character.
+    def _escape_like(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    patterns = [f"{_escape_like(prefix)}%" for prefix in cleaned]
     clause = " OR ".join("project_id LIKE %s" for _ in patterns)
     return _delete_where(cm, clause, tuple(patterns))
 

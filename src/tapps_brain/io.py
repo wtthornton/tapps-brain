@@ -66,7 +66,7 @@ def export_to_markdown(
     """Export memory entries to Markdown (Epic 65.2).
 
     Outputs Obsidian-friendly Markdown with optional frontmatter, grouped by
-    tier or tag, sorted by key within groups.
+    tier or tag, sorted by ``(updated_at, key)`` within groups.
 
     Args:
         entries: Memory entries to export.
@@ -308,8 +308,9 @@ def import_memories(
             logger.warning("memory_import_entry_invalid", entry=raw_entry, error=str(exc))
             continue
 
-        # Check for existing key
-        existing = store.get(entry.key)
+        # Check for existing key — peek without bumping access_count /
+        # last_accessed (an import existence probe is not a retrieval).
+        existing = store._ensure_entry_cached(entry.key)
         if existing is not None and not overwrite:
             skipped += 1
             continue
@@ -330,6 +331,8 @@ def import_memories(
             tags=entry.tags,
             branch=entry.branch,
             confidence=entry.confidence,
+            memory_group=entry.memory_group,
+            temporal_sensitivity=entry.temporal_sensitivity,
         )
         imported += 1
 

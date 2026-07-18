@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         PrivateBackend,
     )
     from tapps_brain.async_postgres_kg import AsyncPostgresKnowledgeGraphStore
-    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
+    from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
     from tapps_brain.store import MemoryStore
 
 from tapps_brain.agent_scope import hive_group_name_from_scope
@@ -454,7 +454,11 @@ def select_local_entries_for_hive_push(
     if keys:
         resolved: list[Any] = []
         for k in keys:
-            entry = store.get(k)
+            # Peek without access tracking — selecting entries for a batch
+            # push is an operator action, not a retrieval; store.get() would
+            # bump access_count/last_accessed and skew frequency/recency
+            # retrieval signals.
+            entry = store._ensure_entry_cached(k)
             if entry is not None:
                 resolved.append(entry)
         return resolved
@@ -531,6 +535,10 @@ def push_memory_entries_to_hive(
                 bypass_profile_hive_rules=bypass_profile_hive_rules,
                 dry_run=dry_run,
                 memory_group=entry.memory_group,
+                # Carry the local embedding so batch-pushed rows stay
+                # semantically searchable in the Hive — the save-time
+                # propagation path already forwards it.
+                embedding=getattr(entry, "embedding", None),
             )
         except Exception as exc:
             logger.warning(
@@ -701,7 +709,7 @@ def create_async_private_backend(
     project_id: str,
     agent_id: str,
 ) -> AsyncPostgresPrivateBackend:
-    """Create an :class:`~tapps_brain.postgres_private.AsyncPostgresPrivateBackend`.
+    """Create an :class:`~tapps_brain.async_postgres_private.AsyncPostgresPrivateBackend`.
 
     Returns the async-native backend that uses
     ``psycopg_pool.AsyncConnectionPool`` directly — no ``asyncio.to_thread()``.
@@ -729,8 +737,8 @@ def create_async_private_backend(
         )
         raise ValueError(msg)
 
+    from tapps_brain.async_postgres_private import AsyncPostgresPrivateBackend
     from tapps_brain.postgres_connection import PostgresConnectionManager
-    from tapps_brain.postgres_private import AsyncPostgresPrivateBackend
 
     cm = PostgresConnectionManager(dsn)
     return AsyncPostgresPrivateBackend(cm, project_id=project_id, agent_id=agent_id)

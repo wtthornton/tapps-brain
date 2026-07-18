@@ -123,6 +123,10 @@ class RelationsMixin(_MemoryStoreBase):
                 for rel in all_relations:
                     for src_key in rel.get("source_entry_keys") or []:
                         rebuilt.setdefault(str(src_key), []).append(rel)
+                # Replace, don't merge: the durable store is authoritative here.
+                # ``update()`` would leave stale buckets for relations that were
+                # deleted durably, double-counting them as orphans.
+                self._relations.clear()
                 self._relations.update(rebuilt)
 
         with self._serialized():
@@ -210,6 +214,10 @@ class RelationsMixin(_MemoryStoreBase):
                 for rel in all_relations:
                     for src_key in rel.get("source_entry_keys") or []:
                         rebuilt.setdefault(str(src_key), []).append(rel)
+                # Replace, don't merge — every cached relation is write-through
+                # from the durable store, so merging only preserves stale edges
+                # for durably deleted relations.
+                self._relations.clear()
                 self._relations.update(rebuilt)
 
         with self._serialized():

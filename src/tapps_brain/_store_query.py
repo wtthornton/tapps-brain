@@ -203,6 +203,14 @@ class QueryMixin(_MemoryStoreBase):
                 raise
             with self._serialized():
                 self._relations.pop(key, None)
+                # The durable delete removes every relation row whose
+                # source_entry_keys contains *key*; purge cached copies that
+                # live under sibling source-key buckets too, or query_relations
+                # keeps returning rows that no longer exist durably.
+                for other_key, rels in list(self._relations.items()):
+                    kept = [r for r in rels if key not in (r.get("source_entry_keys") or [])]
+                    if len(kept) != len(rels):
+                        self._relations[other_key] = kept
                 self._note_removed_locked(key)
 
             # Remove from entity index (TAP-734).
