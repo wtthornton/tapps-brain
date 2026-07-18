@@ -1795,7 +1795,7 @@
     },
     "/v1/reinforce:batch": {
       "post": {
-        "description": "Reinforce multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"confidence_boost\"?: float}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"reinforced_count\": int, \"error_count\": int }``",
+        "description": "Reinforce multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"confidence_boost\"?: float}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"reinforced_count\": int, \"error_count\": int }``",
         "operationId": "_v1_reinforce_batch_v1_reinforce_batch_post",
         "parameters": [
           {
@@ -1907,7 +1907,7 @@
     },
     "/v1/remember:batch": {
       "post": {
-        "description": "Save multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"value\": str, ...}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"saved_count\": int, \"error_count\": int }``",
+        "description": "Save multiple memory entries in one request (max configurable via TAPPS_BRAIN_MAX_BATCH_SIZE).\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"entries\": [{\"key\": str, \"value\": str, ...}, ...] }``\n\nResponse:\n  ``{ \"results\": [...], \"saved_count\": int, \"error_count\": int }``",
         "operationId": "_v1_remember_batch_v1_remember_batch_post",
         "parameters": [
           {
