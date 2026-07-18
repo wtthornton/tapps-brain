@@ -128,6 +128,23 @@ class _CapturePersistenceBackend:
     def load_all(self, **kwargs: Any) -> list[Any]:
         return list(self._real.load_all(**kwargs))
 
+    def load_one(self, key: str) -> Any:
+        """Delegate lazy hydration to the real backend, honouring captures.
+
+        ``_ensure_entry_cached`` treats a missing ``load_one`` as "entry does
+        not exist", so omitting this delegate silently broke reinforce /
+        delete / record_access on durable-but-uncached entries while the
+        capture was swapped in.
+        """
+        with self._lock:
+            for entry in reversed(self._saved):
+                if entry.key == key:
+                    return entry
+            if key in self._deleted:
+                return None
+        fn = getattr(self._real, "load_one", None)
+        return fn(key) if callable(fn) else None
+
     def search(self, *args: Any, **kwargs: Any) -> list[Any]:
         return list(self._real.search(*args, **kwargs))
 
@@ -537,6 +554,11 @@ class AsyncMemoryStore:
                 exc_info=True,
             )
             raise
+        # Relations/audit are best-effort (matching the sync path): by this
+        # point the primary saves/deletes are already durable via the async
+        # pool, so raising here would make the caller roll the entry back out
+        # of the cache while the Postgres row stands — a cache/durable split
+        # worse than a missing secondary write.
         for rel_key, rels in relations:
             save_rels = getattr(self._async_backend, "save_relations", None)
             if save_rels is not None:
@@ -544,7 +566,6 @@ class AsyncMemoryStore:
                     await save_rels(rel_key, rels)
                 except Exception:
                     logger.warning("aio.flush_relations_failed", key=rel_key, exc_info=True)
-                    raise
         for action, audit_key, extra in audit:
             append = getattr(self._async_backend, "append_audit", None)
             if append is not None:
@@ -552,7 +573,6 @@ class AsyncMemoryStore:
                     await append(action, audit_key, extra)
                 except Exception:
                     logger.warning("aio.flush_audit_failed", key=audit_key, exc_info=True)
-                    raise
 
     async def search(self, query: str, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.search`."""
@@ -686,7 +706,7 @@ class AsyncMemoryStore:
         sync return type.  Otherwise delegates to the sync store via
         :func:`asyncio.to_thread`.
 
-        Bounded by ``_read_sem`` (default 32).
+        Bounded by ``_read_sem`` (default 64).
         """
         if self._async_backend is None:
             return await self._read_thread(self._store.audit, **kwargs)
@@ -771,9 +791,16 @@ class AsyncMemoryStore:
                 try:
                     await self._flush_capture(capture)
                 except Exception:
-                    if prior_old is not None:
-                        with self._store._serialized():
+                    with self._store._serialized():
+                        if prior_old is not None:
                             self._store._entries[old_key] = prior_old
+                        # supersede() also inserted a brand-new entry
+                        # (<old_key>.v2 or similar) into the cache; its durable
+                        # write never happened, so drop it or get() would
+                        # return a phantom entry that doesn't exist in Postgres.
+                        new_key = getattr(result, "key", None)
+                        if isinstance(new_key, str) and new_key != old_key:
+                            self._store._entries.pop(new_key, None)
                     raise
                 return result
             finally:
@@ -871,9 +898,12 @@ class AsyncMemoryStore:
         """Async version of :meth:`MemoryStore.gc` (alias for STORY-070.10 parity).
 
         ``gc_run()`` is an explicit alias matching the method name used by
-        AgentForge callers.  Internally delegates to ``gc(dry_run=dry_run)``.
+        AgentForge callers.  Internally delegates to ``gc(dry_run=dry_run)``
+        so the async-native capture/flush/rollback path is used when an
+        async backend is wired (previously it bypassed ``gc()`` and did
+        blocking sync Postgres I/O in a thread).
         """
-        return await self._write_thread(self._store.gc, dry_run=dry_run)
+        return await self.gc(dry_run=dry_run)
 
     async def close(self) -> None:
         """Async version of :meth:`MemoryStore.close`."""
@@ -895,11 +925,33 @@ class AsyncMemoryStore:
     # Auto-wrapping for remaining public methods
     # ------------------------------------------------------------------
 
+    #: Sync MemoryStore methods that mutate state but have no explicit async
+    #: wrapper above.  Auto-wrapped via the *write* semaphore so they are
+    #: counted in write_queue_depth and bounded like other writes.  Note they
+    #: still run against the real sync backend (blocking I/O in a thread) —
+    #: only the explicit wrappers use the async-native capture/flush path.
+    _AUTO_WRAP_WRITE_METHODS: frozenset[str] = frozenset(
+        {
+            "save_many",
+            "update_fields",
+            "record_access",
+            "ingest_context",
+            "backfill_embeddings",
+            "undo_consolidation_merge",
+            "save_relations",
+            "cleanup_sessions",
+            "refresh_group_membership",
+            "validate_entries",
+        }
+    )
+
     def __getattr__(self, name: str) -> Any:
         """Auto-wrap any remaining sync MemoryStore public method as async.
 
         Properties and private attributes are not wrapped — only callable
-        public methods produce an async wrapper.
+        public methods produce an async wrapper.  Known mutating methods
+        (see ``_AUTO_WRAP_WRITE_METHODS``) are bounded by the write
+        semaphore; everything else uses the read semaphore.
 
         Generated wrappers are cached on the instance so repeated attribute
         access returns the same function object (referential stability for
@@ -927,8 +979,10 @@ class AsyncMemoryStore:
         if not callable(attr):
             return attr
 
+        runner = self._write_thread if name in self._AUTO_WRAP_WRITE_METHODS else self._read_thread
+
         async def _async_proxy(*args: Any, **kwargs: Any) -> Any:
-            return await self._read_thread(attr, *args, **kwargs)
+            return await runner(attr, *args, **kwargs)
 
         _async_proxy.__name__ = name
         _async_proxy.__qualname__ = f"AsyncMemoryStore.{name}"

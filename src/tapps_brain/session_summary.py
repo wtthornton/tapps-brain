@@ -114,7 +114,10 @@ def session_summary_save(
     # ``date.today()`` is local-tz and can disagree with UTC near midnight.
     now_utc = datetime.datetime.now(tz=datetime.UTC)
     today = now_utc.date().isoformat()
-    now_ts = now_utc.strftime("%H%M%S")
+    # Microsecond precision: save() upserts on key, so a second-granularity
+    # key silently overwrites another summary saved in the same second
+    # (e.g. two agents ending sessions simultaneously).
+    now_ts = now_utc.strftime("%H%M%S%f")
     key = f"session.{today}.{now_ts}"
 
     base_tags = ["date", "session", "episodic"]

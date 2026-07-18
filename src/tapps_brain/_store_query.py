@@ -104,6 +104,7 @@ class QueryMixin(_MemoryStoreBase):
                 with self._serialized():
                     self._entries[updated.key] = entry
                 raise
+            self._drop_if_concurrently_removed(updated.key)
             return updated
 
     def list_all(
@@ -157,6 +158,7 @@ class QueryMixin(_MemoryStoreBase):
             entry = self._entries.get(key)
             if entry is not None:
                 return entry
+            snapshot_epoch = self._removal_epoch
         load_one = getattr(self._persistence, "load_one", None)
         if not callable(load_one):
             return None
@@ -167,6 +169,11 @@ class QueryMixin(_MemoryStoreBase):
             existing = self._entries.get(key)
             if existing is not None:
                 return existing
+            # Mirror-image of the evict/persist race: a delete/evict may have
+            # landed while load_one ran outside the lock — re-inserting the
+            # stale row would resurrect it in the cache.
+            if self._removed_at.get(key, 0) > snapshot_epoch:
+                return None
             self._entries[key] = entry
             return entry
 

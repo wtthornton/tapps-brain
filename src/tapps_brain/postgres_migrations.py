@@ -174,7 +174,15 @@ def _apply_migrations(
     *,
     dry_run: bool = False,
 ) -> list[int]:
-    """Apply pending migrations. Returns list of applied version numbers."""
+    """Apply pending migrations. Returns list of applied version numbers.
+
+    Dedup is by bare version number: a version already present in the version
+    table is skipped.  Bundled files must therefore use unique version
+    numbers — when several files share one (e.g. the three ``015_*`` private
+    migrations), a DB that recorded the version before all of them were
+    bundled will silently skip the rest forever.  A warning is emitted when
+    duplicates are detected so the situation is at least visible.
+    """
     try:
         import psycopg
         from psycopg import sql as pg_sql
@@ -183,6 +191,24 @@ def _apply_migrations(
             "psycopg is required for PostgreSQL migrations.\n"
             "Install with: pip install 'psycopg[binary]'"
         ) from None
+
+    seen_versions: set[int] = set()
+    duplicate_versions: set[int] = set()
+    for v, _fname, _sql_text in migrations:
+        if v in seen_versions:
+            duplicate_versions.add(v)
+        seen_versions.add(v)
+    if duplicate_versions:
+        logger.warning(
+            "postgres.migrations.duplicate_versions",
+            version_table=version_table,
+            versions=sorted(duplicate_versions),
+            detail=(
+                "multiple bundled migration files share a version number; "
+                "dedup against the version table is by version only, so a DB "
+                "that already recorded one of them will skip the others"
+            ),
+        )
 
     applied: list[int] = []
 
@@ -407,10 +433,13 @@ def _rollback_migrations(
 ) -> list[int]:
     """Apply down-migrations to roll back to *target_version*.
 
-    Executes the down SQL for every discovered version > *target_version*, in
-    descending order (newest first).  Each down file is expected to include a
-    ``DELETE FROM <version_table> WHERE version = N`` statement; after the SQL
-    runs the CLI wrapper need not issue a separate cleanup.
+    Executes the down SQL for every **applied** version > *target_version*
+    (per the version table), in descending order (newest first).  Versions
+    never recorded in the version table are skipped — previously the runner
+    executed and reported rollbacks for versions that were never applied,
+    so dry-run previews misled operators.  Each down file is expected to
+    include a ``DELETE FROM <version_table> WHERE version = N`` statement;
+    after the SQL runs the CLI wrapper need not issue a separate cleanup.
 
     Returns the list of version numbers that were rolled back.
     """
@@ -422,9 +451,29 @@ def _rollback_migrations(
             "Install with: pip install 'psycopg[binary]'"
         ) from None
 
+    # Only roll back versions the database actually recorded as applied.
+    applied_set: set[int] = set()
+    with psycopg.connect(dsn) as _conn, _conn.cursor() as _cur:
+        _cur.execute(
+            "SELECT EXISTS (  SELECT FROM information_schema.tables   WHERE table_name = %s)",
+            (version_table,),
+        )
+        _row = _cur.fetchone()
+        if _row and _row[0]:
+            from psycopg import sql as pg_sql
+
+            _cur.execute(
+                pg_sql.SQL("SELECT version FROM {}").format(pg_sql.Identifier(version_table))
+            )
+            applied_set = {row[0] for row in _cur.fetchall()}
+
     # Descending order: roll back newest migration first.
     to_rollback = sorted(
-        [(v, fname, sql) for v, fname, sql in down_migrations if v > target_version],
+        [
+            (v, fname, sql)
+            for v, fname, sql in down_migrations
+            if v > target_version and v in applied_set
+        ],
         key=lambda t: t[0],
         reverse=True,
     )

@@ -16,3 +16,6 @@ ALTER TABLE private_memories
 CREATE INDEX IF NOT EXISTS private_memories_integrity_hash_v_idx
     ON private_memories (project_id, agent_id, integrity_hash_v)
     WHERE integrity_hash_v < 2;
+
+INSERT INTO private_schema_version (version, description)
+VALUES (15, 'Add integrity_hash_v column + index to private_memories (TAP-710)');

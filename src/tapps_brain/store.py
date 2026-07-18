@@ -831,6 +831,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._removed_at.get(entry.key, 0) > snapshot_epoch:
                     continue
                 self._entries[entry.key] = entry
+                # Keep derived indexes consistent with the cache: without the
+                # bloom add, a later save() of an identical value skips dedup
+                # ("bloom says absent") and creates a duplicate; without the
+                # entity index, graph-centrality scoring never sees the entry.
+                self._bloom.add(normalize_for_dedup(entry.value))
+                self._index_entry_entities(entry.key, entry.value)
 
     def _note_removed_locked(self, key: str) -> None:
         """Record a cache+durable removal for merge-resurrection protection.
@@ -1217,6 +1223,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
 
+        # Validate enum-typed inputs before any side-effectful phase: dedup
+        # can reinforce another entry and conflict-check can mark entries
+        # contradicted before _construct_memory_entry would reject a bad
+        # scope/source — mutations that would survive the failed save.
+        MemorySource(source)
+        MemoryScope(scope)
+
         # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
         # extracted these into the shared prepare step used by save_many too).
         prep = self._prepare_save(
@@ -1577,6 +1590,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         write still completes (just without the batching win).
         """
         to_save = [entry for entry, _ in entries]
+        persisted_keys: set[str] = set()
         try:
             with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
                 if backend_save_many is not None:
@@ -1584,9 +1598,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 else:
                     for entry in to_save:
                         self._persistence.save(entry)
+                        persisted_keys.add(entry.key)
         except Exception:
             with self._serialized():
+                # Batch path: the backend save_many is transactional, so no row
+                # is durable — roll back everything.  Fallback per-row path:
+                # rows persisted before the failure ARE durable; rolling their
+                # cache slots back would make the cache disagree with Postgres
+                # (and the next hydration would resurrect the new value anyway).
                 for entry, existing in entries:
+                    if entry.key in persisted_keys:
+                        continue
                     if existing is not None:
                         self._entries[entry.key] = existing
                     else:
@@ -1639,7 +1661,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if self._write_policy is None:
             return None
 
-        from tapps_brain.write_policy import WriteDecision
+        from tapps_brain.write_policy import DeterministicWritePolicy, WriteDecision
+
+        # DeterministicWritePolicy is documented as a zero-cost no-op that
+        # returns ADD unconditionally — skip the full-table durable merge and
+        # candidate assembly it would never look at.
+        if type(self._write_policy) is DeterministicWritePolicy:
+            return None
 
         # Refresh from durable store so policy decisions are not cache-only.
         self._merge_durable_entries()
@@ -1654,8 +1682,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 key=key,
                 reasoning=result.reasoning,
             )
+            # A NOOP usually means an equivalent memory already exists — often
+            # under a *different* key (result.target_key).  Prefer returning
+            # that entry so callers get the duplicate instead of an error dict.
             with self._serialized():
                 existing_noop = self._entries.get(key)
+                if existing_noop is None and result.target_key:
+                    existing_noop = self._entries.get(result.target_key)
             if existing_noop is not None:
                 return existing_noop
             return {"write_policy": "noop", "key": key, "reasoning": result.reasoning}
@@ -1810,6 +1843,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             if invalidated is not None and previous is not None:
                 try:
                     self._persistence.save(invalidated)
+                    self._drop_if_concurrently_removed(conflict_key)
                 except Exception:
                     with self._serialized():
                         if self._entries.get(conflict_key) is invalidated:
@@ -1947,6 +1981,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     ) -> MemoryEntry:
         """Allocate a new :class:`MemoryEntry`, preserving reserved fields on update."""
         preserved = _preserved_fields_for_update(existing, now)
+        # Preserve learned confidence on routine updates: -1.0 means "caller
+        # did not specify".  Falling through to the static source default
+        # would discard what record_access / reinforce / the feedback
+        # flywheel accumulated while keeping the counters they derived it
+        # from (mutually inconsistent state).
+        if confidence == -1.0 and existing is not None:
+            confidence = existing.confidence
         effective_valid_at = conflict_valid_at or preserved["valid_at"]
         effective_temporal = (
             temporal_sensitivity
@@ -2117,6 +2158,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                         self._entries[key] = previous
                 logger.warning("backfill_embeddings.persist_failed", key=key, exc_info=True)
                 continue
+            self._drop_if_concurrently_removed(key)
 
             backfilled += 1
             # Sync embedding to Hive only after private persist succeeds (scoped rules).
@@ -2160,12 +2202,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     for _e in self._entries.values():
                         self._bloom.add(normalize_for_dedup(_e.value))
             raise
-        # Close the evict/persist race: the durable save above runs outside the
-        # store lock, so a concurrent eviction or delete may have removed this
-        # key (cache + durable row) between cache assignment and persist — the
-        # save would then silently resurrect the row in Postgres while the
-        # cache stays capped, and _merge_durable_entries would push the store
-        # over max_entries.  Re-check under the lock and drop the orphaned row.
+        self._drop_if_concurrently_removed(key)
+
+    def _drop_if_concurrently_removed(self, key: str) -> None:
+        """Close the evict/persist resurrection race after a durable save.
+
+        Write-through persists run outside the store lock, so a concurrent
+        eviction or delete may have removed this key (cache + durable row)
+        between cache assignment and persist — the save would then silently
+        resurrect the row in Postgres while the cache stays capped, and
+        ``_merge_durable_entries`` would push the store over ``max_entries``.
+        Re-check under the lock and drop the orphaned row.  Applies to every
+        persist-outside-lock site (save, update_fields, reinforce,
+        record_access, get, supersede, backfill_embeddings, conflict marking).
+        """
         with self._serialized():
             if key not in self._entries:
                 try:
@@ -2401,6 +2451,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             with self._serialized():
                 self._entries[key] = entry
             raise
+        self._drop_if_concurrently_removed(key)
         return updated
 
     def undo_consolidation_merge(self, consolidated_key: str) -> ConsolidationUndoResult:
@@ -2527,6 +2578,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 with self._serialized():
                     self._entries[key] = entry
                 raise
+            self._drop_if_concurrently_removed(key)
 
             final = self._maybe_promote_after_reinforce(key, updated, decay_cfg)
 
@@ -2600,6 +2652,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     if self._entries.get(key) is promoted:
                         self._entries[key] = updated
                 raise
+            self._drop_if_concurrently_removed(key)
             self._persistence.append_audit(
                 action="promote",
                 key=key,
@@ -2688,6 +2741,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             with self._serialized():
                 self._entries[key] = entry
             raise
+        self._drop_if_concurrently_removed(key)
         logger.debug(
             "memory_access_recorded",
             key=key,
@@ -2732,10 +2786,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         for fact in facts:
             key = fact["key"]
-            # Skip if already exists
-            with self._serialized():
-                if key in self._entries:
-                    continue
+            # Skip if already exists — hydrate from the durable store first so
+            # rows written out-of-band (experience path, other processes) or
+            # beyond the cold-start cap are not silently overwritten.
+            if self._ensure_entry_cached(key) is not None:
+                continue
 
             result = self.save(
                 key=key,
@@ -2744,7 +2799,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 source=source,
                 agent_scope=agent_scope,
             )
-            if isinstance(result, MemoryEntry):
+            # Only report keys that were actually created: a dedup hit returns
+            # the reinforced *existing* entry under a different key, and error
+            # dicts are not creations.
+            if isinstance(result, MemoryEntry) and result.key == key:
                 created_keys.append(key)
 
         return created_keys
@@ -2968,6 +3026,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._entries.get(old_key) is invalidated:
                     self._entries[old_key] = old_entry
             raise
+        self._drop_if_concurrently_removed(old_key)
 
         # Create the new entry
         new_kwargs: dict[str, Any] = {
@@ -2981,6 +3040,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         }
         new_kwargs.update(kwargs)
 
+        # dedup/conflict_check must be off: a dedup hit would return the
+        # reinforced *other* entry (key != new_key), corrupting the cache
+        # slot and pointing superseded_by at a phantom key; a conflict
+        # check could invalidate unrelated entries mid-supersede.
+        new_kwargs.setdefault("dedup", False)
+        new_kwargs.setdefault("conflict_check", False)
         try:
             new_entry = self.save(key=new_key, value=new_value, **new_kwargs)
         except Exception:
@@ -2991,6 +3056,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             except Exception:
                 logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
             raise
+        if isinstance(new_entry, MemoryEntry) and new_entry.key != new_key:
+            # Defensive: the save was redirected (write policy etc.) — roll
+            # back rather than stamp valid_at onto the wrong durable row.
+            with self._serialized():
+                self._entries[old_key] = old_entry
+            try:
+                self._persistence.save(old_entry)
+            except Exception:
+                logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
+            msg = (
+                f"supersede: save() returned entry '{new_entry.key}' instead of "
+                f"'{new_key}' (redirected write); superseding aborted"
+            )
+            raise ValueError(msg)
         if isinstance(new_entry, dict):
             with self._serialized():
                 self._entries[old_key] = old_entry
@@ -3013,6 +3092,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._entries.get(new_key) is updated_new:
                     self._entries[new_key] = previous_new
             raise
+        self._drop_if_concurrently_removed(new_key)
 
         # Transfer relations from old entry to new entry
         old_relations = self.get_relations(old_key)
@@ -3901,6 +3981,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._entries.get(key) is updated:
                     self._entries[key] = previous
             raise
+        self._drop_if_concurrently_removed(key)
         return updated
 
     def entries_by_tag(
@@ -4202,6 +4283,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         for entry in durable:
             if entry.key not in self._entries:
                 self._entries[entry.key] = entry
+                # Keep derived indexes consistent (same contract as
+                # _merge_durable_entries): dedup and graph centrality must see
+                # merged rows.
+                self._bloom.add(normalize_for_dedup(entry.value))
+                self._index_entry_entities(entry.key, entry.value)
         return sum(1 for e in self._entries.values() if e.memory_group == memory_group)
 
     def _evict_entry_key(self, key: str, *, reason: str, memory_group: str | None = None) -> None:
