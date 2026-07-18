@@ -797,7 +797,7 @@ def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
         mock_registry.list_agents.return_value = ["agent-a", "agent-b", "agent-c"]
 
         with (
-            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
             patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)
@@ -827,7 +827,7 @@ def test_collect_hive_health_falls_back_when_no_namespace_detail_list(tmp_path: 
         mock_registry.list_agents.return_value = ["agent-x"]
 
         with (
-            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
             patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)
@@ -854,7 +854,7 @@ def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
         mock_registry.list_agents.return_value = []
 
         with (
-            patch("tapps_brain.backends.AgentRegistry", return_value=mock_registry),
+            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
             patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)

@@ -203,6 +203,7 @@ class QueryMixin(_MemoryStoreBase):
                 raise
             with self._serialized():
                 self._relations.pop(key, None)
+                self._note_removed_locked(key)
 
             # Remove from entity index (TAP-734).
             self._remove_entry_entities(key)

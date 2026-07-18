@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    pass
 
 from tapps_brain.decay import DecayConfig
 from tapps_brain.gc import GCResult, MemoryGarbageCollector
@@ -124,36 +123,6 @@ class TestStaleCandidateDetails:
         entry = _make_entry(confidence=0.9)
         details = gc.stale_candidate_details([entry])
         assert details == []
-
-
-class TestAppendToArchive:
-    def test_writes_jsonl(self, tmp_path: Path) -> None:
-        """Archived entries are written to a JSONL file."""
-        archive_path = tmp_path / "archive.jsonl"
-        entry = _make_entry(key="archived-key")
-
-        n = MemoryGarbageCollector.append_to_archive([entry], archive_path)
-        text = archive_path.read_text(encoding="utf-8")
-        assert n == len(text.encode("utf-8"))
-        lines = [line for line in text.strip().splitlines() if line.strip()]
-        assert len(lines) == 1
-        data = json.loads(lines[0])
-        assert data["key"] == "archived-key"
-        assert "archived_at" in data
-
-    def test_appends_multiple(self, tmp_path: Path) -> None:
-        """Multiple entries append to the same file."""
-        archive_path = tmp_path / "archive.jsonl"
-        entries = [_make_entry(key=f"key-{i}") for i in range(3)]
-
-        n = MemoryGarbageCollector.append_to_archive(entries, archive_path)
-        text = archive_path.read_text(encoding="utf-8")
-        assert n == len(text.encode("utf-8"))
-        lines = [line for line in text.strip().splitlines() if line.strip()]
-        assert len(lines) == 3
-        # Each line is valid JSON with the expected keys
-        keys_found = {json.loads(line)["key"] for line in lines}
-        assert keys_found == {"key-0", "key-1", "key-2"}
 
 
 class TestGCResult:

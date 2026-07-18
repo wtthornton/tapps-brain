@@ -452,9 +452,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._write_policy: DeterministicWritePolicy | LLMWritePolicy | None = (
             self._resolve_write_policy(write_policy)
         )
-        from tapps_brain.gc import GCConfig as _GCConfig
-
-        self._gc_config = _GCConfig()
+        self._gc_config = self._resolve_gc_config()
         self._metrics = MetricsCollector()
         self._hive_store = hive_store
         self._hive_agent_id = hive_agent_id
@@ -563,6 +561,27 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             )
         return ConsolidationConfig()
 
+    def _resolve_gc_config(self) -> Any:  # noqa: ANN401  # gc.GCConfig
+        """Seed GC thresholds from the active profile's ``gc:`` block.
+
+        Profiles ship materially different retention windows (e.g.
+        home-automation: ``floor_retention_days: 7``); without this the
+        profile settings were silently ignored and every store ran with
+        the dataclass defaults. ``session_index_ttl_days`` has no profile
+        field and keeps its default. Runtime overrides via
+        :meth:`set_gc_config` still apply on top.
+        """
+        from tapps_brain.gc import GCConfig as _GCConfig
+
+        prof_gc = getattr(self._profile, "gc", None) if self._profile is not None else None
+        if prof_gc is None:
+            return _GCConfig()
+        return _GCConfig(
+            floor_retention_days=prof_gc.floor_retention_days,
+            session_expiry_days=prof_gc.session_expiry_days,
+            contradicted_threshold=prof_gc.contradicted_threshold,
+        )
+
     def _init_embedding_provider(
         self,
         embedding_provider: SentenceTransformerProvider | None,
@@ -610,6 +629,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._entries: dict[str, MemoryEntry] = {}
         for entry in self._persistence.load_all(limit=self._max_entries):
             self._entries[entry.key] = entry
+
+        # Removal tombstones for merge-resurrection protection (see
+        # _merge_durable_entries / _note_removed_locked).
+        self._removal_epoch: int = 0
+        self._removed_at: dict[str, int] = {}
 
         # TAP-655: startup sanity check — warn if expected HNSW index is absent.
         _verify = getattr(self._persistence, "verify_expected_indexes", None)
@@ -790,12 +814,37 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         Never overwrites keys already present in ``_entries`` so in-memory
         mutations (and write-through newer cache state) are preserved.
+
+        The ``load_all`` snapshot is taken outside the store lock, so a key
+        may be evicted/deleted (cache pop + durable delete) while the snapshot
+        is in flight — naively merging would resurrect it in the cache and
+        push the store past ``max_entries``.  The removal-epoch check below
+        skips any key removed after the snapshot began.
         """
+        with self._serialized():
+            snapshot_epoch = self._removal_epoch
         durable = self._persistence.load_all(limit=limit)
         with self._serialized():
             for entry in durable:
-                if entry.key not in self._entries:
-                    self._entries[entry.key] = entry
+                if entry.key in self._entries:
+                    continue
+                if self._removed_at.get(entry.key, 0) > snapshot_epoch:
+                    continue
+                self._entries[entry.key] = entry
+
+    def _note_removed_locked(self, key: str) -> None:
+        """Record a cache+durable removal for merge-resurrection protection.
+
+        Must be called while holding the store serialization lock, after the
+        durable row was deleted.  Bounded: oldest half is pruned past 4096
+        tombstones (deletes are rare; the tombstone only needs to outlive
+        concurrent ``load_all`` snapshots).
+        """
+        self._removal_epoch += 1
+        self._removed_at[key] = self._removal_epoch
+        if len(self._removed_at) > 4096:
+            cutoff = sorted(self._removed_at.values())[len(self._removed_at) // 2]
+            self._removed_at = {k: e for k, e in self._removed_at.items() if e > cutoff}
 
     @property
     def groups(self) -> list[str]:
@@ -2111,6 +2160,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     for _e in self._entries.values():
                         self._bloom.add(normalize_for_dedup(_e.value))
             raise
+        # Close the evict/persist race: the durable save above runs outside the
+        # store lock, so a concurrent eviction or delete may have removed this
+        # key (cache + durable row) between cache assignment and persist — the
+        # save would then silently resurrect the row in Postgres while the
+        # cache stays capped, and _merge_durable_entries would push the store
+        # over max_entries.  Re-check under the lock and drop the orphaned row.
+        with self._serialized():
+            if key not in self._entries:
+                try:
+                    self._persistence.delete(key)
+                except Exception:
+                    logger.warning("save_resurrect_cleanup_failed", key=key, exc_info=True)
 
     def _emit_save_audit(
         self,
@@ -2559,9 +2620,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Record whether a retrieved memory was useful. Updates Bayesian confidence.
 
         Increments total_access_count always; increments useful_access_count when
-        was_useful=True. Applies a Bayesian update to confidence:
+        was_useful=True. Blends confidence toward the Laplace usefulness estimate:
 
-            new_confidence = old_confidence * (useful + 1) / (total + 2)
+            target = (useful + 1) / (total + 2)
+            new_confidence = old_confidence + 0.2 * (target - old_confidence)
+
+        Useful accesses on a mostly-useful memory pull confidence up; non-useful
+        accesses pull it down. (The previous formula *multiplied* old confidence
+        by the Laplace estimate, which monotonically decreased confidence even
+        for a perfect usefulness record — the opposite of positive feedback.)
 
         If adaptive_stability is enabled on the entry's tier, also calls
         update_stability() from decay.py.
@@ -2581,8 +2648,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             new_total = entry.total_access_count + 1
             new_useful = entry.useful_access_count + (1 if was_useful else 0)
 
-            # Bayesian update: confidence * (useful + 1) / (total + 2)
-            new_confidence = entry.confidence * (new_useful + 1) / (new_total + 2)
+            # Blend toward the Laplace usefulness estimate (see docstring).
+            laplace_target = (new_useful + 1) / (new_total + 2)
+            new_confidence = entry.confidence + 0.2 * (laplace_target - entry.confidence)
             # Clamp to [0.0, 1.0]
             new_confidence = max(0.0, min(1.0, new_confidence))
 
@@ -3437,15 +3505,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         with self._serialized():
             entries = list(self._entries.values())
         now = datetime.now(tz=UTC)
-        candidates = gc_collector.identify_candidates(entries, now=now)
+        # Single candidate scan: derive the archival set from the detail records
+        # rather than running identify_candidates() (same _archive_reasons pass)
+        # a second time over every entry.
+        details = gc_collector.stale_candidate_details(entries, now=now)
+        detail_keys = {d.key for d in details}
+        candidates = [e for e in entries if e.key in detail_keys]
         # Update tapps_brain.gc.candidates gauge with the current candidate count
         # (STORY-032.6) — recorded once per gc() call so get_metrics() stays cheap.
         self._last_gc_candidates = len(candidates)
-        details = gc_collector.stale_candidate_details(entries, now=now)
         reason_counts = aggregate_gc_reason_counts(details)
         candidate_keys = [c.key for c in candidates]
-        now_iso = now.isoformat()
-        est_bytes = archive_entries_jsonl_utf8_bytes(candidates, archived_at_iso=now_iso)
 
         if dry_run:
             return GCResult(
@@ -3454,7 +3524,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 archived_keys=candidate_keys,
                 dry_run=True,
                 reason_counts=reason_counts,
-                estimated_archive_bytes=est_bytes,
+                estimated_archive_bytes=archive_entries_jsonl_utf8_bytes(
+                    candidates, archived_at_iso=now.isoformat()
+                ),
             )
 
         # Archive to Postgres gc_archive table (STORY-066.3) and delete from store.
@@ -4159,6 +4231,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             raise
         self._relations.pop(key, None)
         self._remove_entry_entities(key)
+        self._note_removed_locked(key)
         logger.info(
             "memory_evicted",
             key=key,

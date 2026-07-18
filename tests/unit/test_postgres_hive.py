@@ -355,4 +355,6 @@ class TestPostgresAgentRegistry:
 
         result = registry.list_agents()
         assert len(result) == 1
-        assert result[0]["id"] == "a1"
+        assert result[0].id == "a1"
+        assert result[0].name == "Agent 1"
+        assert result[0].skills == []

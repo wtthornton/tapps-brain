@@ -830,6 +830,27 @@ class PostgresAgentRegistry:
                     d[jf] = json.loads(d[jf])
             return d
 
+    @staticmethod
+    def _row_to_registration(d: dict[str, Any]) -> AgentRegistration:
+        """Build an :class:`AgentRegistration` from an ``agent_registry`` row.
+
+        Callers (``memory_service.audit_consumers``, ``agents_service.agent_list``,
+        ``hive_service``, CLI) consume ``list_agents()`` items as model objects
+        (``a.id`` / ``a.model_dump()``), matching the YAML backend — raw row
+        dicts crash them (TAP-2093 CI regression).  Extra DB columns
+        (``registered_at``, ``last_seen_at``, ``groups``) are dropped: the model
+        forbids extras.
+        """
+        from tapps_brain.models import AgentRegistration
+
+        return AgentRegistration(
+            id=str(d["id"]),
+            name=str(d.get("name") or ""),
+            profile=str(d.get("profile") or "repo-brain"),
+            skills=list(d.get("skills") or []),
+            project_root=d.get("project_root"),
+        )
+
     def list_agents(self) -> list[Any]:
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM agent_registry ORDER BY id")
@@ -841,7 +862,7 @@ class PostgresAgentRegistry:
                 for jf in ("skills", "groups"):
                     if isinstance(d.get(jf), str):
                         d[jf] = json.loads(d[jf])
-                results.append(d)
+                results.append(self._row_to_registration(d))
             return results
 
     def agents_for_domain(self, domain_name: str) -> list[Any]:
@@ -858,5 +879,5 @@ class PostgresAgentRegistry:
                 for jf in ("skills", "groups"):
                     if isinstance(d.get(jf), str):
                         d[jf] = json.loads(d[jf])
-                results.append(d)
+                results.append(self._row_to_registration(d))
             return results

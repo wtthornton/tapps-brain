@@ -44,13 +44,10 @@ _SECONDS_PER_DAY = 86400.0
 # FSRS expresses retrievability as R = (1 + F·t/S)^C with F = 19/81; here
 # we use the equivalent form C0 * (1 + t / (k*H))^(-beta) where k = 1/F = 81/19.
 # Source: https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm
+# To migrate an exponential-tier profile to power-law without shifting median
+# retention, use the half-life anchor β = ln 2 / ln(1 + 1/k) ≈ 3.292 (see
+# ``power_law_decay`` docstring).
 _FSRS_DEFAULT_K = 81.0 / 19.0  # ≈ 4.2632
-
-# Calibration anchor for power-law that preserves R(t=H) = 0.5 (the half-life
-# semantic). Solving (1 + 1/k)^(-β) = 0.5 → β = ln 2 / ln(1 + 1/k).
-# With k = 81/19 this gives β ≈ 3.292. Use this when migrating an existing
-# exponential-tier profile to power-law without shifting median retention.
-_FSRS_HALF_LIFE_ANCHOR_BETA = math.log(2.0) / math.log(1.0 + 1.0 / _FSRS_DEFAULT_K)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -115,6 +112,10 @@ class DecayConfig(BaseModel):
 
     # Per-layer importance tags (EPIC-010)
     layer_importance_tags: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+    # Effective-confidence threshold below which a memory is flagged stale.
+    # Profile-configurable via ``gc.stale_threshold``.
+    stale_threshold: float = Field(default=_DEFAULT_STALE_THRESHOLD, ge=0.0, le=1.0)
 
     @field_validator("layer_half_lives")
     @classmethod
@@ -386,32 +387,20 @@ def update_stability(
     return (s_new, d_old)
 
 
-def calculate_decayed_confidence(
-    entry: MemoryEntry,
-    config: DecayConfig,
-    *,
-    now: datetime | None = None,
-) -> float:
-    """Calculate the time-decayed confidence for a memory entry.
+def effective_half_life(entry: MemoryEntry, config: DecayConfig) -> float:
+    """Return the entry's effective half-life in days after all adjustments.
 
-    Uses exponential decay by default: ``confidence * 0.5^(days / half_life)``.
-    When ``decay_model="power_law"`` (EPIC-010), uses:
-    ``confidence * (1 + days / (k * half_life))^(-beta)``.
-    The result is clamped to ``[confidence_floor, source_ceiling]``.
-    If ``entry.stability > 0``, uses stability as effective half-life (GitHub #28).
+    Order of adjustments (must match :func:`calculate_decayed_confidence`):
+    per-entry ``stability`` (GitHub #28) or tier half-life, then the
+    ``temporal_sensitivity`` multiplier (TAP-735), then importance-tag boosts
+    (EPIC-010).
     """
-    half_life = _get_half_life(entry.tier, config)
-    ceiling = _get_ceiling(entry.source, config)
-    floor = _get_confidence_floor(entry.tier, config)
-
-    ref_time = _decay_reference_time(entry)
-    days = _days_since(ref_time, now)
-
-    # Determine decay model for this tier (EPIC-010)
     tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
 
     # GitHub #28: if entry has a non-zero stability, use it as effective half-life
-    effective_hl = entry.stability if entry.stability > 0.0 else float(half_life)
+    effective_hl = (
+        entry.stability if entry.stability > 0.0 else float(_get_half_life(entry.tier, config))
+    )
 
     # TAP-735: temporal_sensitivity multiplies the effective half-life before all
     # other adjustments.  Applied here so that importance-tag boosts still stack on
@@ -426,6 +415,34 @@ def calculate_decayed_confidence(
             if tag in importance_tags:
                 max_multiplier = max(max_multiplier, importance_tags[tag])
         effective_hl = effective_hl * max_multiplier
+
+    return effective_hl
+
+
+def calculate_decayed_confidence(
+    entry: MemoryEntry,
+    config: DecayConfig,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Calculate the time-decayed confidence for a memory entry.
+
+    Uses exponential decay by default: ``confidence * 0.5^(days / half_life)``.
+    When ``decay_model="power_law"`` (EPIC-010), uses:
+    ``confidence * (1 + days / (k * half_life))^(-beta)``.
+    The result is clamped to ``[confidence_floor, source_ceiling]``.
+    If ``entry.stability > 0``, uses stability as effective half-life (GitHub #28).
+    """
+    ceiling = _get_ceiling(entry.source, config)
+    floor = _get_confidence_floor(entry.tier, config)
+
+    ref_time = _decay_reference_time(entry)
+    days = _days_since(ref_time, now)
+
+    # Determine decay model for this tier (EPIC-010)
+    tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+
+    effective_hl = effective_half_life(entry, config)
 
     decay_model = config.layer_decay_models.get(tier_str, config.decay_model)
 
@@ -445,11 +462,17 @@ def calculate_decayed_confidence(
 def is_stale(
     entry: MemoryEntry,
     config: DecayConfig,
-    threshold: float = _DEFAULT_STALE_THRESHOLD,
+    threshold: float | None = None,
     *,
     now: datetime | None = None,
 ) -> bool:
-    """Return True if the memory's effective confidence is below *threshold*."""
+    """Return True if the memory's effective confidence is below *threshold*.
+
+    When *threshold* is ``None``, uses ``config.stale_threshold``
+    (profile-configurable via ``gc.stale_threshold``).
+    """
+    if threshold is None:
+        threshold = config.stale_threshold
     effective = calculate_decayed_confidence(entry, config, now=now)
     return effective < threshold
 
@@ -462,11 +485,11 @@ def get_effective_confidence(
 ) -> tuple[float, bool]:
     """Return ``(decayed_confidence, is_stale)`` for a memory entry.
 
-    This is the primary read-time API. The *is_stale* flag uses the
-    default stale threshold.
+    This is the primary read-time API. The *is_stale* flag uses
+    ``config.stale_threshold``.
     """
     decayed = calculate_decayed_confidence(entry, config, now=now)
-    stale = decayed < _DEFAULT_STALE_THRESHOLD
+    stale = decayed < config.stale_threshold
     return (decayed, stale)
 
 
@@ -514,6 +537,7 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
 
     return DecayConfig(
         confidence_floor=global_floor,
+        stale_threshold=profile.gc.stale_threshold,
         human_confidence_ceiling=ceilings.get("human", 0.95),
         agent_confidence_ceiling=ceilings.get("agent", 0.85),
         inferred_confidence_ceiling=ceilings.get("inferred", 0.70),

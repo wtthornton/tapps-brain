@@ -1,8 +1,8 @@
 """Garbage collection and archival for memory entries.
 
 Archives memories that have decayed below usefulness for sustained
-periods. Archived memories are moved to a separate table and appended
-to an external JSONL file for visibility.
+periods. Archived memories are moved to the Postgres ``gc_archive``
+table (migration 006, STORY-066.3) — never hard-deleted.
 """
 
 from __future__ import annotations
@@ -21,13 +21,11 @@ from tapps_brain.decay import (
     _days_since,
     _decay_reference_time,
     _get_confidence_floor,
-    _get_half_life,
     calculate_decayed_confidence,
+    effective_half_life,
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from tapps_brain.models import MemoryEntry
 
 logger = structlog.get_logger(__name__)
@@ -86,12 +84,12 @@ class GCResult(BaseModel):
     archive_bytes: int = Field(
         default=0,
         ge=0,
-        description="UTF-8 bytes appended to archive JSONL this run (live runs only).",
+        description="Bytes written to the Postgres gc_archive table this run (live runs only).",
     )
     estimated_archive_bytes: int = Field(
         default=0,
         ge=0,
-        description="UTF-8 size of JSONL that would be appended (dry-run only).",
+        description="Estimated UTF-8 JSONL size of the candidate set (dry-run only).",
     )
     session_chunks_deleted: int = Field(
         default=0,
@@ -125,7 +123,7 @@ def aggregate_gc_reason_counts(details: list[StaleCandidateDetail]) -> dict[str,
 
 
 def archive_entries_jsonl_utf8_bytes(entries: list[MemoryEntry], archived_at_iso: str) -> int:
-    """UTF-8 byte size of JSONL lines ``append_to_archive`` would write."""
+    """UTF-8 byte size of the candidate set serialized as JSONL (dry-run estimate)."""
     total = 0
     for entry in entries:
         record = entry.model_dump()
@@ -269,10 +267,15 @@ class MemoryGarbageCollector:
     def _days_at_floor(self, entry: MemoryEntry, now: datetime) -> float:
         """Estimate how long a memory has been at the confidence floor.
 
-        Uses the decay formula in reverse to find when confidence
-        first reached the floor.
+        Inverts the same decay curve that :func:`calculate_decayed_confidence`
+        applies — including per-entry stability, temporal sensitivity, and
+        importance-tag boosts on the half-life, and the active decay model —
+        so the ``floor_retention_days`` grace period starts when the entry
+        actually reached the floor, not when a plain tier-half-life
+        exponential curve would have.
         """
-        half_life = _get_half_life(entry.tier, self._config)
+        from tapps_brain.models import MemoryTier
+
         ref_time = _decay_reference_time(entry)
         total_days = _days_since(ref_time, now)
         floor = _get_confidence_floor(entry.tier, self._config)
@@ -280,42 +283,25 @@ class MemoryGarbageCollector:
         if entry.confidence <= 0 or floor <= 0:
             return total_days
 
-        # Solve: floor = confidence * 0.5^(days_to_floor / half_life)
-        # days_to_floor = half_life * log2(confidence / floor)
         ratio = entry.confidence / floor
         if ratio <= 1.0:
             return total_days  # was already at or below floor from the start
 
-        days_to_floor = half_life * math.log2(ratio)
+        half_life = effective_half_life(entry, self._config)
+        tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+        decay_model = self._config.layer_decay_models.get(tier_str, self._config.decay_model)
+
+        if decay_model == "power_law":
+            # Solve: floor = confidence * (1 + t / (k*H))^(-beta)
+            # t_floor = k * H * (ratio^(1/beta) - 1)
+            beta = self._config.layer_decay_exponents.get(tier_str, self._config.decay_exponent)
+            k = self._config.layer_decay_k.get(tier_str, self._config.decay_k)
+            days_to_floor = k * half_life * (math.pow(ratio, 1.0 / beta) - 1.0)
+        else:
+            # Solve: floor = confidence * 0.5^(days_to_floor / half_life)
+            # days_to_floor = half_life * log2(confidence / floor)
+            days_to_floor = half_life * math.log2(ratio)
         return max(total_days - days_to_floor, 0.0)
-
-    @staticmethod
-    def append_to_archive(
-        entries: list[MemoryEntry],
-        archive_path: Path,
-    ) -> int:
-        """Append archived entries to a JSONL file for external visibility.
-
-        Returns:
-            UTF-8 byte length appended (0 if nothing written or on I/O error).
-        """
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        now_iso = datetime.now(tz=UTC).isoformat()
-
-        try:
-            total = 0
-            with archive_path.open("a", encoding="utf-8") as fh:
-                for entry in entries:
-                    record = entry.model_dump()
-                    record["archived_at"] = now_iso
-                    line = json.dumps(record, ensure_ascii=False) + "\n"
-                    raw = line.encode("utf-8")
-                    fh.write(line)
-                    total += len(raw)
-            return total
-        except OSError:
-            logger.warning("archive_write_failed", path=str(archive_path), exc_info=True)
-            return 0
 
 
 # ---------------------------------------------------------------------------

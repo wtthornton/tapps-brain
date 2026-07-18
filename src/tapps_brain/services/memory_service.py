@@ -1777,6 +1777,9 @@ def memory_gc_config_set(
             if contradicted_threshold is not None
             else current.contradicted_threshold
         ),
+        # Not settable via this tool, but must be carried forward — omitting it
+        # silently reset a CLI-configured TTL back to the dataclass default.
+        session_index_ttl_days=current.session_index_ttl_days,
     )
     store.set_gc_config(new_cfg)
     return {"status": "updated", **new_cfg.to_dict()}

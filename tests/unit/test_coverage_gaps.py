@@ -4,7 +4,7 @@ Covers:
 - _protocols.py: runtime_checkable Protocol instantiation
 - _feature_flags.py: lazy detection with monkeypatched imports
 - retrieval.py: relation expansion, retrieval policy, reranker edges, vector search, _like_search
-- gc.py: edge cases in _archive_reasons, _days_at_floor, _days_since_timestamp, append_to_archive
+- gc.py: edge cases in _archive_reasons, _days_at_floor, _days_since_timestamp
 - io.py: tag grouping, scope filter, corrupt JSON, max entries, non-dict payload
 - injection.py: search exception, safety-blocked entries, all-blocked early return
 """
@@ -663,17 +663,6 @@ class TestGCEdges:
         entry = _entry("k", "v", confidence=0.3, updated_at=(_NOW - timedelta(days=50)).isoformat())
         days = gc._days_at_floor(entry, _NOW)
         assert days >= 49.0
-
-    def test_append_to_archive_os_error(self, tmp_path):
-        from tapps_brain.gc import MemoryGarbageCollector
-
-        entry = _entry("k", "v")
-        # Use a read-only file to trigger OSError on open()
-        archive_path = tmp_path / "archive.jsonl"
-        archive_path.mkdir()  # dir instead of file -> OSError on open
-
-        # Should not raise, just log warning
-        assert MemoryGarbageCollector.append_to_archive([entry], archive_path) == 0
 
     def test_days_since_timestamp_bad_value(self):
         from tapps_brain.gc import _days_since_timestamp

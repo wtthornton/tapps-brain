@@ -31,13 +31,19 @@ def _isolate_counter(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _patch_registry(monkeypatch: pytest.MonkeyPatch, agent_ids: list[str]) -> None:
-    """Stub :class:`AgentRegistry` to return one bare ``AgentRegistration`` per id."""
+    """Stub the registry resolver to return one bare ``AgentRegistration`` per id.
+
+    Patches ``resolve_agent_registry`` (not the YAML ``AgentRegistry`` class) so
+    the stub holds even when ``TAPPS_BRAIN_DATABASE_URL`` is set in the
+    environment (CI), where the resolver would otherwise pick the live
+    Postgres-backed registry.
+    """
     from tapps_brain.models import AgentRegistration
 
     agents = [AgentRegistration(id=aid) for aid in agent_ids]
     mock_reg = MagicMock()
     mock_reg.list_agents.return_value = agents
-    monkeypatch.setattr("tapps_brain.backends.AgentRegistry", lambda *a, **k: mock_reg)
+    monkeypatch.setattr("tapps_brain.backends.resolve_agent_registry", lambda *a, **k: mock_reg)
 
 
 def _record(project_id: str, agent_id: str, tool: str, n: int = 1) -> None:

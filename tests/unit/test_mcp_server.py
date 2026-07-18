@@ -2540,17 +2540,20 @@ class TestMCPAdditionalCoverage:
         server._tapps_store.close()
 
     def test_agent_delete_exception_returns_error(self, store_dir, monkeypatch):
-        """agent_delete returns error JSON when AgentRegistry raises unexpectedly."""
+        """agent_delete returns error JSON when the registry raises unexpectedly."""
+        from unittest.mock import MagicMock
+
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=False)
         import tapps_brain.backends as hive_mod
 
-        monkeypatch.setattr(
-            hive_mod.AgentRegistry,
-            "unregister",
-            lambda self, agent_id: (_ for _ in ()).throw(RuntimeError("delete failure")),
-        )
+        # Patch the resolver (not the YAML AgentRegistry class) so the failure
+        # injection holds even when TAPPS_BRAIN_DATABASE_URL routes to the
+        # Postgres-backed registry (CI).
+        failing_registry = MagicMock()
+        failing_registry.unregister.side_effect = RuntimeError("delete failure")
+        monkeypatch.setattr(hive_mod, "resolve_agent_registry", lambda *a, **k: failing_registry)
         delete_fn = _tool_fn(server, "agent_delete")
         result = json.loads(delete_fn(agent_id="fail-agent"))
         assert result.get("error") == "registry_error"
@@ -2722,17 +2725,19 @@ class TestMCPAdditionalCoverage:
     # ------------------------------------------------------------------
 
     def test_agent_list_exception_returns_error(self, store_dir, monkeypatch):
-        """agent_list returns error JSON when AgentRegistry raises unexpectedly."""
+        """agent_list returns error JSON when the registry raises unexpectedly."""
+        from unittest.mock import MagicMock
+
         from tapps_brain.mcp_server import create_server
 
         server = create_server(store_dir, enable_hive=False)
         import tapps_brain.backends as hive_mod
 
-        monkeypatch.setattr(
-            hive_mod.AgentRegistry,
-            "list_agents",
-            lambda self: (_ for _ in ()).throw(RuntimeError("list failure")),
-        )
+        # Patch the resolver so the failure injection holds even when
+        # TAPPS_BRAIN_DATABASE_URL routes to the Postgres-backed registry (CI).
+        failing_registry = MagicMock()
+        failing_registry.list_agents.side_effect = RuntimeError("list failure")
+        monkeypatch.setattr(hive_mod, "resolve_agent_registry", lambda *a, **k: failing_registry)
         list_fn = _tool_fn(server, "agent_list")
         result = json.loads(list_fn())
         assert result.get("error") == "registry_error"
