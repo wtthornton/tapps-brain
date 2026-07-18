@@ -899,8 +899,12 @@ class TestMergeProfilesHive:
         assert merged.hive.conflict_policy == "confidence_max"
         assert merged.hive.recall_weight == 0.6
 
-    def test_merge_hive_default_when_child_is_default(self) -> None:
-        """When child uses default HiveConfig, the merged result also has defaults."""
+    def test_merge_hive_inherits_parent_when_child_omits(self) -> None:
+        """When child doesn't set hive, the parent's explicit HiveConfig is inherited.
+
+        A child that says nothing about a block must not silently revert the
+        parent's tuned values to Pydantic defaults (set-aware merge).
+        """
         parent = MemoryProfile(
             name="parent",
             layers=[LayerDefinition(name="a", half_life_days=90)],
@@ -909,12 +913,11 @@ class TestMergeProfilesHive:
         child = MemoryProfile(
             name="child",
             layers=[LayerDefinition(name="b", half_life_days=7)],
-            # No hive specified — uses default HiveConfig()
+            # No hive specified — parent's block carries through
         )
         merged = _merge_profiles(child, parent)
-        # Child's default HiveConfig wins over parent (full child.hive replaces)
-        assert merged.hive.auto_propagate_tiers == ["architectural", "pattern"]
-        assert merged.hive.recall_weight == 0.8  # default
+        assert merged.hive.auto_propagate_tiers == ["architectural"]
+        assert merged.hive.recall_weight == 0.5
 
 
 class TestMergeProfilesLexical:

@@ -81,19 +81,21 @@ def publish_to_experts(
     expert_domains: list[str],
     hive_store: HiveBackend | None,
     auto_publish: bool,
+    publish_tiers: tuple[str, ...] | list[str] = ("architectural", "pattern"),
 ) -> None:
-    """Auto-publish ``architectural`` / ``pattern`` private saves to experts.
+    """Auto-publish shareable-tier private saves to experts.
 
-    STORY-056.2.  Only fires for ``agent_scope == "private"`` entries in the
-    two shareable tiers and when the agent has declared expert domains.  Tags
-    are augmented with ``expert:<domain>`` markers so recall can distinguish
-    expert-published memories from domain-scope ones.
+    STORY-056.2.  Only fires for ``agent_scope == "private"`` entries in a
+    tier listed in *publish_tiers* (``profile.hive.auto_publish_tiers``;
+    defaults to architectural + pattern) and when the agent has declared
+    expert domains.  Tags are augmented with ``expert:<domain>`` markers so
+    recall can distinguish expert-published memories from domain-scope ones.
     """
     if not auto_publish:
         return
     if hive_store is None or not expert_domains:
         return
-    if tier not in ("architectural", "pattern"):
+    if tier not in publish_tiers:
         return
     if agent_scope != "private":
         return

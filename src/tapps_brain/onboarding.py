@@ -106,7 +106,8 @@ def render_agent_onboarding(profile: MemoryProfile) -> str:
             "## Hive (shared memory)",
             "",
             f"- Recall blend weight **{hive.recall_weight:.2f}**; "
-            f"conflict policy `{hive.conflict_policy}`.",
+            f"conflict policy `{hive.conflict_policy}` (reserved — the save-time "
+            "propagation path does not apply it yet).",
             f"- Auto-propagate tiers: {', '.join(hive.auto_propagate_tiers) or '—'}; "
             f"private tiers: {', '.join(hive.private_tiers) or '—'}.",
             "",

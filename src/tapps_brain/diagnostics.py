@@ -479,7 +479,18 @@ def run_diagnostics(
     dims.extend(load_custom_dimensions(cfg.custom_dimension_paths))
     dim_names = [d.name for d in dims]
     weights = {d.name: d.default_weight for d in dims}
-    weights.update(cfg.dimension_weights)
+    # Drop weight overrides for names that match no dimension: a typo'd key
+    # would otherwise absorb normalized weight mass that the composite sum
+    # never pays back, silently dragging a healthy store toward DEGRADED.
+    known = set(dim_names)
+    unknown_weight_keys = sorted(k for k in cfg.dimension_weights if k not in known)
+    if unknown_weight_keys:
+        logger.warning(
+            "diagnostics.unknown_dimension_weights",
+            unknown=unknown_weight_keys,
+            known=sorted(known),
+        )
+    weights.update({k: v for k, v in cfg.dimension_weights.items() if k in known})
     weights = normalize_weights(weights)
     corr_adj = False
     if history_for_correlation is not None:

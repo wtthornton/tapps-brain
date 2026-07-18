@@ -422,6 +422,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # Profile before persistence so lexical FTS/BM25 settings apply at open.
         self._profile = self._resolve_profile(project_root, profile)
         _lexical = getattr(self._profile, "lexical", None) if self._profile is not None else None
+        # Declarative hive memberships (EPIC-056): constructor args / env win,
+        # profile.hive.groups / expert_domains are the fallback — without this
+        # the profile fields are dead configuration.
+        _hive_cfg = getattr(self._profile, "hive", None) if self._profile is not None else None
+        if not self._groups and _hive_cfg is not None and _hive_cfg.groups:
+            self._groups = list(_hive_cfg.groups)
+        if not self._expert_domains and _hive_cfg is not None and _hive_cfg.expert_domains:
+            self._expert_domains = list(_hive_cfg.expert_domains)
 
         self._maybe_auto_migrate_private_schema()
 
@@ -928,6 +936,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
             return _resolve(project_root)
         except Exception:
+            # Fall back to profile=None (code-default scoring/limits), but
+            # never silently: a broken profile.yaml otherwise degrades the
+            # store with no operator-visible signal, defeating
+            # ProfileValidationError's fail-loud contract.
+            logger.warning(
+                "store.profile_resolve_failed",
+                project_root=str(project_root),
+                exc_info=True,
+            )
             return None
 
     @staticmethod
@@ -1230,6 +1247,24 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         MemorySource(source)
         MemoryScope(scope)
 
+        # Profile-tightened limits (profile.limits): the MemoryEntry model
+        # enforces the global constants (128/4096/10), but a profile may set
+        # *stricter* caps — without this check those three fields are dead
+        # configuration and the onboarding doc lies about them. Values above
+        # the model constants cannot take effect (Pydantic rejects first).
+        if self._profile is not None:
+            lim = getattr(self._profile, "limits", None)
+            if lim is not None:
+                if len(key) > lim.max_key_length:
+                    msg = f"Key exceeds profile limit of {lim.max_key_length} characters."
+                    raise ValueError(msg)
+                if len(value) > lim.max_value_length:
+                    msg = f"Value exceeds profile limit of {lim.max_value_length} characters."
+                    raise ValueError(msg)
+                if tags is not None and len(tags) > lim.max_tags:
+                    msg = f"Too many tags (max {lim.max_tags} per profile limit)."
+                    raise ValueError(msg)
+
         # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
         # extracted these into the shared prepare step used by save_many too).
         prep = self._prepare_save(
@@ -1425,6 +1460,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             groups=self._groups,
             hive_store=self._hive_store,
         )
+        _hive_prof = getattr(self._profile, "hive", None) if self._profile is not None else None
         publish_to_experts(
             entry=entry,
             tier=tier,
@@ -1432,6 +1468,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             expert_domains=self._expert_domains,
             hive_store=self._hive_store,
             auto_publish=auto_publish,
+            publish_tiers=(
+                tuple(_hive_prof.auto_publish_tiers)
+                if _hive_prof is not None
+                else ("architectural", "pattern")
+            ),
         )
 
         self._persist_relations(key, value, created_at=entry.created_at)
@@ -1988,6 +2029,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # from (mutually inconsistent state).
         if confidence == -1.0 and existing is not None:
             confidence = existing.confidence
+        # Profile-tuned source defaults (profile.source_confidence) take
+        # precedence over the static map in models.py — without this the
+        # profile block is dead configuration.
+        if confidence == -1.0 and self._profile is not None:
+            prof_default = (getattr(self._profile, "source_confidence", None) or {}).get(source)
+            if prof_default is not None:
+                confidence = float(prof_default)
         effective_valid_at = conflict_valid_at or preserved["valid_at"]
         effective_temporal = (
             temporal_sensitivity
@@ -2294,8 +2342,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 for rel in (_as_relation(c) for c in cached_flat)
                 if rel is not None
                 and (
-                    rel.subject.lower() in new_entities
-                    or rel.object_entity.lower() in new_entities
+                    rel.subject.lower() in new_entities or rel.object_entity.lower() in new_entities
                 )
             ]
 
@@ -2303,8 +2350,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # Filter to new triples so pre-existing self-loops/cycles in the
             # neighborhood don't re-warn on every unrelated save.
             new_triples = {
-                (r.subject.lower(), r.predicate.lower(), r.object_entity.lower())
-                for r in relations
+                (r.subject.lower(), r.predicate.lower(), r.object_entity.lower()) for r in relations
             }
             cycles = [
                 c
@@ -3304,19 +3350,33 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Wires the Hive store and profile so the orchestrator can do hive-aware
         recall.  Created once under the store lock and reused thereafter.
         """
-        from tapps_brain.recall import RecallOrchestrator
+        from tapps_brain.recall import RecallConfig, RecallOrchestrator
 
         with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
                 hive_weight = 0.8
                 agent_profile = "repo-brain"
+                recall_config: RecallConfig | None = None
                 if self._profile is not None:
                     hive_cfg = getattr(self._profile, "hive", None)
                     if hive_cfg is not None:
                         hive_weight = hive_cfg.recall_weight
                     agent_profile = getattr(self._profile, "name", "repo-brain")
+                    # Thread profile recall: block into the orchestrator config —
+                    # without this the profile's recall settings are dead
+                    # configuration and the RecallConfig dataclass defaults
+                    # always win.
+                    recall_prof = getattr(self._profile, "recall", None)
+                    if recall_prof is not None:
+                        recall_config = RecallConfig(
+                            engagement_level=recall_prof.default_engagement,
+                            max_tokens=recall_prof.default_token_budget,
+                            min_score=recall_prof.min_score,
+                            min_confidence=recall_prof.min_confidence,
+                        )
                 self._recall_orchestrator = RecallOrchestrator(
                     self,
+                    config=recall_config,
                     decay_config=self._get_decay_config(),
                     hive_store=self._hive_store,
                     hive_recall_weight=hive_weight,

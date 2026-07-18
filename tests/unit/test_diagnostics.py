@@ -497,6 +497,24 @@ def test_hive_namespace_scores_with_hive(tmp_path) -> None:
     raise RuntimeError("HiveStore (SQLite) removed in v3 — see ADR-007")
 
 
+def test_typo_dimension_weight_does_not_dilute_composite(tmp_path) -> None:
+    """Unknown dimension_weights keys are dropped (with a warning), not normalized in.
+
+    A typo'd key otherwise absorbs weight mass the composite sum never pays
+    back, dragging a healthy store toward the DEGRADED circuit threshold.
+    """
+    store = MemoryStore(tmp_path)
+    try:
+        store.save("diag-k1", "some healthy value", tier="pattern", source="agent")
+        control = run_diagnostics(store)
+        typo = run_diagnostics(
+            store, config=DiagnosticsConfig(dimension_weights={"freshness_typo": 0.5})
+        )
+        assert typo.composite_score == pytest.approx(control.composite_score)
+    finally:
+        store.close()
+
+
 def test_anomaly_detector_z_score_uses_pre_update_ewma() -> None:
     """Outlier z must be measured against the baseline before folding it in."""
     import math

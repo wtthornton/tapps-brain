@@ -216,8 +216,11 @@ class SentenceTransformerProvider:
     def model_id(self) -> str:
         """Composite model identity string (``name@revision`` or just ``name``).
 
-        Stored alongside embeddings in ``embedding_model_id`` so a revision mismatch
-        on cold-start can be detected and a re-index triggered.
+        Stored alongside embeddings in ``embedding_model_id`` for provenance.
+        Note: nothing compares the stored id against the active provider yet —
+        after a model/revision change, ``backfill_embeddings`` skips rows that
+        already carry an embedding, so mixed-model vectors share the index
+        until a manual re-embed. Automated mismatch detection is future work.
         """
         if self._revision:
             return f"{self._model_name}@{self._revision}"

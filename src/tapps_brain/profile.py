@@ -81,7 +81,7 @@ class LayerDefinition(BaseModel):
             "``MemoryStore.record_access`` and ``MemoryStore.reinforce``."
         ),
     )
-    promotion_strategy: str = Field(
+    promotion_strategy: Literal["threshold", "stability"] = Field(
         default="threshold",
         description="Promotion strategy: 'threshold' (default) or 'stability'.",
     )
@@ -435,7 +435,9 @@ class HiveConfig(BaseModel):
         default="supersede",
         description=(
             "Conflict resolution: 'supersede' | 'source_authority'"
-            " | 'confidence_max' | 'last_write_wins'."
+            " | 'confidence_max' | 'last_write_wins'. RESERVED: the save-time"
+            " propagation path (PropagationEngine → hive_store.save) does not"
+            " consult this yet; only direct hive_backend.propagate() calls do."
         ),
     )
     recall_weight: float = Field(
@@ -454,11 +456,51 @@ class HiveConfig(BaseModel):
     )
     recall_weights: dict[str, float] = Field(
         default_factory=lambda: {"local": 0.5, "group": 0.3, "hive": 0.2},
-        description="Recall weight distribution across local, group, and hive scopes (EPIC-056).",
+        description=(
+            "RESERVED (EPIC-056): per-scope recall weight distribution is not"
+            " implemented; recall uses the scalar `recall_weight` above."
+        ),
     )
     auto_publish_tiers: list[str] = Field(
         default_factory=lambda: ["architectural", "pattern"],
         description="Tiers eligible for expert auto-publishing (EPIC-056).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph profile config (EPIC-075 / ADR-009)
+# ---------------------------------------------------------------------------
+
+
+class KGProfileConfig(BaseModel):
+    """Knowledge Graph settings (EPIC-075 / ADR-009).
+
+    Previously the ``kg:`` block shipped in ``repo-brain.yaml`` was silently
+    discarded at load (no matching field). It is now validated and carried on
+    the profile. Wiring status: ``PostgresKnowledgeGraphStore`` defaults match
+    ``evidence_required=True`` / ``inferred_confidence_cap=0.4``; the
+    experience-recorder path (``kg_service``) intentionally constructs with
+    ``evidence_required=False``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_required: bool = Field(
+        default=True,
+        description="When true, KG edge writes require an evidence_id.",
+    )
+    inferred_confidence_cap: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Confidence cap for edges written without evidence.",
+    )
+    edge_layer_half_lives: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "RESERVED: edge layer → half-life mapping (days) for per-edge FSRS"
+            " decay; no runtime consumer yet."
+        ),
     )
 
 
@@ -550,6 +592,10 @@ class MemoryProfile(BaseModel):
     ``repo-brain`` profile reproduces current hardcoded behavior exactly.
     """
 
+    # Unknown top-level blocks fail loudly instead of being silently dropped
+    # (a typo'd "scorng:" block previously loaded with default scoring).
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     version: str = "1.0"
     extends: str | None = None
@@ -608,9 +654,20 @@ class MemoryProfile(BaseModel):
             "Overridden by TAPPS_BRAIN_WRITE_POLICY env var when set."
         ),
     )
+    kg: KGProfileConfig = Field(
+        default_factory=KGProfileConfig,
+        description="Knowledge Graph settings (EPIC-075 / ADR-009).",
+    )
 
     @model_validator(mode="after")
     def _validate_layers(self) -> MemoryProfile:
+        # A profile with no layers and nothing to inherit from would load
+        # cleanly and later blow up as a bare min() ValueError deep in
+        # get_layer_or_default. Children with `extends` may declare layers: []
+        # (they inherit the parent's layers on merge).
+        if not self.layers and self.extends is None:
+            msg = "Profile must define at least one layer (or extend a profile that does)."
+            raise ValueError(msg)
         names = [layer.name for layer in self.layers]
         if len(names) != len(set(names)):
             seen: set[str] = set()
@@ -681,7 +738,13 @@ def load_profile(path: Path) -> MemoryProfile:
             quoted in the message.
     """
     text = path.read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        # yaml.ScannerError is not a ValueError — wrap so callers honoring
+        # the documented contract actually catch malformed YAML.
+        msg = f"Profile YAML is not parseable: {exc}"
+        raise ProfileValidationError(msg) from exc
     if not isinstance(data, dict):
         msg = f"Profile YAML must be a mapping, got {type(data).__name__}"
         raise ValueError(msg)
@@ -758,8 +821,12 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
     """Merge a child profile onto a parent profile.
 
     Child layers with matching names replace parent layers; new child
-    layers are appended. Scalar configs (scoring, gc, etc.) from the
-    child override the parent.
+    layers are appended. Scalar config blocks (scoring, gc, etc.) are taken
+    from the child only when the child actually set them (``model_fields_set``);
+    blocks the child omitted inherit the parent's values instead of reverting
+    to Pydantic defaults. Iterating ``model_fields`` (instead of enumerating
+    blocks by hand) means newly added blocks can never be silently dropped
+    again (``consolidation`` and ``write_policy`` were, twice before).
     """
     # Start with parent layers, override with child layers by name
     parent_layers = {la.name: la for la in parent.layers}
@@ -767,27 +834,30 @@ def _merge_profiles(child: MemoryProfile, parent: MemoryProfile) -> MemoryProfil
         parent_layers[child_layer.name] = child_layer
     merged_layers = list(parent_layers.values())
 
-    # Child scalars override parent (Pydantic defaults are used if child didn't set them)
+    _special = {
+        "name",
+        "version",
+        "extends",
+        "description",
+        "layers",
+        "source_confidence",
+        "source_ceilings",
+    }
+    merged_blocks = {
+        field_name: getattr(child if field_name in child.model_fields_set else parent, field_name)
+        for field_name in MemoryProfile.model_fields
+        if field_name not in _special
+    }
+
     return MemoryProfile(
         name=child.name,
         version=child.version,
         extends=None,  # Resolved — no further inheritance
         description=child.description or parent.description,
         layers=merged_layers,
-        scoring=child.scoring,
         source_confidence={**parent.source_confidence, **child.source_confidence},
         source_ceilings={**parent.source_ceilings, **child.source_ceilings},
-        gc=child.gc,
-        recall=child.recall,
-        limits=child.limits,
-        hive=child.hive,
-        feedback=child.feedback,
-        diagnostics=child.diagnostics,
-        lexical=child.lexical,
-        hybrid_fusion=child.hybrid_fusion,
-        conflict_check=child.conflict_check,
-        safety=child.safety,
-        seeding=child.seeding,
+        **merged_blocks,
     )
 
 
