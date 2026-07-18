@@ -278,6 +278,11 @@ class ContradictionDetector:
             # Skip pure version strings like "1.2.3" or "2.0.1" — not file paths.
             if re.match(r"^\d+(\.\d+)*$", fpath):
                 continue
+            # Skip prose abbreviations like "e.g" / "i.e" (single letter on both
+            # sides of the dot) — these matched the path regex and produced
+            # false "file no longer exists" contradictions.
+            if re.match(r"^[a-zA-Z]\.[a-zA-Z]$", fpath):
+                continue
             full = self._project_root / fpath
             try:
                 full.resolve().relative_to(self._project_root.resolve())

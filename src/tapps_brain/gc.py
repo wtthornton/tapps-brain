@@ -173,10 +173,12 @@ class MemoryGarbageCollector:
     ) -> list[MemoryEntry]:
         """Return entries that should be archived.
 
-        Archive criteria (any one triggers archival):
-        - Effective confidence <= floor for 30+ consecutive days
-        - Contradicted AND effective confidence < 0.2
-        - Session-scoped AND session ended 7+ days ago
+        Archive criteria (any one triggers archival; thresholds from
+        :class:`GCConfig`, defaults in parentheses):
+        - Effective confidence <= floor for ``floor_retention_days`` (30)
+          consecutive days
+        - Contradicted AND effective confidence < ``contradicted_threshold`` (0.2)
+        - Session-scoped AND not updated for ``session_expiry_days`` (7) days
         """
         if now is None:
             now = datetime.now(tz=UTC)

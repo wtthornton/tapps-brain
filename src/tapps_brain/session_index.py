@@ -97,11 +97,15 @@ def index_session(
         for idx, content in enumerate(trimmed):
             chunk_key = (session_id, idx)
             is_new = chunk_key not in bucket
+            # Preserve created_at on upsert — the Postgres path
+            # (SessionIndex.save_chunks) only updates content on conflict, so
+            # TTL expiry and eviction order must match between the two paths.
+            created_at = now if is_new else bucket[chunk_key]["created_at"]
             bucket[chunk_key] = {
                 "session_id": session_id,
                 "chunk_index": idx,
                 "content": content,
-                "created_at": now,
+                "created_at": created_at,
             }
             # Evict the oldest entry only when a new key pushes the bucket over cap.
             # Note: all chunks in the same call share the same `now` timestamp, so

@@ -126,8 +126,8 @@ def reseed_from_profile(
     existing = store.list_all(tags=[_SEEDED_TAG])
     deleted = 0
     for entry in existing:
-        store.delete(entry.key)
-        deleted += 1
+        if store.delete(entry.key):
+            deleted += 1
 
     with batch_exempt_scope("seed"):
         result = _do_seed(store, profile)
