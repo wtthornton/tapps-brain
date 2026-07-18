@@ -3354,13 +3354,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         with self._serialized():
             if not hasattr(self, "_recall_orchestrator"):
-                hive_weight = 0.8
                 agent_profile = "repo-brain"
                 recall_config: RecallConfig | None = None
                 if self._profile is not None:
-                    hive_cfg = getattr(self._profile, "hive", None)
-                    if hive_cfg is not None:
-                        hive_weight = hive_cfg.recall_weight
                     agent_profile = getattr(self._profile, "name", "repo-brain")
                     # Thread profile recall: block into the orchestrator config —
                     # without this the profile's recall settings are dead
@@ -3374,12 +3370,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                             min_score=recall_prof.min_score,
                             min_confidence=recall_prof.min_confidence,
                         )
+                # hive_recall_weight deliberately NOT passed: an explicit
+                # constructor weight would freeze the profile value at first
+                # recall AND bypass get_hive_recall_weight(), whose diagnostics
+                # circuit multiplier (EPIC-030: 0.5 when DEGRADED, 0.0 when
+                # OPEN) must apply per-search.
                 self._recall_orchestrator = RecallOrchestrator(
                     self,
                     config=recall_config,
                     decay_config=self._get_decay_config(),
                     hive_store=self._hive_store,
-                    hive_recall_weight=hive_weight,
                     hive_agent_profile=agent_profile,
                     hive_agent_id=self._hive_agent_id,
                 )

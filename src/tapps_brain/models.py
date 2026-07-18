@@ -697,7 +697,11 @@ class RecallResult(BaseModel):
     )
     quality_warning: str | None = Field(
         default=None,
-        description="Set when diagnostics circuit breaker is not CLOSED (EPIC-030).",
+        description=(
+            "Degraded-quality signal: circuit breaker not CLOSED (EPIC-030), "
+            "'hive_search_unavailable' on a Hive outage, or an injection "
+            "search failure. Multiple signals are '; '-joined."
+        ),
     )
     recall_diagnostics: RecallDiagnostics | None = Field(
         default=None,

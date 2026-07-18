@@ -123,7 +123,8 @@ def _extract_candidates(query: str) -> list[str]:
     Strategy:
     1. Extract multi-word Title Case phrases first (higher signal).
     2. Extract individual tokens ≥ ``_MIN_CANDIDATE_LEN`` chars, skipping
-       stopwords, digits-only, and already-captured phrase tokens.
+       stopwords and already-captured phrase tokens. (Digits-only strings
+       never match ``_WORD_RE`` — every token starts with a letter.)
     3. Deduplicate preserving insertion order.
     4. Cap at ``_MAX_CANDIDATES``.
     """
@@ -141,18 +142,18 @@ def _extract_candidates(query: str) -> list[str]:
     for m in _TITLE_CASE_RE.finditer(query):
         phrase = m.group(1)
         _add(phrase)
-        # Also record individual words of the phrase so single-word lookup works.
+        # Also record individual words of the phrase so single-word lookup
+        # works — with the same stopword/length filter as pass 2, so
+        # sentence-initial capitals ("The Memory Retriever", "How Does X
+        # Work") don't send noise words to the DB resolver.
         for word in phrase.split():
-            _add(word)
+            if len(word) >= _MIN_CANDIDATE_LEN and word.lower() not in _STOPWORDS:
+                _add(word)
 
     # Pass 2: individual words.
     for m in _WORD_RE.finditer(query):
         word = m.group(1)
-        if (
-            len(word) >= _MIN_CANDIDATE_LEN
-            and word.lower() not in _STOPWORDS
-            and not word.isdigit()
-        ):
+        if len(word) >= _MIN_CANDIDATE_LEN and word.lower() not in _STOPWORDS:
             _add(word)
 
     return candidates[:_MAX_CANDIDATES]

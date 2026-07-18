@@ -211,40 +211,48 @@ class RecallOrchestrator:
         if cfg.use_graph_boost and memories:
             memories = self._apply_graph_boost(memories, cfg.graph_boost_factor)
 
-        # Hive recall: merge local + Hive results (EPIC-011)
-        hive_count = 0
+        # Hive recall: merge local + Hive results (EPIC-011).
+        # Low engagement is the recall off-switch — inject_memories honors it
+        # ("never inject"), so the Hive merge must too, or a low-engagement
+        # recall with a Hive backend returns memories anyway.
         hive_truncated = False
+        hive_merged = False
         hive_quality_warning: str | None = None
-        if self._hive_store is not None:
-            hive_memories, hive_count, hive_search_failed = self._search_hive(
-                message, memories, cfg
-            )
+        if self._hive_store is not None and cfg.engagement_level != "low":
+            hive_memories, _, hive_search_failed = self._search_hive(message, memories, cfg)
             if hive_search_failed:
                 hive_quality_warning = "hive_search_unavailable"
             if hive_memories:
                 memories = self._merge_hive_results(memories, hive_memories)
-                # Enforce the recall token budget on the merged list — the
-                # injection budget only covered local results, so unbounded
-                # Hive additions could otherwise blow past cfg.max_tokens.
-                memories, hive_truncated = self._truncate_to_budget(memories, cfg.max_tokens)
-                hive_count = sum(1 for m in memories if m.get("source") == "hive")
-                # Rebuild section to include Hive results
-                memory_section = self._rebuild_section(memories)
+                hive_merged = True
 
-        # Post-filter: scope, tier, branch, dedupe
+        # Post-filter (scope, tier, branch, dedupe) BEFORE budget truncation —
+        # entries the filter is about to discard must not consume token budget
+        # and evict entries that would have fit.
         count_before_post_filter = len(memories)
         if memories and self._needs_post_filter(cfg):
-            memories, memory_section = self._apply_post_filters(memories, cfg, message)
-            # Recount Hive memories after post-filtering — some may have been removed.
-            hive_count = sum(1 for m in memories if m.get("source") == "hive")
+            memories, memory_section = self._apply_post_filters(memories, cfg)
+
+        if hive_merged and memories:
+            # Enforce the recall token budget on the merged list — the
+            # injection budget only covered local results, so unbounded
+            # Hive additions could otherwise blow past cfg.max_tokens.
+            memories, hive_truncated = self._truncate_to_budget(memories, cfg.max_tokens)
+            # Rebuild section to include Hive results
+            memory_section = self._rebuild_section(memories)
+
+        hive_count = sum(1 for m in memories if m.get("source") == "hive")
 
         if not memories and count_before_post_filter > 0 and self._needs_post_filter(cfg):
-            prev = recall_diag
-            recall_diag = RecallDiagnostics(
-                empty_reason=RECALL_EMPTY_POST_FILTER,
-                retriever_hits=prev.retriever_hits if prev is not None else 0,
-                visible_entries=prev.visible_entries if prev is not None else None,
-            )
+            # Preserve the KG/lifecycle counters inject_memories computed
+            # (mentions, graph hits, stale/low-confidence drops) — rebuilding
+            # from scratch zeroed them exactly when diagnostics matter most.
+            if recall_diag is not None:
+                recall_diag = recall_diag.model_copy(
+                    update={"empty_reason": RECALL_EMPTY_POST_FILTER}
+                )
+            else:
+                recall_diag = RecallDiagnostics(empty_reason=RECALL_EMPTY_POST_FILTER)
 
         # Recompute token count from the final section so Hive additions are reflected.
         # inject_memories() token count only covers local results; _rebuild_section()
@@ -322,7 +330,6 @@ class RecallOrchestrator:
         *,
         source: str = "agent",
         agent_scope: str = "private",
-        **kwargs: object,
     ) -> list[str]:
         """Extract and persist new facts from an agent response.
 
@@ -414,12 +421,18 @@ class RecallOrchestrator:
             # Apply hive weight to confidence
             raw_conf = entry.get("confidence", 0.6)
             conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.6
+            score = round(conf * eff_weight, 4)
+            # Apply the same quality floor local results get inside
+            # inject_memories — otherwise min_score only gates local memories
+            # and post-weight Hive scores far below it leak into the result.
+            if score < effective_cfg.min_score:
+                continue
             hive_memories.append(
                 {
                     "key": key,
-                    "confidence": round(conf * eff_weight, 4),
+                    "confidence": score,
                     "tier": entry.get("tier", "pattern"),
-                    "score": round(conf * eff_weight, 4),
+                    "score": score,
                     "source": "hive",
                     "namespace": entry.get("namespace", "universal"),
                     "value": entry.get("value", ""),
@@ -443,45 +456,56 @@ class RecallOrchestrator:
         merged.sort(key=_score, reverse=True)
         return merged
 
+    _SECTION_HEADER = "### Project Memory"
+
     @staticmethod
+    def _format_memory_line(mem: dict[str, object]) -> str:
+        """Format one memory as the section line ``_rebuild_section`` emits.
+
+        Shared with ``_truncate_to_budget`` so the budget charges the *actual*
+        line cost — a cheaper cost model made merged sections overshoot
+        ``max_tokens`` while reporting ``truncated=False``.
+        """
+        key = str(mem.get("key", ""))
+        raw_conf = mem.get("confidence", 0.0)
+        conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
+        tier = str(mem.get("tier", "pattern"))
+        value = str(mem.get("value") or key)
+        src = str(mem.get("source", "local"))
+        origin = f" [hive:{mem.get('namespace', '')}]" if src == "hive" else ""
+        return f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): {value}"
+
+    @classmethod
     def _truncate_to_budget(
+        cls,
         memories: list[dict[str, object]],
         max_tokens: int,
     ) -> tuple[list[dict[str, object]], bool]:
         """Cut the merged memory list to fit *max_tokens* (estimate-based).
 
         Walks the list in ranked order, accumulating the estimated token cost
-        of each formatted line, and stops once the budget is exceeded. Always
-        keeps at least the first memory (mirrors the injection budget rule).
-        Returns ``(kept_memories, truncated)``.
+        of each formatted line (the exact format ``_rebuild_section`` emits,
+        plus the section header), and stops once the budget is exceeded.
+        Always keeps at least the first memory (mirrors the injection budget
+        rule). Returns ``(kept_memories, truncated)``.
         """
         kept: list[dict[str, object]] = []
-        used = 0
+        used = estimate_tokens(cls._SECTION_HEADER)
         for mem in memories:
-            key = str(mem.get("key", ""))
-            value = str(mem.get("value", key))
-            cost = estimate_tokens(f"- **{key}**: {value}")
+            cost = estimate_tokens(cls._format_memory_line(mem))
             if kept and used + cost > max_tokens:
                 break
             kept.append(mem)
             used += cost
         return kept, len(kept) < len(memories)
 
-    @staticmethod
-    def _rebuild_section(memories: list[dict[str, object]]) -> str:
+    @classmethod
+    def _rebuild_section(cls, memories: list[dict[str, object]]) -> str:
         """Rebuild the formatted memory section from merged results."""
         if not memories:
             return ""
-        lines = ["### Project Memory"]
-        for mem in memories:
-            key = str(mem.get("key", ""))
-            raw_conf = mem.get("confidence", 0.0)
-            conf = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
-            tier = str(mem.get("tier", "pattern"))
-            value = str(mem.get("value", key))
-            src = str(mem.get("source", "local"))
-            origin = f" [hive:{mem.get('namespace', '')}]" if src == "hive" else ""
-            lines.append(f"- **{key}** (confidence: {conf:.2f}, tier: {tier}{origin}): {value}")
+        lines = [cls._SECTION_HEADER]
+        lines.extend(cls._format_memory_line(mem) for mem in memories)
         return "\n".join(lines)
 
     def _apply_graph_boost(
@@ -553,39 +577,41 @@ class RecallOrchestrator:
 
         vals: dict[str, object] = dataclasses.asdict(self._config)
         vals["dedupe_window"] = list(self._config.dedupe_window)
+        unknown = [k for k in overrides if k not in vals]
+        if unknown:
+            # A typo'd override (max_token vs max_tokens) silently running
+            # with defaults is the worst failure mode for an override API.
+            logger.warning(
+                "recall.unknown_config_overrides",
+                unknown=sorted(unknown),
+                known=sorted(vals),
+            )
         for k, v in overrides.items():
             if k in vals:
                 vals[k] = v
         return RecallConfig(**vals)  # type: ignore[arg-type]
 
     def _needs_post_filter(self, cfg: RecallConfig) -> bool:
-        """Check whether any post-filter is active."""
-        return bool(
-            cfg.scope_filter
-            or cfg.tier_filter
-            or cfg.branch
-            or cfg.memory_group
-            or cfg.dedupe_window
-        )
+        """Check whether any post-filter is active.
+
+        ``memory_group`` is deliberately absent: it is threaded into ranked
+        retrieval (``inject_memories`` → ``retriever.search``), so every local
+        result already belongs to the group and hive results are exempt —
+        re-checking here was per-entry dead work on the hot path.
+        """
+        return bool(cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.dedupe_window)
 
     def _passes_entry_filters(
         self,
         entry: MemoryEntry,
-        mem: dict[str, object],
         cfg: RecallConfig,
     ) -> bool:
-        """Return True when *entry* satisfies all active scope/tier/branch/group filters."""
+        """Return True when *entry* satisfies all active scope/tier/branch filters."""
         if cfg.scope_filter and entry.scope != cfg.scope_filter:
             return False
         if cfg.tier_filter and entry.tier != cfg.tier_filter:
             return False
-        if cfg.branch and entry.scope == MemoryScope.branch and entry.branch != cfg.branch:
-            return False
-        return not (
-            cfg.memory_group
-            and str(mem.get("source", "")) != "hive"
-            and entry.memory_group != cfg.memory_group
-        )
+        return not (cfg.branch and entry.scope == MemoryScope.branch and entry.branch != cfg.branch)
 
     def _build_filtered_section(
         self,
@@ -632,7 +658,6 @@ class RecallOrchestrator:
         self,
         memories: list[dict[str, object]],
         cfg: RecallConfig,
-        message: str,
     ) -> tuple[list[dict[str, object]], str]:
         """Filter memories by scope/tier/branch/dedupe and rebuild the section.
 
@@ -651,17 +676,30 @@ class RecallOrchestrator:
             if key in dedupe_set:
                 continue
 
-            # Scope / tier / branch / memory_group filter: read-only lookup so
-            # filtering does not bump access_count on entries it may discard.
-            if cfg.scope_filter or cfg.tier_filter or cfg.branch or cfg.memory_group:
+            # Scope / tier / branch filter: read-only lookup so filtering
+            # does not bump access_count on entries it may discard.
+            if cfg.scope_filter or cfg.tier_filter or cfg.branch:
                 entry = self._peek_entry(key) if key else None
                 if key:
                     entry_cache[key] = entry  # cache for section rebuild below
                 if entry is None:
-                    # Entry not found — keep the memory (defensive)
+                    if str(mem.get("source", "")) == "hive":
+                        # Hive memories never resolve locally — enforce the
+                        # tier filter from the carried tier value instead of
+                        # keeping them unconditionally. Scope/branch filters
+                        # don't apply: hive rows carry no local scope.
+                        if cfg.tier_filter and str(mem.get("tier", "")) != str(
+                            cfg.tier_filter.value
+                            if isinstance(cfg.tier_filter, MemoryTier)
+                            else cfg.tier_filter
+                        ):
+                            continue
+                        filtered.append(mem)
+                        continue
+                    # Local entry vanished mid-recall — keep it (defensive).
                     filtered.append(mem)
                     continue
-                if not self._passes_entry_filters(entry, mem, cfg):
+                if not self._passes_entry_filters(entry, cfg):
                     continue
 
             filtered.append(mem)

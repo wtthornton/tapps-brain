@@ -592,7 +592,7 @@ class TestApplyPostFiltersRobustness:
 
         cfg = RecallConfig(dedupe_window=["other-key"])  # no scope/tier/branch filter
         # Should NOT raise ValueError
-        filtered, section = orch._apply_post_filters(memories, cfg, "query")
+        filtered, section = orch._apply_post_filters(memories, cfg)
         assert len(filtered) == 1
         # confidence should default to 0.0 for non-numeric input
         assert "0.00" in section
@@ -603,7 +603,7 @@ class TestApplyPostFiltersRobustness:
         from tapps_brain.recall import RecallConfig
 
         cfg = RecallConfig(dedupe_window=["x"])
-        filtered, section = orch._apply_post_filters([], cfg, "query")
+        filtered, section = orch._apply_post_filters([], cfg)
         assert filtered == []
         assert section == ""
 
