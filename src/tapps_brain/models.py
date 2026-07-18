@@ -233,6 +233,7 @@ class MemoryEntry(BaseModel):
     # Adaptive stability and difficulty for FSRS-style decay (GitHub #28, task 040.5)
     stability: float = Field(
         default=0.0,
+        ge=0.0,
         description=(
             "FSRS-style memory stability in days. 0.0 means use tier half-life. "
             "See docs/guides/memory-decay-and-fsrs.md."
@@ -240,16 +241,19 @@ class MemoryEntry(BaseModel):
     )
     difficulty: float = Field(
         default=0.0,
+        ge=0.0,
         description="Memory difficulty (1-10). 0.0 means auto from tier.",
     )
 
     # Bayesian confidence update counters (GitHub #35, task 040.6)
     useful_access_count: int = Field(
         default=0,
+        ge=0,
         description="Times this memory was retrieved and proved useful.",
     )
     total_access_count: int = Field(
         default=0,
+        ge=0,
         description="Total times this memory was retrieved.",
     )
 
@@ -338,15 +342,25 @@ class MemoryEntry(BaseModel):
             raise ValueError(msg)
         # Coerce strings that match a standard tier to the enum for type consistency;
         # pass through unrecognised strings (they may be EPIC-010 profile layer names).
+        # Case/whitespace variants of standard tiers ("Pattern", " pattern ") must
+        # coerce too — passed through as pseudo layer names they crash the decay
+        # engine's _get_half_life on first read.
         try:
             return MemoryTier(v)
+        except ValueError:
+            pass
+        try:
+            return MemoryTier(v.strip().lower())
         except ValueError:
             return v
 
     @field_validator("key")
     @classmethod
     def _validate_key(cls, v: str) -> str:
-        if not _KEY_SLUG_PATTERN.match(v):
+        # fullmatch: re.match with a trailing "$" still accepts "abc\n" (the
+        # "$" matches before a final newline) — a key that prints as "abc"
+        # but is a distinct Postgres primary-key component.
+        if not _KEY_SLUG_PATTERN.fullmatch(v):
             msg = (
                 f"Key must be a lowercase slug (letters, digits, dots, hyphens, "
                 f"underscores), 1-{MAX_KEY_LENGTH} chars, starting with alphanumeric. "
@@ -430,6 +444,27 @@ class MemoryEntry(BaseModel):
             msg = "invalid_at must be after valid_at."
             raise ValueError(msg)
 
+        # valid_from / valid_until (alias window, GitHub #29): parse + order
+        # check at construction. Without this, a one-character typo silently
+        # makes the entry permanently invisible to recall (is_temporally_valid
+        # swallows the parse error and returns False forever).
+        from_dt = until_dt = None
+        if self.valid_from:
+            try:
+                from_dt = _parse_iso(self.valid_from)
+            except ValueError:
+                msg = f"valid_from is not a valid ISO-8601 timestamp: {self.valid_from!r}"
+                raise ValueError(msg) from None
+        if self.valid_until:
+            try:
+                until_dt = _parse_iso(self.valid_until)
+            except ValueError:
+                msg = f"valid_until is not a valid ISO-8601 timestamp: {self.valid_until!r}"
+                raise ValueError(msg) from None
+        if from_dt is not None and until_dt is not None and until_dt <= from_dt:
+            msg = "valid_until must be after valid_from."
+            raise ValueError(msg)
+
         return self
 
     def is_temporally_valid(self, as_of: str | None = None) -> bool:
@@ -475,7 +510,12 @@ class MemoryEntry(BaseModel):
             return True
         if self.invalid_at is None:
             return False
-        return datetime.now(tz=UTC) >= _parse_iso(self.invalid_at)
+        # Malformed timestamps must not abort an entire filter loop (same
+        # contract as is_temporally_valid): treat unparseable as not-superseded.
+        try:
+            return datetime.now(tz=UTC) >= _parse_iso(self.invalid_at)
+        except ValueError:
+            return False
 
 
 # ---------------------------------------------------------------------------

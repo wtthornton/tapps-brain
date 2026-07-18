@@ -11,8 +11,11 @@ from typing import Any
 
 # Max length aligned with tag keys — human-chosen partition names (e.g. team-a, feature-x).
 MAX_MEMORY_GROUP_LENGTH: int = 64
-# Reject ASCII control characters (space 0x20 and above allowed).
+# Reject ASCII control characters (space 0x20 and above allowed),
+# plus DEL (0x7F) and the C1 control block (0x80-0x9F) — all invisible.
 _MIN_PRINTABLE_ASCII: int = 32
+_DEL_CHAR: int = 0x7F
+_C1_CONTROL_END: int = 0x9F
 
 
 class _MemoryGroupUnsetType:
@@ -38,7 +41,9 @@ def normalize_memory_group(raw: str | None) -> str | None:
     if len(s) > MAX_MEMORY_GROUP_LENGTH:
         msg = f"memory_group exceeds max length ({len(s)} > {MAX_MEMORY_GROUP_LENGTH})."
         raise ValueError(msg)
-    if any(ord(c) < _MIN_PRINTABLE_ASCII for c in s):
+    if any(
+        ord(c) < _MIN_PRINTABLE_ASCII or _DEL_CHAR <= ord(c) <= _C1_CONTROL_END for c in s
+    ):
         msg = "memory_group must not contain control characters."
         raise ValueError(msg)
     return s

@@ -33,8 +33,13 @@ def normalize_save_tier(raw: str | None, profile: object | None) -> str:
 
     Profile layer names are matched before global aliases so e.g. ``long-term`` on
     ``personal-assistant`` stays that layer instead of mapping to ``architectural``.
+    Layer matching is case- and separator-insensitive (``long_term`` matches a
+    ``long-term`` layer) so a save never fails on spelling of a real layer name.
 
-    Unknown values map to ``pattern`` so saves never fail solely on tier spelling.
+    Without a profile, unknown values map to ``pattern`` so saves never fail on
+    tier spelling. When a profile defines custom layer names, the service layer
+    validates the result against those names and rejects tiers outside them
+    (pinned contract — see ``TestProfileAwareTierValidation``).
     """
     if raw is None or str(raw).strip() == "":
         return MemoryTier.pattern.value
@@ -43,8 +48,12 @@ def normalize_save_tier(raw: str | None, profile: object | None) -> str:
 
     if profile is not None:
         names = getattr(profile, "layer_names", None) or []
+        # Separator-insensitive: "long_term" must match a "long-term" layer,
+        # otherwise the alias table maps it to "architectural" and the save
+        # is rejected purely on underscore-vs-hyphen spelling.
+        t_sep = t_lower.replace("_", "-")
         for name in names:
-            if isinstance(name, str) and name.lower() == t_lower:
+            if isinstance(name, str) and name.lower().replace("_", "-") == t_sep:
                 return name
 
     t = _TIER_ALIASES.get(t_lower, t_lower)
