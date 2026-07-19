@@ -132,8 +132,7 @@ def _find_common_prefix(keys: list[str]) -> str:
         else:
             break
 
-    result = "".join(prefix).rstrip("-_.")
-    return result
+    return "".join(prefix).rstrip("-_.")
 
 
 # ---------------------------------------------------------------------------

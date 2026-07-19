@@ -17,7 +17,7 @@ index keyed by the project-root path.
 from __future__ import annotations
 
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -187,8 +187,6 @@ def delete_expired_sessions(
     """
     if ttl_days < 1:
         return 0
-    from datetime import timedelta
-
     cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
     key = f"{project_root}\x00{agent_id}" if agent_id else str(project_root)
     with _in_memory_lock:

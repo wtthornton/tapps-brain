@@ -797,8 +797,8 @@ def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
         mock_registry.list_agents.return_value = ["agent-a", "agent-b", "agent-c"]
 
         with (
-            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
+            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)
 
@@ -827,8 +827,8 @@ def test_collect_hive_health_falls_back_when_no_namespace_detail_list(tmp_path: 
         mock_registry.list_agents.return_value = ["agent-x"]
 
         with (
-            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
+            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)
 
@@ -854,8 +854,8 @@ def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
         mock_registry.list_agents.return_value = []
 
         with (
-            patch("tapps_brain.backends.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
+            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
         ):
             result = _collect_hive_health(store)
 
@@ -870,7 +870,7 @@ def test_collect_hive_health_not_reachable(tmp_path: Path) -> None:
     """_collect_hive_health() returns connected=False when DSN not set."""
     store = MemoryStore(tmp_path)
     try:
-        with patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=None):
+        with patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=None):
             result = _collect_hive_health(store)
 
         assert result.connected is False
@@ -1007,7 +1007,7 @@ def test_visual_snapshot_has_agent_registry_field(tmp_path: Path) -> None:
     """build_visual_snapshot returns agent_registry field (empty when no hive)."""
     store = MemoryStore(tmp_path)
     try:
-        with patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=None):
+        with patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=None):
             snap = build_visual_snapshot(store, skip_diagnostics=True)
     finally:
         store.close()
@@ -1031,7 +1031,7 @@ def test_visual_snapshot_agent_registry_populated_from_hive(tmp_path: Path) -> N
     store = MemoryStore(tmp_path)
     try:
         with (
-            patch("tapps_brain.backends.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
             patch(
                 "tapps_brain.visual_snapshot._collect_hive_health",
                 return_value=HiveHealthSummary(connected=False, status="skipped"),

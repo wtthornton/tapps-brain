@@ -33,6 +33,7 @@ from tapps_brain.models import (
     _utc_now_iso,
 )
 from tapps_brain.rate_limiter import batch_exempt_scope
+from tapps_brain.relations import RelationEntry
 from tapps_brain.similarity import compute_similarity_with_embeddings, find_consolidation_groups
 
 if TYPE_CHECKING:
@@ -80,36 +81,33 @@ def find_last_consolidation_merge_audit(
     backends.  Returns ``None`` when no matching row is found.
     """
     if persistence is not None and hasattr(persistence, "query_audit"):
-        try:
-            rows = persistence.query_audit(
+        # NOTE: a Postgres failure propagates — falling through to JSONL could
+        # return a stale/ghost merge record and corrupt undo.
+        rows = persistence.query_audit(
+            key=consolidated_key,
+            event_type="consolidation_merge",
+            limit=_AUDIT_PAGE_LIMIT,
+        )
+        # query_audit orders oldest-first with a LIMIT, so a full page may
+        # have truncated the *newest* rows — page forward via the inclusive
+        # `since` cursor until the final (partial) page is reached.
+        while len(rows) == _AUDIT_PAGE_LIMIT:
+            tail_ts = rows[-1].get("timestamp")
+            if not tail_ts:
+                break
+            nxt = persistence.query_audit(
                 key=consolidated_key,
                 event_type="consolidation_merge",
+                since=str(tail_ts),
                 limit=_AUDIT_PAGE_LIMIT,
             )
-            # query_audit orders oldest-first with a LIMIT, so a full page may
-            # have truncated the *newest* rows — page forward via the inclusive
-            # `since` cursor until the final (partial) page is reached.
-            while len(rows) == _AUDIT_PAGE_LIMIT:
-                tail_ts = rows[-1].get("timestamp")
-                if not tail_ts:
-                    break
-                nxt = persistence.query_audit(
-                    key=consolidated_key,
-                    event_type="consolidation_merge",
-                    since=str(tail_ts),
-                    limit=_AUDIT_PAGE_LIMIT,
-                )
-                if not nxt:
-                    break
-                if len(nxt) == _AUDIT_PAGE_LIMIT and nxt[-1].get("timestamp") == tail_ts:
-                    # Pathological page of identical timestamps — cannot advance.
-                    rows = nxt
-                    break
+            if not nxt:
+                break
+            if len(nxt) == _AUDIT_PAGE_LIMIT and nxt[-1].get("timestamp") == tail_ts:
+                # Pathological page of identical timestamps — cannot advance.
                 rows = nxt
-        except Exception:
-            # Do not fall through to JSONL on a Postgres failure — that can
-            # return a stale/ghost merge record and corrupt undo.
-            raise
+                break
+            rows = nxt
         if rows:
             last_row = rows[-1]
             details = last_row.get("details") or {}
@@ -130,11 +128,11 @@ def find_last_consolidation_merge_audit(
     except OSError:
         return None
     for line in text.splitlines():
-        line = line.strip()
-        if not line:
+        stripped = line.strip()
+        if not stripped:
             continue
         try:
-            rec = json.loads(line)
+            rec = json.loads(stripped)
         except json.JSONDecodeError:
             continue
         if rec.get("action") != "consolidation_merge":
@@ -155,8 +153,6 @@ def _strip_key_from_relations(store: MemoryStore, consolidated_key: str) -> None
     re-upserted with the consolidated key stripped; only rows referenced
     exclusively by the consolidated entry are deleted.
     """
-    from tapps_brain.relations import RelationEntry
-
     rows = store._persistence.load_relations(consolidated_key)
     survivors: list[RelationEntry] = []
     for r in rows:
@@ -348,7 +344,7 @@ def undo_consolidation_merge(  # noqa: PLR0911
             for sk, old in backup_sources.items():
                 store._entries[sk] = old
             try:
-                for _sk, old in backup_sources.items():
+                for old in backup_sources.values():
                     store._persistence.save(old)
             except Exception:
                 logger.warning("undo_consolidation_merge_rollback_failed", exc_info=True)

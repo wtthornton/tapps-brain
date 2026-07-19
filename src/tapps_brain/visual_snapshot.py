@@ -19,6 +19,9 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from pydantic import BaseModel, Field
 
+from tapps_brain.backends import resolve_agent_registry, resolve_hive_backend_from_env
+from tapps_brain.health_check import retrieval_health_slice
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -396,8 +399,6 @@ def _agent_scope_counts_from_aggregates(aggregates: SnapshotAggregates) -> dict[
 def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
     """Best-effort Hive hub stats (matches health_check spirit; never raises)."""
     try:
-        from tapps_brain.backends import resolve_hive_backend_from_env
-
         hive = resolve_hive_backend_from_env()
         if hive is None:
             return HiveHealthSummary(connected=False, status="skipped")
@@ -421,8 +422,6 @@ def _collect_hive_health(_store: MemoryStore) -> HiveHealthSummary:
                 ]
             ns_rows_sorted = sorted(ns_rows, key=lambda d: d.name)
             total_entries = sum(d.entry_count for d in ns_rows_sorted)
-            from tapps_brain.backends import resolve_agent_registry
-
             registry = resolve_agent_registry(hive)
             return HiveHealthSummary(
                 connected=True,
@@ -488,9 +487,9 @@ def _collect_agent_registry(
                     last_write_at=row[3],
                 )
             )
-        return result
     except Exception:
         return []
+    return result
 
 
 def _memory_group_counts_from_entries(entries: list[Any]) -> dict[str, int]:
@@ -1109,8 +1108,6 @@ def build_visual_snapshot(
     privacy: PrivacyTier = "standard",
 ) -> VisualSnapshot:
     """Build a versioned visual snapshot from an open store."""
-    from tapps_brain.health_check import retrieval_health_slice
-
     # EPIC-078 / TAP-4330+4332: the O(n^2) consolidation similarity scan in
     # health() can take minutes on a full store (thousands of entries) and 504 the
     # /snapshot endpoint.  Run the live gauge scan inline only for normal-sized
@@ -1182,8 +1179,6 @@ def build_visual_snapshot(
     # Collect agent registry (separate connection; best-effort, never raises).
     agent_registry: list[AgentEntry] = []
     try:
-        from tapps_brain.backends import resolve_hive_backend_from_env
-
         _hive_for_agents = resolve_hive_backend_from_env()
         if _hive_for_agents is not None:
             try:

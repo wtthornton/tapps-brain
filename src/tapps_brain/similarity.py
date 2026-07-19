@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tapps_brain.bm25 import preprocess_similarity
+from tapps_brain.embeddings import embedding_cosine_similarity
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -227,8 +228,6 @@ def compute_similarity_with_embeddings(
     Returns:
         SimilarityResult with ``used_embeddings=True`` when the semantic path fired.
     """
-    from tapps_brain.embeddings import embedding_cosine_similarity
-
     tag_score = tag_similarity(entry_a, entry_b)
     text_score = text_similarity(entry_a, entry_b)
 

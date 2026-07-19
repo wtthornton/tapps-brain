@@ -19,6 +19,7 @@ import structlog
 from pydantic import BaseModel, Field, field_validator
 
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+from tapps_brain.profile import MemoryProfile
 
 logger = structlog.get_logger(__name__)
 
@@ -505,8 +506,6 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
     ``profile_source_ceilings``, and per-layer decay model overrides
     from the profile's layer definitions.
     """
-    from tapps_brain.profile import MemoryProfile
-
     if not isinstance(profile, MemoryProfile):
         return DecayConfig()
 

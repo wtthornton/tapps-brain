@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
+import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -431,8 +432,7 @@ def _run_hdbscan_clustering(  # pragma: no cover
     out: list[tuple[list[tuple[str, str, float, list[str]]], str]] = []
     for lab, group in by_label.items():
         if lab == -1:
-            for g in group:
-                out.append(([g], g[0]))
+            out.extend(([g], g[0]) for g in group)
         else:
             rep = min((g[0] for g in group), key=len)
             out.append((group, rep))
@@ -446,13 +446,12 @@ def _parse_iso(ts: str) -> datetime:
     gap timestamps as "recent", which inflated knowledge-gap trend scores.
     """
     try:
-        raw = ts.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(raw)
+        dt = datetime.fromisoformat(ts)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
-        return dt
     except (ValueError, TypeError):
         return datetime.min.replace(tzinfo=UTC)
+    return dt
 
 
 def _estimate_tier_weight(store: _GapSearchStore, query: str) -> float:
@@ -592,8 +591,7 @@ class _AnomalyAlertsSection:
     def render(self, data: ReportData) -> str:
         an = data.diagnostics_report.get("anomalies") or []
         lines = ["## Anomalies"]
-        for a in an[:10]:
-            lines.append(f"- {a!s}")
+        lines.extend(f"- {a!s}" for a in an[:10])
         return "\n".join(lines) + "\n"
 
 
@@ -621,8 +619,10 @@ class _KnowledgeGapsSection:
 
     def render(self, data: ReportData) -> str:
         lines = ["## Knowledge gaps"]
-        for g in data.knowledge_gaps[:5]:
-            lines.append(f"- {g.query_pattern!r} (priority {g.priority_score}, count {g.count})")
+        lines.extend(
+            f"- {g.query_pattern!r} (priority {g.priority_score}, count {g.count})"
+            for g in data.knowledge_gaps[:5]
+        )
         return "\n".join(lines) + "\n"
 
 
@@ -637,8 +637,7 @@ class _RecommendationsSection:
     def render(self, data: ReportData) -> str:
         recs = data.diagnostics_report.get("recommendations") or []
         lines = ["## Actions"]
-        for r in recs:
-            lines.append(f"- {r}")
+        lines.extend(f"- {r}" for r in recs)
         return "\n".join(lines) + "\n"
 
 
@@ -724,8 +723,6 @@ def generate_report(
     )
 
     if cfg.store_self_report_memory:
-        import uuid
-
         body = text[:4096]
         store.save(
             f"self-report-{uuid.uuid4().hex[:16]}",

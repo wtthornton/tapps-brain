@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -24,6 +25,7 @@ from tapps_brain.decay import (
     calculate_decayed_confidence,
     effective_half_life,
 )
+from tapps_brain.models import MemoryScope, MemoryStatus, MemoryTier
 
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
@@ -198,11 +200,7 @@ class MemoryGarbageCollector:
         if now is None:
             now = datetime.now(tz=UTC)
 
-        candidates: list[MemoryEntry] = []
-        for entry in entries:
-            if self._archive_reasons(entry, now):
-                candidates.append(entry)
-        return candidates
+        return [entry for entry in entries if self._archive_reasons(entry, now)]
 
     def stale_candidate_details(
         self,
@@ -213,8 +211,6 @@ class MemoryGarbageCollector:
         """Return structured GC stale candidates (same set as :meth:`identify_candidates`)."""
         if now is None:
             now = datetime.now(tz=UTC)
-
-        from tapps_brain.models import MemoryScope, MemoryTier
 
         out: list[StaleCandidateDetail] = []
         for entry in entries:
@@ -258,8 +254,6 @@ class MemoryGarbageCollector:
         # written as contradicted=True + superseded_by=<merge key> with status=active, and
         # archiving one silently breaks undo_consolidation_merge forever (the documented
         # EPIC-044.4 undo guarantee) — the same supersession-chain rationale applies.
-        from tapps_brain.models import MemoryStatus
-
         if getattr(entry, "status", MemoryStatus.active) in {
             MemoryStatus.stale,
             MemoryStatus.superseded,
@@ -297,8 +291,6 @@ class MemoryGarbageCollector:
         actually reached the floor, not when a plain tier-half-life
         exponential curve would have.
         """
-        from tapps_brain.models import MemoryTier
-
         ref_time = _decay_reference_time(entry)
         total_days = _days_since(ref_time, now)
         floor = _get_confidence_floor(entry.tier, self._config)
@@ -397,8 +389,6 @@ def run_hnsw_maintenance(
         :class:`HNSWMaintenanceResult` with reindexed indexes, skipped indexes
         (absent from ``pg_class``), vacuumed tables, and elapsed duration.
     """
-    import time
-
     pairs = index_table_pairs if index_table_pairs is not None else _HNSW_INDEX_TABLE_PAIRS
     t0 = time.monotonic()
 
