@@ -38,7 +38,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
         hive_status = get_hive_schema_status(dsn)
         private_status = get_private_schema_status(dsn)
         federation_status = get_federation_schema_status(dsn)
-        version = hive_status.current_version if hive_status.current_version else None
+        version = hive_status.current_version or None
         pending = (
             len(hive_status.pending_migrations)
             + len(private_status.pending_migrations)

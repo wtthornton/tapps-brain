@@ -198,10 +198,10 @@ def hive_propagate(
         finally:
             if should_close:
                 hive.close()
-        return outcome
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_propagate")
         return {"error": "hive_error", "message": str(exc)}
+    return outcome
 
 
 def hive_push(
@@ -285,10 +285,10 @@ def hive_push(
         finally:
             if should_close:
                 hive.close()
-        return report
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_push")
         return {"error": "hive_error", "message": str(exc)}
+    return report
 
 
 def hive_write_revision(
@@ -306,10 +306,10 @@ def hive_write_revision(
         finally:
             if should_close:
                 hive.close()
-        return state  # type: ignore[no-any-return]
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_write_revision")
         return {"error": "hive_error", "message": str(exc)}
+    return state  # type: ignore[no-any-return]
 
 
 def hive_wait_write(
@@ -337,7 +337,7 @@ def hive_wait_write(
         finally:
             if should_close:
                 hive.close()
-        return result  # type: ignore[no-any-return]
     except Exception as exc:
         logger.exception("hive_tool_error", tool="hive_wait_write")
         return {"error": "hive_error", "message": str(exc)}
+    return result  # type: ignore[no-any-return]

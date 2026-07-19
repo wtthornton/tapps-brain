@@ -247,7 +247,7 @@ def _get_store_for_project(
     # (Lazy import avoids circular: server.py imports from context.py.)
     import tapps_brain.mcp_server as _ms_pkg
 
-    effective_agent_id = call_agent_id if call_agent_id else agent_id
+    effective_agent_id = call_agent_id or agent_id
     per_call_differs = bool(call_agent_id and call_agent_id != agent_id)
 
     if not project_id and not per_call_differs:
@@ -528,9 +528,9 @@ class _StoreProxy:
     def __class__(self) -> type:
         try:
             resolved_class: type = self._resolve().__class__
-            return resolved_class
         except Exception:
             return _StoreProxy
+        return resolved_class
 
 
 @dataclass

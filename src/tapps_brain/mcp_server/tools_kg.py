@@ -63,9 +63,9 @@ def _validate_uuid(value: str, field: str) -> dict[str, str] | None:
     """
     try:
         _stdlib_uuid.UUID(value)
-        return None
     except (ValueError, AttributeError):
         return _bad_uuid_error(field, value)
+    return None
 
 
 def _parse_uuid_list_json(raw: str, field: str) -> dict[str, Any]:

@@ -2672,6 +2672,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         Preserves immutable fields like ``created_at``. Used by Epic 24
         decay/contradiction/reinforcement systems.
+
+        ``updated_at`` defaults to now but honors an explicit caller value —
+        maintenance passes (e.g. flywheel confidence updates) preserve the
+        entry's own timestamp so a metadata write does not inflate the
+        recency ranking signal of negatively rated entries.
         """
         with self._serialized():
             entry = self._entries.get(key)
@@ -2684,7 +2689,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             if entry is None:
                 return None
 
-            fields["updated_at"] = _utc_now_iso()
+            fields.setdefault("updated_at", _utc_now_iso())
             updated = entry.model_copy(update=fields)
             self._entries[key] = updated
 

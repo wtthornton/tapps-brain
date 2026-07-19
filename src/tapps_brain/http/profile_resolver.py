@@ -53,7 +53,7 @@ def _get_profile_resolver() -> Any:  # noqa: ANN401
         import tapps_brain.http_adapter as _http_mod
 
         dsn = _http_mod.get_settings().dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN", "").strip()
-        if dsn and (dsn.startswith("postgres://") or dsn.startswith("postgresql://")):
+        if dsn and dsn.startswith(("postgres://", "postgresql://")):
             try:
                 from tapps_brain.postgres_connection import PostgresConnectionManager
                 from tapps_brain.postgres_hive import PostgresAgentRegistry

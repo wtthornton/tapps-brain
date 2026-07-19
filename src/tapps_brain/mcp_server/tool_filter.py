@@ -309,7 +309,7 @@ def _enriched_tool_error_message(name: str, original: str, missing: list[str]) -
     message string while preserving the original ``"Error executing tool <name>: "``
     prefix and the original pydantic body verbatim."""
     prefix = f"Error executing tool {name}: "
-    body = original[len(prefix) :] if original.startswith(prefix) else original
+    body = original.removeprefix(prefix)
     hint = "required_fields: [" + ", ".join(repr(f) for f in missing) + "]"
     return f"{prefix}{hint}. {body}"
 
@@ -525,10 +525,9 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                             },
                         )
                     )
-                else:
-                    with _METRICS_LOCK:
-                        key = (profile, name, "allowed")
-                        _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+                with _METRICS_LOCK:
+                    key = (profile, name, "allowed")
+                    _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
         else:
             # Fast path: full profile — count as allowed without tool-name label
             # to keep cardinality bounded (no per-tool explosion on full profile).

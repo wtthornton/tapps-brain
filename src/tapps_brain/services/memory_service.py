@@ -388,7 +388,7 @@ def audit_consumers(
 
     if since:
         try:
-            datetime.fromisoformat(since.replace("Z", "+00:00"))
+            datetime.fromisoformat(since)
         except ValueError:
             return {
                 "error": "invalid_since",
@@ -579,7 +579,7 @@ def _recency_score(last_accessed: str) -> float:
     from datetime import UTC, datetime
 
     try:
-        ts = datetime.fromisoformat(last_accessed.replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(last_accessed)
         # Imported / legacy rows may be tz-naive — assume UTC so ranking does
         # not raise TypeError when subtracting from an aware ``now``.
         if ts.tzinfo is None:
@@ -927,7 +927,7 @@ def _validate_and_normalize_save(
             "message": f"Invalid source {source!r}. Valid values: {list(_valid_sources)}",
             "valid_values": list(_valid_sources),
         }
-    resolved_agent = source_agent if source_agent else agent_id
+    resolved_agent = source_agent or agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
 
     return {
@@ -1069,7 +1069,7 @@ def memory_search(
         try:
             from datetime import datetime
 
-            datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+            datetime.fromisoformat(as_of)
         except ValueError:
             return {
                 "error": "invalid_as_of",
@@ -2113,7 +2113,7 @@ async def async_memory_save(
             "message": f"Invalid source {source!r}. Valid values: {list(_valid_sources)}",
             "valid_values": list(_valid_sources),
         }
-    resolved_agent = source_agent if source_agent else agent_id
+    resolved_agent = source_agent or agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
 
     from pydantic import ValidationError as _PydanticValidationError

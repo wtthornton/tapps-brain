@@ -34,15 +34,15 @@ def agent_register(
         skill_list = [s.strip() for s in skills.split(",") if s.strip()]
         agent = AgentRegistration(id=new_agent_id, profile=profile, skills=skill_list)
         registry.register(agent)
-        return {
-            "registered": True,
-            "agent_id": new_agent_id,
-            "profile": profile,
-            "skills": skill_list,
-        }
     except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_register")
         return {"error": "registry_error", "message": str(exc)}
+    return {
+        "registered": True,
+        "agent_id": new_agent_id,
+        "profile": profile,
+        "skills": skill_list,
+    }
 
 
 def agent_create(
@@ -87,17 +87,17 @@ def agent_create(
             "description": prof.description,
         }
 
-        return {
-            "created": True,
-            "agent_id": new_agent_id,
-            "profile": profile,
-            "namespace": namespace,
-            "skills": skill_list,
-            "profile_summary": profile_summary,
-        }
     except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_create")
         return {"error": "agent_create_error", "message": str(exc)}
+    return {
+        "created": True,
+        "agent_id": new_agent_id,
+        "profile": profile,
+        "namespace": namespace,
+        "skills": skill_list,
+        "profile_summary": profile_summary,
+    }
 
 
 def agent_list(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
@@ -122,13 +122,13 @@ def agent_delete(
 
         registry = resolve_agent_registry(getattr(store, "_hive_store", None))
         removed = registry.unregister(target_agent_id)
-        if removed:
-            return {"deleted": True, "agent_id": target_agent_id}
-        return {
-            "deleted": False,
-            "agent_id": target_agent_id,
-            "message": f"Agent '{target_agent_id}' not found.",
-        }
     except Exception as exc:
         logger.exception("hive_tool_error", tool="agent_delete")
         return {"error": "registry_error", "message": str(exc)}
+    if removed:
+        return {"deleted": True, "agent_id": target_agent_id}
+    return {
+        "deleted": False,
+        "agent_id": target_agent_id,
+        "message": f"Agent '{target_agent_id}' not found.",
+    }

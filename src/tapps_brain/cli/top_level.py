@@ -159,7 +159,7 @@ def stats_cmd(  # noqa: PLR0915
 
             # Recent entries (created in last 7 days)
             try:
-                created = datetime.fromisoformat(e.created_at.replace("Z", "+00:00"))
+                created = datetime.fromisoformat(e.created_at)
                 if created >= week_ago:
                     recent_count += 1
             except (ValueError, AttributeError, TypeError):
@@ -405,16 +405,15 @@ def cli_brain_recall(
     store = _get_store(project_dir)
     try:
         entries = store.search(query)
-        results = []
-        for entry in entries[:max_results]:
-            results.append(
-                {
-                    "key": entry.key,
-                    "value": entry.value[:120],
-                    "tier": str(entry.tier),
-                    "confidence": f"{entry.confidence:.2f}",
-                }
-            )
+        results = [
+            {
+                "key": entry.key,
+                "value": entry.value[:120],
+                "tier": str(entry.tier),
+                "confidence": f"{entry.confidence:.2f}",
+            }
+            for entry in entries[:max_results]
+        ]
         if as_json:
             _output(results, as_json=True)
         elif not results:

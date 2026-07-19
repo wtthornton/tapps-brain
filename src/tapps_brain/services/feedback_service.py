@@ -31,7 +31,7 @@ def feedback_rate(
             entry_key,
             rating=rating,
             session_id=session_id.strip() or None,
-            details=details if details else None,
+            details=details or None,
         )
     except ValueError as exc:
         return {"error": "validation_error", "message": str(exc)}
@@ -54,7 +54,7 @@ def feedback_gap(
     event = store.report_gap(
         query,
         session_id=session_id.strip() or None,
-        details=details if details else None,
+        details=details or None,
     )
     return {"status": "recorded", "event": event.model_dump(mode="json")}
 
@@ -77,7 +77,7 @@ def feedback_issue(
         entry_key,
         issue,
         session_id=session_id.strip() or None,
-        details=details if details else None,
+        details=details or None,
     )
     return {"status": "recorded", "event": event.model_dump(mode="json")}
 
@@ -103,7 +103,7 @@ def feedback_record(
             entry_key=entry_key.strip() or None,
             session_id=session_id.strip() or None,
             utility_score=utility_score,
-            details=details if details else None,
+            details=details or None,
         )
     except ValueError as exc:
         return {"error": "validation_error", "message": str(exc)}

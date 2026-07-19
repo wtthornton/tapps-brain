@@ -136,7 +136,7 @@ def memory_save_cmd(
                 as_json=True,
             )
         else:
-            grp = out.memory_group if out.memory_group else "(ungrouped)"
+            grp = out.memory_group or "(ungrouped)"
             typer.echo(f"Saved memory '{out.key}' (tier={out.tier!s}, group={grp})")
     finally:
         store.close()
@@ -172,9 +172,7 @@ def memory_show(
             typer.echo(f"Source:        {entry.source.value}")
             typer.echo(f"Source Agent:  {entry.source_agent}")
             typer.echo(f"Scope:         {entry.scope.value}")
-            typer.echo(
-                f"Group:         {entry.memory_group if entry.memory_group else '(ungrouped)'}"
-            )
+            typer.echo(f"Group:         {entry.memory_group or '(ungrouped)'}")
             typer.echo(f"Tags:          {', '.join(entry.tags) if entry.tags else '(none)'}")
             typer.echo(f"Created:       {entry.created_at}")
             typer.echo(f"Updated:       {entry.updated_at}")

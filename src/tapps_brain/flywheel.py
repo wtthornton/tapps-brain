@@ -13,7 +13,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from tapps_brain._protocols import ReportSection
-from tapps_brain.feedback import FeedbackEvent
+from tapps_brain.feedback import FeedbackEvent, _timestamp_sort_key
 from tapps_brain.models import MemoryEntry, MemoryTier
 
 if TYPE_CHECKING:
@@ -106,9 +106,15 @@ def _parse_cursor(raw: str | None) -> tuple[str | None, str | None]:
 def _event_after_cursor(ev: FeedbackEvent, ts: str | None, eid: str | None) -> bool:
     if ts is None or eid is None:
         return True
-    if ev.timestamp > ts:
+    # Parsed comparison: raw string comparison misorders equivalent ISO-8601
+    # forms ("...Z" vs "...+00:00"), silently skipping events forever once a
+    # Z-suffixed timestamp became the cursor (same hazard feedback.py fixed
+    # with _timestamp_sort_key).
+    ev_key = _timestamp_sort_key(ev.timestamp)
+    cur_key = _timestamp_sort_key(ts)
+    if ev_key > cur_key:
         return True
-    if ev.timestamp < ts:
+    if ev_key < cur_key:
         return False
     return ev.id > eid
 
@@ -159,15 +165,25 @@ class FeedbackProcessor:
         # same already-processed oldest rows and newer events were never reached.
         # The id tie-break for same-timestamp events stays in Python.
         events = store.query_feedback(since=cur_ts, limit=100_000)
-        events.sort(key=lambda e: (e.timestamp, e.id))
+        events.sort(key=lambda e: (_timestamp_sort_key(e.timestamp), e.id))
         processed = 0
         adjustments = 0
         last_ts: str | None = None
         last_id: str | None = None
+        since_key = _timestamp_sort_key(since) if since is not None else None
+        # Cursor advancement with ``since``: advance over the CONTIGUOUS
+        # applied prefix only.  Advancing past since-skipped events would
+        # permanently drop them on retry, but never advancing (previous
+        # behavior) re-applied every since-applied event on the next plain
+        # run — and these deltas are not idempotent.  Skipped events sort
+        # before applied ones, so the prefix breaks at the first skip.
+        prefix_intact = True
         for ev in events:
             if not _event_after_cursor(ev, cur_ts, cur_id):
                 continue
-            apply_updates = since is None or ev.timestamp >= since
+            apply_updates = since_key is None or _timestamp_sort_key(ev.timestamp) >= since_key
+            if not apply_updates:
+                prefix_intact = False
             if apply_updates:
                 for ek, d_pos, d_neg in _feedback_deltas(ev):
                     if not ek:
@@ -194,6 +210,12 @@ class FeedbackProcessor:
                         positive_feedback_count=round(new_pos, 6),
                         negative_feedback_count=round(new_neg, 6),
                         confidence=round(new_conf, 6),
+                        # Preserve the entry's own updated_at: retrieval's
+                        # recency score reads it (15% composite weight), so a
+                        # default now() stamp made processing an "irrelevant"
+                        # rating RAISE the entry's ranking — the opposite of
+                        # the _ensure_entry_cached rationale above.
+                        updated_at=entry.updated_at,
                     )
                     store._persistence.append_audit(
                         "flywheel_confidence",
@@ -207,16 +229,14 @@ class FeedbackProcessor:
                         },
                     )
                     adjustments += 1
-                # Advance cursor only when not using a ``since`` filter — advancing
-                # past since-skipped events would permanently drop them on retry.
-                if since is None:
+                if prefix_intact:
                     last_ts, last_id = ev.timestamp, ev.id
                     # Persist every N events for mid-run crash safety (deltas
                     # are not idempotent) without one meta upsert per event.
                     if processed % _CURSOR_FLUSH_INTERVAL == _CURSOR_FLUSH_INTERVAL - 1:
                         self._persist_cursor(store, last_ts, last_id)
             processed += 1
-        if since is None and last_ts is not None and last_id is not None:
+        if last_ts is not None and last_id is not None:
             self._persist_cursor(store, last_ts, last_id)
         return {"processed_events": processed, "confidence_adjustments": adjustments}
 
@@ -270,12 +290,20 @@ class GapTracker:
         instances: list[tuple[str, str, float, list[str]]] = []
         # (query, ts, weight, desc_parts)
         try:
-            evs = store.query_feedback(event_type="gap_reported", limit=10_000)
+            # Push ``since`` into the query and keep the NEWEST window:
+            # query_feedback is oldest-first + LIMIT, so a bare limit=10_000
+            # pinned analysis to the oldest 10k lifetime gap events and every
+            # newer gap became permanently invisible (same fetch-window class
+            # process_feedback fixed for its cursor).
+            evs = store.query_feedback(event_type="gap_reported", since=since, limit=100_000)[
+                -10_000:
+            ]
         except Exception:
             logger.warning("flywheel.gap_query_feedback_failed", exc_info=True)
             raise
+        since_key = _timestamp_sort_key(since) if since is not None else None
         for ev in evs:
-            if since is not None and ev.timestamp < since:
+            if since_key is not None and _timestamp_sort_key(ev.timestamp) < since_key:
                 continue
             q = ""
             desc: list[str] = []
@@ -287,7 +315,7 @@ class GapTracker:
             if q:
                 instances.append((q, ev.timestamp, 1.0, desc))
         for q, ts in store.zero_result_gap_signals():
-            if since is not None and ts < since:
+            if since_key is not None and _timestamp_sort_key(ts) < since_key:
                 continue
             if q.strip():
                 instances.append((q.strip(), ts, 0.5, []))
@@ -746,7 +774,7 @@ def aggregate_hive_feedback(
         # event from the `since` comparison below.
         ts_raw = r.get("timestamp", "")
         ts = ts_raw.isoformat() if hasattr(ts_raw, "isoformat") else str(ts_raw)
-        if since is not None and ts < since:
+        if since is not None and _timestamp_sort_key(ts) < _timestamp_sort_key(since):
             continue
         sp = str(r.get("source_project", "") or "")
         if sp:

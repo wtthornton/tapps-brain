@@ -233,6 +233,7 @@ def require_data_plane_auth(request: Request) -> None:
                 "auth.per_tenant_verify_error",
                 project_id=project_id,
                 detail="token verification failed due to backend error; failing closed",
+                exc_info=True,
             )
             raise HTTPException(
                 status_code=503,

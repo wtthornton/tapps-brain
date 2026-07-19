@@ -528,7 +528,7 @@ def create_app(
                 mcp = _build_mcp_server()
                 mcp_holder["mcp"] = mcp
             except Exception as exc:
-                logger.error("http_adapter.mcp_build_failed", error=str(exc))
+                logger.error("http_adapter.mcp_build_failed", error=str(exc), exc_info=True)
                 mcp = None
 
         session_cm = None
@@ -557,7 +557,11 @@ def create_app(
                     session_cm = sm.run()
                     await session_cm.__aenter__()
                 except Exception as exc:
-                    logger.error("http_adapter.session_manager_start_failed", error=str(exc))
+                    logger.error(
+                        "http_adapter.session_manager_start_failed",
+                        error=str(exc),
+                        exc_info=True,
+                    )
                     session_cm = None
 
             # TAP-1843: build the static tools snapshot once at startup so
@@ -634,8 +638,8 @@ def create_app(
 
                 try:
                     validate_rest_route_map(frozenset(_tools_by_name))
-                except ValueError:
-                    logger.error("http_adapter.rest_profile_gate_drift")
+                except ValueError as exc:
+                    logger.error("http_adapter.rest_profile_gate_drift", error=str(exc))
                     raise
         try:
             yield
