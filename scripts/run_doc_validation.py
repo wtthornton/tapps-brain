@@ -67,7 +67,8 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 print(
-                    "  Wire a LookupEngineLike via MemoryStore(lookup_engine=...) for real validation.",
+                    "  Wire a LookupEngineLike via MemoryStore(lookup_engine=...) "
+                    "for real validation.",
                     file=sys.stderr,
                 )
 
@@ -76,7 +77,7 @@ def main() -> int:
 
             try:
                 report = store.validate_entries(
-                    keys=args.keys if args.keys else None,
+                    keys=args.keys or None,
                     strict=args.strict,
                 )
             except StrictValidationError as exc:

@@ -21,9 +21,12 @@ checked-in copies under ``docs/contracts/``.
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
 from fastapi.openapi.utils import get_openapi
+
+from tapps_brain.postgres_migrations import discover_private_migrations
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -42,10 +45,8 @@ _IDEMPOTENCY_PREFIXES = ("/v1/remember", "/v1/reinforce")
 def _service_version() -> str:
     """Return the installed brain version, or ``"unknown"`` if not packaged."""
     try:
-        from importlib.metadata import PackageNotFoundError, version
-
         return version("tapps-brain")
-    except (ImportError, PackageNotFoundError):
+    except PackageNotFoundError:
         return "unknown"
 
 
@@ -58,8 +59,6 @@ def _bundled_schema_version() -> int:
     hit ``/ready``.
     """
     try:
-        from tapps_brain.postgres_migrations import discover_private_migrations
-
         migs = discover_private_migrations()
         if not migs:
             return 0

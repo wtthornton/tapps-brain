@@ -80,7 +80,7 @@ class AuditReader:
             return []
         # Legacy / unit-test path: backend is a file path.
         if isinstance(self._backend, Path):
-            entries = self._query_file(
+            return self._query_file(
                 key=key,
                 event_type=event_type,
                 since=since,
@@ -88,7 +88,6 @@ class AuditReader:
                 limit=limit,
                 newest_first=newest_first,
             )
-            return entries
         # Postgres backend path.
         query_audit = getattr(self._backend, "query_audit", None)
         if query_audit is None:
@@ -161,11 +160,11 @@ class AuditReader:
 
         results: list[AuditEntry] = []
         for line in lines:
-            line = line.strip()
-            if not line:
+            stripped = line.strip()
+            if not stripped:
                 continue
             try:
-                rec: dict[str, Any] = json.loads(line)
+                rec: dict[str, Any] = json.loads(stripped)
             except json.JSONDecodeError:
                 continue
 

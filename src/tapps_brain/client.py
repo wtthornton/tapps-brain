@@ -46,6 +46,13 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from tapps_brain.exceptions import (
+    TappsBrainTransientError,
+    TappsBrainTransportError,
+    TappsBrainValidationError,
+    raise_for_response,
+)
+
 # ---------------------------------------------------------------------------
 # Protocol — the shared public surface
 # ---------------------------------------------------------------------------
@@ -438,8 +445,6 @@ def _is_missing_session_error(exc: BaseException) -> bool:
     # Match wrapped TappsBrainValidationError first (the typed exception
     # raised by _post_tool's fallback path now that raw httpx.HTTPStatusError
     # is no longer surfaced — STORY-071.1).
-    from tapps_brain.exceptions import TappsBrainValidationError
-
     _http_400 = 400
     if isinstance(exc, TappsBrainValidationError) and exc.status_code == _http_400:
         message = (exc.body.get("detail") or exc.message or "").lower()
@@ -467,8 +472,6 @@ def _wrap_request_error(exc: BaseException, *, where: str) -> BaseException:
     except ImportError:
         return exc
     if isinstance(exc, httpx.RequestError):
-        from tapps_brain.exceptions import TappsBrainTransportError
-
         url = getattr(getattr(exc, "request", None), "url", "<unknown>")
         return TappsBrainTransportError(
             f"{where} failed: {type(exc).__name__} contacting {url} — {exc}",
@@ -545,8 +548,6 @@ def _post_tool(
     *extra_headers* are merged into the request headers after the standard
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
-    from tapps_brain.exceptions import TappsBrainTransientError, raise_for_response
-
     config = retry_config or _NO_RETRY
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:
@@ -605,8 +606,6 @@ async def _async_post_tool(
     *extra_headers* are merged into the request headers after the standard
     header set; used to inject ``Mcp-Session-Id`` for stateful servers.
     """
-    from tapps_brain.exceptions import TappsBrainTransientError, raise_for_response
-
     config = retry_config or _NO_RETRY
     headers = _build_headers(project_id, agent_id, auth_token, idempotency_key=idempotency_key)
     if extra_headers:

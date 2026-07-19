@@ -103,6 +103,11 @@ class SchemaStatus:
     pending_migrations: list[tuple[int, str]] = field(default_factory=list)
 
 
+_PSYCOPG_IMPORT_ERROR_MSG = (
+    "psycopg is required for PostgreSQL migrations.\nInstall with: pip install 'psycopg[binary]'"
+)
+
+
 def _get_schema_status(
     dsn: str,
     version_table: str,
@@ -113,10 +118,7 @@ def _get_schema_status(
         import psycopg
         from psycopg import sql as pg_sql
     except ImportError:
-        raise ImportError(
-            "psycopg is required for PostgreSQL migrations.\n"
-            "Install with: pip install 'psycopg[binary]'"
-        ) from None
+        raise ImportError(_PSYCOPG_IMPORT_ERROR_MSG) from None
 
     status = SchemaStatus()
 
@@ -188,10 +190,7 @@ def _apply_migrations(
         import psycopg
         from psycopg import sql as pg_sql
     except ImportError:
-        raise ImportError(
-            "psycopg is required for PostgreSQL migrations.\n"
-            "Install with: pip install 'psycopg[binary]'"
-        ) from None
+        raise ImportError(_PSYCOPG_IMPORT_ERROR_MSG) from None
 
     seen_versions: set[int] = set()
     duplicate_versions: set[int] = set()
@@ -446,11 +445,9 @@ def _rollback_migrations(
     """
     try:
         import psycopg
+        from psycopg import sql as pg_sql
     except ImportError:
-        raise ImportError(
-            "psycopg is required for PostgreSQL migrations.\n"
-            "Install with: pip install 'psycopg[binary]'"
-        ) from None
+        raise ImportError(_PSYCOPG_IMPORT_ERROR_MSG) from None
 
     # Only roll back versions the database actually recorded as applied.
     applied_set: set[int] = set()
@@ -461,8 +458,6 @@ def _rollback_migrations(
         )
         _row = _cur.fetchone()
         if _row and _row[0]:
-            from psycopg import sql as pg_sql
-
             _cur.execute(
                 pg_sql.SQL("SELECT version FROM {}").format(pg_sql.Identifier(version_table))
             )

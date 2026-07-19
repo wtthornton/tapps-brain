@@ -82,9 +82,9 @@ def _load_token(name: str) -> str | None:
     env_path = REPO_ROOT / "docker" / ".env"
     if env_path.is_file():
         for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line.startswith(f"{name}=") and not line.startswith("#"):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
+            stripped = line.strip()
+            if stripped.startswith(f"{name}="):
+                return stripped.split("=", 1)[1].strip().strip('"').strip("'")
     return None
 
 
@@ -183,7 +183,7 @@ def collect_stack() -> dict[str, Any]:
         image, status, started, restarts, health = (res.strip().split("|") + [""] * 5)[:5]
         uptime_s = None
         try:
-            started_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            started_dt = datetime.fromisoformat(started)
             uptime_s = (datetime.now(UTC) - started_dt).total_seconds()
         except ValueError:
             pass
@@ -570,12 +570,12 @@ def derive_findings(data: dict[str, Any]) -> list[str]:
     denied = [
         e for e in m.get("profile_tools_call", []) if e.get("outcome", "").startswith("denied")
     ]
-    for e in denied:
-        out.append(
-            f"PROFILE FRICTION: profile '{e.get('profile')}' was denied tool "
-            f"'{e.get('tool')}' {int(e['count'])}x - widen the profile or stop the client from "
-            "calling a tool it cannot use."
-        )
+    out.extend(
+        f"PROFILE FRICTION: profile '{e.get('profile')}' was denied tool "
+        f"'{e.get('tool')}' {int(e['count'])}x - widen the profile or stop the client from "
+        "calling a tool it cannot use."
+        for e in denied
+    )
 
     if isinstance(db.get("experience_window"), list):
         dep = next(
@@ -905,9 +905,9 @@ def main() -> int:
     report = render_markdown(data)
     md_path.write_text(report)
 
-    print("")
+    print()
     print(report)
-    print("")
+    print()
     print(f"==> wrote {md_path}")
     print(f"==> wrote {json_path}")
     return 0

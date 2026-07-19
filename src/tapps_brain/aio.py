@@ -37,6 +37,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import structlog
 
+from tapps_brain.audit import AuditEntry
+from tapps_brain.backends import create_async_private_backend
 from tapps_brain.postgres_connection import is_postgres_dsn
 from tapps_brain.store import MemoryStore
 
@@ -412,8 +414,6 @@ class AsyncMemoryStore:
             or ""
         ).strip()
         if is_postgres_dsn(dsn):
-            from tapps_brain.backends import create_async_private_backend
-
             project_id = getattr(store, "_project_id", None) or ""
             # Read the *resolved* agent id off the backend: MemoryStore keeps
             # the raw constructor arg (None unless explicitly passed) in
@@ -742,8 +742,6 @@ class AsyncMemoryStore:
         """
         if self._async_backend is None:
             return await self._read_thread(self._store.audit, **kwargs)
-
-        from tapps_brain.audit import AuditEntry
 
         # Mirror the sync MemoryStore.audit contract: fetch the most recent
         # rows (descending) and return them in chronological order.

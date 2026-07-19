@@ -33,7 +33,8 @@ def main() -> int:
     )
     if not dsn:
         print(
-            "ERROR: no DSN supplied. Set TAPPS_BRAIN_DATABASE_URL or pass it as the first argument.",
+            "ERROR: no DSN supplied. Set TAPPS_BRAIN_DATABASE_URL "
+            "or pass it as the first argument.",
             file=sys.stderr,
         )
         return 1

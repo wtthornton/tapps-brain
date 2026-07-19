@@ -220,9 +220,8 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         print(f"validate_epics: {failed}/{len(paths)} file(s) failed validation")
         return 1
-    else:
-        print(f"validate_epics: all {len(paths)} file(s) valid")
-        return 0
+    print(f"validate_epics: all {len(paths)} file(s) valid")
+    return 0
 
 
 if __name__ == "__main__":

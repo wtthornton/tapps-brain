@@ -16,6 +16,7 @@ import math
 import random
 import threading
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -317,8 +318,6 @@ class MetricsCollector:
 
     def snapshot(self) -> MetricsSnapshot:
         """Return a frozen copy of all counters, histograms, and gauges."""
-        from datetime import UTC, datetime
-
         with self._lock:
             counters = dict(self._counters)
             histograms = {k: v.stats() for k, v in self._histograms.items()}
