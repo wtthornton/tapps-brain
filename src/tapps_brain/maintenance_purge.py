@@ -100,6 +100,7 @@ def purge_by_prefix(
     cleaned = tuple(p for p in prefixes if p)
     if not cleaned:
         return {}
+
     # Escape LIKE wildcards so a literal ``_``/``%`` in a (CLI-supplied) prefix
     # cannot over-match and delete unrelated tenants (``test_`` would otherwise
     # match ``testX...``). ``\`` is the default LIKE escape character.

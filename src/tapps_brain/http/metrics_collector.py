@@ -14,7 +14,7 @@ from collections import OrderedDict
 from contextlib import suppress
 from typing import Any, cast
 
-from tapps_brain.http.probe_cache import _get_hive_pool_stats, _probe_db
+from tapps_brain.http.probe_cache import _get_hive_pool_stats, _probe_db, _probe_experience_schema
 
 # ---------------------------------------------------------------------------
 # Per-(project_id, agent_id) request counters (STORY-070.12)
@@ -100,6 +100,24 @@ def _record_labeled_request(project_id: str, agent_id: str) -> None:
         # subsequent overflow agents still bucket to "other" via the
         # `agent_id not in distinct` check, which evaluates False for "other".
         distinct.add(agent_id)
+
+
+# ---------------------------------------------------------------------------
+# TAP-2866: per-(path, status) HTTP error counters
+# ---------------------------------------------------------------------------
+
+# Exported to Prometheus as tapps_brain_http_errors_total so a data-plane
+# endpoint that is failing (e.g. /v1/experience 500ing) is observable even
+# while /health reads green — the exact gap that hid the TAP-2865 incident.
+_HTTP_ERROR_COUNTS: dict[tuple[str, str], int] = {}
+_HTTP_ERROR_COUNTS_LOCK = threading.Lock()
+
+
+def _record_http_error(path: str, status: int) -> None:
+    """Increment the per-(path, status) HTTP error counter (TAP-2866)."""
+    key = (path, str(status))
+    with _HTTP_ERROR_COUNTS_LOCK:
+        _HTTP_ERROR_COUNTS[key] = _HTTP_ERROR_COUNTS.get(key, 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -236,14 +254,58 @@ def _emit_db_gauges(lines: list[str], dsn: str | None) -> None:
         )
 
 
+def _emit_experience_gauge(lines: list[str], dsn: str | None) -> None:
+    """TAP-2866: deep write-path readiness for the experience_events table."""
+    experience_writable, _ = _probe_experience_schema(dsn)
+    _emit_gauge(
+        lines,
+        "tapps_brain_experience_writable",
+        1.0 if experience_writable else 0.0,
+        "1 if the experience_events write path (table + partitions) is present, 0 otherwise.",
+    )
+
+
+def _emit_http_error_counters(lines: list[str]) -> None:
+    """TAP-2866: per-(path, status) HTTP error counter.
+
+    No tenant labels, so it is emitted in full regardless of redaction.
+    Alert with ``tapps_brain_http_errors_total{status=~"5.."} > 0``.
+    """
+    with _HTTP_ERROR_COUNTS_LOCK:
+        error_snapshot = dict(_HTTP_ERROR_COUNTS)
+    lines.append(
+        "# HELP tapps_brain_http_errors_total HTTP 4xx/5xx responses by path and status (TAP-2866)."
+    )
+    lines.append("# TYPE tapps_brain_http_errors_total counter")
+    for (err_path, err_status), err_count in sorted(error_snapshot.items()):
+        safe_path = err_path.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(
+            f'tapps_brain_http_errors_total{{path="{safe_path}",status="{err_status}"}} {err_count}'
+        )
+
+
 def _emit_request_counters(lines: list[str], *, redact: bool) -> None:
     """STORY-070.12: per-(project_id, agent_id) MCP request counters.
 
     TAP-547: drop labels entirely when *redact* — still emit the counter so
     scrapers have a total-volume signal, just not per-tenant.
+
+    TAP-600: also always emits ``tapps_brain_tenant_labels_evicted_total``
+    (even at zero) — snapshotted under the same lock acquisition as the
+    request counts so the two series are consistent with each other.
     """
     with _LABELED_REQUEST_COUNTS_LOCK:
+        snapshot_evicted = _TENANT_LABELS_EVICTED_TOTAL
         snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
+    lines.append(
+        "# HELP tapps_brain_tenant_labels_evicted_total "
+        "Cumulative number of project_id entries evicted from the in-memory "
+        "request-counter LRU cache (TAP-600). Non-zero indicates high "
+        "project_id churn; consider increasing "
+        "TAPPS_BRAIN_MAX_PROJECT_CARDINALITY."
+    )
+    lines.append("# TYPE tapps_brain_tenant_labels_evicted_total counter")
+    lines.append(f"tapps_brain_tenant_labels_evicted_total {snapshot_evicted}")
     if not snapshot_counts:
         return
     lines.append(
@@ -347,6 +409,16 @@ def _emit_pool_gauges(lines: list[str], store: Any) -> None:  # noqa: ANN401
         "tapps_brain_pool_saturation",
         float(_pool_stats.get("pool_saturation", 0.0)),
         "Fraction of Hive pool max_size currently in use (0.0-1.0).",
+    )
+    # TAP-729: expose whether live pool stats were successfully read.
+    # 0.0 means the pool is not open or get_stats() raised — operators
+    # can alert on this to detect observability gaps.
+    _emit_gauge(
+        lines,
+        "tapps_brain_pool_stats_available",
+        1.0 if _pool_stats.get("pool_stats_available") else 0.0,
+        "1 if pool stats were successfully read from psycopg_pool; "
+        "0 if the pool is not open or get_stats() raised.",
     )
 
 
@@ -572,6 +644,8 @@ def _collect_metrics(
 
     _emit_process_gauges(lines, _start)
     _emit_db_gauges(lines, dsn)
+    _emit_experience_gauge(lines, dsn)
+    _emit_http_error_counters(lines)
     _emit_request_counters(lines, redact=redact_tenant_labels)
     _emit_tool_call_counters(lines, redact=redact_tenant_labels)
     _emit_session_gauge(lines, store)

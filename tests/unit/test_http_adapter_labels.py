@@ -27,8 +27,12 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import tapps_brain.http_adapter as _mod
-from tapps_brain.http_adapter import (
+# The counter state and _record_labeled_request live in metrics_collector —
+# the single implementation since the http_adapter duplicates were removed
+# (TAP-604 split-brain fix).  http_adapter re-exports the names for callers,
+# but tests must mutate/patch the owning module so writer and reader agree.
+import tapps_brain.http.metrics_collector as _mod
+from tapps_brain.http.metrics_collector import (
     _LABELED_REQUEST_COUNTS_LOCK,
     _MAX_AGENT_ID_CARDINALITY,
     _record_labeled_request,

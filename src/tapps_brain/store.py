@@ -438,7 +438,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # store_dir / encryption_key / lexical_config are legacy SQLite knobs —
         # kept in the signature for API compatibility but ignored on Postgres.
         _ = (store_dir, encryption_key, _lexical)
-        self._persistence: PrivateBackend = private_backend
+        # ``_persistence`` is a property backed by ``_persistence_backend``
+        # plus a per-thread override (see ``_scoped_persistence``) so the
+        # async wrapper can capture writes without mutating shared state.
+        self._persistence_local = threading.local()
+        self._persistence = private_backend
         # STORY-069.7: stash resolved project_id so instance methods can bind it
         # into structured logs.  Falls back to None for backends (e.g.
         # InMemoryPrivateBackend) that don't carry a project_id.
@@ -785,6 +789,41 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 yield
             finally:
                 lock.release()
+
+    @property
+    def _persistence(self) -> PrivateBackend:
+        """The active persistence backend for the *calling thread*.
+
+        Returns the per-thread override installed by
+        :meth:`_scoped_persistence` when present, else the shared backend.
+        The async wrapper (:mod:`tapps_brain.aio`) uses the override to
+        capture writes for its native flush path — a thread-local keeps the
+        capture invisible to concurrent sync-path writers on other threads
+        (mutating the shared attribute used to let a sync save land in
+        another request's capture backend and get lost on flush failure).
+        """
+        override = getattr(self._persistence_local, "override", None)
+        if override is not None:
+            return override  # type: ignore[no-any-return]
+        return self._persistence_backend
+
+    @_persistence.setter
+    def _persistence(self, value: PrivateBackend) -> None:
+        self._persistence_backend = value
+
+    @contextmanager
+    def _scoped_persistence(self, backend: PrivateBackend) -> Iterator[None]:
+        """Route this thread's persistence calls through *backend*.
+
+        Thread-local: other threads (and re-entrant calls after exit) keep
+        using the shared backend.  Used by :mod:`tapps_brain.aio` to capture
+        writes inside ``asyncio.to_thread`` workers.
+        """
+        self._persistence_local.override = backend
+        try:
+            yield
+        finally:
+            self._persistence_local.override = None
 
     @property
     def agent_id(self) -> str | None:

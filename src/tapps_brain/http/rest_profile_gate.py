@@ -49,6 +49,8 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/kg/neighbors": "brain_get_neighbors",
     "/v1/kg/explain": "brain_explain_connection",
     "/v1/kg/feedback": "brain_record_feedback",
+    "/v1/kg/resolve_entity": "brain_resolve_entity",  # TAP-2725
+    "/v1/kg/resolve_entities": "brain_resolve_entity",  # TAP-3249 — same tool, batch
 }
 
 # Paths that bypass profile gating entirely.  Mirrors the

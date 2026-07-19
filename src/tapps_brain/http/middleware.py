@@ -1,12 +1,13 @@
 """ASGI middleware for the tapps-brain HTTP adapter (TAP-604).
 
-Extracted from ``tapps_brain.http_adapter``.  Three middleware classes:
+Extracted from ``tapps_brain.http_adapter``.  Four middleware classes:
 
-* :class:`OtelSpanMiddleware`       — W3C traceparent extraction + OTel server span.
+* :class:`OtelSpanMiddleware`        — W3C traceparent extraction + OTel server span.
 * :class:`OriginAllowlistMiddleware` — DNS-rebinding guard (TAP-627).
+* :class:`RestProfileGateMiddleware` — ``/v1/*`` capability-profile gate (TAP-1929).
 * :class:`McpTenantMiddleware`       — ``/mcp`` tenant envelope enforcement.
 
-All three classes call ``get_settings()`` and OTel helpers via a lazy
+Classes that need settings or OTel helpers resolve them via a lazy
 ``import tapps_brain.http_adapter`` inside their ``dispatch`` methods so
 that unit tests patching ``tapps_brain.http_adapter.get_settings`` and
 ``tapps_brain.http_adapter.start_span`` continue to work unchanged.

@@ -142,10 +142,11 @@ def test_mcp_tenant_middleware_sets_scope_group(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.delenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", raising=False)
 
     # Reset the module-level settings singleton so ``get_settings()`` sees
-    # the env-var changes we just applied.
-    import tapps_brain.http_adapter as ha
+    # the env-var changes we just applied.  The singleton lives in
+    # tapps_brain.http.settings (http_adapter re-exports it).
+    import tapps_brain.http.settings as _hs
 
-    ha._settings = ha._Settings()  # type: ignore[attr-defined]
+    _hs._settings = _hs._Settings()
 
     app = _build_app_no_auth()
     with TestClient(app) as client:
@@ -181,11 +182,12 @@ def test_mcp_tenant_middleware_x_tapps_agent_overrides_x_agent_id(
     monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", raising=False)
 
-    import tapps_brain.http_adapter as ha
+    import tapps_brain.http.settings as _hs
 
     # Reset the module-level settings singleton so ``get_settings()`` sees the
-    # env-var changes we just applied.
-    ha._settings = ha._Settings()  # type: ignore[attr-defined]
+    # env-var changes we just applied.  The singleton lives in
+    # tapps_brain.http.settings (http_adapter re-exports it).
+    _hs._settings = _hs._Settings()
 
     app = _build_app_no_auth()
     with TestClient(app) as client:
@@ -212,11 +214,12 @@ def test_mcp_tenant_middleware_missing_project_id_returns_400(
     monkeypatch.delenv("TAPPS_BRAIN_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("TAPPS_BRAIN_HTTP_AUTH_TOKEN", raising=False)
 
-    import tapps_brain.http_adapter as ha
+    import tapps_brain.http.settings as _hs
 
     # Reset the module-level settings singleton so ``get_settings()`` sees the
-    # env-var changes we just applied.
-    ha._settings = ha._Settings()  # type: ignore[attr-defined]
+    # env-var changes we just applied.  The singleton lives in
+    # tapps_brain.http.settings (http_adapter re-exports it).
+    _hs._settings = _hs._Settings()
 
     app = _build_app_no_auth()
     with TestClient(app) as client:

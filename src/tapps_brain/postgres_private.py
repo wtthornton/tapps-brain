@@ -1052,7 +1052,6 @@ class PostgresPrivateBackend:
         )
 
 
-
 def __getattr__(name: str) -> object:
     """Lazy re-export of the canonical async backend (TAP: single source).
 

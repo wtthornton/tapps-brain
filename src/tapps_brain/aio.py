@@ -304,9 +304,6 @@ class AsyncMemoryStore:
         self._store = store
         self._wrapper_cache: dict[str, Any] = {}
         self._async_backend = async_backend
-        # Serialises the persistence-swap in async-native save/delete so
-        # concurrent coroutines never observe each other's capture backend.
-        self._lock: asyncio.Lock = asyncio.Lock()
         _w = (
             max_concurrent_writes
             if max_concurrent_writes is not None
@@ -328,11 +325,6 @@ class AsyncMemoryStore:
         # asyncio coroutines are cooperative; there is no await between the
         # semaphore acquire and the increment, so the update is atomic from
         # the event-loop's perspective.
-        # NOTE: for the async-backend code path (save/delete/reinforce),
-        # _lock serialises the persistence-swap, so the effective concurrency
-        # for those operations is 1 even though the write semaphore allows
-        # up to max_concurrent_writes holders.  write_queue_depth reflects
-        # semaphore holders (including those blocked on _lock), not active I/O.
         self._write_inflight: int = 0
         self._read_inflight: int = 0
 
@@ -371,6 +363,26 @@ class AsyncMemoryStore:
                 return await asyncio.to_thread(fn, *args, **kwargs)
             finally:
                 self._read_inflight -= 1
+
+    async def _captured_thread(
+        self, capture: _CapturePersistenceBackend, fn: Callable[..., _T], *args: Any, **kwargs: Any
+    ) -> _T:
+        """Run *fn* in a worker thread with persistence routed to *capture*.
+
+        Uses :meth:`MemoryStore._scoped_persistence` — a *thread-local*
+        override installed inside the worker thread — instead of mutating the
+        store's shared ``_persistence`` attribute.  The old shared-attribute
+        swap (guarded only by an asyncio lock) let a concurrent sync-path
+        write from another thread land in this request's capture backend:
+        durable only via an unrelated flush on success, lost outright when
+        this flush failed.
+        """
+
+        def _call() -> _T:
+            with self._store._scoped_persistence(capture):
+                return fn(*args, **kwargs)
+
+        return await asyncio.to_thread(_call)
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -449,13 +461,9 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(self._store.save, key, value, **kwargs)
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(
+                    capture, self._store.save, key, value, **kwargs
+                )
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -493,13 +501,7 @@ class AsyncMemoryStore:
                     prior = self._store._entries.get(key)
                     prior_rels = list(self._store._relations.get(key, []))
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(self._store.delete, key)
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(capture, self._store.delete, key)
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -610,13 +612,7 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(self._store.reinforce, key, **kwargs)
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(capture, self._store.reinforce, key, **kwargs)
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -640,15 +636,9 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior_keys = set(self._store._entries)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(
-                            self._store.ingest_context, context, **kwargs
-                        )
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(
+                    capture, self._store.ingest_context, context, **kwargs
+                )
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -672,13 +662,7 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        await asyncio.to_thread(self._store.record_access, key, was_useful)
-                    finally:
-                        self._store._persistence = old
+                await self._captured_thread(capture, self._store.record_access, key, was_useful)
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -751,13 +735,7 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior = dict(self._store._entries)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(self._store.gc, dry_run=dry_run)
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(capture, self._store.gc, dry_run=dry_run)
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -779,15 +757,9 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior_old = self._store._entries.get(old_key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(
-                            self._store.supersede, old_key, new_value, **kwargs
-                        )
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(
+                    capture, self._store.supersede, old_key, new_value, **kwargs
+                )
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -852,13 +824,9 @@ class AsyncMemoryStore:
                 with self._store._serialized():
                     prior = self._store._entries.get(key)
                 capture = _CapturePersistenceBackend(self._store._persistence)
-                async with self._lock:
-                    old = self._store._persistence
-                    self._store._persistence = capture
-                    try:
-                        result = await asyncio.to_thread(self._store.update_tags, key, **kwargs)
-                    finally:
-                        self._store._persistence = old
+                result = await self._captured_thread(
+                    capture, self._store.update_tags, key, **kwargs
+                )
                 try:
                     await self._flush_capture(capture)
                 except Exception:
@@ -906,10 +874,17 @@ class AsyncMemoryStore:
         return await self.gc(dry_run=dry_run)
 
     async def close(self) -> None:
-        """Async version of :meth:`MemoryStore.close`."""
-        if self._async_backend is not None:
-            await self._async_backend.close()
-        await asyncio.to_thread(self._store.close)
+        """Async version of :meth:`MemoryStore.close`.
+
+        The sync store close runs in a ``finally`` so a failing async-backend
+        close (e.g. network error against a dying Postgres at shutdown) does
+        not leak the ``MemoryStore``'s own pools and Hive connections.
+        """
+        try:
+            if self._async_backend is not None:
+                await self._async_backend.close()
+        finally:
+            await asyncio.to_thread(self._store.close)
 
     # ------------------------------------------------------------------
     # Context manager
@@ -934,8 +909,6 @@ class AsyncMemoryStore:
         {
             "save_many",
             "update_fields",
-            "record_access",
-            "ingest_context",
             "backfill_embeddings",
             "undo_consolidation_merge",
             "save_relations",

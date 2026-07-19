@@ -52,8 +52,7 @@ import sys
 import threading
 import time
 import uuid
-from collections import OrderedDict
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,7 +62,6 @@ from pydantic import ValidationError
 try:
     from fastapi import Depends, FastAPI, HTTPException, Request, Response
     from fastapi.responses import JSONResponse, PlainTextResponse
-    from starlette.middleware.base import BaseHTTPMiddleware
 except ImportError as exc:  # pragma: no cover — http extra not installed
     raise ImportError(
         "tapps_brain.http_adapter requires the [http] extra.  "
@@ -95,15 +93,21 @@ from tapps_brain.http.auth import (
     require_data_plane_auth,
 )
 
-# metrics counter state (re-exported so tests can mutate via ``_mod.X``)
-from tapps_brain.http.metrics_collector import (
+# metrics counter state (re-exported so tests can mutate via ``_mod.X``).
+# TAP-604 follow-up: metrics_collector is the single implementation — the
+# duplicated copies that used to shadow these imports made the live /metrics
+# endpoint read counters nothing wrote (split-brain).
+from tapps_brain.http.metrics_collector import (  # noqa: F401
     _DISTINCT_AGENTS_PER_PROJECT,
+    _HTTP_ERROR_COUNTS,
+    _HTTP_ERROR_COUNTS_LOCK,
     _LABELED_REQUEST_COUNTS,
     _LABELED_REQUEST_COUNTS_LOCK,
     _MAX_AGENT_ID_CARDINALITY,
     _collect_metrics,
     _emit_probe_histogram,
     _emit_snapshot_metrics,
+    _record_http_error,
     _record_labeled_request,
     record_snapshot_build_duration,
     record_snapshot_cache_hit,
@@ -121,14 +125,15 @@ from tapps_brain.http.middleware import (
 )
 
 # probe cache
-from tapps_brain.http.probe_cache import (
+from tapps_brain.http.probe_cache import (  # noqa: F401
     _PROBE_CACHE_TTL,
     _get_hive_pool_stats,
     _probe_db,
+    _probe_experience_schema,
 )
 
 # profile resolver singleton
-from tapps_brain.http.profile_resolver import (
+from tapps_brain.http.profile_resolver import (  # noqa: F401
     _PROFILE_RESOLVER,
     _PROFILE_RESOLVER_LOCK,
     _get_profile_resolver,
@@ -140,14 +145,21 @@ from tapps_brain.http.profile_resolver import (
 # that do ``from tapps_brain.http_adapter import <name>``.
 # ---------------------------------------------------------------------------
 # settings
-from tapps_brain.http.settings import (
+from tapps_brain.http.settings import (  # noqa: F401
     _filter_snapshot_by_project,
     _service_version,
     _Settings,
     _settings,
     get_settings,
 )
-from tapps_brain.otel_tracer import SPAN_KIND_SERVER, extract_trace_context, start_span
+
+# Re-exported for http.middleware.OtelSpanMiddleware, which reads these via a
+# lazy ``import tapps_brain.http_adapter`` so tests patching them keep working.
+from tapps_brain.otel_tracer import (  # noqa: F401
+    SPAN_KIND_SERVER,
+    extract_trace_context,
+    start_span,
+)
 from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -170,165 +182,6 @@ _EXPERIENCE_MAX_BODY_BYTES: int = 262_144
 _EXPERIENCE_BATCH_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB total for batch.
 _EXPERIENCE_BATCH_MAX_ITEMS: int = 100
 
-# STORY-070.12: bounded per-(project_id, agent_id) request counters for
-# Prometheus export.  agent_id cardinality is capped at 100 distinct values
-# per project; overflow is bucketed as "other".
-_MAX_AGENT_ID_CARDINALITY = 100  # noqa: F811
-
-
-# TAP-600: bounded project cardinality — evict least-recently-used projects
-# when the project count exceeds this limit.  Default 10 000; override via
-# TAPPS_BRAIN_MAX_PROJECT_CARDINALITY.  Zero or negative disables the cap
-# (unbounded growth — use only in testing or single-tenant deployments).
-def _parse_max_project_cardinality() -> int:
-    raw = os.environ.get("TAPPS_BRAIN_MAX_PROJECT_CARDINALITY", "10000") or "10000"
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning(
-            "http_adapter.max_project_cardinality.invalid",
-            raw=raw,
-            fallback=10000,
-        )
-        return 10000
-
-
-_MAX_PROJECT_CARDINALITY: int = _parse_max_project_cardinality()
-_LABELED_REQUEST_COUNTS: dict[tuple[str, str], int] = {}  # type: ignore[no-redef]  # noqa: F811
-_LABELED_REQUEST_COUNTS_LOCK = threading.Lock()  # noqa: F811
-# TAP-599: per-project set of seen agent_ids for O(1) cardinality checks.
-# Maintained in lock-step with _LABELED_REQUEST_COUNTS inside the lock.
-_DISTINCT_AGENTS_PER_PROJECT: dict[str, set[str]] = {}  # type: ignore[no-redef]  # noqa: F811
-# TAP-600: LRU order tracker — OrderedDict preserves insertion/access order.
-# Keys are project_ids; values are None.  The *first* key is the LRU project.
-_PROJECT_LRU: OrderedDict[str, None] = OrderedDict()
-# TAP-600: cumulative count of project evictions since process start.
-_TENANT_LABELS_EVICTED_TOTAL: int = 0
-
-# TAP-2866: per-(path, status) HTTP error counter.  Exported to Prometheus as
-# tapps_brain_http_errors_total so a data-plane endpoint that is failing (e.g.
-# /v1/experience 500ing) is observable even while /health reads green — the
-# exact gap that hid the TAP-2865 incident for a 5-minute window.
-_HTTP_ERROR_COUNTS: dict[tuple[str, str], int] = {}
-_HTTP_ERROR_COUNTS_LOCK = threading.Lock()
-
-
-def _record_http_error(path: str, status: int) -> None:
-    """Increment the per-(path, status) HTTP error counter (TAP-2866)."""
-    key = (path, str(status))
-    with _HTTP_ERROR_COUNTS_LOCK:
-        _HTTP_ERROR_COUNTS[key] = _HTTP_ERROR_COUNTS.get(key, 0) + 1
-
-
-# STORY-073.2: process-wide ProfileResolver singleton.  Built once on first
-# /mcp request; guarded by _PROFILE_RESOLVER_LOCK.
-_PROFILE_RESOLVER: Any = None  # type: ignore[no-redef]  # noqa: F811
-_PROFILE_RESOLVER_LOCK = threading.Lock()  # noqa: F811
-
-
-def _record_labeled_request(project_id: str, agent_id: str) -> None:  # type: ignore[no-redef]  # noqa: F811
-    """Increment the per-(project_id, agent_id) request counter (STORY-070.12).
-
-    TAP-599: Uses a per-project set for O(1) membership/cardinality checks
-    instead of an O(N) set-comprehension over the full _LABELED_REQUEST_COUNTS
-    dict.  Both structures are updated inside the same lock so they stay in
-    sync.
-
-    TAP-600: Maintains a bounded LRU of active project_ids.  When the number
-    of distinct projects exceeds ``_MAX_PROJECT_CARDINALITY`` the
-    least-recently-used project is evicted from all in-memory counter
-    structures and ``_TENANT_LABELS_EVICTED_TOTAL`` is incremented so
-    operators can detect high project-churn via the Prometheus
-    ``tapps_brain_tenant_labels_evicted_total`` counter.
-    """
-    global _TENANT_LABELS_EVICTED_TOTAL
-    with _LABELED_REQUEST_COUNTS_LOCK:
-        # --- TAP-600: LRU bookkeeping -----------------------------------
-        # When _MAX_PROJECT_CARDINALITY <= 0 the LRU is disabled and
-        # projects accumulate unboundedly (single-tenant / test use only).
-        if _MAX_PROJECT_CARDINALITY > 0:
-            if project_id in _PROJECT_LRU:
-                # Move to "most recently used" position (end of OrderedDict).
-                _PROJECT_LRU.move_to_end(project_id)
-            else:
-                # New project — evict LRU if at cap.
-                if len(_PROJECT_LRU) >= _MAX_PROJECT_CARDINALITY:
-                    lru_project, _ = _PROJECT_LRU.popitem(last=False)
-                    # Remove all counter entries for the evicted project.
-                    evict_keys = [k for k in _LABELED_REQUEST_COUNTS if k[0] == lru_project]
-                    for k in evict_keys:
-                        del _LABELED_REQUEST_COUNTS[k]
-                    _DISTINCT_AGENTS_PER_PROJECT.pop(lru_project, None)
-                    _TENANT_LABELS_EVICTED_TOTAL += 1
-                _PROJECT_LRU[project_id] = None
-        # --- agent cardinality cap (unchanged from TAP-599) -------------
-        distinct = _DISTINCT_AGENTS_PER_PROJECT.setdefault(project_id, set())
-        if agent_id not in distinct and len(distinct) >= _MAX_AGENT_ID_CARDINALITY:
-            agent_id = "other"
-        key = (project_id, agent_id)
-        _LABELED_REQUEST_COUNTS[key] = _LABELED_REQUEST_COUNTS.get(key, 0) + 1
-        # Note: when agent_id was remapped to "other" the add below can grow
-        # the set to _MAX_AGENT_ID_CARDINALITY + 1.  This is intentional —
-        # subsequent overflow agents still bucket to "other" via the
-        # `agent_id not in distinct` check, which evaluates False for "other".
-        distinct.add(agent_id)
-
-
-def _get_profile_resolver() -> Any:  # type: ignore[no-redef]  # noqa: F811
-    """Return the process-wide :class:`~tapps_brain.mcp_server.profile_resolver.ProfileResolver`.
-
-    Built lazily on first call; subsequent calls return the cached singleton.
-    Thread-safe via ``_PROFILE_RESOLVER_LOCK``.
-
-    The resolver is initialised with:
-    * The bundled :class:`~tapps_brain.mcp_server.profile_registry.ProfileRegistry`.
-    * An optional agent-profile getter backed by ``TAPPS_BRAIN_HIVE_DSN`` or
-      ``TAPPS_BRAIN_DATABASE_URL`` when a Postgres DSN is configured.
-    * The ``TAPPS_BRAIN_DEFAULT_PROFILE`` env var (default ``"full"``).
-    """
-    global _PROFILE_RESOLVER
-    if _PROFILE_RESOLVER is not None:
-        return _PROFILE_RESOLVER
-    with _PROFILE_RESOLVER_LOCK:
-        if _PROFILE_RESOLVER is not None:
-            return _PROFILE_RESOLVER
-        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
-        from tapps_brain.mcp_server.profile_resolver import ProfileResolver
-
-        registry = ProfileRegistry()
-
-        # Build an agent-profile getter if a Postgres DSN is available.
-        getter = None
-        dsn = get_settings().dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN", "").strip()
-        if dsn and (dsn.startswith("postgres://") or dsn.startswith("postgresql://")):
-            try:
-                from tapps_brain.postgres_connection import PostgresConnectionManager
-                from tapps_brain.postgres_hive import PostgresAgentRegistry
-
-                _cm = PostgresConnectionManager(dsn)
-                _pg_agent_reg = PostgresAgentRegistry(_cm)
-
-                def _pg_getter(project_id: str, agent_id: str) -> str | None:
-                    row = _pg_agent_reg.get(agent_id)
-                    if row is None:
-                        return None
-                    return str(row.get("profile") or "") or None
-
-                getter = _pg_getter
-            except Exception as exc:
-                logger.warning(
-                    "http_adapter.profile_resolver.agent_registry_unavailable",
-                    error=str(exc),
-                    detail=(
-                        "Agent-registry lookup disabled for profile resolution. "
-                        "Profile will fall back to header or server default."
-                    ),
-                )
-
-        _PROFILE_RESOLVER = ProfileResolver(registry, agent_profile_getter=getter)
-        return _PROFILE_RESOLVER
-
-
 # ---------------------------------------------------------------------------
 # OpenAPI spec — generated from FastAPI's route table and enriched with
 # the dual auth schemes, tenant headers, error envelope, and the ASGI-mounted
@@ -338,28 +191,37 @@ def _get_profile_resolver() -> Any:  # type: ignore[no-redef]  # noqa: F811
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers (lifted verbatim from the legacy handler, behavior-identical)
+# Shared helpers
 # ---------------------------------------------------------------------------
 
 
-def _service_version() -> str:  # type: ignore[no-redef]  # noqa: F811
+def _coerce_int(body: dict[str, Any], field: str, default: int) -> int:
+    """Coerce a client-supplied body field to ``int`` or raise a 400.
+
+    TAP-2865/TAP-2140 class: a malformed *client* payload (``"five"``, a list,
+    a dict) must report as ``bad_request``, not fall through ``int()`` to the
+    generic 500 catch-all.
+    """
+    raw = body.get(field, default)
     try:
-        from importlib.metadata import version
+        return int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": f"'{field}' must be an integer."},
+        ) from None
 
-        return version("tapps-brain")
-    except Exception:
-        return "unknown"
 
-
-def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:  # type: ignore[no-redef]  # noqa: F811
-    """STORY-069.7: filter diagnostics/feedback to a single project_id."""
-    filtered = dict(payload)
-    for key in ("diagnostics_history", "feedback_events"):
-        rows = filtered.get(key) or []
-        filtered[key] = [
-            row for row in rows if isinstance(row, dict) and row.get("project_id") == project_id
-        ]
-    return filtered
+def _coerce_float(body: dict[str, Any], field: str, default: float) -> float:
+    """Coerce a client-supplied body field to ``float`` or raise a 400."""
+    raw = body.get(field, default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_request", "detail": f"'{field}' must be a number."},
+        ) from None
 
 
 def _validate_uuid_field(value: Any, field_name: str) -> str:
@@ -417,525 +279,6 @@ async def _parse_json_object_body(request: Request) -> dict[str, Any]:
             detail={"error": "bad_request", "detail": "Request body must be a JSON object."},
         )
     return body
-
-
-# TAP-2866: deep-probe cache for the experience write path (table + partitions).
-_EXPERIENCE_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
-
-
-def _probe_experience_schema(dsn: str | None) -> tuple[bool, str]:
-    """TAP-2866: deep readiness probe for the experience-event write path.
-
-    ``/health`` and the default ``/healthz`` only check generic DB reachability
-    (``SELECT 1`` + migration version), so a missing ``experience_events``
-    migration — the core ``POST /v1/experience`` write path — would read green
-    while every write failed.  This probe confirms the partitioned
-    ``experience_events`` table exists and has at least one partition (so inserts
-    land somewhere), making a broken / un-migrated write path observable via
-    ``/healthz?deep=1`` and the ``tapps_brain_experience_writable`` gauge.
-
-    Result is cached for ``_PROBE_CACHE_TTL`` seconds (same as :func:`_probe_db`)
-    so a Prometheus scrape + load-balancer probe don't each open a connection.
-    Returns ``(writable, detail)``; never raises.
-    """
-    if not dsn:
-        return False, "no DSN configured"
-    now = time.monotonic()
-    cached = _EXPERIENCE_PROBE_CACHE.get(dsn)
-    if cached is not None and now < cached[0]:
-        return cached[1]
-    result: tuple[bool, str]
-    try:
-        import psycopg
-
-        with psycopg.connect(dsn, connect_timeout=5) as conn, conn.cursor() as cur:
-            cur.execute("SELECT to_regclass('public.experience_events')")
-            row = cur.fetchone()
-            if not row or row[0] is None:
-                result = (False, "experience_events table missing (migration not applied)")
-            else:
-                cur.execute(
-                    "SELECT count(*) FROM pg_catalog.pg_inherits "
-                    "WHERE inhparent = 'public.experience_events'::regclass"
-                )
-                prow = cur.fetchone()
-                partitions = int(prow[0]) if prow and prow[0] is not None else 0
-                if partitions == 0:
-                    result = (False, "experience_events has no partitions")
-                else:
-                    result = (True, f"ready ({partitions} partitions)")
-    except Exception:
-        result = (False, "experience_events probe failed")
-    _EXPERIENCE_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
-    return result
-
-
-def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:  # type: ignore[no-redef]  # noqa: F811
-    """Return pool stats dict from a store's hive connection manager, or None."""
-    if store is None:
-        return None
-    try:
-        hive = getattr(store, "_hive_store", None)
-        cm = getattr(hive, "_cm", None)
-        if cm is not None and hasattr(cm, "get_pool_stats"):
-            stats: dict[str, Any] = cm.get_pool_stats()
-            return stats
-    except (AttributeError, TypeError):
-        pass  # hive connection manager unavailable or pool_stats not exposed
-    return None
-
-
-def _collect_metrics(  # type: ignore[no-redef]  # noqa: F811
-    dsn: str | None,
-    store: Any = None,
-    *,
-    redact_tenant_labels: bool = False,
-    process_start_time: float | None = None,
-) -> str:
-    """Render Prometheus exposition text.
-
-    ``redact_tenant_labels`` (TAP-547): when ``True`` the per-tenant labels
-    ``project_id`` and ``agent_id`` are dropped from
-    ``tapps_brain_mcp_requests_total`` and ``tapps_brain_tool_calls_total``
-    and the counters are aggregated across those dimensions.  This is the
-    shape served to anonymous (or unauthenticated) scrapers so reachable-
-    but-unprivileged callers cannot enumerate tenant/agent activity.
-    """
-    _start = process_start_time if process_start_time is not None else _PROCESS_START_TIME
-    lines: list[str] = []
-
-    def gauge(name: str, value: float, help_text: str = "") -> None:
-        if help_text:
-            lines.append(f"# HELP {name} {help_text}")
-        lines.append(f"# TYPE {name} gauge")
-        lines.append(f"{name} {value}")
-
-    gauge(
-        "tapps_brain_process_start_time_seconds",
-        _start,
-        "Unix timestamp when tapps-brain HTTP adapter was started.",
-    )
-    gauge(
-        "tapps_brain_process_uptime_seconds",
-        time.time() - _start,
-        "Seconds since tapps-brain HTTP adapter started.",
-    )
-    gauge(
-        "tapps_brain_python_info",
-        1.0,
-        f"Python version info (version={sys.version_info.major}.{sys.version_info.minor}).",
-    )
-
-    is_ready, migration_version, _ = _probe_db(dsn)
-    gauge(
-        "tapps_brain_db_ready",
-        1.0 if is_ready else 0.0,
-        "1 if the configured Postgres database responded to a probe, 0 otherwise.",
-    )
-    if migration_version is not None:
-        gauge(
-            "tapps_brain_db_migration_version",
-            float(migration_version),
-            "Highest applied Hive schema migration version.",
-        )
-
-    # TAP-2866: deep write-path readiness — 1 when the experience_events table
-    # and its partitions exist, 0 when the migration is missing.  Lets operators
-    # alert on a broken POST /v1/experience path that tapps_brain_db_ready (a
-    # generic SELECT 1) cannot see.
-    experience_writable, _ = _probe_experience_schema(dsn)
-    gauge(
-        "tapps_brain_experience_writable",
-        1.0 if experience_writable else 0.0,
-        "1 if the experience_events write path (table + partitions) is present, 0 otherwise.",
-    )
-
-    # TAP-2866: per-(path, status) HTTP error counter.  No tenant labels, so it
-    # is emitted in full regardless of redaction.  Only present series are
-    # written; alert with `tapps_brain_http_errors_total{status=~"5.."} > 0`.
-    with _HTTP_ERROR_COUNTS_LOCK:
-        error_snapshot = dict(_HTTP_ERROR_COUNTS)
-    lines.append(
-        "# HELP tapps_brain_http_errors_total HTTP 4xx/5xx responses by path and status (TAP-2866)."
-    )
-    lines.append("# TYPE tapps_brain_http_errors_total counter")
-    for (err_path, err_status), err_count in sorted(error_snapshot.items()):
-        safe_path = err_path.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(
-            f'tapps_brain_http_errors_total{{path="{safe_path}",status="{err_status}"}} {err_count}'
-        )
-
-    # TAP-600: snapshot both the eviction counter and the request counts inside
-    # the same lock acquisition so they are consistent with each other.
-    # Always emit tapps_brain_tenant_labels_evicted_total (even at zero) so
-    # operators have a stable Prometheus series they can alert on.
-    with _LABELED_REQUEST_COUNTS_LOCK:
-        snapshot_evicted = _TENANT_LABELS_EVICTED_TOTAL
-        snapshot_counts = dict(_LABELED_REQUEST_COUNTS)
-
-    lines.append(
-        "# HELP tapps_brain_tenant_labels_evicted_total "
-        "Cumulative number of project_id entries evicted from the in-memory "
-        "request-counter LRU cache (TAP-600). Non-zero indicates high "
-        "project_id churn; consider increasing "
-        "TAPPS_BRAIN_MAX_PROJECT_CARDINALITY."
-    )
-    lines.append("# TYPE tapps_brain_tenant_labels_evicted_total counter")
-    lines.append(f"tapps_brain_tenant_labels_evicted_total {snapshot_evicted}")
-
-    # STORY-070.12: per-(project_id, agent_id) request counters.
-    # TAP-547: drop labels entirely when redacting — we still emit the
-    # counter so scrapers have a total-volume signal, just not per-tenant.
-    if snapshot_counts:
-        lines.append(
-            "# HELP tapps_brain_mcp_requests_total "
-            "Total MCP requests, labelled by project_id and agent_id."
-        )
-        lines.append("# TYPE tapps_brain_mcp_requests_total counter")
-        if redact_tenant_labels:
-            total = sum(snapshot_counts.values())
-            lines.append(f"tapps_brain_mcp_requests_total {total}")
-        else:
-            for (pid, aid), count in sorted(snapshot_counts.items()):
-                safe_pid = pid.replace('"', '\\"')
-                safe_aid = aid.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_requests_total{{project_id="{safe_pid}",'
-                    f'agent_id="{safe_aid}"}} {count}'
-                )
-
-    # STORY-070.12: per-(project_id, agent_id, tool, status) tool call counters.
-    # TAP-547: when redacting, aggregate over (project_id, agent_id) but
-    # keep (tool, status) — those are not tenant-identifying and remain
-    # useful for ops / alerting on anonymous scrapes.
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.otel_tracer import get_tool_call_counts_snapshot
-
-        tool_counts = get_tool_call_counts_snapshot()
-        if tool_counts:
-            lines.append(
-                "# HELP tapps_brain_tool_calls_total "
-                "Total MCP tool invocations labelled by project_id, agent_id, tool, and status."
-            )
-            lines.append("# TYPE tapps_brain_tool_calls_total counter")
-            if redact_tenant_labels:
-                aggregated: dict[tuple[str, str], int] = {}
-                for (_pid, _aid, tool, status), count in tool_counts.items():
-                    key = (tool, status)
-                    aggregated[key] = aggregated.get(key, 0) + count
-                for (tool, status), count in sorted(aggregated.items()):
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
-            else:
-                for (pid, aid, tool, status), count in sorted(tool_counts.items()):
-                    safe_pid = pid.replace('"', '\\"')
-                    safe_aid = aid.replace('"', '\\"')
-                    safe_tool = tool.replace('"', '\\"')
-                    safe_status = status.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_tool_calls_total{{project_id="{safe_pid}",'
-                        f'agent_id="{safe_aid}",tool="{safe_tool}",'
-                        f'status="{safe_status}"}} {count}'
-                    )
-
-    # TAP-549: in-memory session-state cardinality gauge.  Alertable
-    # signal for the "client rotates session_id every call" failure mode
-    # — the gauge should stay well below _SESSION_STATE_HARD_CAP (10_000)
-    # on a healthy adapter; sustained growth means the sweep / eviction
-    # isn't keeping up.  Always emit (even when None/0) so dashboards
-    # have a stable series.
-    if store is not None and hasattr(store, "active_session_count"):
-        with suppress(Exception):
-            # Best-effort gauge — a broken store must never crash /metrics.
-            gauge(
-                "tapps_brain_store_active_sessions",
-                float(store.active_session_count()),
-                "Distinct session_ids tracked in MemoryStore in-memory "
-                "implicit-feedback helper dicts.",
-            )
-
-    # STORY-066.7: live pool stats from the hive connection manager.
-    _pool_stats = _get_hive_pool_stats(store)
-    if _pool_stats:
-        gauge(
-            "tapps_brain_pool_size",
-            float(_pool_stats.get("pool_size", 0)),
-            "Current number of open connections in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_available",
-            float(_pool_stats.get("pool_available", 0)),
-            "Number of idle connections available in the Hive pool.",
-        )
-        gauge(
-            "tapps_brain_pool_saturation",
-            float(_pool_stats.get("pool_saturation", 0.0)),
-            "Fraction of Hive pool max_size currently in use (0.0-1.0).",
-        )
-        # TAP-729: expose whether live pool stats were successfully read.
-        # 0.0 means the pool is not open or get_stats() raised — operators
-        # can alert on this to detect observability gaps.
-        gauge(
-            "tapps_brain_pool_stats_available",
-            1.0 if _pool_stats.get("pool_stats_available") else 0.0,
-            "1 if pool stats were successfully read from psycopg_pool; "
-            "0 if the pool is not open or get_stats() raised.",
-        )
-
-    # TAP-655: per-project counter for missing HNSW indexes detected at startup.
-    # Non-zero means migration 002 was not applied on that project's DB.
-    # TAP-547: drop project_id label when redacting to prevent tenant enumeration.
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.postgres_private import get_missing_index_counts_snapshot
-
-        missing_idx_counts = get_missing_index_counts_snapshot()
-        if missing_idx_counts:
-            lines.append(
-                "# HELP tapps_brain_private_missing_indexes_total "
-                "Number of startup checks that found idx_priv_embedding_hnsw absent "
-                "(migration 002 not applied). Non-zero means vector recall falls back "
-                "to a sequential scan."
-            )
-            lines.append("# TYPE tapps_brain_private_missing_indexes_total counter")
-            if redact_tenant_labels:
-                total = sum(missing_idx_counts.values())
-                lines.append(f"tapps_brain_private_missing_indexes_total {total}")
-            else:
-                for project_id, count in sorted(missing_idx_counts.items()):
-                    safe_pid = project_id.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_private_missing_indexes_total{{project_id="{safe_pid}"}} {count}'
-                    )
-
-    # STORY-073.4: profile-filter metrics (cardinality bounded by profile count × tool count).
-    # suppress(Exception): any import or runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        from tapps_brain.mcp_server.tool_filter import get_profile_filter_metrics_snapshot
-
-        _filter_snap = get_profile_filter_metrics_snapshot()
-
-        # mcp_tools_list_total{profile}
-        list_total = _filter_snap.get("list_total", {})
-        if list_total:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_list_total Total tools/list calls per MCP profile."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_list_total counter")
-            for _profile, _count in sorted(list_total.items()):
-                _sp = _profile.replace('"', '\\"')
-                lines.append(f'tapps_brain_mcp_tools_list_total{{profile="{_sp}"}} {_count}')
-
-        # mcp_tools_list_visible_tools{profile} — gauge
-        list_visible = _filter_snap.get("list_visible", {})
-        if list_visible:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_list_visible_tools "
-                "Last observed visible tool count per MCP profile after filtering."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_list_visible_tools gauge")
-            for _profile, _vis in sorted(list_visible.items()):
-                _sp = _profile.replace('"', '\\"')
-                lines.append(f'tapps_brain_mcp_tools_list_visible_tools{{profile="{_sp}"}} {_vis}')
-
-        # mcp_tools_call_total{profile, tool, outcome}
-        call_total = _filter_snap.get("call_total", {})
-        if call_total:
-            lines.append(
-                "# HELP tapps_brain_mcp_tools_call_total "
-                "Total tools/call attempts, labelled by profile, tool, and outcome."
-            )
-            lines.append("# TYPE tapps_brain_mcp_tools_call_total counter")
-            for (_profile, _tool, _outcome), _count in sorted(call_total.items()):
-                _sp = _profile.replace('"', '\\"')
-                _st = _tool.replace('"', '\\"')
-                _so = _outcome.replace('"', '\\"')
-                lines.append(
-                    f'tapps_brain_mcp_tools_call_total{{profile="{_sp}",'
-                    f'tool="{_st}",outcome="{_so}"}} {_count}'
-                )
-
-    # STORY-073.4: profile resolver resolution-source + cache metrics.
-    # suppress(Exception): any runtime error must not crash /metrics.
-    with suppress(Exception):  # pragma: no cover
-        _resolver = _PROFILE_RESOLVER
-        if _resolver is not None:
-            _res_stats = _resolver.resolution_stats()
-            if _res_stats:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_resolution_source_total "
-                    "Profile resolution source per MCP request."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_resolution_source_total counter")
-                for _src, _count in sorted(_res_stats.items()):
-                    _ss = _src.replace('"', '\\"')
-                    lines.append(
-                        f'tapps_brain_mcp_profile_resolution_source_total{{source="{_ss}"}} {_count}'
-                    )
-
-            _cache = _resolver.cache_stats()
-            # Only emit if at least one cache event has occurred.
-            if _cache.get("hits", 0) + _cache.get("misses", 0) + _cache.get("invalidated", 0) > 0:
-                lines.append(
-                    "# HELP tapps_brain_mcp_profile_cache_events_total "
-                    "Profile resolver cache events (hit/miss/invalidated)."
-                )
-                lines.append("# TYPE tapps_brain_mcp_profile_cache_events_total counter")
-                # Map result label → cache_stats() key; extend here when new event types land.
-                _result_to_key = {"hit": "hits", "miss": "misses", "invalidated": "invalidated"}
-                for _result, _key in _result_to_key.items():
-                    _count = _cache.get(_key, 0)
-                    if _count:
-                        lines.append(
-                            f'tapps_brain_mcp_profile_cache_events_total{{result="{_result}"}} {_count}'
-                        )
-
-    # TAP-1849: tools/list probe latency histogram (doctor probe-latency check).
-    _emit_probe_histogram(lines)
-
-    _emit_snapshot_metrics(lines)
-
-    lines.append("")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Settings resolved from environment
-# ---------------------------------------------------------------------------
-
-
-class _Settings:  # type: ignore[no-redef]  # noqa: F811
-    """Process-wide configuration resolved from env at app startup."""
-
-    def __init__(self) -> None:
-        self.dsn = self._resolve_dsn()
-        self.auth_token = self._resolve_auth_token()
-        self.admin_token = self._resolve_admin_token()
-        # TAP-547: optional bearer token gating /metrics.  When set, the
-        # endpoint serves the full per-(project_id, agent_id) counter
-        # surface only to callers presenting the correct token; anonymous
-        # callers receive a redacted (tenant-label-stripped) body.  When
-        # unset, we still serve the redacted body so anonymous scrapes
-        # can't enumerate tenants.
-        self.metrics_token = self._resolve_metrics_token()
-        self.allowed_origins = self._resolve_allowed_origins()
-        self.version = _service_version()
-        # Optional store injected by the CLI entry point / tests.
-        self.store: MemoryStore | None = None
-        # Snapshot cache
-        self.snapshot_lock = threading.Lock()
-        self.snapshot_cache: Any = None
-        self.snapshot_cache_at: float = 0.0
-        # TAP-548: process-wide ``IdempotencyStore`` singleton, built in
-        # the FastAPI lifespan startup hook when
-        # ``TAPPS_BRAIN_IDEMPOTENCY=1`` and a DSN is configured, and
-        # closed on shutdown.  Re-using one store reuses one
-        # ``PostgresConnectionManager`` pool instead of opening a fresh
-        # psycopg connection per write — the previous per-request
-        # construction bypassed the hardened pool and raced
-        # ``max_connections`` under load.
-        self.idempotency_store: Any = None
-        # EPIC-072: async-native write path. Populated in lifespan startup
-        # when a Postgres DSN and store are available (TAP-1117 graduated
-        # this from the TAPPS_BRAIN_ASYNC_NATIVE opt-in flag).  None when no
-        # async backend can be built (e.g. no DSN configured, test injection).
-        self.async_store: Any = None
-
-    @staticmethod
-    def _resolve_dsn() -> str | None:
-        dsn = (
-            os.environ.get("TAPPS_BRAIN_DATABASE_URL")
-            or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
-            or ""
-        ).strip()
-        return dsn or None
-
-    @staticmethod
-    def _read_secret(env_name: str, file_env_name: str) -> str | None:
-        tok = os.environ.get(env_name, "").strip()
-        if tok:
-            return tok
-        file_ = os.environ.get(file_env_name, "").strip()
-        if file_:
-            try:
-                return Path(file_).read_text().strip() or None
-            except OSError:
-                return None
-        return None
-
-    @classmethod
-    def _resolve_auth_token(cls) -> str | None:
-        # STORY-070.3: accept either new (TAPPS_BRAIN_AUTH_TOKEN) or legacy
-        # (TAPPS_BRAIN_HTTP_AUTH_TOKEN) name for the data-plane token.
-        return cls._read_secret(
-            "TAPPS_BRAIN_AUTH_TOKEN", "TAPPS_BRAIN_AUTH_TOKEN_FILE"
-        ) or cls._read_secret("TAPPS_BRAIN_HTTP_AUTH_TOKEN", "TAPPS_BRAIN_HTTP_AUTH_TOKEN_FILE")
-
-    @classmethod
-    def _resolve_admin_token(cls) -> str | None:
-        return cls._read_secret("TAPPS_BRAIN_ADMIN_TOKEN", "TAPPS_BRAIN_ADMIN_TOKEN_FILE")
-
-    @classmethod
-    def _resolve_metrics_token(cls) -> str | None:
-        return cls._read_secret("TAPPS_BRAIN_METRICS_TOKEN", "TAPPS_BRAIN_METRICS_TOKEN_FILE")
-
-    @staticmethod
-    def _resolve_allowed_origins() -> list[str]:
-        raw = (os.environ.get("TAPPS_BRAIN_ALLOWED_ORIGINS") or "").strip()
-        if not raw:
-            return []
-        return [o.strip() for o in raw.split(",") if o.strip()]
-
-
-_settings = _Settings()  # noqa: F811
-
-
-def get_settings() -> _Settings:  # type: ignore[no-redef]  # noqa: F811
-    return _settings
-
-
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
-
-
-class OtelSpanMiddleware(BaseHTTPMiddleware):  # type: ignore[no-redef]  # noqa: F811
-    """Wrap each request in an OTel server span with W3C traceparent extraction."""
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
-        carrier: dict[str, str] = {}
-        tp = request.headers.get("traceparent")
-        if tp:
-            carrier["traceparent"] = tp
-        ts = request.headers.get("tracestate")
-        if ts:
-            carrier["tracestate"] = ts
-        trace_ctx = extract_trace_context(carrier) if carrier else None
-        method = request.method
-        path = request.url.path
-        project_id = request.headers.get("x-project-id", "")
-        # STORY-070.7: tag spans with per-call agent identity so observability
-        # can filter by tenant × agent without inspecting headers downstream.
-        agent_id_header = request.headers.get("x-tapps-agent") or request.headers.get(
-            "x-agent-id", ""
-        )
-        with start_span(
-            f"{method} {path}",
-            {
-                "http.method": method,
-                "http.route": path,
-                "tapps.project_id": project_id,
-                "tapps.agent_id": agent_id_header,
-            },
-            kind=SPAN_KIND_SERVER,
-            context=trace_ctx,
-        ):
-            return await call_next(request)  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -1321,6 +664,11 @@ def create_app(
                 except Exception:
                     logger.debug("http_adapter.async_store_close_failed", exc_info=True)
                 cfg.async_store = None
+            # Release the shared project-registry pool used by per-tenant
+            # auth and the /admin/* routes.
+            from tapps_brain.http.auth import close_registry_cm
+
+            close_registry_cm()
 
     app = FastAPI(
         title="tapps-brain HTTP API",
@@ -1354,15 +702,19 @@ def create_app(
             mcp_holder["asgi_sub"] = asgi_sub
 
     # Register middlewares.  add_middleware order is reversed: last-added = outermost
-    # = first to process requests.  Origin allowlist must run before MCP tenant auth
-    # so a bad Origin returns 403 before the auth check can return 401/403 (TAP-627).
-    # RestProfileGateMiddleware (TAP-1929) runs after MCP tenant middleware so /mcp
-    # routes are unaffected and before the route handlers so /v1/* denials avoid the
-    # body parse / DB hop entirely.
-    app.add_middleware(OtelSpanMiddleware)
+    # = first to process requests.  Request order is therefore:
+    #   OtelSpan → OriginAllowlist → RestProfileGate → McpTenant → handlers.
+    # OtelSpanMiddleware is outermost so every rejection (403 from the Origin
+    # allowlist, 400/401/403 from the profile gate or /mcp bearer auth) still
+    # gets a server span + traceparent propagation.  Origin allowlist runs
+    # before MCP tenant auth so a bad Origin returns 403 before the auth check
+    # can return 401/403 (TAP-627).  RestProfileGateMiddleware (TAP-1929) only
+    # touches /v1/* paths and runs before the route handlers so denials avoid
+    # the body parse / DB hop entirely.
     app.add_middleware(McpTenantMiddleware)
     app.add_middleware(RestProfileGateMiddleware)
     app.add_middleware(OriginAllowlistMiddleware)
+    app.add_middleware(OtelSpanMiddleware)
 
     # -------- ops routes --------
 
@@ -1510,12 +862,19 @@ def create_app(
         base_headers = {
             "Cache-Control": "public, max-age=300",
             "ETag": etag,
+            # The body is a function of X-Brain-Profile (TAP-1929) — without
+            # Vary, a shared cache would key on URL alone and serve whichever
+            # profile variant it cached first to every consumer for 300 s.
+            "Vary": "X-Brain-Profile",
             "X-Brain-Version": cfg.version,
             "X-Catalog-Generated-At": str(generated_at),
         }
-        # If-None-Match — exact match (weak or strong) → 304 + headers, no body.
-        client_etag = (request.headers.get("if-none-match") or "").strip()
-        if client_etag and client_etag == etag:
+        # If-None-Match may carry a comma-separated list of validators (RFC
+        # 9110 §13.1.2) — match any entry, not just an exact single string.
+        client_etags = [
+            v.strip() for v in (request.headers.get("if-none-match") or "").split(",") if v.strip()
+        ]
+        if etag in client_etags or "*" in client_etags:
             return Response(status_code=304, headers=base_headers)
         return Response(content=content, media_type="application/json", headers=base_headers)
 
@@ -1554,7 +913,6 @@ def create_app(
         if cached is not None:
             return _tools_list_response(cached, cache_key, request)
 
-        from tapps_brain.http.profile_resolver import _get_profile_resolver
         from tapps_brain.mcp_server.profile_registry import UnknownProfileError
 
         try:
@@ -1802,6 +1160,13 @@ def create_app(
         absent, or the ``IdempotencyStore`` singleton was not built at
         startup (lifespan failure / feature flag off).
 
+        Raises ``HTTPException(503, idempotency_unavailable)`` when the
+        feature is enabled and the client sent a key but the store failed to
+        build — a retryable outage, not a server bug.  Mapping the 503 here
+        keeps the error contract identical across every route that calls this
+        (the single-shot routes used to let it fall through to the generic
+        500 catch-all while the batch routes returned 503).
+
         TAP-548: reads the process-wide singleton built once in the
         lifespan startup hook.
         """
@@ -1816,10 +1181,12 @@ def create_app(
         if istore is None:
             # Feature enabled + client key present but store failed to init —
             # refuse rather than silently allowing duplicate writes.
-            from tapps_brain.idempotency import IdempotencyUnavailableError
-
-            raise IdempotencyUnavailableError(
-                "Idempotency is enabled but the idempotency store is unavailable"
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "idempotency_unavailable",
+                    "detail": "Idempotency is enabled but the idempotency store is unavailable",
+                },
             )
         return ikey, istore
 
@@ -1964,7 +1331,7 @@ def create_app(
                     source=body.get("source", "agent"),
                     tags=body.get("tags"),
                     scope=body.get("scope", "project"),
-                    confidence=float(body.get("confidence", -1.0)),
+                    confidence=_coerce_float(body, "confidence", -1.0),
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                 )
@@ -1983,7 +1350,7 @@ def create_app(
                     source=body.get("source", "agent"),
                     tags=body.get("tags"),
                     scope=body.get("scope", "project"),
-                    confidence=float(body.get("confidence", -1.0)),
+                    confidence=_coerce_float(body, "confidence", -1.0),
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                 )
@@ -2125,7 +1492,7 @@ def create_app(
                     project_id,
                     agent_id,
                     key=mem_key,
-                    confidence_boost=float(body.get("confidence_boost", 0.0)),
+                    confidence_boost=_coerce_float(body, "confidence_boost", 0.0),
                 )
             else:
                 # TAP-1099: offload sync DB call to a worker thread.
@@ -2135,7 +1502,7 @@ def create_app(
                     project_id,
                     agent_id,
                     key=mem_key,
-                    confidence_boost=float(body.get("confidence_boost", 0.0)),
+                    confidence_boost=_coerce_float(body, "confidence_boost", 0.0),
                 )
             if isinstance(result, dict) and "error" in result:
                 status_code = 400
@@ -2192,13 +1559,9 @@ def create_app(
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
-        try:
-            ikey, istore = _get_ikey_and_istore(request)
-        except IdempotencyUnavailableError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"error": "idempotency_unavailable", "detail": str(exc)},
-            ) from exc
+        # Raises HTTPException(503, idempotency_unavailable) when the store
+        # singleton is missing — mapped inside the helper (TAP-548 follow-up).
+        ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
             guard = _ensure_idem_guard(project_id, ikey)
@@ -2384,13 +1747,9 @@ def create_app(
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
-        try:
-            ikey, istore = _get_ikey_and_istore(request)
-        except IdempotencyUnavailableError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"error": "idempotency_unavailable", "detail": str(exc)},
-            ) from exc
+        # Raises HTTPException(503, idempotency_unavailable) when the store
+        # singleton is missing — mapped inside the helper (TAP-548 follow-up).
+        ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
             guard = _ensure_idem_guard(project_id, ikey)
@@ -2555,7 +1914,7 @@ def create_app(
                 detail={"error": "bad_request", "detail": "query is required."},
             )
 
-        max_results = int(body.get("max_results", 5))
+        max_results = _coerce_int(body, "max_results", 5)
         max_results = max(max_results, 1)
 
         from tapps_brain.services import memory_service as _ms
@@ -3054,13 +2413,9 @@ def create_app(
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
-        try:
-            ikey, istore = _get_ikey_and_istore(request)
-        except IdempotencyUnavailableError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"error": "idempotency_unavailable", "detail": str(exc)},
-            ) from exc
+        # Raises HTTPException(503, idempotency_unavailable) when the store
+        # singleton is missing — mapped inside the helper (TAP-548 follow-up).
+        ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
             guard = _ensure_idem_guard(project_id, ikey)
@@ -3141,7 +2496,7 @@ def create_app(
                 agent_id,
                 event_type=event_type,
                 subject_key=body.get("subject_key") or None,
-                utility_score=float(body.get("utility_score", 0.0)),
+                utility_score=_coerce_float(body, "utility_score", 0.0),
                 payload=body.get("payload") or {},
                 entities=list(body.get("entities") or []),
                 edges=list(body.get("edges") or []),
@@ -3219,13 +2574,9 @@ def create_app(
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
-        try:
-            ikey, istore = _get_ikey_and_istore(request)
-        except IdempotencyUnavailableError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"error": "idempotency_unavailable", "detail": str(exc)},
-            ) from exc
+        # Raises HTTPException(503, idempotency_unavailable) when the store
+        # singleton is missing — mapped inside the helper (TAP-548 follow-up).
+        ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
             guard = _ensure_idem_guard(project_id, ikey)
@@ -3417,7 +2768,7 @@ def create_app(
             since=body.get("since") or None,
             until=body.get("until") or None,
             entity_id=body.get("entity_id") or None,
-            limit=int(body.get("limit", _kg_svc._QUERY_EVENTS_DEFAULT_LIMIT)),
+            limit=_coerce_int(body, "limit", _kg_svc._QUERY_EVENTS_DEFAULT_LIMIT),
         )
         if isinstance(result, dict) and result.get("error"):
             status = 400 if result.get("error") == "bad_request" else 503
@@ -3604,8 +2955,8 @@ def create_app(
             project_id,
             _kg_brain_id(),
             entity_ids=validated_entity_ids,
-            hops=max(1, min(int(body.get("hops", 1)), 2)),
-            limit=max(1, min(int(body.get("limit", 20)), 200)),
+            hops=max(1, min(_coerce_int(body, "hops", 1), 2)),
+            limit=max(1, min(_coerce_int(body, "limit", 20), 200)),
             predicate_filter=str(body.get("predicate_filter") or "") or None,
         )
         return JSONResponse(status_code=200, content=result)
@@ -3772,7 +3123,7 @@ def create_app(
             _kg_brain_id(),
             subject_id=subject_id,
             object_id=object_id,
-            max_hops=max(1, min(int(body.get("max_hops", 3)), ceiling)),
+            max_hops=max(1, min(_coerce_int(body, "max_hops", 3), ceiling)),
         )
         return JSONResponse(status_code=200, content=result)
 
@@ -4053,7 +3404,15 @@ def create_app(
 
     # -------- admin-plane routes (EPIC-069) --------
 
-    def _open_registry() -> tuple[Any, Any]:
+    def _open_registry() -> Any:
+        """Return a ``ProjectRegistry`` bound to the shared registry pool.
+
+        TAP-548-class fix: each admin request used to construct and tear down
+        a full ``PostgresConnectionManager`` pool.  The pool is now the
+        process-wide singleton shared with per-tenant auth
+        (:func:`tapps_brain.http.auth.get_registry_cm`) and is closed once in
+        lifespan shutdown.
+        """
         if not cfg.dsn:
             raise HTTPException(
                 status_code=503,
@@ -4062,19 +3421,15 @@ def create_app(
                     "detail": "TAPPS_BRAIN_DATABASE_URL is not configured.",
                 },
             )
-        from tapps_brain.postgres_connection import PostgresConnectionManager
+        from tapps_brain.http.auth import get_registry_cm
         from tapps_brain.project_registry import ProjectRegistry
 
-        cm = PostgresConnectionManager(cfg.dsn)
-        return ProjectRegistry(cm), cm
+        return ProjectRegistry(get_registry_cm(cfg.dsn))
 
     @app.get("/admin/projects", dependencies=[Depends(require_admin_auth)])
     async def _admin_projects_list() -> JSONResponse:
-        registry, cm = _open_registry()
-        try:
-            rows = registry.list_all()
-        finally:
-            cm.close()
+        registry = _open_registry()
+        rows = registry.list_all()
         return JSONResponse(
             status_code=200,
             content={
@@ -4152,24 +3507,21 @@ def create_app(
                 detail={"error": "bad_request", "detail": "Invalid profile or project_id."},
             )
 
-        registry, cm = _open_registry()
+        registry = _open_registry()
         try:
-            try:
-                record = registry.register(
-                    project_id,
-                    profile,
-                    source=source,
-                    approved=approved,
-                    notes=notes,
-                )
-            except ValueError:
-                logger.exception("http_adapter.project_register_failed")
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "bad_request", "detail": "Project registration failed."},
-                )
-        finally:
-            cm.close()
+            record = registry.register(
+                project_id,
+                profile,
+                source=source,
+                approved=approved,
+                notes=notes,
+            )
+        except ValueError:
+            logger.exception("http_adapter.project_register_failed")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "Project registration failed."},
+            )
         return JSONResponse(
             status_code=201,
             content={
@@ -4182,11 +3534,8 @@ def create_app(
 
     @app.get("/admin/projects/{project_id}", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_show(project_id: str) -> JSONResponse:
-        registry, cm = _open_registry()
-        try:
-            record = registry.get(project_id)
-        finally:
-            cm.close()
+        registry = _open_registry()
+        record = registry.get(project_id)
         if record is None:
             return JSONResponse(
                 status_code=404,
@@ -4205,11 +3554,8 @@ def create_app(
 
     @app.post("/admin/projects/{project_id}/approve", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_approve(project_id: str) -> JSONResponse:
-        registry, cm = _open_registry()
-        try:
-            updated = registry.approve(project_id)
-        finally:
-            cm.close()
+        registry = _open_registry()
+        updated = registry.approve(project_id)
         if not updated:
             return JSONResponse(
                 status_code=404,
@@ -4222,11 +3568,8 @@ def create_app(
 
     @app.delete("/admin/projects/{project_id}", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_delete(project_id: str) -> JSONResponse:
-        registry, cm = _open_registry()
-        try:
-            deleted = registry.delete(project_id)
-        finally:
-            cm.close()
+        registry = _open_registry()
+        deleted = registry.delete(project_id)
         if not deleted:
             return JSONResponse(
                 status_code=404,
@@ -4247,26 +3590,23 @@ def create_app(
 
         Returns the **plaintext token once** — store it immediately.
         """
-        registry, cm = _open_registry()
+        registry = _open_registry()
         try:
-            try:
-                plaintext = registry.rotate_token(project_id)
-            except LookupError:
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": "not_found", "project_id": project_id},
-                )
-            except ImportError:
-                logger.exception("http_adapter.rotate_token_missing_library")
-                raise HTTPException(
-                    status_code=503,
-                    detail={
-                        "error": "feature_unavailable",
-                        "detail": "Token hashing library is not available; contact operator.",
-                    },
-                )
-        finally:
-            cm.close()
+            plaintext = registry.rotate_token(project_id)
+        except LookupError:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "not_found", "project_id": project_id},
+            )
+        except ImportError:
+            logger.exception("http_adapter.rotate_token_missing_library")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "feature_unavailable",
+                    "detail": "Token hashing library is not available; contact operator.",
+                },
+            )
         return JSONResponse(
             status_code=201,
             content={
@@ -4279,11 +3619,8 @@ def create_app(
     @app.delete("/admin/projects/{project_id}/token", dependencies=[Depends(require_admin_auth)])
     async def _admin_project_revoke_token(project_id: str) -> JSONResponse:
         """Revoke (clear) the per-tenant token for *project_id*."""
-        registry, cm = _open_registry()
-        try:
-            revoked = registry.revoke_token(project_id)
-        finally:
-            cm.close()
+        registry = _open_registry()
+        revoked = registry.revoke_token(project_id)
         if not revoked:
             return JSONResponse(
                 status_code=404,
@@ -4299,6 +3636,11 @@ def create_app(
     @app.exception_handler(HTTPException)
     async def _http_exc_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         body = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
+        # TAP-2866: every 4xx/5xx must land in tapps_brain_http_errors_total —
+        # before this only 422/500 were counted, so a data-plane endpoint
+        # failing with 503 (idempotency/store/db unavailable) was invisible.
+        if exc.status_code >= 400:
+            _record_http_error(_request.url.path, exc.status_code)
         return JSONResponse(status_code=exc.status_code, content=body)
 
     # STORY-069.4: map ProjectNotRegisteredError → structured 403 so admin
@@ -4306,6 +3648,7 @@ def create_app(
     # legacy handler.  Shape preserved for backward compat.
     @app.exception_handler(_ProjectNotRegisteredError)
     async def _pne_handler(_request: Request, exc: _ProjectNotRegisteredError) -> JSONResponse:
+        _record_http_error(_request.url.path, 403)
         return JSONResponse(
             status_code=403,
             content={
@@ -4320,6 +3663,7 @@ def create_app(
     @app.exception_handler(_BrainDegradedError)
     async def _brain_degraded_handler(_request: Request, exc: _BrainDegradedError) -> JSONResponse:
         retry_after: int = exc.details.get("retry_after", 30)
+        _record_http_error(_request.url.path, 503)
         return JSONResponse(
             status_code=503,
             content=exc.http_body(retry_after=retry_after),
@@ -4331,6 +3675,7 @@ def create_app(
         _request: Request, exc: _BrainRateLimitedError
     ) -> JSONResponse:
         retry_after = exc.details.get("retry_after", 60)
+        _record_http_error(_request.url.path, 429)
         return JSONResponse(
             status_code=429,
             content=exc.http_body(retry_after=retry_after),
@@ -4340,6 +3685,7 @@ def create_app(
     @app.exception_handler(_TaxonomyError)
     async def _taxonomy_handler(_request: Request, exc: _TaxonomyError) -> JSONResponse:
         """Catch-all for all remaining TaxonomyError subclasses."""
+        _record_http_error(_request.url.path, exc.http_status)
         return JSONResponse(
             status_code=exc.http_status,
             content=exc.http_body(),

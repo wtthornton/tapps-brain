@@ -41,9 +41,7 @@ def normalize_memory_group(raw: str | None) -> str | None:
     if len(s) > MAX_MEMORY_GROUP_LENGTH:
         msg = f"memory_group exceeds max length ({len(s)} > {MAX_MEMORY_GROUP_LENGTH})."
         raise ValueError(msg)
-    if any(
-        ord(c) < _MIN_PRINTABLE_ASCII or _DEL_CHAR <= ord(c) <= _C1_CONTROL_END for c in s
-    ):
+    if any(ord(c) < _MIN_PRINTABLE_ASCII or _DEL_CHAR <= ord(c) <= _C1_CONTROL_END for c in s):
         msg = "memory_group must not contain control characters."
         raise ValueError(msg)
     return s

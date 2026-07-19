@@ -15,6 +15,7 @@ import hmac
 import os
 import threading
 import time
+from typing import Any
 
 import structlog
 
@@ -37,6 +38,9 @@ _ADMIN_RATE_LIMIT = int(os.environ.get("TAPPS_BRAIN_ADMIN_RATE_LIMIT", "10"))
 _ADMIN_RATE_WINDOW = int(os.environ.get("TAPPS_BRAIN_ADMIN_RATE_WINDOW", "60"))
 _admin_rate_lock = threading.Lock()
 _admin_rate_buckets: dict[str, collections.deque[float]] = {}
+# Sweep fully-expired buckets when the dict grows past this — a scan of
+# /admin/* from many source IPs must not grow the dict for process lifetime.
+_ADMIN_RATE_SWEEP_THRESHOLD = 1024
 
 
 def _check_admin_rate_limit(remote_addr: str) -> bool:
@@ -49,6 +53,16 @@ def _check_admin_rate_limit(remote_addr: str) -> bool:
     now = time.monotonic()
     cutoff = now - _ADMIN_RATE_WINDOW
     with _admin_rate_lock:
+        # Bound memory: keys were never removed, so a distributed scan grew
+        # the dict by one deque per source IP for the life of the process.
+        if len(_admin_rate_buckets) > _ADMIN_RATE_SWEEP_THRESHOLD:
+            stale = [
+                addr
+                for addr, bucket in _admin_rate_buckets.items()
+                if addr != remote_addr and (not bucket or bucket[-1] < cutoff)
+            ]
+            for addr in stale:
+                del _admin_rate_buckets[addr]
         dq = _admin_rate_buckets.setdefault(remote_addr, collections.deque())
         while dq and dq[0] < cutoff:
             dq.popleft()
@@ -79,6 +93,49 @@ def _per_tenant_auth_enabled() -> bool:
     return os.environ.get("TAPPS_BRAIN_PER_TENANT_AUTH", "") == "1"
 
 
+# TAP-548-class fix: per-tenant auth used to construct (and tear down) a full
+# ``PostgresConnectionManager`` pool — including the non-privileged-role
+# assertion round-trip — on *every* /v1/* request.  One process-wide manager
+# is built lazily and reused; ``close_registry_cm`` runs in lifespan shutdown.
+_registry_cm_lock = threading.Lock()
+_registry_cm: Any = None
+_registry_cm_dsn: str | None = None
+
+
+def get_registry_cm(dsn: str) -> Any:  # noqa: ANN401
+    """Return the process-wide registry ``PostgresConnectionManager`` for *dsn*.
+
+    Rebuilds the singleton if the DSN changed (test fixtures swap DSNs).
+    """
+    global _registry_cm, _registry_cm_dsn
+    with _registry_cm_lock:
+        if _registry_cm is not None and _registry_cm_dsn == dsn:
+            return _registry_cm
+        if _registry_cm is not None:
+            try:
+                _registry_cm.close()
+            except Exception:
+                logger.warning("auth.registry_cm_close_failed", exc_info=True)
+        from tapps_brain.postgres_connection import PostgresConnectionManager
+
+        _registry_cm = PostgresConnectionManager(dsn)
+        _registry_cm_dsn = dsn
+        return _registry_cm
+
+
+def close_registry_cm() -> None:
+    """Close and drop the shared registry connection manager (lifespan shutdown)."""
+    global _registry_cm, _registry_cm_dsn
+    with _registry_cm_lock:
+        if _registry_cm is not None:
+            try:
+                _registry_cm.close()
+            except Exception:
+                logger.warning("auth.registry_cm_close_failed", exc_info=True)
+        _registry_cm = None
+        _registry_cm_dsn = None
+
+
 def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | None:
     """Check *token* against the project's stored argon2id hash.
 
@@ -88,14 +145,9 @@ def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | No
         ``None``  — project has no per-tenant token; caller falls back to
                     the global ``TAPPS_BRAIN_AUTH_TOKEN`` check.
     """
-    from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.project_registry import ProjectRegistry
 
-    cm = PostgresConnectionManager(dsn)
-    try:
-        return ProjectRegistry(cm).verify_token(project_id, token)
-    finally:
-        cm.close()
+    return ProjectRegistry(get_registry_cm(dsn)).verify_token(project_id, token)
 
 
 def require_data_plane_auth(request: Request) -> None:
