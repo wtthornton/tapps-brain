@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-07-16 — **v3.25.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
+**Last updated:** 2026-07-18 — **v3.26.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
 
-**Package version (`pyproject.toml`):** **3.25.0**
+**Package version (`pyproject.toml`):** **3.26.0**
 
 Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic acceptance criteria: [`epics/`](./epics/).
 

@@ -12,13 +12,29 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
-### Added
+## [3.26.0] — 2026-07-18
 
-- **Diagnostics scorecard recommendations** — `run_diagnostics` now emits actionable operator hints derived from dimension `raw_details`, independent of composite score: low `freshness` dominated by the context tier (`context_share >= 0.7`) is explained as structural (short-lived 14d-half-life entries near their half-life) rather than data corruption, and a non-zero `staleness.gc_candidates` adds a `maintenance gc` hint. Previously these only surfaced when composite < 0.6 or the circuit was OPEN, so a healthy composite could hide them. Surfaced in the CLI `diagnostics report` and persisted history.
+Bug-fix sweep release: six themed audit passes (retrieval & ranking, memory lifecycle, storage layer, models & extraction, agent API & recall, HTTP/MCP surface) fixed ~190 real defects. No new features; the headline items below are the ones observable from the deployed service.
+
+### Fixed
+
+- **`/metrics` split-brain** — the TAP-604 module split left duplicate counter/resolver/settings state in `http_adapter.py` shadowing the extracted `http/*` modules, so the live endpoint never emitted `tapps_brain_mcp_requests_total`, `tapps_brain_tenant_labels_evicted_total`, or the profile-resolver series. Consolidated to single sources; `/metrics` now renders what the middleware records.
+- **HTTP error contract** — malformed numeric client fields (`max_results`, `confidence`, `hops`, …) return `400` instead of `500`; idempotency-store outages return `503 idempotency_unavailable` on all nine write routes; every 4xx/5xx is counted in `tapps_brain_http_errors_total`; `/v1/tools/list` sends `Vary: X-Brain-Profile` and honours multi-ETag `If-None-Match`.
+- **`hive_search` visibility** — domain-propagated entries (stored under the profile-name namespace) and `group:`-prefixed namespaces (stored bare) were unsearchable; both now resolve.
+- **MCP tenant routing** — store-factory `os.environ` handoff serialized under a lock (cross-tenant routing race), default-store fast path restored in production, strict agent-id mismatches return `bad_request` envelopes instead of raw tool errors, and agent-registry tools no longer shadow the acting server identity.
+- **Async capture race** — `AsyncMemoryStore` write capture now uses a thread-local persistence override (`MemoryStore._scoped_persistence`) instead of mutating the shared backend, so concurrent sync-path writers can no longer land writes in another request's capture buffer and lose them on flush failure. `close()` always closes the sync store even when the async pool close raises.
+- **Per-tenant auth pooling** — `_verify_per_tenant_token` and `/admin/*` reuse one process-wide registry `PostgresConnectionManager` (was building and tearing down a pool per request); admin rate-limiter buckets are swept.
+- **Recall quality gates** — `min_score` and `tier_filter` now apply to Hive-sourced results, post-filtering runs before token-budget truncation, the truncation cost model matches the rendered section, and the circuit breaker can modulate Hive recall weight.
+- **Lifecycle correctness** — GC demotes instead of archiving when the layer defines `demotion_to`; consolidation respects `memory_group` boundaries and best-first partner ordering; `record_access(was_useful=True)` no longer *decreases* confidence; profile `gc:`, `recall:`, `limits:`, `source_confidence:`, and hive fields are wired instead of silently ignored.
+- **Storage/model validation** — key slugs reject trailing newlines, `valid_from`/`valid_until` are parsed and order-checked, `memory_group` rejects C1 control characters, batch save/reinforce record per-item errors instead of aborting the batch, and `brain_remember` supersession preserves the old entry's tags/source/scope.
 
 ### Changed
 
 - **`make brain-diagnostics-live`** no longer inherits host `TAPPS_BRAIN_*` env (which targeted the dev repo / local agent and diagnosed the wrong store); it auto-detects the busiest `http-adapter` project in Postgres and accepts `BRAIN_LIVE_PROJECT` / `BRAIN_LIVE_AGENT_ID` / `BRAIN_LIVE_PROJECT_DIR` overrides, parses diagnostics JSON (accurate integrity/composite), and supports `AUTO_GC=1` to archive stale candidates in-container. Documented in `docs/guides/observability.md`.
+
+### Added
+
+- **Diagnostics scorecard recommendations** — `run_diagnostics` now emits actionable operator hints derived from dimension `raw_details`, independent of composite score: low `freshness` dominated by the context tier (`context_share >= 0.7`) is explained as structural (short-lived 14d-half-life entries near their half-life) rather than data corruption, and a non-zero `staleness.gc_candidates` adds a `maintenance gc` hint. Previously these only surfaced when composite < 0.6 or the circuit was OPEN, so a healthy composite could hide them. Surfaced in the CLI `diagnostics report` and persisted history.
 
 ## [3.25.0] — 2026-06-24
 
