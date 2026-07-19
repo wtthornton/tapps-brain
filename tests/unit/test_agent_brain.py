@@ -268,9 +268,17 @@ class TestRememberValidation:
             assert isinstance(key, str)
 
     def test_remember_share_with_nonempty_group_is_valid(self, tmp_path: Path) -> None:
-        with _make_brain(tmp_path) as brain:
+        with _make_brain(tmp_path, groups=["my-group"]) as brain:
             key = brain.remember("some fact", share_with="my-group")
             assert isinstance(key, str)
+            # The key must refer to a memory that actually exists.
+            assert brain.store.get(key) is not None
+
+    def test_remember_share_with_non_member_group_raises(self, tmp_path: Path) -> None:
+        """A rejected save must raise, not hand back a key for a phantom memory."""
+        with _make_brain(tmp_path) as brain:
+            with pytest.raises(BrainValidationError, match="not a member"):
+                brain.remember("some fact", share_with="not-my-group")
 
     def test_remember_share_with_list_containing_empty_string_raises(self, tmp_path: Path) -> None:
         with _make_brain(tmp_path) as brain:

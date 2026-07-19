@@ -198,3 +198,48 @@ def test_floor_retention_uses_layer_confidence_floor() -> None:
     )
     reasons = gc._archive_reasons(entry, datetime.now(tz=UTC))
     assert "floor_retention" in reasons
+
+
+def test_gc_demotes_instead_of_archiving_when_layer_defines_demotion_to(tmp_path) -> None:
+    """EPIC-010: floor-retention candidates with a demotion target move down a tier.
+
+    Previously check_demotion had no production caller — every builtin
+    profile's demotion_to was dead configuration and stale entries went
+    straight to gc_archive.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from tapps_brain.models import MemoryTier
+    from tapps_brain.store import MemoryStore
+
+    store = MemoryStore(tmp_path)
+    try:
+        assert store.profile is not None  # repo-brain default: architectural -> pattern
+
+        store.save(key="old-arch", value="ancient decision", tier="architectural")
+        old = (datetime.now(tz=UTC) - timedelta(days=2000)).isoformat()
+        entry = store._entries["old-arch"]
+        stale = entry.model_copy(
+            update={
+                "created_at": old,
+                "updated_at": old,
+                "last_accessed": old,
+                "confidence": 0.2,
+            }
+        )
+        store._entries["old-arch"] = stale
+        store._persistence.save(stale)
+
+        dry = store.gc(dry_run=True)
+        assert "old-arch" in dry.demoted_keys
+        assert "old-arch" not in dry.archived_keys
+        # Dry run applies nothing.
+        assert store._entries["old-arch"].tier == MemoryTier.architectural
+
+        live = store.gc()
+        assert "old-arch" in live.demoted_keys
+        assert live.demoted_count == 1
+        assert "old-arch" not in live.archived_keys
+        assert store._entries["old-arch"].tier == MemoryTier.pattern
+    finally:
+        store.close()

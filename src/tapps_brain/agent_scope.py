@@ -27,7 +27,12 @@ _AGENT_SCOPE_DOC_VALUES: tuple[str, ...] = (
 
 
 def normalize_agent_scope(raw: str) -> str:
-    """Return canonical ``agent_scope`` or raise ``ValueError``."""
+    """Return canonical ``agent_scope`` or raise ``ValueError``.
+
+    Primitive scopes and the ``group:`` prefix are lowercased; the group
+    *name* is preserved case-sensitively — it is a Hive namespace, and
+    memberships/recall match it exactly (``group:G1`` ≠ ``group:g1``).
+    """
     s = raw.strip()
     if not s:
         msg = "agent_scope must not be empty"

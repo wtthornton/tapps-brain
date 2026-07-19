@@ -294,6 +294,39 @@ class TestCheckPromotion:
         result = engine.check_promotion(entry, profile)
         assert result == "procedural"
 
+    def test_stability_strategy_zero_stability_returns_none(self) -> None:
+        """stability strategy + stability==0 must NOT fall back to thresholds.
+
+        Entries without a stability signal previously fell through to the
+        threshold strategy the profile author explicitly did not select.
+        """
+        layers = [
+            LayerDefinition(
+                name="context",
+                half_life_days=14,
+                promotion_to="procedural",
+                promotion_strategy="stability",
+                promotion_stability_threshold=10.0,
+                promotion_threshold=PromotionThreshold(
+                    min_access_count=1, min_age_days=1, min_confidence=0.1
+                ),
+            ),
+            LayerDefinition(name="procedural", half_life_days=30),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="no-signal",
+            tier=MemoryTier.context,
+            confidence=0.9,
+            access_count=50,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_15_ISO,
+            stability=0.0,
+        )
+        engine = PromotionEngine()
+        assert engine.check_promotion(entry, profile, now=_JAN_15) is None
+
     def test_stability_promotion_noop_when_score_below_threshold(self) -> None:
         """Stability strategy does not promote when score stays below threshold."""
         layers = [
@@ -332,7 +365,7 @@ class TestCheckDemotion:
     """Tests for PromotionEngine.check_demotion."""
 
     def test_demotion_by_low_stability_before_floor_checks(self) -> None:
-        """When demotion_min_stability is set, low stability demotes immediately."""
+        """Low stability demotes a stale entry regardless of the floor gate."""
         layers = [
             LayerDefinition(
                 name="pattern",
@@ -358,6 +391,37 @@ class TestCheckDemotion:
         # Omit ``now`` to cover default ``datetime.now(UTC)`` branch in check_demotion.
         result = engine.check_demotion(entry, profile)
         assert result == "context"
+
+    def test_stability_demotion_requires_stale_access(self) -> None:
+        """The stability branch must not demote a recently-accessed entry.
+
+        A single was_useful=False access can shrink FSRS stability on an
+        actively-used, high-confidence memory — that alone is not demotion
+        grounds; the half-life recency gate applies to both branches.
+        """
+        layers = [
+            LayerDefinition(
+                name="pattern",
+                half_life_days=60,
+                confidence_floor=0.1,
+                demotion_to="context",
+                demotion_min_stability=10.0,
+            ),
+            LayerDefinition(name="context", half_life_days=14),
+        ]
+        profile = _make_profile(layers)
+        entry = make_entry(
+            key="stab-recent",
+            tier=MemoryTier.pattern,
+            confidence=0.9,
+            access_count=5,
+            created_at=_JAN_1_ISO,
+            updated_at=_JAN_1_ISO,
+            last_accessed=_JAN_15_ISO,  # accessed today relative to `now`
+            stability=2.0,
+        )
+        engine = PromotionEngine()
+        assert engine.check_demotion(entry, profile, now=_JAN_15) is None
 
     def test_demotion_on_stale_entry(self) -> None:
         """Entry with low effective confidence and no recent access is demoted."""

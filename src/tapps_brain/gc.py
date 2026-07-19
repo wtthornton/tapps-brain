@@ -96,6 +96,15 @@ class GCResult(BaseModel):
         ge=0,
         description="Session index rows pruned by TTL this run (live runs only).",
     )
+    demoted_count: int = Field(
+        default=0,
+        ge=0,
+        description="Entries demoted to a lower tier instead of archived (EPIC-010).",
+    )
+    demoted_keys: list[str] = Field(
+        default_factory=list,
+        description="Keys demoted this run (candidates when dry_run).",
+    )
 
 
 class StaleCandidateDetail(BaseModel):

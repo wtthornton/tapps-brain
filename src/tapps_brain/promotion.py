@@ -7,14 +7,18 @@ definitions and access patterns.
 Key mechanisms:
 - **Promotion** checked on reinforcement: if access_count, age, and
   confidence all exceed the layer's promotion threshold, entry moves up.
-- **Demotion** checked during GC: if effective confidence is near the
-  floor and the entry hasn't been accessed within its half-life, it
-  moves down instead of being archived.
-- **Desirable difficulty bonus**: reinforcement boost scales with
-  ``(1.0 - decayed_confidence)`` — nearly-forgotten memories get bigger
-  boosts (Roediger & Karpicke 2006).
-- **Stability growth**: effective half-life grows with
-  ``log1p(reinforce_count) * 0.3`` multiplier (Jost's First Law).
+- **Demotion** checked during GC (``MemoryStore.gc``): a stale candidate
+  whose layer defines ``demotion_to`` moves down a tier instead of being
+  archived.
+
+Unwired helpers (NOT part of the default pipeline):
+- :meth:`PromotionEngine.desirable_difficulty_bonus` scales a boost by
+  ``(1.0 - decayed_confidence)`` (Roediger & Karpicke 2006), but
+  ``store.reinforce`` passes ``confidence_boost`` through unscaled.
+- :meth:`PromotionEngine.effective_half_life` grows half-life with
+  ``log1p(reinforce_count) * 0.3`` (Jost's First Law), but the decay
+  engine (``decay.effective_half_life``) uses per-entry FSRS ``stability``
+  instead and never consults ``reinforce_count``.
 """
 
 from __future__ import annotations
@@ -71,8 +75,13 @@ class PromotionEngine:
         if now is None:
             now = datetime.now(tz=UTC)
 
-        # Stability-based promotion strategy
-        if layer.promotion_strategy == "stability" and entry.stability > 0:
+        # Stability-based promotion strategy. Entries with stability == 0
+        # (never accessed / adaptive_stability off) have no stability signal:
+        # return None rather than silently falling through to the threshold
+        # strategy the profile author explicitly did not select.
+        if layer.promotion_strategy == "stability":
+            if entry.stability <= 0:
+                return None
             promote_score = (
                 entry.stability * math.log1p(entry.access_count) * (1 - entry.difficulty / 10)
             )
@@ -116,8 +125,9 @@ class PromotionEngine:
 
         Demotion criteria (all must be met):
         - Layer defines ``demotion_to`` (not None)
-        - Effective confidence near the confidence floor (within 1.5x)
         - No access within the layer's half-life period
+        - Either effective confidence near the confidence floor (within
+          1.5x) or FSRS stability below ``demotion_min_stability``.
         """
         from tapps_brain.profile import MemoryProfile
 
@@ -132,6 +142,14 @@ class PromotionEngine:
         if now is None:
             now = datetime.now(tz=UTC)
 
+        # No access within half-life period — required for BOTH branches.
+        # The stability branch previously skipped this gate and would demote
+        # an actively-used, high-confidence entry whose FSRS stability was
+        # shrunk by a single was_useful=False access.
+        days_since_access = _days_since(entry.last_accessed, now)
+        if days_since_access < layer.half_life_days:
+            return None
+
         # Stability-based demotion check
         if (
             layer.demotion_min_stability > 0
@@ -144,11 +162,6 @@ class PromotionEngine:
 
         # Near floor: effective confidence <= floor * 1.5
         if eff_conf > layer.confidence_floor * 1.5:
-            return None
-
-        # No access within half-life period
-        days_since_access = _days_since(entry.last_accessed, now)
-        if days_since_access < layer.half_life_days:
             return None
 
         return layer.demotion_to

@@ -10,11 +10,39 @@ import json
 import os
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from tapps_brain.mcp_server.context import _current_request_idempotency_key
 from tapps_brain.services import memory_service
 
 if TYPE_CHECKING:
     from tapps_brain.mcp_server.context import ToolContext
+
+logger = structlog.get_logger(__name__)
+
+
+def _idempotency_record(dsn: str, project_id: str, ikey: str, result: Any) -> None:  # noqa: ANN401
+    """Record *result* under *ikey*, never discarding a committed write.
+
+    The underlying save already succeeded when this runs — raising here
+    would surface a tool error for a write that committed, and the client
+    retry (with the key unrecorded) would re-execute the write: the exact
+    duplicate the feature exists to prevent.
+    """
+    from tapps_brain.idempotency import (
+        IdempotencyUnavailableError,
+        get_shared_idempotency_store,
+    )
+
+    status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
+    try:
+        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result)
+    except IdempotencyUnavailableError:
+        logger.warning(
+            "mcp.idempotency_record_failed",
+            idempotency_key=ikey,
+            hint="write committed; key not replayable",
+        )
 
 
 def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,ANN401
@@ -46,7 +74,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         Pass ``agent_id`` to override the server-level default for this
         call (STORY-070.7).
         """
-        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+        from tapps_brain.idempotency import get_shared_idempotency_store, is_idempotency_enabled
 
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -55,15 +83,12 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         project_id = _pid()
         dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
 
-        if ikey and is_idempotency_enabled() and dsn and project_id:
-            istore = IdempotencyStore(dsn)
-            try:
-                cached = istore.check(project_id, ikey)
-                if cached is not None:
-                    _status, body = cached
-                    return json.dumps(body)
-            finally:
-                istore.close()
+        idem_active = bool(ikey and is_idempotency_enabled() and dsn and project_id)
+        if idem_active and ikey:
+            cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+            if cached is not None:
+                _status, body = cached
+                return json.dumps(body)
 
         result = memory_service.memory_save(
             s,
@@ -81,13 +106,8 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             group=group,
         )
 
-        if ikey and is_idempotency_enabled() and dsn and project_id:
-            status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
-            istore2 = IdempotencyStore(dsn)
-            try:
-                istore2.save(project_id, ikey, status_code, result)
-            finally:
-                istore2.close()
+        if idem_active and ikey:
+            _idempotency_record(dsn, project_id, ikey, result)
 
         return json.dumps(result)
 
@@ -199,7 +219,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
 
         Pass ``agent_id`` to override the server-level default (STORY-070.7).
         """
-        from tapps_brain.idempotency import IdempotencyStore, is_idempotency_enabled
+        from tapps_brain.idempotency import get_shared_idempotency_store, is_idempotency_enabled
 
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -208,15 +228,12 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         project_id = _pid()
         dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
 
-        if ikey and is_idempotency_enabled() and dsn and project_id:
-            istore = IdempotencyStore(dsn)
-            try:
-                cached = istore.check(project_id, ikey)
-                if cached is not None:
-                    _status, body = cached
-                    return json.dumps(body)
-            finally:
-                istore.close()
+        idem_active = bool(ikey and is_idempotency_enabled() and dsn and project_id)
+        if idem_active and ikey:
+            cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+            if cached is not None:
+                _status, body = cached
+                return json.dumps(body)
 
         result = memory_service.memory_reinforce(
             s,
@@ -226,13 +243,8 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             confidence_boost=confidence_boost,
         )
 
-        if ikey and is_idempotency_enabled() and dsn and project_id:
-            status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
-            istore2 = IdempotencyStore(dsn)
-            try:
-                istore2.save(project_id, ikey, status_code, result)
-            finally:
-                istore2.close()
+        if idem_active and ikey:
+            _idempotency_record(dsn, project_id, ikey, result)
 
         return json.dumps(result)
 

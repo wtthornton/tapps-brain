@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from tapps_brain.backends import create_hive_backend
-from tapps_brain.models import MemoryTier
+from tapps_brain.models import MemoryEntry, MemoryTier
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -135,7 +135,17 @@ class AgentBrain:
         self._agent_id = agent_id or os.environ.get("TAPPS_BRAIN_AGENT_ID") or None
         _project_dir = project_dir or os.environ.get("TAPPS_BRAIN_PROJECT_DIR") or str(Path.cwd())
         self._project_dir = Path(_project_dir).resolve()
-        _hive_dsn = hive_dsn or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+        self._profile_name = profile
+        # Documented fallback (CLAUDE.md / hive-deployment.md): Hive rides on
+        # TAPPS_BRAIN_DATABASE_URL when TAPPS_BRAIN_HIVE_DSN is unset — the
+        # same rule resolve_hive_backend_from_env applies for CLI/MCP/serve.
+        # Without it, share=/share_with= silently no-op in the default
+        # single-DSN deployment.
+        _hive_dsn = (
+            hive_dsn
+            or os.environ.get("TAPPS_BRAIN_HIVE_DSN")
+            or os.environ.get("TAPPS_BRAIN_DATABASE_URL")
+        )
         _groups = groups or _parse_csv_env("TAPPS_BRAIN_GROUPS")
         _expert_domains = expert_domains or _parse_csv_env("TAPPS_BRAIN_EXPERT_DOMAINS")
 
@@ -185,22 +195,34 @@ class AgentBrain:
             else:
                 _project_id = derive_project_id(self._project_dir)
             _private_backend = resolve_private_backend_from_env(_project_id, _effective_agent_id)
+        except ValueError as exc:
+            # Malformed DSN (e.g. sqlite:// scheme) — a config problem the
+            # BrainConfigError docstring explicitly promises to raise for.
+            # Swallowing it and letting MemoryStore raise a raw ValueError
+            # told operators to *set* a variable that was already set.
+            msg = f"Failed to open private backend ({type(exc).__name__}): {exc}"
+            raise BrainConfigError(msg) from exc
         except Exception:
             logger.warning("agent_brain.private_backend_init_failed", exc_info=True)
             _private_backend = None
 
         # Create MemoryStore — always pass the same resolved agent id used for
         # the private backend tenant key (avoids None vs "unknown" split).
-        self._store = MemoryStore(
-            self._project_dir,
-            agent_id=_effective_agent_id,
-            hive_store=self._hive,
-            hive_agent_id=_effective_agent_id,
-            groups=_groups,
-            expert_domains=_expert_domains,
-            encryption_key=encryption_key,
-            private_backend=_private_backend,
-        )
+        try:
+            self._store = MemoryStore(
+                self._project_dir,
+                agent_id=_effective_agent_id,
+                hive_store=self._hive,
+                hive_agent_id=_effective_agent_id,
+                groups=_groups,
+                expert_domains=_expert_domains,
+                encryption_key=encryption_key,
+                private_backend=_private_backend,
+            )
+        except ValueError as exc:
+            # Missing TAPPS_BRAIN_DATABASE_URL (ADR-007) — wrap so callers
+            # following the documented `except BrainConfigError` pattern work.
+            raise BrainConfigError(str(exc)) from exc
 
         # Internal recall tracking for learn_from_success
         self._last_recalled_keys: list[str] = []
@@ -247,13 +269,37 @@ class AgentBrain:
         """Close the underlying store and Hive backend."""
         if self._closed:
             return
-        self._closed = True
-        if hasattr(self._store, "close"):
-            self._store.close()
-        if self._hive is not None and hasattr(self._hive, "close"):
-            self._hive.close()
+        # Close both resources even if one raises; mark closed only after
+        # both were attempted (previously a store.close() failure leaked the
+        # Hive connection pool forever — the early `_closed = True` made
+        # every retry a no-op).
+        try:
+            try:
+                if hasattr(self._store, "close"):
+                    self._store.close()
+            finally:
+                if self._hive is not None and hasattr(self._hive, "close"):
+                    self._hive.close()
+        finally:
+            self._closed = True
 
     # --- Core methods (STORY-057.2) -------------------------------------------
+
+    def _checked_save(self, **save_kwargs: object) -> MemoryEntry:
+        """Call ``store.save`` and raise when the save was rejected.
+
+        ``MemoryStore.save`` returns an error dict (never raises) when the
+        save is blocked — invalid agent scope, group non-membership,
+        RAG-safety block, write rules. Ignoring it hands the caller a key
+        for a memory that was never saved: silent data loss.
+        """
+        result = self._store.save(**save_kwargs)  # type: ignore[arg-type]
+        if isinstance(result, dict):
+            err = result.get("error", "unknown")
+            detail = result.get("message") or result.get("reason") or ""
+            msg = f"Memory save rejected ({err})" + (f": {detail}" if detail else "")
+            raise BrainValidationError(msg)
+        return result
 
     def remember(
         self,
@@ -305,21 +351,24 @@ class AgentBrain:
             # One private row + Hive fan-out. Repeated save() on the same key
             # would overwrite agent_scope and leave only the last group.
             groups = [g.strip() for g in share_with]
-            self._store.save(key=key, value=fact, tier=tier, agent_scope=f"group:{groups[0]}")
-            if len(groups) > 1:
-                entry = self._store.get(key)
-                if entry is not None:
-                    from tapps_brain._save_propagation import propagate_group_save
+            entry = self._checked_save(
+                key=key, value=fact, tier=tier, agent_scope=f"group:{groups[0]}"
+            )
+            # Fan out using the entry save() returned — a store.get() here
+            # bumped access_count/last_accessed on the just-saved entry,
+            # skewing frequency/recency ranking vs single-group saves.
+            if len(groups) > 1 and self._hive is not None:
+                from tapps_brain._save_propagation import propagate_group_save
 
-                    propagate_group_save(
-                        entry=entry,
-                        agent_scope="group",
-                        groups=groups,
-                        hive_store=self._hive,
-                    )
+                propagate_group_save(
+                    entry=entry,
+                    agent_scope="group",
+                    groups=groups,
+                    hive_store=self._hive,
+                )
             return key
 
-        self._store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        self._checked_save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
         return key
 
     def recall(
@@ -346,7 +395,9 @@ class AgentBrain:
         # Filter by agent_scope when the caller requests a specific scope.
         # ``"all"`` is the opt-out sentinel — no filtering applied.
         # Normalise the scope value so ``"Hive"`` / ``"Private"`` match stored
-        # entries whose agent_scope is always lowercase-normalised.
+        # entries. Note: the group *name* in ``group:<name>`` is preserved
+        # case-sensitively (it is a Hive namespace).
+        _normalised_scope: str | None = None
         if scope != "all":
             from tapps_brain.agent_scope import normalize_agent_scope
 
@@ -372,10 +423,65 @@ class AgentBrain:
                 }
             )
 
+        # Shared scopes must also query the Hive — private FTS only sees this
+        # agent's own rows, so memories shared *by other agents* were
+        # unreachable through the facade despite the docstring's promise.
+        if _normalised_scope is not None and len(results) < max_results:
+            results.extend(
+                self._search_hive_scope(
+                    query, _normalised_scope, max_results - len(results), results
+                )
+            )
+
         # Track for learn_from_success
         self._last_recalled_keys = [r.get("key", "") for r in results]
 
         return results
+
+    def _search_hive_scope(
+        self,
+        query: str,
+        normalised_scope: str,
+        limit: int,
+        local_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Search Hive namespaces matching *normalised_scope*; local keys win."""
+        if self._hive is None or limit <= 0:
+            return []
+        from tapps_brain.agent_scope import hive_group_name_from_scope
+
+        group_name = hive_group_name_from_scope(normalised_scope)
+        if group_name is not None:
+            namespaces = [group_name]
+        elif normalised_scope == "hive":
+            namespaces = ["universal"]
+        elif normalised_scope == "domain":
+            namespaces = [self._profile_name]
+        else:  # "private" / bare "group" — nothing to fetch from the Hive
+            return []
+        try:
+            rows = self._hive.search(query, namespaces=namespaces, limit=limit)
+        except Exception:
+            logger.warning("agent_brain.hive_recall_failed", exc_info=True)
+            return []
+        local_keys = {r["key"] for r in local_results}
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            key = str(row.get("key", ""))
+            if not key or key in local_keys:
+                continue
+            raw_conf = row.get("confidence", 0.6)
+            out.append(
+                {
+                    "key": key,
+                    "value": str(row.get("value", "")),
+                    "tier": str(row.get("tier", "pattern")),
+                    "confidence": float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.6,
+                    "tags": [],
+                    "agent_scope": normalised_scope,
+                }
+            )
+        return out[:limit]
 
     def forget(self, key: str) -> bool:
         """Delete a memory.  Returns ``True`` if found."""
@@ -404,7 +510,7 @@ class AgentBrain:
         tags = ["success"]
         if tid:
             tags.append(f"task:{tid}")
-        self._store.save(key=key, value=task_description, tier="procedural", tags=tags)
+        self._checked_save(key=key, value=task_description, tier="procedural", tags=tags)
 
         # Reinforce recalled memories; reinforce() raises KeyError only when
         # the entry has since been deleted, which is not an error here.
@@ -428,4 +534,4 @@ class AgentBrain:
         tags = ["failure"]
         if tid:
             tags.append(f"task:{tid}")
-        self._store.save(key=key, value=value, tier="procedural", tags=tags)
+        self._checked_save(key=key, value=value, tier="procedural", tags=tags)

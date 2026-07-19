@@ -1255,13 +1255,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if self._profile is not None:
             lim = getattr(self._profile, "limits", None)
             if lim is not None:
-                if len(key) > lim.max_key_length:
+                from tapps_brain.models import MAX_KEY_LENGTH, MAX_TAGS, MAX_VALUE_LENGTH
+
+                # Only enforce limits *stricter* than the model constants —
+                # at or above them Pydantic raises its own ValidationError,
+                # which callers pin on.
+                if lim.max_key_length < MAX_KEY_LENGTH and len(key) > lim.max_key_length:
                     msg = f"Key exceeds profile limit of {lim.max_key_length} characters."
                     raise ValueError(msg)
-                if len(value) > lim.max_value_length:
+                if lim.max_value_length < MAX_VALUE_LENGTH and len(value) > lim.max_value_length:
                     msg = f"Value exceeds profile limit of {lim.max_value_length} characters."
                     raise ValueError(msg)
-                if tags is not None and len(tags) > lim.max_tags:
+                if lim.max_tags < MAX_TAGS and tags is not None and len(tags) > lim.max_tags:
                     msg = f"Too many tags (max {lim.max_tags} per profile limit)."
                     raise ValueError(msg)
 
@@ -3664,8 +3669,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Run garbage collection on the store.
 
         Archives stale rows to the ``gc_archive`` Postgres table (migration 006,
-        STORY-066.3).  Counters: ``store.gc`` (invocations),
-        ``store.gc.archived`` (rows), ``store.gc.archive_bytes`` (bytes written).
+        STORY-066.3).  Floor-retention candidates whose layer defines
+        ``demotion_to`` in the active profile are demoted a tier instead of
+        archived (EPIC-010).  Counters: ``store.gc`` (invocations),
+        ``store.gc.archived`` (rows), ``store.gc.archive_bytes`` (bytes
+        written), ``store.gc.demoted`` (demotions).
 
         Args:
             dry_run: If True, only identify candidates without archiving.
@@ -3702,6 +3710,36 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # Update tapps_brain.gc.candidates gauge with the current candidate count
         # (STORY-032.6) — recorded once per gc() call so get_metrics() stays cheap.
         self._last_gc_candidates = len(candidates)
+
+        # EPIC-010: demote-instead-of-archive. When the profile's layer for a
+        # floor-retention candidate defines ``demotion_to``, the entry moves
+        # down a tier rather than into gc_archive. Contradicted and
+        # session-expired candidates archive regardless.
+        detail_by_key = {d.key: d for d in details}
+        demoted_keys: list[str] = []
+        if self._profile is not None:
+            from tapps_brain.promotion import PromotionEngine
+
+            engine = PromotionEngine(self._get_decay_config())
+            to_archive: list[MemoryEntry] = []
+            for entry in candidates:
+                target: str | None = None
+                if detail_by_key[entry.key].reasons == ["floor_retention"]:
+                    try:
+                        target = engine.check_demotion(entry, self._profile, now=now)
+                    except Exception:
+                        logger.warning("gc.demotion_check_failed", key=entry.key, exc_info=True)
+                if target is None:
+                    to_archive.append(entry)
+                elif dry_run or self._gc_demote_entry(entry, target):
+                    demoted_keys.append(entry.key)
+                else:
+                    to_archive.append(entry)
+            candidates = to_archive
+            details = [detail_by_key[e.key] for e in candidates]
+            if demoted_keys and not dry_run:
+                self._metrics.increment("store.gc.demoted", len(demoted_keys))
+
         reason_counts = aggregate_gc_reason_counts(details)
         candidate_keys = [c.key for c in candidates]
 
@@ -3715,6 +3753,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 estimated_archive_bytes=archive_entries_jsonl_utf8_bytes(
                     candidates, archived_at_iso=now.isoformat()
                 ),
+                demoted_count=len(demoted_keys),
+                demoted_keys=demoted_keys,
             )
 
         # Archive to Postgres gc_archive table (STORY-066.3) and delete from store.
@@ -3774,7 +3814,43 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             reason_counts=reason_counts,
             archive_bytes=archive_bytes,
             session_chunks_deleted=session_chunks_deleted,
+            demoted_count=len(demoted_keys),
+            demoted_keys=demoted_keys,
         )
+
+    def _gc_demote_entry(self, entry: MemoryEntry, target_tier: str) -> bool:
+        """Apply a GC demotion: persist the tier change + audit. Returns success.
+
+        Best-effort — a failed demotion leaves the entry unchanged so the GC
+        pass falls back to archiving it.
+        """
+        demoted = entry.model_copy(update={"tier": target_tier, "updated_at": _utc_now_iso()})
+        old_tier = str(entry.tier)
+        try:
+            with self._serialized():
+                self._entries[entry.key] = demoted
+            try:
+                self._persistence.save(demoted)
+            except Exception:
+                with self._serialized():
+                    if self._entries.get(entry.key) is demoted:
+                        self._entries[entry.key] = entry
+                raise
+            self._drop_if_concurrently_removed(entry.key)
+            self._persistence.append_audit(
+                action="demote",
+                key=entry.key,
+                extra={"from_tier": old_tier, "to_tier": target_tier, "trigger": "gc"},
+            )
+        except Exception:
+            logger.warning(
+                "gc.demotion_apply_failed",
+                key=entry.key,
+                to_tier=target_tier,
+                exc_info=True,
+            )
+            return False
+        return True
 
     def list_gc_stale_details(self, *, now: Any = None) -> list[Any]:  # noqa: ANN401
         """Return GC stale candidates with reasons (GitHub #21)."""

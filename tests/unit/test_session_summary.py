@@ -291,3 +291,33 @@ class TestMCPSessionEnd:
         # Save via session_summary_save directly to verify the module works
         result = session_summary_save("MCP test session", project_dir=tmp_path)
         assert result["status"] == "saved"
+
+
+def test_session_summary_save_uses_provided_store_and_agent(tmp_path, monkeypatch) -> None:
+    """Run-5 audit: summaries must land under the calling agent's tenant.
+
+    A fresh MemoryStore constructed without agent_id persisted the entry
+    under (project_id, "default") — a row space no real agent reads.
+    """
+    from tapps_brain import session_summary as ss
+    from tapps_brain.store import MemoryStore
+
+    live = MemoryStore(tmp_path, agent_id="agent-42")
+    try:
+        constructed: list[object] = []
+
+        class _Boom:
+            def __init__(self, *a: object, **kw: object) -> None:
+                constructed.append(kw)
+                raise AssertionError("must reuse the provided store")
+
+        monkeypatch.setattr("tapps_brain.store.MemoryStore", _Boom)
+        out = ss.session_summary_save(
+            "did things", project_dir=tmp_path, source_agent="agent-42", store=live
+        )
+        assert out["status"] == "saved"
+        assert constructed == []
+        # Saved through the live store — visible to the calling agent.
+        assert live.get(out["key"]) is not None
+    finally:
+        live.close()

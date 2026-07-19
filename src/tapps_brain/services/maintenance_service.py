@@ -82,6 +82,10 @@ def tapps_brain_session_end(
     """Persist a session summary to disk and optionally append to the daily note."""
     from tapps_brain.session_summary import session_summary_save
 
+    # Save through the caller's live store: constructing a fresh MemoryStore
+    # here dropped the agent_id, landing the entry under the shared
+    # (project_id, "default") tenant that no real agent's recall reads —
+    # and paid a full store construction/teardown per call.
     return session_summary_save(
         summary,
         tags=tags,
@@ -89,4 +93,6 @@ def tapps_brain_session_end(
         workspace_dir=project_root,
         daily_note=daily_note,
         source_agent=agent_id,
+        store=store,
+        agent_id=agent_id,
     )

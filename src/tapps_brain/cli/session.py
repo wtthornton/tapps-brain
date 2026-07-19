@@ -20,12 +20,14 @@ from tapps_brain.cli._common import (
 
 def _write_daily_note(workspace: Path, summary: str) -> None:
     """Append a formatted session summary to today's daily note file."""
-    from datetime import UTC
+    from datetime import UTC, date
     from datetime import datetime as dt
 
-    # UTC date so the filename matches the UTC timestamp in the note body.
+    # Local date for the filename — the daily note is a human-facing journal,
+    # and "today" means the user's today (UTC flips before local midnight in
+    # western timezones). Timestamps inside the note stay UTC.
     now_utc = dt.now(tz=UTC)
-    today = now_utc.date().isoformat()
+    today = date.today().isoformat()
     note_dir = workspace / "memory"
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = note_dir / f"{today}.md"

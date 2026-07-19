@@ -367,3 +367,31 @@ class TestBatchExemptScope:
         with pytest.raises(ValueError, match="federation_sync_extra"):
             with batch_exempt_scope("federation_sync_extra"):
                 pass
+
+
+class TestEnforceModeBookkeeping:
+    """Run-5 audit: rejected writes must not corrupt window or lifetime stats."""
+
+    def test_rejected_write_leaves_no_phantom_state(self) -> None:
+        from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
+
+        limiter = SlidingWindowRateLimiter(
+            RateLimiterConfig(writes_per_minute=1, lifetime_write_warn_at=1, enforce=True)
+        )
+        first = limiter.check()
+        assert first.allowed is True
+
+        for expected_anomalies in (1, 2, 3):
+            rejected = limiter.check()
+            assert rejected.allowed is False
+            assert rejected.minute_exceeded is True
+            # The write was never admitted: lifetime cannot have crossed the
+            # threshold, and the window must not accumulate phantom entries.
+            assert rejected.lifetime_exceeded is False
+            assert rejected.current_minute_count == 1
+            assert rejected.current_lifetime_count == 1
+            stats = limiter.stats
+            assert stats.total_writes == 1
+            assert stats.lifetime_anomalies == 0
+            assert stats.minute_anomalies == expected_anomalies
+            assert len(limiter._timestamps) == 1

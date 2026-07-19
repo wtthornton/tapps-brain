@@ -203,55 +203,58 @@ class SlidingWindowRateLimiter:
         now = time.monotonic()
         window_start = now - 60.0
 
+        # Decide admission and record (or not) under a SINGLE lock
+        # acquisition. The previous record-then-rollback design released the
+        # lock between the two steps: a concurrent check() could append in
+        # between, the tail-match rollback then failed, and the rejected
+        # write's timestamp leaked into the window permanently while the
+        # lifetime counters were still decremented.
         with self._lock:
             # Prune timestamps older than 1 minute (O(k) popleft, k = expired entries)
             while self._timestamps and self._timestamps[0] <= window_start:
                 self._timestamps.popleft()
 
-            # Record this write
-            self._timestamps.append(now)
-            self._lifetime_writes += 1
-            self._stats.total_writes += 1
-
-            minute_count = len(self._timestamps)
-            lifetime_writes = self._lifetime_writes
-
-            minute_exceeded = minute_count > self._config.writes_per_minute
-            lifetime_exceeded = lifetime_writes > self._config.lifetime_write_warn_at
+            attempted_minute = len(self._timestamps) + 1
+            minute_exceeded = attempted_minute > self._config.writes_per_minute
+            allowed = not (self._config.enforce and minute_exceeded)
 
             if minute_exceeded:
                 self._stats.minute_anomalies += 1
-            if lifetime_exceeded:
-                self._stats.lifetime_anomalies += 1
 
-        # Build result
-        allowed = True
-        if self._config.enforce and minute_exceeded:
-            allowed = False
-            # Do not count the rejected write toward the window / lifetime.
-            with self._lock:
-                if self._timestamps and self._timestamps[-1] == now:
-                    self._timestamps.pop()
-                self._lifetime_writes = max(0, self._lifetime_writes - 1)
-                self._stats.total_writes = max(0, self._stats.total_writes - 1)
+            if allowed:
+                self._timestamps.append(now)
+                self._lifetime_writes += 1
+                self._stats.total_writes += 1
+                minute_count = attempted_minute
+                lifetime_writes = self._lifetime_writes
+                lifetime_exceeded = lifetime_writes > self._config.lifetime_write_warn_at
+                if lifetime_exceeded:
+                    self._stats.lifetime_anomalies += 1
+            else:
+                # Rejected write is never admitted: the window and lifetime
+                # counters stay unchanged, so the lifetime threshold cannot
+                # be crossed (and lifetime_anomalies must not grow) here.
+                minute_count = len(self._timestamps)
+                lifetime_writes = self._lifetime_writes
+                lifetime_exceeded = False
 
         result = RateLimitResult(
             allowed=allowed,
             minute_exceeded=minute_exceeded,
             lifetime_exceeded=lifetime_exceeded,
-            current_minute_count=minute_count if allowed else max(0, minute_count - 1),
-            current_lifetime_count=lifetime_writes if allowed else max(0, lifetime_writes - 1),
+            current_minute_count=minute_count,
+            current_lifetime_count=lifetime_writes,
         )
 
         # Log warnings for exceeded limits
         if minute_exceeded:
             result.message = (
-                f"Rate limit warning: {minute_count} writes in last minute "
+                f"Rate limit warning: {attempted_minute} write attempts in last minute "
                 f"(limit: {self._config.writes_per_minute})"
             )
             logger.warning(
                 "rate_limit_minute_exceeded",
-                current=minute_count,
+                current=attempted_minute,
                 limit=self._config.writes_per_minute,
             )
 

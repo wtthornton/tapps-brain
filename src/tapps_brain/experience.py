@@ -281,6 +281,11 @@ class MemorySpec(BaseModel):
     private_memories columns use their database defaults.  For full-featured
     writes (decay metadata, FSRS scores, provenance fields) use
     :meth:`tapps_brain.store.MemoryStore.save` separately.
+
+    Key/value/tags constraints mirror :class:`~tapps_brain.models.MemoryEntry`:
+    the raw INSERT bypasses MemoryStore validation, so a row accepted here but
+    rejected by ``MemoryEntry`` would poison ``load_all`` hydration for the
+    entire tenant (every cold start / cache merge raises ValidationError).
     """
 
     key: str = Field(description="Memory entry slug (max 128 chars).")
@@ -289,6 +294,22 @@ class MemorySpec(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Memory confidence.")
     tags: list[str] = Field(default_factory=list, description="Classification tags (max 10).")
     agent_scope: str = Field(default="private", description="Hive propagation scope.")
+
+    @model_validator(mode="after")
+    def _mirror_memory_entry_constraints(self) -> MemorySpec:
+        """Reject rows that :class:`~tapps_brain.models.MemoryEntry` could not hydrate."""
+        from tapps_brain.models import MemoryEntry
+
+        MemoryEntry.__pydantic_validator__.validate_python(
+            {
+                "key": self.key,
+                "value": self.value,
+                "tags": self.tags,
+                "tier": self.tier,
+                "agent_scope": self.agent_scope,
+            }
+        )
+        return self
 
 
 class ExperienceEvent(BaseModel):

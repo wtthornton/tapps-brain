@@ -29,8 +29,10 @@ silently allowing duplicate writes.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import threading
 from typing import Any
 
 import structlog
@@ -59,9 +61,11 @@ class IdempotencyStore:
     """Postgres-backed idempotency key store.
 
     Requires migration ``010_idempotency_keys.sql`` to be applied against the
-    private schema.  When the table is absent or Postgres errors,
-    :meth:`check` raises :class:`IdempotencyUnavailableError` (fail-closed).
-    :meth:`save` remains a logged no-op on write failure.
+    private schema.  When the table is absent or Postgres errors, both
+    :meth:`check` and :meth:`save` raise :class:`IdempotencyUnavailableError`
+    after logging (fail-closed) — callers that have already committed the
+    underlying write must handle the :meth:`save` failure explicitly rather
+    than discarding a successful result.
 
     Parameters
     ----------
@@ -229,10 +233,39 @@ def sweep_expired_keys(
         return store.sweep_expired()
 
 
+# ---------------------------------------------------------------------------
+# Process-wide shared store (TAP-548 sibling for the MCP path)
+# ---------------------------------------------------------------------------
+
+_SHARED_STORE: IdempotencyStore | None = None
+_SHARED_STORE_DSN: str | None = None
+_SHARED_STORE_LOCK = threading.Lock()
+
+
+def get_shared_idempotency_store(dsn: str) -> IdempotencyStore:
+    """Return the process-wide ``IdempotencyStore`` for *dsn*.
+
+    TAP-548 converted the HTTP adapter to a startup singleton because each
+    constructor spins a fresh ``PostgresConnectionManager`` pool; the MCP
+    tools were still paying two pool open/role-check/close cycles per
+    idempotent request.  The store is rebuilt if the DSN changes.
+    """
+    global _SHARED_STORE, _SHARED_STORE_DSN
+    with _SHARED_STORE_LOCK:
+        if _SHARED_STORE is None or dsn != _SHARED_STORE_DSN:
+            if _SHARED_STORE is not None:
+                with contextlib.suppress(Exception):
+                    _SHARED_STORE.close()
+            _SHARED_STORE = IdempotencyStore(dsn)
+            _SHARED_STORE_DSN = dsn
+        return _SHARED_STORE
+
+
 __all__ = [
     "IDEMPOTENCY_TTL_HOURS",
     "IdempotencyStore",
     "IdempotencyUnavailableError",
+    "get_shared_idempotency_store",
     "is_idempotency_enabled",
     "sweep_expired_keys",
 ]

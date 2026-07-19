@@ -87,8 +87,12 @@ def resolve_relay_scopes(item: dict[str, Any]) -> tuple[str, str] | None:
         vis = vs
 
     if ag is not None:
+        # The dedicated agent_scope field always wins over the heuristic
+        # "scope" fallback and is always validated — `ag_norm or ...` let an
+        # explicit agent_scope be silently overridden (and malformed values
+        # slip through unvalidated) whenever "scope" also resolved.
         try:
-            ag_norm = ag_norm or normalize_agent_scope(str(ag).strip())
+            ag_norm = normalize_agent_scope(str(ag).strip())
         except ValueError:
             return None
 
@@ -182,7 +186,11 @@ def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
     mem_scope, agent_scope = scopes
 
     _tier_in = raw.get("tier")
-    tier_raw = normalize_save_tier(_tier_in if isinstance(_tier_in, str) else None, profile)
+    if _tier_in is not None and not isinstance(_tier_in, str):
+        # Match the tags contract below: a wrong-typed field skips the item
+        # with a warning instead of silently importing mistiered.
+        return None, f"{prefix}: tier must be a string when provided, skipped"
+    tier_raw = normalize_save_tier(_tier_in, profile)
 
     tags = raw.get("tags")
     if tags is not None and not isinstance(tags, list):
@@ -202,7 +210,13 @@ def _coerce_relay_item_save_kwargs(  # noqa: PLR0911
         confidence = float(conf)
         # Reject non-finite / out-of-range values so MemoryStore.save does not
         # raise ValidationError mid-import (use source default via -1.0).
-        if not math.isfinite(confidence) or confidence > 1.0 or confidence < -1.0:
+        # Valid values are 0.0..1.0 or the exact -1.0 sentinel — anything in
+        # (-1.0, 0.0) previously evaded this guard and crashed the save.
+        if (
+            not math.isfinite(confidence)
+            or confidence > 1.0
+            or (confidence < 0.0 and confidence != -1.0)
+        ):
             confidence = -1.0
     else:
         confidence = -1.0

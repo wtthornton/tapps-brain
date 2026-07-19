@@ -16,27 +16,36 @@ if TYPE_CHECKING:
 _PREFERRED_TIERS = ("short-term", "context", "pattern")
 """Ordered list of tier candidates for episodic memory entries.
 
-We try ``short-term`` first (personal-assistant profile), then fall
-back to ``context`` and ``pattern`` which exist in all built-in profiles.
+We try ``short-term`` first (personal-assistant profile), then
+``context`` / ``pattern`` (repo-brain and most other built-ins).  Not
+every profile defines these — when none match, the profile's last
+declared layer (typically the shortest-lived) is used.
 """
 
 
 def _pick_tier(store: MemoryStore, preferred: str) -> str:
-    """Return *preferred* if valid for the active profile, else the first fallback."""
+    """Return *preferred* if valid for the active profile, else the first fallback.
+
+    When a profile is active, only its ``layer_names`` are valid — base
+    ``MemoryTier`` enum values outside the profile would decay by hardcoded
+    enum defaults with no layer floor/ceiling/promotion rules applied.
+    """
     profile = getattr(store, "profile", None)
-    layer_names: list[str] = list(profile.layer_names) if profile is not None else []
+    if profile is not None:
+        layer_names: list[str] = list(profile.layer_names)
+        valid: set[str] = set(layer_names)
+    else:
+        from tapps_brain.models import MemoryTier
 
-    # Collect all valid tiers: profile layer names + base MemoryTier values
-    from tapps_brain.models import MemoryTier
-
-    valid: set[str] = {t.value for t in MemoryTier} | set(layer_names)
+        layer_names = []
+        valid = {t.value for t in MemoryTier}
 
     if preferred in valid:
         return preferred
     for fallback in _PREFERRED_TIERS:
         if fallback in valid:
             return fallback
-    return "pattern"  # always valid
+    return layer_names[-1] if layer_names else "pattern"
 
 
 def session_summary_save(
@@ -50,6 +59,8 @@ def session_summary_save(
     scope: str = "project",
     source_agent: str = "agent",
     max_chars: int | None = None,
+    store: MemoryStore | None = None,
+    agent_id: str | None = None,
 ) -> dict[str, Any]:
     """Save an end-of-session episodic memory entry.
 
@@ -81,6 +92,12 @@ def session_summary_save(
             truncated at the last whitespace boundary before the limit
             and ``" …"`` is appended.  ``None`` (default) disables
             truncation.
+        store: Optional live ``MemoryStore`` to save through (not closed).
+            When omitted, a store is constructed for *project_dir* and
+            *agent_id* and closed afterwards.
+        agent_id: Tenant agent id for the constructed store.  Without it
+            the entry lands under the shared ``(project_id, "default")``
+            row space that no real agent's recall ever reads (EPIC-053).
 
     Returns:
         A dict with ``key``, ``status``, ``tags``, ``tier``, and
@@ -123,7 +140,15 @@ def session_summary_save(
     base_tags = ["date", "session", "episodic"]
     all_tags = base_tags + [t for t in (tags or []) if t not in base_tags]
 
-    store = MemoryStore(root)
+    owns_store = store is None
+    if store is None:
+        import os
+
+        # Fall back to the ambient agent identity (CLI path) — MemoryStore
+        # itself never reads TAPPS_BRAIN_AGENT_ID and would tenant the row
+        # under (project_id, "default").
+        resolved_agent = agent_id or os.environ.get("TAPPS_BRAIN_AGENT_ID") or None
+        store = MemoryStore(root, agent_id=resolved_agent)
     resolved_tier = _pick_tier(store, tier)
     try:
         result = store.save(
@@ -137,15 +162,18 @@ def session_summary_save(
             agent_scope="private",
         )
     finally:
-        store.close()
+        if owns_store:
+            store.close()
 
     if isinstance(result, dict) and result.get("error"):
         return result
 
-    # Optionally write daily note
+    # Optionally write daily note. The note filename uses the *local* date —
+    # it is a human-facing journal file, and "today" means the user's today,
+    # not UTC's (which flips before local midnight in western timezones).
     if daily_note:
         ws = Path(workspace_dir).resolve() if workspace_dir else root
-        _append_daily_note(ws, today, summary)
+        _append_daily_note(ws, datetime.date.today().isoformat(), summary)
 
     out: dict[str, Any] = {
         "key": key,
