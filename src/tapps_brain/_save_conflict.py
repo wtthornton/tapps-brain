@@ -11,6 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tapps_brain.contradictions import detect_save_conflicts, format_save_conflict_reason
+from tapps_brain.profile import ConflictCheckConfig
+
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
 
@@ -43,8 +46,6 @@ def resolve_similarity_threshold(profile: object | None, tier: str | None = None
     cc = getattr(profile, "conflict_check", None) if profile is not None else None
     if cc is not None:
         return float(cc.effective_similarity_threshold(tier))
-    from tapps_brain.profile import ConflictCheckConfig
-
     return float(ConflictCheckConfig().effective_similarity_threshold(tier))
 
 
@@ -64,11 +65,6 @@ def plan_conflicts(
     is pure data — callers are responsible for lock-held mutation and
     (best-effort) persistence of the invalidated entries.
     """
-    from tapps_brain.contradictions import (
-        detect_save_conflicts,
-        format_save_conflict_reason,
-    )
-
     hits = detect_save_conflicts(
         value,
         tier,

@@ -11,6 +11,7 @@ EPIC-055 STORIES 055.3-055.6 — full Postgres-backed Hive with:
 from __future__ import annotations
 
 import json
+import select
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,10 +19,11 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from tapps_brain.models import AgentRegistration
+
 if TYPE_CHECKING:
     import psycopg
 
-    from tapps_brain.models import AgentRegistration
     from tapps_brain.postgres_connection import PostgresConnectionManager
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -64,7 +66,7 @@ class PostgresHiveBackend:
         """Save a memory entry to PostgreSQL.
 
         Uses INSERT ... ON CONFLICT for upsert semantics.
-        Conflict policies are evaluated in Python to match SQLite backend behavior.
+        Conflict policies are evaluated in Python (see :meth:`_resolve_conflict`).
 
         **Trusted-caller contract (scope-audit G-1):** this method does **not**
         validate namespace membership. Callers must be ``PropagationEngine`` or
@@ -333,34 +335,24 @@ class PostgresHiveBackend:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Full-text search using tsvector @@ plainto_tsquery()."""
+        # One statement for both branches: an empty/None namespace filter
+        # collapses to TRUE via the %s::text[] IS NULL guard, so the two
+        # previously-duplicated SQL bodies cannot drift.
+        ns_param = list(namespaces) if namespaces else None
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            if namespaces:
-                cur.execute(
-                    """
-                        SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
-                        FROM hive_memories
-                        WHERE search_vector @@ plainto_tsquery('english', %s)
-                          AND confidence >= %s
-                          AND namespace = ANY(%s)
-                          AND invalid_at IS NULL
-                        ORDER BY rank DESC
-                        LIMIT %s
-                        """,
-                    (query, query, min_confidence, namespaces, limit),
-                )
-            else:
-                cur.execute(
-                    """
-                        SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
-                        FROM hive_memories
-                        WHERE search_vector @@ plainto_tsquery('english', %s)
-                          AND confidence >= %s
-                          AND invalid_at IS NULL
-                        ORDER BY rank DESC
-                        LIMIT %s
-                        """,
-                    (query, query, min_confidence, limit),
-                )
+            cur.execute(
+                """
+                    SELECT *, ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
+                    FROM hive_memories
+                    WHERE search_vector @@ plainto_tsquery('english', %s)
+                      AND confidence >= %s
+                      AND (%s::text[] IS NULL OR namespace = ANY(%s::text[]))
+                      AND invalid_at IS NULL
+                    ORDER BY rank DESC
+                    LIMIT %s
+                    """,
+                (query, query, min_confidence, ns_param, ns_param, limit),
+            )
             rows = cur.fetchall()
             col_names = [desc[0] for desc in cur.description]
             return [self._row_to_dict(dict(zip(col_names, r, strict=False))) for r in rows]
@@ -391,10 +383,17 @@ class PostgresHiveBackend:
             return bool(changed)
 
     def get_confidence(self, *, namespace: str, key: str) -> float | None:
-        """Return the current confidence for a row, or None."""
+        """Return the current confidence for a *live* row, or None.
+
+        Filters ``invalid_at IS NULL`` to stay consistent with
+        :meth:`patch_confidence` — otherwise the flywheel could read a
+        superseded row's confidence as the base for a penalty that
+        ``patch_confidence`` then applies to nothing.
+        """
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT confidence FROM hive_memories WHERE namespace = %s AND key = %s",
+                "SELECT confidence FROM hive_memories "
+                "WHERE namespace = %s AND key = %s AND invalid_at IS NULL",
                 (namespace, key),
             )
             row = cur.fetchone()
@@ -409,15 +408,20 @@ class PostgresHiveBackend:
     def create_group(self, name: str, description: str = "") -> dict[str, Any]:
         now = datetime.now(tz=UTC).isoformat()
         with self._cm.get_connection() as conn, conn.cursor() as cur:
+            # RETURNING reports the *stored* created_at — on upsert of an
+            # existing group the original timestamp is kept, not `now`.
             cur.execute(
                 """
                     INSERT INTO hive_groups (name, description, created_at)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+                    RETURNING created_at
                     """,
                 (name, description, now),
             )
-        return {"name": name, "description": description, "created_at": now}
+            row = cur.fetchone()
+        created_at = str(row[0]) if row is not None else now
+        return {"name": name, "description": description, "created_at": created_at}
 
     def add_group_member(self, group_name: str, agent_id: str, role: str = "member") -> bool:
         now = datetime.now(tz=UTC).isoformat()
@@ -667,8 +671,6 @@ class PostgresHiveBackend:
         timeout_sec: float,
     ) -> dict[str, Any]:
         """Use PostgreSQL LISTEN/NOTIFY for change detection."""
-        import select as _select
-
         with self._cm.get_connection() as conn:
             conn.autocommit = True
             with conn.cursor() as cur:
@@ -681,7 +683,7 @@ class PostgresHiveBackend:
 
             # Wait for notification.
             fd = conn.fileno()
-            ready = _select.select([fd], [], [], max(0.0, timeout_sec))
+            ready = select.select([fd], [], [], max(0.0, timeout_sec))
             if ready[0]:
                 conn.poll()
                 # Drain notifications.
@@ -708,7 +710,7 @@ class PostgresHiveBackend:
         timeout_sec: float,
         poll_interval_sec: float,
     ) -> dict[str, Any]:
-        """Fallback polling approach matching SQLite backend behavior."""
+        """Fallback polling approach for connections where LISTEN is unavailable."""
         deadline = time.monotonic() + max(0.0, float(timeout_sec))
         poll = max(0.05, float(poll_interval_sec))
         while time.monotonic() < deadline:
@@ -823,12 +825,15 @@ class PostgresAgentRegistry:
             if row is None:
                 return None
             col_names = [desc[0] for desc in cur.description]
-            d = dict(zip(col_names, row, strict=False))
-            # Parse JSONB fields if they come back as strings.
-            for jf in ("skills", "groups"):
-                if isinstance(d.get(jf), str):
-                    d[jf] = json.loads(d[jf])
-            return d
+            return self._parse_agent_row(dict(zip(col_names, row, strict=False)))
+
+    @staticmethod
+    def _parse_agent_row(d: dict[str, Any]) -> dict[str, Any]:
+        """Parse JSONB fields that psycopg may return as raw strings."""
+        for jf in ("skills", "groups"):
+            if isinstance(d.get(jf), str):
+                d[jf] = json.loads(d[jf])
+        return d
 
     @staticmethod
     def _row_to_registration(d: dict[str, Any]) -> AgentRegistration:
@@ -841,8 +846,6 @@ class PostgresAgentRegistry:
         (``registered_at``, ``last_seen_at``, ``groups``) are dropped: the model
         forbids extras.
         """
-        from tapps_brain.models import AgentRegistration
-
         return AgentRegistration(
             id=str(d["id"]),
             name=str(d.get("name") or ""),
@@ -856,14 +859,12 @@ class PostgresAgentRegistry:
             cur.execute("SELECT * FROM agent_registry ORDER BY id")
             rows = cur.fetchall()
             col_names = [desc[0] for desc in cur.description]
-            results = []
-            for r in rows:
-                d = dict(zip(col_names, r, strict=False))
-                for jf in ("skills", "groups"):
-                    if isinstance(d.get(jf), str):
-                        d[jf] = json.loads(d[jf])
-                results.append(self._row_to_registration(d))
-            return results
+            return [
+                self._row_to_registration(
+                    self._parse_agent_row(dict(zip(col_names, r, strict=False)))
+                )
+                for r in rows
+            ]
 
     def agents_for_domain(self, domain_name: str) -> list[Any]:
         with self._cm.get_connection() as conn, conn.cursor() as cur:
@@ -873,11 +874,9 @@ class PostgresAgentRegistry:
             )
             rows = cur.fetchall()
             col_names = [desc[0] for desc in cur.description]
-            results = []
-            for r in rows:
-                d = dict(zip(col_names, r, strict=False))
-                for jf in ("skills", "groups"):
-                    if isinstance(d.get(jf), str):
-                        d[jf] = json.loads(d[jf])
-                results.append(self._row_to_registration(d))
-            return results
+            return [
+                self._row_to_registration(
+                    self._parse_agent_row(dict(zip(col_names, r, strict=False)))
+                )
+                for r in rows
+            ]

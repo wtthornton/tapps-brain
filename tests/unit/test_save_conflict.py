@@ -100,7 +100,7 @@ class TestPlanConflictsNoHits:
     """When detect_save_conflicts returns an empty list, plan_conflicts returns None."""
 
     def test_no_entries_returns_none(self) -> None:
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[]):
             result = plan_conflicts(
                 key="new-key",
                 value="some value",
@@ -114,7 +114,7 @@ class TestPlanConflictsNoHits:
     def test_low_similarity_entries_returns_none(self) -> None:
         """Even with entries present, no conflicts means None."""
         entry = _entry("old-key", "very different content")
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[]):
             result = plan_conflicts(
                 key="new-key",
                 value="completely unrelated",
@@ -138,7 +138,7 @@ class TestPlanConflictsWithHits:
         existing = _entry("old-key", "similar content", invalid_at=None)
         hit = _conflict_hit(existing, similarity=0.85)
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[hit]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[hit]):
             result = plan_conflicts(
                 key="new-key",
                 value="similar content v2",
@@ -158,7 +158,7 @@ class TestPlanConflictsWithHits:
         existing = _entry("dup-key", "duplicate", invalid_at=None)
         hit = _conflict_hit(existing, similarity=0.9)
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[hit]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[hit]):
             result = plan_conflicts(
                 key="new-key",
                 value="similar",
@@ -176,7 +176,7 @@ class TestPlanConflictsWithHits:
         existing = _entry("audit-key", "content", invalid_at=None)
         hit = _conflict_hit(existing, similarity=0.88)
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[hit]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[hit]):
             result = plan_conflicts(
                 key="new-key",
                 value="similar",
@@ -197,7 +197,7 @@ class TestPlanConflictsWithHits:
         e2 = _entry("key-2", "content b", invalid_at=None)
         hits = [_conflict_hit(e1, 0.9), _conflict_hit(e2, 0.8)]
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=hits):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=hits):
             result = plan_conflicts(
                 key="new-key",
                 value="content",
@@ -224,7 +224,7 @@ class TestPlanConflictsInvalidatedEntries:
         already_invalid = _entry("old-key", "content", invalid_at="2025-12-01T00:00:00Z")
         hit = _conflict_hit(already_invalid, similarity=0.95)
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=[hit]):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=[hit]):
             result = plan_conflicts(
                 key="new-key",
                 value="similar content",
@@ -246,7 +246,7 @@ class TestPlanConflictsInvalidatedEntries:
         stale = _entry("stale-key", "content", invalid_at="2025-01-01T00:00:00Z")
         hits = [_conflict_hit(active, 0.9), _conflict_hit(stale, 0.85)]
 
-        with patch("tapps_brain.contradictions.detect_save_conflicts", return_value=hits):
+        with patch("tapps_brain._save_conflict.detect_save_conflicts", return_value=hits):
             result = plan_conflicts(
                 key="new-key",
                 value="similar",

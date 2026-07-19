@@ -55,9 +55,9 @@ class PostgresFederationBackend:
                         agent_scope=agent_scope,
                     )
                     continue
-                tags_json = json.dumps(
-                    entry.tags if hasattr(entry, "tags") else getattr(entry, "tags", [])
-                )
+                # `or []` guards entries whose tags attribute is None — json.dumps(None)
+                # would store JSONB null and break tag filtering on search.
+                tags_json = json.dumps(getattr(entry, "tags", None) or [])
                 tier = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
                 source = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
                 cur.execute(
@@ -162,9 +162,9 @@ class PostgresFederationBackend:
             clauses.append("memory_group = %s")
             params.append(memory_group)
 
-        # For tag filtering, use JSONB containment: tags @> ANY of the requested tags.
-        # We fetch extra rows and filter in Python (same approach as SQLite backend)
-        # since JSONB array overlap is less straightforward.
+        # Tag filtering happens in Python: fetch extra rows, then intersect the
+        # requested tags with each row's tags (JSONB array overlap in SQL is
+        # less straightforward than a set intersection here).
         sql_limit = limit * 3 if tags else limit
         params.append(sql_limit)
 
@@ -187,9 +187,9 @@ class PostgresFederationBackend:
         results: list[dict[str, Any]] = []
         for r in rows:
             d = dict(zip(col_names, r, strict=False))
-            row_tags = d.get("tags", [])
+            row_tags = d.get("tags") or []
             if isinstance(row_tags, str):
-                row_tags = json.loads(row_tags)
+                row_tags = json.loads(row_tags) or []
             # Python-side tag filtering.
             if tags and not set(tags) & set(row_tags):
                 continue
@@ -222,9 +222,10 @@ class PostgresFederationBackend:
         results: list[dict[str, Any]] = []
         for r in rows:
             d = dict(zip(col_names, r, strict=False))
-            tags = d.get("tags", [])
+            tags = d.get("tags") or []
             if isinstance(tags, str):
-                d["tags"] = json.loads(tags)
+                tags = json.loads(tags) or []
+            d["tags"] = tags
             d.pop("search_vector", None)
             results.append(d)
         return results
