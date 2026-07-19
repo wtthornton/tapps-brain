@@ -201,8 +201,11 @@ class _MockStore:
     def search(self, query: str, **_kwargs: Any) -> list[MemoryEntry]:
         return list(self._entries_map.values())
 
-    def list_all(self) -> list[MemoryEntry]:
-        return list(self._entries_map.values())
+    def list_all(self, *, include_superseded: bool = True) -> list[MemoryEntry]:
+        entries = list(self._entries_map.values())
+        if include_superseded:
+            return entries
+        return [e for e in entries if e.status is not MemoryStatus.superseded]
 
     def get(self, key: str) -> MemoryEntry | None:
         return self._entries_map.get(key)

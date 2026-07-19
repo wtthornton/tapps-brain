@@ -416,6 +416,9 @@ class TestProperties:
 
     def test_hive_property(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("TAPPS_BRAIN_HIVE_DSN", raising=False)
+        # Hive now falls back to the unified DSN — clear it too so "no DSN
+        # anywhere" genuinely means no Hive backend.
+        monkeypatch.delenv("TAPPS_BRAIN_DATABASE_URL", raising=False)
         with _make_brain(tmp_path) as brain:
             # v3 Postgres-only: without a DSN the Hive backend is None
             assert brain.hive is None
