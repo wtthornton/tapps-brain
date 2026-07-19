@@ -79,6 +79,11 @@ class _CapturePersistenceBackend:
     def save(self, entry: MemoryEntry) -> None:
         with self._lock:
             self._saved.append(entry)
+            # Drop any pending delete for this key — a later save wins.
+            # Without this, flush replays saves before deletes and a
+            # delete-then-save sequence would net to a durable delete while
+            # the cache keeps the entry.
+            self._deleted = [k for k in self._deleted if k != entry.key]
 
     def save_many(self, entries: list[MemoryEntry]) -> None:
         # TAP-2800: capture a batched persist the same way as single saves so
@@ -86,6 +91,8 @@ class _CapturePersistenceBackend:
         # flushed via the async backend after the to_thread call returns.
         with self._lock:
             self._saved.extend(entries)
+            saved_keys = {e.key for e in entries}
+            self._deleted = [k for k in self._deleted if k not in saved_keys]
 
     def delete(self, key: str) -> bool:
         with self._lock:
@@ -408,7 +415,17 @@ class AsyncMemoryStore:
             from tapps_brain.backends import create_async_private_backend
 
             project_id = getattr(store, "_project_id", None) or ""
-            agent_id = getattr(store, "_agent_id", None) or ""
+            # Read the *resolved* agent id off the backend: MemoryStore keeps
+            # the raw constructor arg (None unless explicitly passed) in
+            # _agent_id but resolves `agent_id or "default"` when building the
+            # backend, so gating on _agent_id alone silently disabled the
+            # async-native write path for the documented `open(project_root)`
+            # usage.
+            agent_id = (
+                getattr(store._persistence, "_agent_id", None)
+                or getattr(store, "_agent_id", None)
+                or "default"
+            )
             if (
                 isinstance(project_id, str)
                 and isinstance(agent_id, str)
@@ -460,6 +477,8 @@ class AsyncMemoryStore:
             try:
                 with self._store._serialized():
                     prior = self._store._entries.get(key)
+                    had_rels = key in self._store._relations
+                    prior_rels = list(self._store._relations.get(key, []))
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 result = await self._captured_thread(
                     capture, self._store.save, key, value, **kwargs
@@ -467,11 +486,19 @@ class AsyncMemoryStore:
                 try:
                     await self._flush_capture(capture)
                 except Exception:
+                    # Roll back the entry *and* the relation cache:
+                    # _persist_relations refreshes _relations[key] from the
+                    # capture during the worker call, so leaving it in place
+                    # would expose edges whose durable write never happened.
                     with self._store._serialized():
                         if prior is None:
                             self._store._entries.pop(key, None)
                         else:
                             self._store._entries[key] = prior
+                        if had_rels:
+                            self._store._relations[key] = prior_rels
+                        else:
+                            self._store._relations.pop(key, None)
                     raise
                 return result
             finally:
@@ -563,16 +590,20 @@ class AsyncMemoryStore:
         # worse than a missing secondary write.
         for rel_key, rels in relations:
             save_rels = getattr(self._async_backend, "save_relations", None)
-            if save_rels is not None:
+            if callable(save_rels):
                 try:
-                    await save_rels(rel_key, rels)
+                    maybe_rels = save_rels(rel_key, rels)
+                    if inspect.isawaitable(maybe_rels):
+                        await maybe_rels
                 except Exception:
                     logger.warning("aio.flush_relations_failed", key=rel_key, exc_info=True)
         for action, audit_key, extra in audit:
             append = getattr(self._async_backend, "append_audit", None)
-            if append is not None:
+            if callable(append):
                 try:
-                    await append(action, audit_key, extra)
+                    maybe_audit = append(action, audit_key, extra)
+                    if inspect.isawaitable(maybe_audit):
+                        await maybe_audit
                 except Exception:
                     logger.warning("aio.flush_audit_failed", key=audit_key, exc_info=True)
 
@@ -635,6 +666,7 @@ class AsyncMemoryStore:
             try:
                 with self._store._serialized():
                     prior_keys = set(self._store._entries)
+                    prior_rel_keys = set(self._store._relations)
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 result = await self._captured_thread(
                     capture, self._store.ingest_context, context, **kwargs
@@ -646,6 +678,11 @@ class AsyncMemoryStore:
                         for k in list(self._store._entries):
                             if k not in prior_keys:
                                 self._store._entries.pop(k, None)
+                        # Drop relation-cache entries created for the new keys
+                        # (mirrors save(): their durable write never happened).
+                        for k in list(self._store._relations):
+                            if k not in prior_rel_keys:
+                                self._store._relations.pop(k, None)
                     raise
                 return result
             finally:
@@ -666,9 +703,15 @@ class AsyncMemoryStore:
                 try:
                     await self._flush_capture(capture)
                 except Exception:
-                    if prior is not None:
-                        with self._store._serialized():
+                    # prior is None when record_access hydrated a
+                    # durable-but-uncached entry into the cache and then
+                    # mutated it; pop it so the mutated copy (whose durable
+                    # write failed) doesn't linger.
+                    with self._store._serialized():
+                        if prior is not None:
                             self._store._entries[key] = prior
+                        else:
+                            self._store._entries.pop(key, None)
                     raise
             finally:
                 self._write_inflight -= 1
@@ -677,9 +720,14 @@ class AsyncMemoryStore:
         """Async version of :meth:`MemoryStore.history`."""
         return await self._read_thread(self._store.history, key)
 
-    async def health(self) -> Any:
-        """Async version of :meth:`MemoryStore.health`."""
-        return await self._read_thread(self._store.health)
+    async def health(self, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.health`.
+
+        Forwards keyword arguments (``skip_consolidation_scan``,
+        ``consolidation_scan_max_entries``) so async callers can skip the
+        O(n²) consolidation similarity scan just like sync callers.
+        """
+        return await self._read_thread(self._store.health, **kwargs)
 
     async def audit(self, **kwargs: Any) -> list[Any]:
         """Async version of :meth:`MemoryStore.audit` (TAP-2134).
@@ -830,9 +878,13 @@ class AsyncMemoryStore:
                 try:
                     await self._flush_capture(capture)
                 except Exception:
-                    if prior is not None:
-                        with self._store._serialized():
+                    # See record_access: pop hydrated-then-mutated entries when
+                    # there was no prior cached copy to restore.
+                    with self._store._serialized():
+                        if prior is not None:
                             self._store._entries[key] = prior
+                        else:
+                            self._store._entries.pop(key, None)
                     raise
                 return result
             finally:
@@ -850,13 +902,18 @@ class AsyncMemoryStore:
         """Async version of :meth:`MemoryStore.search_sessions` (STORY-070.10)."""
         return await self._read_thread(self._store.search_sessions, query, **kwargs)
 
-    async def list_gc_stale_details(self) -> Any:
+    async def list_gc_stale_details(self, **kwargs: Any) -> Any:
         """Async version of :meth:`MemoryStore.list_gc_stale_details` (STORY-070.10)."""
-        return await self._read_thread(self._store.list_gc_stale_details)
+        return await self._read_thread(self._store.list_gc_stale_details, **kwargs)
 
-    async def generate_report(self, *, period_days: int = 7) -> Any:
-        """Async version of :meth:`MemoryStore.generate_report` (STORY-070.10)."""
-        return await self._read_thread(self._store.generate_report, period_days=period_days)
+    async def generate_report(self, **kwargs: Any) -> Any:
+        """Async version of :meth:`MemoryStore.generate_report` (STORY-070.10).
+
+        Forwards all keyword arguments (``period_days``, ``extra_sections``,
+        ``custom_data``, ``registry``, ``eval_results``, ``config``) to the
+        sync method, matching its ``**kwargs`` signature.
+        """
+        return await self._read_thread(self._store.generate_report, **kwargs)
 
     async def latest_quality_report(self) -> Any:
         """Async version of :meth:`MemoryStore.latest_quality_report` (STORY-070.10)."""
@@ -915,6 +972,13 @@ class AsyncMemoryStore:
             "cleanup_sessions",
             "refresh_group_membership",
             "validate_entries",
+            # Feedback-pipeline methods write durable FeedbackStore events
+            # (rate_recall may also propagate to Hive) — bound them as writes.
+            "process_feedback",
+            "rate_recall",
+            "report_gap",
+            "report_issue",
+            "record_feedback",
         }
     )
 
