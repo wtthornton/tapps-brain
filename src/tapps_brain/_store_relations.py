@@ -42,7 +42,7 @@ class RelationsMixin(_MemoryStoreBase):
         partial write.
         """
         self._persistence.save_relations(key, relations)
-        with self._lock:
+        with self._serialized():
             self._relations[key] = self._persistence.load_relations(key)
 
     def load_relations(self, key: str) -> list[dict[str, Any]]:
@@ -54,7 +54,7 @@ class RelationsMixin(_MemoryStoreBase):
         list of relation dicts (same shape as :meth:`get_relations`).
         """
         loaded = self._persistence.load_relations(key)
-        with self._lock:
+        with self._serialized():
             self._relations[key] = list(loaded)
         return list(loaded)
 
@@ -68,12 +68,12 @@ class RelationsMixin(_MemoryStoreBase):
             List of relation dicts with subject, predicate, object_entity,
             source_entry_keys, confidence, and created_at.
         """
-        with self._lock:
+        with self._serialized():
             cached = self._relations.get(key)
             if cached is not None:
                 return list(cached)
         loaded = self._persistence.load_relations(key)
-        with self._lock:
+        with self._serialized():
             self._relations[key] = list(loaded)
             return list(loaded)
 

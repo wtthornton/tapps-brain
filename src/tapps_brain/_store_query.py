@@ -97,12 +97,15 @@ class QueryMixin(_MemoryStoreBase):
                 self._entries[updated.key] = updated
 
             self._metrics.increment("store.get.hit")
-            # Persist access metadata — rollback on failure.
+            # Persist access metadata — rollback on failure.  Identity-guarded
+            # so a concurrent writer that replaced the slot in the failure
+            # window is not clobbered with the stale pre-image.
             try:
                 self._persistence.save(updated)
             except Exception:
                 with self._serialized():
-                    self._entries[updated.key] = entry
+                    if self._entries.get(updated.key) is updated:
+                        self._entries[updated.key] = entry
                 raise
             self._drop_if_concurrently_removed(updated.key)
             return updated
@@ -220,8 +223,11 @@ class QueryMixin(_MemoryStoreBase):
                         self._relations[other_key] = kept
                 self._note_removed_locked(key)
 
-            # Remove from entity index (TAP-734).
-            self._remove_entry_entities(key)
+            # Remove from entity index (TAP-734) — under the lock: the helper
+            # iterates and replaces token sets, and races unlocked with the
+            # save path's _refresh_entity_index otherwise.
+            with self._serialized():
+                self._remove_entry_entities(key)
 
             # Audit (best-effort).
             self._persistence.append_audit(

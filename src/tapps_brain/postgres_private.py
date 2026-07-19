@@ -434,6 +434,18 @@ class PostgresPrivateBackend:
             row = cur.fetchone()
         return int(row[0]) if row else 0
 
+    def keys_missing_embedding(self) -> list[str]:
+        """Keys whose durable row has a NULL embedding (backfill candidates).
+
+        ``load_all``/``load_one`` deliberately never hydrate the ``embedding``
+        column, so the in-memory field cannot distinguish "row has no vector"
+        from "vector exists but was not loaded" — this query can.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.KEYS_MISSING_EMBEDDING_SQL, (self._project_id, self._agent_id))
+            rows = cur.fetchall()
+        return [str(r[0]) for r in rows]
+
     def snapshot_aggregates(self, project_id: str) -> SnapshotAggregates:
         """Return visual-snapshot rollups without hydrating full memory rows."""
         from tapps_brain.visual_snapshot import (

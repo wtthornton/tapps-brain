@@ -207,7 +207,7 @@ class IntegrityMixin(_MemoryStoreBase):
             upgraded_entry = entry.model_copy(
                 update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
             )
-            with self._lock:
+            with self._serialized():
                 previous = entry
                 self._entries[key] = upgraded_entry
 
@@ -216,7 +216,7 @@ class IntegrityMixin(_MemoryStoreBase):
             try:
                 self._persistence.save(upgraded_entry)
             except Exception:
-                with self._lock:
+                with self._serialized():
                     if self._entries.get(key) is upgraded_entry:
                         self._entries[key] = previous
                 logger.warning("rehash_integrity_v1.persist_failed", key=key, exc_info=True)
@@ -292,14 +292,14 @@ class IntegrityMixin(_MemoryStoreBase):
             resigned_entry = entry.model_copy(
                 update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
             )
-            with self._lock:
+            with self._serialized():
                 previous = entry
                 self._entries[key] = resigned_entry
 
             try:
                 self._persistence.save(resigned_entry)
             except Exception:
-                with self._lock:
+                with self._serialized():
                     if self._entries.get(key) is resigned_entry:
                         self._entries[key] = previous
                 logger.warning("resign_integrity.persist_failed", key=key, exc_info=True)

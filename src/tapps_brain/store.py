@@ -1286,28 +1286,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         MemorySource(source)
         MemoryScope(scope)
 
-        # Profile-tightened limits (profile.limits): the MemoryEntry model
-        # enforces the global constants (128/4096/10), but a profile may set
-        # *stricter* caps — without this check those three fields are dead
-        # configuration and the onboarding doc lies about them. Values above
-        # the model constants cannot take effect (Pydantic rejects first).
-        if self._profile is not None:
-            lim = getattr(self._profile, "limits", None)
-            if lim is not None:
-                from tapps_brain.models import MAX_KEY_LENGTH, MAX_TAGS, MAX_VALUE_LENGTH
+        # TAP-2675: normalise non-str values *before* the profile length
+        # check below — len() on a dict counts keys (undercounting the JSON
+        # text that actually persists) and raises TypeError on int/float.
+        value = _ensure_str_value(value)
 
-                # Only enforce limits *stricter* than the model constants —
-                # at or above them Pydantic raises its own ValidationError,
-                # which callers pin on.
-                if lim.max_key_length < MAX_KEY_LENGTH and len(key) > lim.max_key_length:
-                    msg = f"Key exceeds profile limit of {lim.max_key_length} characters."
-                    raise ValueError(msg)
-                if lim.max_value_length < MAX_VALUE_LENGTH and len(value) > lim.max_value_length:
-                    msg = f"Value exceeds profile limit of {lim.max_value_length} characters."
-                    raise ValueError(msg)
-                if lim.max_tags < MAX_TAGS and tags is not None and len(tags) > lim.max_tags:
-                    msg = f"Too many tags (max {lim.max_tags} per profile limit)."
-                    raise ValueError(msg)
+        limit_error = self._profile_limit_error(key, value, tags)
+        if limit_error is not None:
+            raise ValueError(limit_error)
 
         # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
         # extracted these into the shared prepare step used by save_many too).
@@ -1386,6 +1372,32 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         return entry
 
+    def _profile_limit_error(self, key: str, value: str, tags: list[str] | None) -> str | None:
+        """Return an error message when profile-tightened limits reject the row.
+
+        The MemoryEntry model enforces the global constants (128/4096/10), but
+        a profile may set *stricter* caps — without this check those three
+        fields are dead configuration and the onboarding doc lies about them.
+        Only limits stricter than the model constants are enforced here; at or
+        above them Pydantic raises its own ValidationError, which callers pin
+        on.  Shared by :meth:`save` (raises) and :meth:`_prepare_batch_entry`
+        (returns a per-row error dict).
+        """
+        if self._profile is None:
+            return None
+        lim = getattr(self._profile, "limits", None)
+        if lim is None:
+            return None
+        from tapps_brain.models import MAX_KEY_LENGTH, MAX_TAGS, MAX_VALUE_LENGTH
+
+        if lim.max_key_length < MAX_KEY_LENGTH and len(key) > lim.max_key_length:
+            return f"Key exceeds profile limit of {lim.max_key_length} characters."
+        if lim.max_value_length < MAX_VALUE_LENGTH and len(value) > lim.max_value_length:
+            return f"Value exceeds profile limit of {lim.max_value_length} characters."
+        if lim.max_tags < MAX_TAGS and tags is not None and len(tags) > lim.max_tags:
+            return f"Too many tags (max {lim.max_tags} per profile limit)."
+        return None
+
     def _prepare_save(
         self,
         *,
@@ -1452,15 +1464,27 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         elif wp_short is not None:
             return wp_short
 
-        # Phase 4 — dedup fast-path.
-        dedup_short = self._handle_dedup(key if update_key is None else update_key, value, dedup)
-        if dedup_short is not None:
-            return dedup_short
+        # Phases 4-5 run *durable* side effects: dedup can reinforce another
+        # entry and conflict-check marks similar entries contradicted.  Skip
+        # both when the key or value is going to fail model validation anyway
+        # — _construct_memory_entry still raises the same ValidationError, but
+        # no side effects survive the failed save.
+        from tapps_brain.models import _KEY_SLUG_PATTERN, MAX_VALUE_LENGTH
 
-        # Phase 5 — conflict detection (opt-in) marks superseded entries.
-        conflict_valid_at = self._handle_conflicts(
-            key if update_key is None else update_key, value, tier, conflict_check
+        persist_key = key if update_key is None else update_key
+        will_fail_validation = (
+            not _KEY_SLUG_PATTERN.fullmatch(persist_key) or len(value) > MAX_VALUE_LENGTH
         )
+
+        conflict_valid_at: str | None = None
+        if not will_fail_validation:
+            # Phase 4 — dedup fast-path.
+            dedup_short = self._handle_dedup(persist_key, value, dedup)
+            if dedup_short is not None:
+                return dedup_short
+
+            # Phase 5 — conflict detection (opt-in) marks superseded entries.
+            conflict_valid_at = self._handle_conflicts(persist_key, value, tier, conflict_check)
 
         return _SavePrep(
             value=value,
@@ -1564,12 +1588,29 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             ),
             MetricsTimer(self._metrics, "store.save_many_ms"),
         ):
-            for idx, item in enumerate(items):
-                built = self._prepare_batch_entry(item)
-                if isinstance(built, tuple):
-                    pending.append((idx, built[0], built[1]))
-                else:
-                    results[idx] = built  # short-circuit (error dict / dedup entry)
+            try:
+                for idx, item in enumerate(items):
+                    built = self._prepare_batch_entry(item)
+                    if isinstance(built, tuple):
+                        pending.append((idx, built[0], built[1]))
+                    else:
+                        results[idx] = built  # short-circuit (error dict / dedup entry)
+            except Exception:
+                # A row raised past the per-row handler (rate limit, lock
+                # timeout, …).  Earlier valid rows were already assigned into
+                # the cache but never persisted — roll them back so the cache
+                # doesn't advertise rows Postgres never saw.
+                if pending:
+                    with self._serialized():
+                        for _, entry, existing in pending:
+                            if existing is not None:
+                                self._entries[entry.key] = existing
+                            else:
+                                self._entries.pop(entry.key, None)
+                        self._bloom = BloomFilter()
+                        for _e in self._entries.values():
+                            self._bloom.add(normalize_for_dedup(_e.value))
+                raise
 
             # Single batched persist for all valid rows (TAP-2800).
             if pending:
@@ -1577,6 +1618,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     [(entry, existing) for _, entry, existing in pending],
                     backend_save_many=backend_save_many,
                 )
+                # Same evict/persist resurrection guard as single save(): a
+                # concurrent delete between cache assignment and the batched
+                # persist must not leave a zombie durable row.
+                for _, entry, _existing in pending:
+                    self._drop_if_concurrently_removed(entry.key)
 
             # Per-row post-persist fan-out + result assembly.
             for idx, entry, existing in pending:
@@ -1612,6 +1658,23 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         from pydantic import ValidationError as _PydanticValidationError
 
         key = item.get("key", "")
+
+        # Mirror save()'s up-front guards per row: enum conversion inside
+        # _construct_memory_entry raises a bare ValueError (not a Pydantic
+        # ValidationError), which previously escaped the batch and stranded
+        # earlier cache-assigned rows; profile-tightened limits were not
+        # enforced at all on the batch path.
+        try:
+            MemorySource(item.get("source", "agent"))
+            MemoryScope(item.get("scope", "project"))
+        except ValueError as exc:
+            return {"error": "bad_request", "message": str(exc)}
+        limit_error = self._profile_limit_error(
+            key, _ensure_str_value(item.get("value", "")), item.get("tags")
+        )
+        if limit_error is not None:
+            return {"error": "bad_request", "message": limit_error}
+
         prep = self._prepare_save(
             key=key,
             value=item.get("value", ""),
@@ -1658,6 +1721,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             errs = exc.errors()
             msg = errs[0].get("msg", str(exc)) if errs else str(exc)
             return {"error": "bad_request", "message": msg}
+        except ValueError as exc:
+            # Bare ValueError from enum conversion or similar — surface as a
+            # per-row error instead of aborting the batch (ValidationError is
+            # a ValueError subclass, so this arm must come second).
+            return {"error": "bad_request", "message": str(exc)}
         return entry, existing
 
     def _persist_many_or_rollback(
@@ -1866,7 +1934,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     return self.reinforce(dup_key)
                 except KeyError:
                     pass  # Entry was deleted between check and reinforce; proceed with save.
-        self._bloom.add(normalized)
+        # Under the lock: gc() holds the lock for its whole bloom rebuild and
+        # BloomFilter.add can auto-resize (reallocate _bits, reset _count) —
+        # an unlocked add racing that rebuild loses this entry's bits or
+        # interleaves the clear/resize non-atomically.
+        with self._serialized():
+            self._bloom.add(normalized)
         return None
 
     def _handle_conflicts(
@@ -2216,12 +2289,29 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         skipped_existing = 0
         failed = 0
 
+        # Ask the durable store which rows actually lack an embedding when it
+        # can tell us: load_all()/load_one() never hydrate the embedding
+        # column, so the in-memory field is None for every hydrated row — the
+        # cache-only check would re-embed and rewrite the entire store after
+        # any restart (and report skipped_existing=0).
+        missing: set[str] | None = None
+        keys_missing = getattr(self._persistence, "keys_missing_embedding", None)
+        if callable(keys_missing):
+            try:
+                missing = set(keys_missing())
+            except Exception:
+                logger.warning("backfill_embeddings.missing_query_failed", exc_info=True)
+
         for key in keys:
             with self._serialized():
                 entry = self._entries.get(key)
             if entry is None:
                 continue
-            if getattr(entry, "embedding", None):
+            if missing is not None:
+                if key not in missing:
+                    skipped_existing += 1
+                    continue
+            elif getattr(entry, "embedding", None):
                 skipped_existing += 1
                 continue
 
@@ -2340,10 +2430,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         *,
         existing_present: bool,
     ) -> None:
-        """Refresh the entity index for graph centrality (TAP-734)."""
-        if existing_present:
-            self._remove_entry_entities(key)
-        self._index_entry_entities(key, entry.value)
+        """Refresh the entity index for graph centrality (TAP-734).
+
+        Takes the store lock: this runs in the post-persist fan-out (outside
+        any lock), and unlocked index mutation races other saves/deletes —
+        dict insert during ``_remove_entry_entities``'s iteration raises
+        ``RuntimeError: dictionary changed size during iteration``.
+        """
+        with self._serialized():
+            if existing_present:
+                self._remove_entry_entities(key)
+            self._index_entry_entities(key, entry.value)
 
     def _persist_relations(self, key: str, value: str, *, created_at: str | None = None) -> None:
         """Extract + persist relations and warn on simple cycles (EPIC-006)."""
@@ -2486,26 +2583,31 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Add *key* to the entity index for all BM25 tokens in *value* (TAP-734).
 
         Tokens shorter than 3 characters are excluded (post-stemming length).
-        May be called with or without the store lock held; callers that need
-        strict consistency should operate under ``_serialized()``.  Thread
-        safety relies on CPython's GIL for dict mutations.
+        Must be called while holding the store lock.  Token sets are replaced
+        (copy-on-write), never mutated in place, so unlocked readers (recall's
+        graph-centrality scoring) can safely iterate a set snapshot they
+        obtained via ``dict.get`` without racing a concurrent mutation.
         """
         tokens = [t for t in _bm25_preprocess(value) if len(t) >= 3]
         for token in tokens:
-            self._entity_index.setdefault(token, set()).add(key)
+            existing = self._entity_index.get(token)
+            self._entity_index[token] = {key} if existing is None else existing | {key}
 
     def _remove_entry_entities(self, key: str) -> None:
         """Remove *key* from all entity index token sets (TAP-734).
 
-        Empty token sets are pruned to keep memory bounded.
+        Empty token sets are pruned to keep memory bounded.  Must be called
+        while holding the store lock; sets are replaced, not mutated in place
+        (see :meth:`_index_entry_entities`).
         """
-        empty_tokens: list[str] = []
-        for token, keys in self._entity_index.items():
-            keys.discard(key)
-            if not keys:
-                empty_tokens.append(token)
-        for token in empty_tokens:
-            self._entity_index.pop(token, None)
+        for token, keys in list(self._entity_index.items()):
+            if key not in keys:
+                continue
+            remaining = keys - {key}
+            if remaining:
+                self._entity_index[token] = remaining
+            else:
+                self._entity_index.pop(token, None)
 
     def _propagate_to_hive(self, entry: MemoryEntry) -> None:
         """Propagate a saved entry to the Hive if appropriate (EPIC-011)."""
@@ -2582,12 +2684,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             updated = entry.model_copy(update=fields)
             self._entries[key] = updated
 
-        # Persist — rollback in-memory cache on failure.
+        # Persist — rollback in-memory cache on failure.  Identity-guarded so
+        # a concurrent writer that replaced the slot in the failure window is
+        # not clobbered with our stale pre-image.
         try:
             self._persistence.save(updated)
         except Exception:
             with self._serialized():
-                self._entries[key] = entry
+                if self._entries.get(key) is updated:
+                    self._entries[key] = entry
             raise
         self._drop_if_concurrently_removed(key)
         return updated
@@ -2710,11 +2815,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
             # Persist reinforcement — rollback in-memory cache on failure to
             # maintain write-through consistency (matches get() / update_fields()).
+            # Identity-guarded so a concurrent writer is not clobbered.
             try:
                 self._persistence.save(updated)
             except Exception:
                 with self._serialized():
-                    self._entries[key] = entry
+                    if self._entries.get(key) is updated:
+                        self._entries[key] = entry
                 raise
             self._drop_if_concurrently_removed(key)
 
@@ -2873,11 +2980,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         # Persist access metadata — rollback in-memory cache on failure to
         # maintain write-through consistency (matches get() / update_fields()).
+        # Identity-guarded so a concurrent writer is not clobbered.
         try:
             self._persistence.save(updated)
         except Exception:
             with self._serialized():
-                self._entries[key] = entry
+                if self._entries.get(key) is updated:
+                    self._entries[key] = entry
             raise
         self._drop_if_concurrently_removed(key)
         logger.debug(
@@ -3802,7 +3911,21 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         archived_keys: list[str] = []
         archive_bytes = 0
         for entry in candidates:
-            nbytes = self._persistence.archive_entry(entry)
+            # Re-read the current row: a save()/reinforce() that landed after
+            # the candidate snapshot must not be destroyed by archiving the
+            # stale payload and then deleting the fresh row.
+            with self._serialized():
+                current = self._entries.get(entry.key)
+            if current is None:
+                continue
+            if current.updated_at != entry.updated_at:
+                logger.info(
+                    "gc.skip_concurrently_updated",
+                    key=entry.key,
+                    hint="entry changed since candidate scan; left in store",
+                )
+                continue
+            nbytes = self._persistence.archive_entry(current)
             if nbytes > 0:
                 archived_keys.append(entry.key)
                 archive_bytes += nbytes
@@ -3863,17 +3986,27 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Best-effort — a failed demotion leaves the entry unchanged so the GC
         pass falls back to archiving it.
         """
-        demoted = entry.model_copy(update={"tier": target_tier, "updated_at": _utc_now_iso()})
         old_tier = str(entry.tier)
         try:
             with self._serialized():
+                # Demote the *current* row, not the candidate-scan snapshot —
+                # assigning a snapshot-era copy would silently revert any
+                # concurrent update.  A changed row is no longer the entry the
+                # candidate scan judged; fall back to the archive path (which
+                # re-checks updated_at itself).
+                current = self._entries.get(entry.key)
+                if current is None or current.updated_at != entry.updated_at:
+                    return False
+                demoted = current.model_copy(
+                    update={"tier": target_tier, "updated_at": _utc_now_iso()}
+                )
                 self._entries[entry.key] = demoted
             try:
                 self._persistence.save(demoted)
             except Exception:
                 with self._serialized():
                     if self._entries.get(entry.key) is demoted:
-                        self._entries[entry.key] = entry
+                        self._entries[entry.key] = current
                 raise
             self._drop_if_concurrently_removed(entry.key)
             self._persistence.append_audit(
@@ -4502,9 +4635,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Count live rows whose ``memory_group`` matches (``None`` = ungrouped)."""
         # Caller holds the store lock; merge durable overflow so caps see
         # experience/out-of-band rows that never entered the cold-start cache.
+        snapshot_epoch = self._removal_epoch
         durable = self._persistence.load_all()
         for entry in durable:
             if entry.key not in self._entries:
+                # Same contract as _merge_durable_entries, *including* the
+                # removal-tombstone guard: a delete whose durable phase is
+                # still in flight must not be resurrected into the cache.
+                if self._removed_at.get(entry.key, 0) > snapshot_epoch:
+                    continue
                 self._entries[entry.key] = entry
                 # Keep derived indexes consistent (same contract as
                 # _merge_durable_entries): dedup and graph centrality must see
@@ -4606,21 +4745,24 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._evict_entry_key(lowest_key, reason="max_entries")
 
     def _resolve_scope(self, key: str, scope: str, branch: str) -> MemoryEntry | None:
-        """Resolve scope precedence: session > branch > project.
+        """Return the entry when its scope is at least as specific as *scope*.
 
-        Must be called while holding the store serialization lock (inside ``_serialized()``).
+        ``_entries`` holds at most one entry per key, so there is nothing to
+        rank between — the old probe loop over [session, branch, project]
+        also silently hid ``ephemeral``/``shared``-scoped entries from scoped
+        ``get()`` because those scopes were never probed.
+
+        Must be called while holding the store serialization lock (inside
+        ``_serialized()``).
         """
-        # Try most specific first
-        for try_scope in [MemoryScope.session, MemoryScope.branch, MemoryScope.project]:
-            if try_scope.value == scope or _scope_rank(try_scope) >= _scope_rank(
-                MemoryScope(scope)
-            ):
-                for entry in self._entries.values():
-                    if entry.key == key and entry.scope == try_scope:
-                        if try_scope == MemoryScope.branch and entry.branch != branch:
-                            continue
-                        return entry
-        return None
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if entry.scope != scope and _scope_rank(entry.scope) < _scope_rank(MemoryScope(scope)):
+            return None
+        if entry.scope == MemoryScope.branch and entry.branch != branch:
+            return None
+        return entry
 
 
 def _scope_rank(scope: MemoryScope) -> int:

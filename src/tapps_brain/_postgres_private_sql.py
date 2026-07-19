@@ -438,6 +438,11 @@ VECTOR_ROW_COUNT_SQL = (
     "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL"
 )
 
+KEYS_MISSING_EMBEDDING_SQL = (
+    "SELECT key FROM private_memories "
+    "WHERE project_id = %s AND agent_id = %s AND embedding IS NULL"
+)
+
 
 # ---------------------------------------------------------------------------
 # Index sanity check
