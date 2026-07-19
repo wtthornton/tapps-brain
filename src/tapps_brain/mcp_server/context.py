@@ -221,9 +221,11 @@ def _safe_close_store(store: Any) -> None:  # noqa: ANN401
 
 _STORE_CACHE = _StoreCache()
 
-
-def _resolve_project_dir_for_id(project_id: str) -> Path:
-    return Path.cwd().resolve()
+# Serializes store-factory runs that communicate project_id to MemoryStore via
+# the TAPPS_BRAIN_PROJECT env var. _StoreCache deliberately runs factories
+# outside its own lock; without this, two concurrent tool calls for different
+# projects could interleave env set/read and silently cross-route tenants.
+_ENV_FACTORY_LOCK = threading.Lock()
 
 
 def _get_store_for_project(
@@ -251,39 +253,52 @@ def _get_store_for_project(
     if not project_id and not per_call_differs:
         return default_store
 
+    # ``_tapps_project_id`` is an explicit override (tests); production stores
+    # carry their resolved tenant id in ``_project_id`` (STORY-069.7).
+    default_pid = getattr(default_store, "_tapps_project_id", None) or getattr(
+        default_store, "_project_id", None
+    )
+
     if not project_id:
-        project_id = getattr(default_store, "_tapps_project_id", "") or ""
+        project_id = default_pid or ""
 
     # Compound key always includes agent_id so pooled MCP connections cannot
     # reuse another agent's store when only project_id matches.
     cache_key = f"{project_id}\x00{effective_agent_id}"
 
-    default_pid = getattr(default_store, "_tapps_project_id", None)
+    # Reuse the default store when the request targets the server's own
+    # project with the server-level agent — a second MemoryStore (own pool,
+    # own in-memory cache) would only diverge from it. `_get_store` maps the
+    # "unknown" placeholder to agent_id=None at construction, so mirror that
+    # here or the fast path never fires for unnamed servers.
     default_aid = getattr(default_store, "_agent_id", None)
+    expected_aid = effective_agent_id if effective_agent_id != "unknown" else None
     if (
         not per_call_differs
         and default_pid
         and project_id == default_pid
-        and (default_aid is not None and default_aid == effective_agent_id)
+        and default_aid == expected_aid
     ):
         return default_store
 
     def _factory() -> Any:  # noqa: ANN401
-        prev = os.environ.get("TAPPS_BRAIN_PROJECT")
-        if project_id:
-            os.environ["TAPPS_BRAIN_PROJECT"] = project_id
-        try:
-            target_dir = _resolve_project_dir_for_id(project_id) if project_id else Path.cwd()
-            return _ms_pkg._get_store(  # type: ignore[attr-defined]
-                target_dir,
-                enable_hive=enable_hive,
-                agent_id=effective_agent_id,
-            )
-        finally:
-            if prev is None:
-                os.environ.pop("TAPPS_BRAIN_PROJECT", None)
-            else:
-                os.environ["TAPPS_BRAIN_PROJECT"] = prev
+        # Env-var handoff to MemoryStore must not interleave with another
+        # thread's factory run (cross-tenant routing race) — serialize it.
+        with _ENV_FACTORY_LOCK:
+            prev = os.environ.get("TAPPS_BRAIN_PROJECT")
+            if project_id:
+                os.environ["TAPPS_BRAIN_PROJECT"] = project_id
+            try:
+                return _ms_pkg._get_store(  # type: ignore[attr-defined]
+                    Path.cwd(),
+                    enable_hive=enable_hive,
+                    agent_id=effective_agent_id,
+                )
+            finally:
+                if prev is None:
+                    os.environ.pop("TAPPS_BRAIN_PROJECT", None)
+                else:
+                    os.environ["TAPPS_BRAIN_PROJECT"] = prev
 
     return _STORE_CACHE.get_or_create(cache_key, _factory)
 
@@ -360,7 +375,7 @@ def _current_request_group() -> str | None:
     return str(g).strip() or None
 
 
-def _resolve_per_call_agent_id(call_val: str, *, default: str) -> str:
+def _resolve_per_call_agent_id(call_val: str, *, default: str, warn: bool = True) -> str:
     """Resolve the effective ``agent_id`` for a single MCP tool call.
 
     Precedence (STORY-070.7):
@@ -371,8 +386,11 @@ def _resolve_per_call_agent_id(call_val: str, *, default: str) -> str:
 
     TAP-1936: When both *call_val* and the contextvar resolve to non-empty,
     non-equal values, emit a structured ``WARNING`` log so attribution drift
-    is diagnosable.  If ``TAPPS_BRAIN_STRICT_AGENT_ID=1`` is set, raise
-    :class:`ValueError` instead (caller translates to 400 / error envelope).
+    is diagnosable (pass ``warn=False`` on secondary resolutions — e.g. the
+    store resolver — so one tool call logs the mismatch once).  If
+    ``TAPPS_BRAIN_STRICT_AGENT_ID=1`` is set, raise :class:`ValueError`
+    instead; the KG tools translate that to a ``bad_request`` envelope,
+    other tool families surface it as a raw MCP tool error.
     """
     v = (call_val or "").strip()
     ctx = _current_request_agent_id()
@@ -387,6 +405,8 @@ def _resolve_per_call_agent_id(call_val: str, *, default: str) -> str:
                 f"agent_id mismatch: header/contextvar={ctx!r} kwarg={v!r}; "
                 "TAPPS_BRAIN_STRICT_AGENT_ID is enabled."
             )
+        if not warn:
+            return v
         _get_logger().warning(
             "agent_id.mismatch",
             kwarg_agent_id=v,

@@ -92,10 +92,18 @@ def brain_remember(
         if supersedes:
             old_entry = store.get(supersedes)
             if old_entry is not None:
+                # Re-save preserves the historical record's provenance —
+                # save() constructs a fresh MemoryEntry, so omitting tags/
+                # source/scope would silently reset them to defaults.
                 store.save(
                     key=old_entry.key,
                     value=old_entry.value,
                     tier=str(old_entry.tier),
+                    source=old_entry.source.value,
+                    source_agent=old_entry.source_agent,
+                    scope=old_entry.scope.value,
+                    tags=list(old_entry.tags),
+                    branch=old_entry.branch,
                     agent_scope=old_entry.agent_scope,
                     status=MemoryStatus.superseded.value,
                     superseded_by=key,
@@ -143,6 +151,11 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
     We extract the word-slug prefix and look for existing active entries whose
     key begins with that same prefix (and differs from *new_key*).
 
+    This is a best-effort *advisory* hint decorating an already-persisted
+    save: it scans only the in-memory cache (no durable load_all merge) and
+    never raises — a failure here must not convert a successful save into a
+    tool error.
+
     Returns the first matching key, or ``None``.
     """
     import re
@@ -157,10 +170,10 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
         return None
 
     try:
-        all_entries = store.list_all()
+        all_entries = store.list_all(include_superseded=False)
     except Exception:
         logger.warning("prefix_duplicate_list_failed", new_key=new_key, exc_info=True)
-        raise
+        return None
 
     for entry in all_entries:
         if entry.key == new_key:
@@ -323,13 +336,15 @@ def brain_status(store: Any, project_id: str, agent_id: str) -> dict[str, Any]:
     """Return the current agent's identity, group membership, and memory count.
 
     Includes ``hive_connected`` so callers can detect when a Hive backend is
-    unavailable. Cheap — does not query Postgres.
+    unavailable. ``memory_count`` counts *active* entries (matching what
+    ``memory_list`` shows by default) and triggers a durable-entry merge, so
+    this call does hit Postgres on a cold cache.
     """
     return {
         "agent_id": getattr(store, "agent_id", None),
         "groups": getattr(store, "groups", []),
         "expert_domains": getattr(store, "expert_domains", []),
-        "memory_count": len(store.list_all()),
+        "memory_count": len(store.list_all(include_superseded=False)),
         "hive_connected": store._hive_store is not None,
     }
 
@@ -1266,8 +1281,21 @@ def memory_save_many(
                     }
                     errors += 1
                     continue
-                key = (raw_entry.get("key") or "").strip()
-                value = raw_entry.get("value") or ""
+                # Field coercion can raise on malformed items (non-string key,
+                # non-numeric confidence) — keep that per-item, honoring the
+                # documented partial-failure contract.
+                try:
+                    key = str(raw_entry.get("key") or "").strip()
+                    value = raw_entry.get("value") or ""
+                    confidence = float(raw_entry.get("confidence", -1.0))
+                except (TypeError, ValueError):
+                    results[i] = {
+                        "error": "bad_entry",
+                        "message": "Malformed entry field (key/confidence).",
+                        "index": i,
+                    }
+                    errors += 1
+                    continue
                 if not key or not value:
                     results[i] = {
                         "error": "bad_entry",
@@ -1285,7 +1313,7 @@ def memory_save_many(
                     source=raw_entry.get("source", "agent"),
                     tags=raw_entry.get("tags"),
                     scope=raw_entry.get("scope", "project"),
-                    confidence=float(raw_entry.get("confidence", -1.0)),
+                    confidence=confidence,
                     agent_scope=raw_entry.get("agent_scope", "private"),
                     source_agent="",
                     group=raw_entry.get("group"),
@@ -1431,7 +1459,20 @@ def memory_reinforce_many(
                     }
                     errors += 1
                 else:
-                    key = (raw_entry.get("key") or "").strip()
+                    # Coercion errors stay per-item: a malformed entry mid-batch
+                    # must not abort the call after earlier reinforces persisted.
+                    try:
+                        key = str(raw_entry.get("key") or "").strip()
+                        boost = float(raw_entry.get("confidence_boost", 0.0))
+                    except (TypeError, ValueError):
+                        item = {
+                            "error": "bad_entry",
+                            "message": "Malformed entry field (key/confidence_boost).",
+                            "index": i,
+                        }
+                        errors += 1
+                        results.append(item)
+                        continue
                     if not key:
                         item = {
                             "error": "bad_entry",
@@ -1445,7 +1486,7 @@ def memory_reinforce_many(
                             project_id,
                             agent_id,
                             key=key,
-                            confidence_boost=float(raw_entry.get("confidence_boost", 0.0)),
+                            confidence_boost=boost,
                         )
                         if "error" in item:
                             errors += 1
@@ -2254,7 +2295,20 @@ async def async_memory_reinforce_many(
                     }
                     errors += 1
                 else:
-                    key = (raw_entry.get("key") or "").strip()
+                    # Coercion errors stay per-item: a malformed entry mid-batch
+                    # must not abort the call after earlier reinforces persisted.
+                    try:
+                        key = str(raw_entry.get("key") or "").strip()
+                        boost = float(raw_entry.get("confidence_boost", 0.0))
+                    except (TypeError, ValueError):
+                        item = {
+                            "error": "bad_entry",
+                            "message": "Malformed entry field (key/confidence_boost).",
+                            "index": i,
+                        }
+                        errors += 1
+                        results.append(item)
+                        continue
                     if not key:
                         item = {
                             "error": "bad_entry",
@@ -2268,7 +2322,7 @@ async def async_memory_reinforce_many(
                             project_id,
                             agent_id,
                             key=key,
-                            confidence_boost=float(raw_entry.get("confidence_boost", 0.0)),
+                            confidence_boost=boost,
                         )
                         if "error" in item:
                             errors += 1

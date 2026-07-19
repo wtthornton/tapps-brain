@@ -77,27 +77,33 @@ def hive_search(
         hive, should_close = hive_resolver()
         try:
             hive_agent_id = getattr(store, "_hive_agent_id", None) or agent_id or "unknown"
-            own_ns = getattr(store, "_hive_agent_profile", None) or hive_agent_id
-            allowed = {own_ns, "universal", *hive.get_agent_groups(hive_agent_id)}
+            # Domain-propagated entries live under the *profile name* namespace
+            # (PropagationEngine stores agent_scope="domain" under the profile,
+            # not the agent id) — resolve it from the store's active profile.
+            profile_ns = None
+            if getattr(store, "profile", None) is not None:
+                profile_ns = getattr(store.profile, "name", None)
+            own_ns = profile_ns or hive_agent_id
+            allowed = {own_ns, hive_agent_id, "universal", *hive.get_agent_groups(hive_agent_id)}
             if namespace is not None:
                 ns = namespace.strip()
-                if ns not in allowed:
-                    # Bare group names and group:<name> both need membership.
-                    bare = ns.removeprefix("group:") if ns.startswith("group:") else ns
-                    if bare not in allowed and not hive.agent_is_group_member(bare, hive_agent_id):
-                        return {
-                            "error": "forbidden",
-                            "message": (
-                                f"Agent {hive_agent_id!r} is not allowed to search "
-                                f"namespace {ns!r}."
-                            ),
-                            "results": [],
-                            "count": 0,
-                        }
-                    allowed_ns = [ns]
-                else:
-                    allowed_ns = [ns]
-                results = hive.search(query, namespaces=allowed_ns, limit=20)
+                # Group entries are persisted under the bare group name; the
+                # documented group:<name> form must be stripped before search.
+                bare = ns.removeprefix("group:")
+                if (
+                    ns not in allowed
+                    and bare not in allowed
+                    and not hive.agent_is_group_member(bare, hive_agent_id)
+                ):
+                    return {
+                        "error": "forbidden",
+                        "message": (
+                            f"Agent {hive_agent_id!r} is not allowed to search namespace {ns!r}."
+                        ),
+                        "results": [],
+                        "count": 0,
+                    }
+                results = hive.search(query, namespaces=[bare], limit=20)
             else:
                 results = hive.search_with_groups(
                     query, hive_agent_id, agent_namespace=own_ns, limit=20
@@ -123,11 +129,13 @@ def hive_propagate(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Propagate a single local memory entry to Hive under the given scope."""
-    entry = store.get(key)
-    if entry is None:
-        return {"error": "not_found", "message": f"Key '{key}' not found."}
-
     try:
+        # Inside the guard: store.get hydrates from Postgres and a transient
+        # DB failure must return the hive_error envelope, not a raw exception.
+        entry = store.get(key)
+        if entry is None:
+            return {"error": "not_found", "message": f"Key '{key}' not found."}
+
         from tapps_brain.agent_scope import (
             agent_scope_valid_values_for_errors,
             normalize_agent_scope,

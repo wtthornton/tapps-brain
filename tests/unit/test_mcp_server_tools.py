@@ -122,13 +122,29 @@ def test_brain_learn_success_canonical_description(mcp: Any, fake_ctx: ToolConte
 
 
 def test_brain_learn_success_requires_description(mcp: Any, fake_ctx: ToolContext) -> None:
-    """Empty call fails fast with a Required-style message."""
+    """Empty call fails fast with a bad_request envelope (not a raised ValueError)."""
+    import json as _json
+
     from tapps_brain.mcp_server.tools_brain import register_brain_tools
 
     register_brain_tools(mcp, fake_ctx)
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "brain_learn_success")
-    with pytest.raises(ValueError, match="'description' is required"):
-        tool.fn()
+    result = _json.loads(tool.fn())
+    assert result["error"] == "bad_request"
+    assert "'description' is required" in result["detail"]
+
+
+def test_brain_learn_failure_requires_description(mcp: Any, fake_ctx: ToolContext) -> None:
+    """Empty description is rejected — it would collapse onto one content-hash key."""
+    import json as _json
+
+    from tapps_brain.mcp_server.tools_brain import register_brain_tools
+
+    register_brain_tools(mcp, fake_ctx)
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "brain_learn_failure")
+    result = _json.loads(tool.fn(description="  "))
+    assert result["error"] == "bad_request"
+    assert "'description' is required" in result["detail"]
 
 
 # ---------------------------------------------------------------------------

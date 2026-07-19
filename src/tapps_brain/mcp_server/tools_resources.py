@@ -159,7 +159,7 @@ def register_resources_and_prompts(mcp: Any, ctx: ToolContext) -> None:  # noqa:
 
         lines = [
             f"Memory store summary for: {snap.project_root}",
-            f"Total entries: {snap.total_count} / 500",
+            f"Total entries: {snap.total_count} / {store._max_entries}",
             f"Schema version: {schema_ver}",
             f"Tier distribution: {json.dumps(snap.tier_counts)}",
             "",

@@ -737,9 +737,11 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
         """
         try:
             eff_aid = _rpc(agent_id, default=_server_aid)
+            # _resolve re-runs the same strict-mode agent-id check — keep it
+            # inside the guard or the ValueError escapes as a raw tool error.
+            s = _resolve(agent_id)
         except ValueError as exc:
             return json.dumps({"error": "bad_request", "detail": str(exc)})
-        s = _resolve(agent_id)
         project_id = _pid()
 
         # TAP-1969: validate details_json once up-front and surface the same

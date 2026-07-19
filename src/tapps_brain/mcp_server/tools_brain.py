@@ -118,8 +118,8 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         Required: ``description`` (free-text describing the task that
         succeeded). Aligns with ``brain_learn_failure(description=...)``.
         """
-        if not description:
-            raise ValueError("brain_learn_success: 'description' is required.")
+        if not description.strip():
+            return json.dumps({"error": "bad_request", "detail": "'description' is required."})
 
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -140,7 +140,14 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         error: str = "",
         agent_id: str = "",
     ) -> str:
-        """Record a failed task outcome to avoid repeating mistakes."""
+        """Record a failed task outcome to avoid repeating mistakes.
+
+        Required: ``description`` — an empty value would collapse every call
+        onto the same content-hash key, silently overwriting prior failures.
+        """
+        if not description.strip():
+            return json.dumps({"error": "bad_request", "detail": "'description' is required."})
+
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         return json.dumps(

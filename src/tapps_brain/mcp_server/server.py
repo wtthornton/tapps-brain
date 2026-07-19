@@ -367,7 +367,9 @@ def create_server(  # noqa: PLR0915
         propagation, logging, cache isolation) does not bleed across
         concurrent tool calls sharing one pooled MCP connection.
         """
-        eff = _resolve_per_call_agent_id(call_agent_id, default=_server_agent_id)
+        # warn=False: the tool body already resolved (and warned) once for
+        # this call — a second WARNING here would double-log every mismatch.
+        eff = _resolve_per_call_agent_id(call_agent_id, default=_server_agent_id, warn=False)
         if eff == _server_agent_id:
             return store
         pid = _current_request_project_id()

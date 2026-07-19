@@ -15,17 +15,26 @@ def _bad_json_error(field: str, detail: str) -> dict[str, str]:
     return {"error": "bad_json", "field": field, "detail": detail}
 
 
-def _parse_profile_value_json(value_json: str) -> dict[str, Any]:
-    """Parse ``value_json`` tool arg; return object or error envelope."""
+def _parse_profile_value_json(
+    value_json: str,
+) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """Parse ``value_json`` tool arg; return ``(parsed, error)``.
+
+    Success and failure are discriminated out-of-band: a user payload that
+    itself contains an ``"error"`` key (e.g. learned error statistics) is
+    valid data, so the error signal cannot live inside the parsed object.
+    """
     if not value_json or not value_json.strip():
-        return {"error": "bad_request", "detail": "value_json is required."}
+        return None, {"error": "bad_request", "detail": "value_json is required."}
     try:
         parsed = json.loads(value_json)
     except json.JSONDecodeError as exc:
-        return _bad_json_error("value_json", str(exc))
+        return None, _bad_json_error("value_json", str(exc))
     if not isinstance(parsed, dict):
-        return _bad_json_error("value_json", f"expected JSON object, got {type(parsed).__name__}")
-    return parsed
+        return None, _bad_json_error(
+            "value_json", f"expected JSON object, got {type(parsed).__name__}"
+        )
+    return parsed, None
 
 
 def register_profile_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
@@ -56,9 +65,9 @@ def register_profile_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
             return json.dumps({"error": "bad_request", "detail": "profile is required."})
         if not data_key:
             return json.dumps({"error": "bad_request", "detail": "key is required."})
-        parsed = _parse_profile_value_json(value_json)
-        if "error" in parsed:
-            return json.dumps(parsed, default=str)
+        parsed, parse_err = _parse_profile_value_json(value_json)
+        if parse_err is not None or parsed is None:
+            return json.dumps(parse_err, default=str)
 
         cm = kg_service._get_or_create_cm()
         if cm is None:
