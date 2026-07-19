@@ -300,6 +300,9 @@ class AsyncPostgresPrivateBackend:
                     (vec_str, self._project_id, self._agent_id, k),
                 )
                 rows = await cur.fetchall()
+            # Clear the degraded latch on success — the flag reflects the most
+            # recent attempt (mirrors the sync backend).
+            self.knn_search_degraded = False
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
             self.knn_search_degraded = True
@@ -519,6 +522,7 @@ class AsyncPostgresPrivateBackend:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
         """Read entries from ``audit_log`` for this ``(project_id, agent_id)``."""
         stmt, extra_params = _sql.build_query_audit_sql(
@@ -526,6 +530,7 @@ class AsyncPostgresPrivateBackend:
             event_type=event_type,
             since=since,
             until=until,
+            newest_first=newest_first,
         )
         params: list[Any] = [self._project_id, self._agent_id, *extra_params, limit]
         try:

@@ -328,6 +328,7 @@ class InMemoryPrivateBackend:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
         """Read and filter audit records from the temp JSONL file (unit-test only)."""
         import json as _json
@@ -337,6 +338,8 @@ class InMemoryPrivateBackend:
             lines = self._audit_path.read_text(encoding="utf-8").splitlines()
         except OSError:
             return []
+        if newest_first:
+            lines = list(reversed(lines))
 
         for line in lines:
             line = line.strip()

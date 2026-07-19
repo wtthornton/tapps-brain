@@ -745,12 +745,17 @@ class AsyncMemoryStore:
 
         from tapps_brain.audit import AuditEntry
 
+        # Mirror the sync MemoryStore.audit contract: fetch the most recent
+        # rows (descending) and return them in chronological order.
+        newest_first = bool(kwargs.pop("newest_first", True))
         async with self._read_sem:
             self._read_inflight += 1
             try:
-                rows = await self._async_backend.query_audit(**kwargs)
+                rows = await self._async_backend.query_audit(newest_first=newest_first, **kwargs)
             finally:
                 self._read_inflight -= 1
+        if newest_first:
+            rows = list(reversed(rows))
         return [
             AuditEntry(
                 timestamp=str(r.get("timestamp", "")),

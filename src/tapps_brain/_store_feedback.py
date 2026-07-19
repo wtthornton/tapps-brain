@@ -14,12 +14,25 @@ from typing import TYPE_CHECKING, Any, cast
 import structlog
 
 from tapps_brain._store_base import _MemoryStoreBase
+from tapps_brain.feedback import (
+    FeedbackConfig,
+    FeedbackEvent,
+    FeedbackStore,
+    InMemoryFeedbackStore,
+)
 
 if TYPE_CHECKING:
-    from tapps_brain.feedback import FeedbackEvent, FeedbackStore, InMemoryFeedbackStore
     from tapps_brain.store import MemoryStore
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+#: Utility scores for the ``rate_recall`` convenience API (EPIC-029).
+_RATING_SCORES: dict[str, float] = {
+    "helpful": 1.0,
+    "partial": 0.5,
+    "irrelevant": 0.0,
+    "outdated": 0.0,
+}
 
 
 class FeedbackMixin(_MemoryStoreBase):
@@ -90,28 +103,24 @@ class FeedbackMixin(_MemoryStoreBase):
         :class:`MemoryStore` instance only — it is not durable.
         """
         if self._feedback_store_instance is None:
-            from tapps_brain.feedback import FeedbackConfig, FeedbackStore, InMemoryFeedbackStore
-
             cm = getattr(self._persistence, "_cm", None)
             project_id = getattr(self._persistence, "_project_id", None)
             agent_id = getattr(self._persistence, "_agent_id", None)
+
+            config: FeedbackConfig | None = None
+            if self._profile is not None:
+                config = getattr(self._profile, "feedback", None)
 
             if cm is None or project_id is None or agent_id is None:
                 # No Postgres connection — fall back to in-memory store.
                 # Use backend._feedback_events if available so all MemoryStore
                 # instances sharing the same InMemoryPrivateBackend (same
                 # project_root in tests) see the same feedback data.
-                config: FeedbackConfig | None = None
-                if self._profile is not None:
-                    config = getattr(self._profile, "feedback", None)
                 shared = getattr(self._persistence, "_feedback_events", None)
                 self._feedback_store_instance = InMemoryFeedbackStore(
                     config=config, shared_events=shared
                 )
             else:
-                config = None
-                if self._profile is not None:
-                    config = getattr(self._profile, "feedback", None)
                 self._feedback_store_instance = FeedbackStore(
                     cm,
                     project_id=project_id,
@@ -193,14 +202,6 @@ class FeedbackMixin(_MemoryStoreBase):
         Raises:
             ValueError: If *rating* is not a recognised value.
         """
-        from tapps_brain.feedback import FeedbackEvent
-
-        _RATING_SCORES: dict[str, float] = {
-            "helpful": 1.0,
-            "partial": 0.5,
-            "irrelevant": 0.0,
-            "outdated": 0.0,
-        }
         if rating not in _RATING_SCORES:
             raise ValueError(f"Unknown rating {rating!r}. Valid values: {sorted(_RATING_SCORES)}")
 
@@ -239,8 +240,6 @@ class FeedbackMixin(_MemoryStoreBase):
         Returns:
             The persisted ``FeedbackEvent``.
         """
-        from tapps_brain.feedback import FeedbackEvent
-
         log = logger.bind(project_id=self._project_id, op="feedback", event_type="gap_reported")
         log.debug("store.feedback.gap_reported")
         event = FeedbackEvent(
@@ -275,8 +274,6 @@ class FeedbackMixin(_MemoryStoreBase):
         Returns:
             The persisted ``FeedbackEvent``.
         """
-        from tapps_brain.feedback import FeedbackEvent
-
         log = logger.bind(project_id=self._project_id, op="feedback", event_type="issue_flagged")
         log.debug("store.feedback.issue_flagged")
         event = FeedbackEvent(
@@ -322,8 +319,6 @@ class FeedbackMixin(_MemoryStoreBase):
             ValueError: If *event_type* fails pattern validation, or if
                 strict event types are enabled and the type is unknown.
         """
-        from tapps_brain.feedback import FeedbackEvent
-
         log = logger.bind(project_id=self._project_id, op="feedback", event_type=event_type)
         log.debug("store.feedback.recorded")
         event = FeedbackEvent(

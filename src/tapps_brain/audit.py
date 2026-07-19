@@ -67,15 +67,28 @@ class AuditReader:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
+        newest_first: bool = False,
     ) -> list[AuditEntry]:
-        """Query audit log entries with optional filters."""
+        """Query audit log entries with optional filters.
+
+        ``newest_first=True`` returns the most recent *limit* entries
+        (newest-to-oldest).  The default ascending order combined with a
+        limit can only ever return the oldest rows — recent activity becomes
+        unreachable once the log outgrows the limit.
+        """
         if limit <= 0:
             return []
         # Legacy / unit-test path: backend is a file path.
         if isinstance(self._backend, Path):
-            return self._query_file(
-                key=key, event_type=event_type, since=since, until=until, limit=limit
+            entries = self._query_file(
+                key=key,
+                event_type=event_type,
+                since=since,
+                until=until,
+                limit=limit,
+                newest_first=newest_first,
             )
+            return entries
         # Postgres backend path.
         query_audit = getattr(self._backend, "query_audit", None)
         if query_audit is None:
@@ -86,6 +99,7 @@ class AuditReader:
             since=since,
             until=until,
             limit=limit,
+            newest_first=newest_first,
         )
         return [
             AuditEntry(
@@ -103,7 +117,15 @@ class AuditReader:
         key: str | None = None,
         event_type: str | None = None,
     ) -> int:
-        """Count matching audit entries."""
+        """Count matching audit entries.
+
+        Uses the backend's exact ``count_audit`` when available — the old
+        ``len(query(limit=10_000))`` fallback silently pins to 10 000 on
+        busy tenants (the audit log grows unboundedly).
+        """
+        count_audit = getattr(self._backend, "count_audit", None)
+        if callable(count_audit):
+            return int(count_audit(key=key, event_type=event_type))
         return len(self.query(key=key, event_type=event_type, limit=10_000))
 
     # ------------------------------------------------------------------
@@ -118,6 +140,7 @@ class AuditReader:
         since: str | None,
         until: str | None,
         limit: int,
+        newest_first: bool = False,
     ) -> list[AuditEntry]:
         """Read and filter a JSONL audit file (legacy / unit-test path)."""
         # Non-positive limits must return empty — ``len(results) >= 0`` is always
@@ -131,6 +154,10 @@ class AuditReader:
             lines = path.read_text(encoding="utf-8").splitlines()
         except OSError:
             return []
+        if newest_first:
+            # File records are append-ordered (oldest first); walk backwards
+            # so the limit keeps the most recent matches.
+            lines = list(reversed(lines))
 
         results: list[AuditEntry] = []
         for line in lines:

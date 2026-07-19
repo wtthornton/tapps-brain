@@ -22,12 +22,23 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import structlog
 
 from tapps_brain import _postgres_private_sql as _sql
+from tapps_brain.models import (
+    MemoryEntry,
+    MemoryScope,
+    MemorySource,
+    MemoryStatus,
+    MemoryTier,
+)
+from tapps_brain.visual_snapshot import (
+    _TOP_TAGS_LIMIT,
+    AccessBucket,
+    AccessStats,
+    SnapshotAggregates,
+)
 
 if TYPE_CHECKING:
-    from tapps_brain.models import MemoryEntry
     from tapps_brain.postgres_connection import PostgresConnectionManager
     from tapps_brain.relations import RelationEntry
-    from tapps_brain.visual_snapshot import SnapshotAggregates
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -153,6 +164,9 @@ class PostgresPrivateBackend:
 
         self._lock = threading.Lock()
         self._relations_ensured = False
+        # Memoized verify_expected_indexes result (successful probes only) —
+        # health polls re-invoke the check per read, see the method docstring.
+        self._index_verify_cache: list[str] | None = None
 
         # TAP-2728: HNSW query-time GUC — read once at construction so env-var
         # parsing is not repeated on every knn_search call.
@@ -421,6 +435,11 @@ class PostgresPrivateBackend:
                     (vec_str, self._project_id, self._agent_id, k),
                 )
                 rows = cur.fetchall()
+            # A successful query clears the degraded latch: the flag reflects
+            # the *most recent* attempt, not "any error ever" — otherwise one
+            # transient blip (DB restart, pool timeout) permanently reports
+            # the vector index as down for the life of the process.
+            self.knn_search_degraded = False
             return [(str(r[0]), float(r[1])) for r in rows]
         except Exception:
             self.knn_search_degraded = True
@@ -448,13 +467,6 @@ class PostgresPrivateBackend:
 
     def snapshot_aggregates(self, project_id: str) -> SnapshotAggregates:
         """Return visual-snapshot rollups without hydrating full memory rows."""
-        from tapps_brain.visual_snapshot import (
-            _TOP_TAGS_LIMIT,
-            AccessBucket,
-            AccessStats,
-            SnapshotAggregates,
-        )
-
         if project_id != self._project_id:
             msg = (
                 f"snapshot_aggregates project_id mismatch: "
@@ -551,8 +563,15 @@ class PostgresPrivateBackend:
 
         .. note::
             Call once at ``MemoryStore.__init__`` after :meth:`load_all`.
-            Calling repeatedly is harmless but redundant.
+            Successful probe results are memoized: consumers re-invoke this
+            per health poll (``MemoryStore.vector_index_enabled``), and
+            without the cache every poll re-runs the ``pg_indexes`` query,
+            re-warns, and inflates ``tapps_brain_private_missing_indexes_total``
+            — a counter documented as counting *startup checks*.  Probe
+            failures are never cached so a later call can recover.
         """
+        if self._index_verify_cache is not None:
+            return list(self._index_verify_cache)
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 cur.execute(_sql.LIST_TABLE_INDEXES_SQL)
@@ -578,6 +597,7 @@ class PostgresPrivateBackend:
                 ),
             )
             _record_missing_indexes(self._project_id)
+        self._index_verify_cache = list(missing)
         return missing
 
     # ------------------------------------------------------------------
@@ -613,16 +633,9 @@ class PostgresPrivateBackend:
 
         results: list[dict[str, Any]] = []
         for r in rows:
-            raw_keys = r[3]
-            if isinstance(raw_keys, list):
-                keys: list[str] = [str(k) for k in raw_keys]
-            elif isinstance(raw_keys, str):
-                try:
-                    keys = json.loads(raw_keys)
-                except (json.JSONDecodeError, TypeError):
-                    keys = []
-            else:
-                keys = []
+            # _parse_jsonb_list also guards against non-list JSON payloads,
+            # which the previous inline parser let through untyped.
+            keys = _parse_jsonb_list(r[3])
             created_raw = r[5]
             created_str = (
                 created_raw.isoformat() if hasattr(created_raw, "isoformat") else str(created_raw)
@@ -657,25 +670,24 @@ class PostgresPrivateBackend:
             return 0
         self._ensure_relations_table()
         now = datetime.now(tz=UTC).isoformat()
-        count = 0
+        params_seq = [
+            (
+                self._project_id,
+                self._agent_id,
+                rel.subject,
+                rel.predicate,
+                rel.object_entity,
+                json.dumps(list(dict.fromkeys([*rel.source_entry_keys, key])), ensure_ascii=False),
+                rel.confidence,
+                now,
+            )
+            for rel in relations
+        ]
+        # executemany routes through psycopg's pipeline mode (same rationale
+        # as save_many, TAP-2800) — one round-trip batch instead of N.
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            for rel in relations:
-                source_keys: list[str] = list(dict.fromkeys([*rel.source_entry_keys, key]))
-                cur.execute(
-                    _sql.SAVE_RELATION_UPSERT_SQL,
-                    (
-                        self._project_id,
-                        self._agent_id,
-                        rel.subject,
-                        rel.predicate,
-                        rel.object_entity,
-                        json.dumps(source_keys, ensure_ascii=False),
-                        rel.confidence,
-                        now,
-                    ),
-                )
-                count += 1
-        return count
+            cur.executemany(_sql.SAVE_RELATION_UPSERT_SQL, params_seq)
+        return len(params_seq)
 
     def load_relations(self, key: str) -> list[dict[str, Any]]:
         """Return relations whose ``source_entry_keys`` contains *key*."""
@@ -765,17 +777,21 @@ class PostgresPrivateBackend:
         since: str | None = None,
         until: str | None = None,
         limit: int = 100,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
         """Read entries from ``audit_log`` for this ``(project_id, agent_id)``.
 
         Returns dicts with ``timestamp`` (ISO-8601 string), ``event_type``,
-        ``key``, and ``details``.  Ordered oldest-to-newest.
+        ``key``, and ``details``.  Ordered oldest-to-newest by default;
+        ``newest_first=True`` orders newest-to-oldest so a limited query
+        returns the most recent rows instead of the oldest.
         """
         stmt, extra_params = _sql.build_query_audit_sql(
             key=key,
             event_type=event_type,
             since=since,
             until=until,
+            newest_first=newest_first,
         )
         params: list[Any] = [self._project_id, self._agent_id, *extra_params, limit]
         try:
@@ -809,6 +825,20 @@ class PostgresPrivateBackend:
                 }
             )
         return results
+
+    def count_audit(
+        self,
+        *,
+        key: str | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        """Exact matching-row count over ``audit_log`` (no LIMIT cap)."""
+        stmt, extra_params = _sql.build_count_audit_sql(key=key, event_type=event_type)
+        params: list[Any] = [self._project_id, self._agent_id, *extra_params]
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(stmt, params)
+            row = cur.fetchone()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # Flywheel metadata (migration 007, STORY-066.14)
@@ -875,7 +905,6 @@ class PostgresPrivateBackend:
                         byte_count,
                     ),
                 )
-            return byte_count
         except Exception:
             logger.warning(
                 "postgres_private.gc_archive_entry_failed",
@@ -883,6 +912,7 @@ class PostgresPrivateBackend:
                 exc_info=True,
             )
             return 0
+        return byte_count
 
     def list_archive(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Return the most recent *limit* rows from ``gc_archive``."""
@@ -939,26 +969,8 @@ class PostgresPrivateBackend:
     @staticmethod
     def _row_to_entry(row: dict[str, Any]) -> MemoryEntry:
         """Convert a Postgres row dict to a :class:`MemoryEntry`."""
-        from tapps_brain.models import (
-            MemoryEntry,
-            MemoryScope,
-            MemorySource,
-            MemoryStatus,
-            MemoryTier,
-        )
-
         # Tags — stored as JSONB (may arrive as list or JSON string).
-        tags_raw = row.get("tags")
-        if isinstance(tags_raw, list):
-            tags: list[str] = [str(t) for t in tags_raw]
-        elif isinstance(tags_raw, str):
-            try:
-                parsed = json.loads(tags_raw)
-                tags = [str(t) for t in parsed] if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError):
-                tags = []
-        else:
-            tags = []
+        tags = _parse_jsonb_list(row.get("tags"))
 
         def _str_or_none(v: Any) -> str | None:
             return str(v) if v is not None else None

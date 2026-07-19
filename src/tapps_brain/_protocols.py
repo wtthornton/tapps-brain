@@ -447,6 +447,23 @@ class PrivateBackend(Protocol):
         extra: dict[str, Any] | None = None,
     ) -> None: ...
 
+    # -- Flywheel metadata (migration 007) -------------------------------------
+
+    def flywheel_meta_get(self, key: str) -> str | None:
+        """Return the stored flywheel metadata value for *key*, or ``None``.
+
+        Required (not getattr-guarded): the flywheel feedback pipeline calls
+        this unconditionally to read its processing cursor.
+        """
+        ...
+
+    def flywheel_meta_set(self, key: str, value: str) -> None:
+        """Persist a flywheel metadata value (cursor checkpoint).
+
+        Required (not getattr-guarded): see :meth:`flywheel_meta_get`.
+        """
+        ...
+
     # -- GC archive (migration 006) ------------------------------------------
 
     def archive_entry(self, entry: MemoryEntry) -> int:

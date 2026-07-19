@@ -151,7 +151,7 @@ class FeedbackProcessor:
 
         if not isinstance(store, _MS):
             raise TypeError("store must be MemoryStore")
-        raw = store._persistence.flywheel_meta_get(_FEEDBACK_CURSOR_KEY)  # type: ignore[attr-defined]
+        raw = store._persistence.flywheel_meta_get(_FEEDBACK_CURSOR_KEY)
         cur_ts, cur_id = _parse_cursor(raw)
         # Push the cursor timestamp into the query — query_feedback returns the
         # *oldest* rows first with a LIMIT, so without `since` the fetch window
@@ -223,7 +223,7 @@ class FeedbackProcessor:
     @staticmethod
     def _persist_cursor(store: MemoryStore, last_ts: str, last_id: str) -> None:
         try:
-            store._persistence.flywheel_meta_set(  # type: ignore[attr-defined]
+            store._persistence.flywheel_meta_set(
                 _FEEDBACK_CURSOR_KEY,
                 json.dumps({"ts": last_ts, "id": last_id}, separators=(",", ":")),
             )

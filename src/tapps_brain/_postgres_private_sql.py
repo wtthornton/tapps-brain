@@ -304,18 +304,19 @@ _SEARCH_BASE_SQL = (
 #: bound parameters — so it composes into existing param tuples unchanged.
 #: Deliberately touches NO tenant/RLS predicate (``project_id``/``agent_id``).
 #:
-#: The ``::timestamptz`` cast is guarded by a CASE + shape regex: ``valid_until``
-#: is free text (unvalidated ``str`` on ``MemoryEntry``), and a bare cast would
-#: abort the *entire* recall query for the tenant the moment one row holds a
-#: non-timestamp value (e.g. ``"never"``).  CASE guarantees the cast is only
-#: evaluated for timestamp-shaped values; non-conforming values are treated as
-#: expired, mirroring ``MemoryEntry.is_temporally_valid`` which returns False
-#: for unparseable ``valid_until`` instead of raising.
+#: The ``::timestamptz`` cast is guarded by ``pg_input_is_valid`` (PG >= 16;
+#: deployment baseline is pgvector/pg17): ``valid_until`` is free text
+#: (legacy rows predate the Pydantic validator), and a bare cast would abort
+#: the *entire* recall query for the tenant the moment one row holds a
+#: non-timestamp value.  A shape-prefix regex is NOT sufficient here — values
+#: like ``"2026-99-99"`` pass the prefix check but still blow up the cast.
+#: Non-parseable values are treated as expired, mirroring
+#: ``MemoryEntry.is_temporally_valid`` which returns False instead of raising.
 _LIVE_ROW_PREDICATE_SQL = (
     " AND superseded_by IS NULL"
     " AND ("
     "valid_until IS NULL OR valid_until = ''"
-    " OR (CASE WHEN valid_until ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'"
+    " OR (CASE WHEN pg_input_is_valid(valid_until, 'timestamptz')"
     " THEN valid_until::timestamptz > now() ELSE false END)"
     ")"
 )
@@ -476,6 +477,11 @@ COUNT_RELATIONS_SQL = (
     "SELECT COUNT(*) FROM private_relations WHERE project_id = %s AND agent_id = %s"
 )
 
+#: On conflict the provenance arrays are *merged* (distinct union), not
+#: replaced: extraction emits ``source_entry_keys=[entry_key]`` per save, so
+#: replacing would strip earlier entries' keys from a shared triple — and
+#: ``load_relations``/``delete_relations`` select by containment, so those
+#: entries would silently lose their graph edge after a cold-start reload.
 SAVE_RELATION_UPSERT_SQL = """
 INSERT INTO private_relations
     (project_id, agent_id, subject, predicate, object_entity,
@@ -483,7 +489,12 @@ INSERT INTO private_relations
 VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s)
 ON CONFLICT (project_id, agent_id, subject, predicate, object_entity)
 DO UPDATE SET
-    source_entry_keys = EXCLUDED.source_entry_keys,
+    source_entry_keys = (
+        SELECT COALESCE(jsonb_agg(DISTINCT e), '[]'::jsonb)
+        FROM jsonb_array_elements(
+            private_relations.source_entry_keys || EXCLUDED.source_entry_keys
+        ) AS e
+    ),
     confidence        = EXCLUDED.confidence
 """
 
@@ -513,28 +524,14 @@ VALUES (%s, %s, %s, %s, %s::jsonb)
 """
 
 
-def build_query_audit_sql(
+def _audit_filter_conditions(
     *,
     key: str | None,
     event_type: str | None,
-    since: str | None,
-    until: str | None,
-) -> tuple[Composable, list[Any]]:
-    """Compose the audit-log SELECT + per-filter params.
-
-    Returns ``(stmt, extra_params)``.  Caller must prepend
-    ``[project_id, agent_id]`` to ``extra_params`` and append the trailing
-    ``LIMIT`` value.  The returned ``stmt`` is a ``psycopg.sql.Composable``
-    (parameterised LIMIT placeholder); it executes the same against both
-    sync and async cursors.
-
-    Uses ``psycopg.sql`` composition (not f-string concatenation) because
-    the WHERE clauses are joined with ``AND`` separators that depend on
-    which filters are present — psycopg.sql.SQL guarantees correct joining
-    without manual delimiter bookkeeping.
-    """
-    from psycopg import sql as pgsql
-
+    since: str | None = None,
+    until: str | None = None,
+) -> tuple[list[str], list[Any]]:
+    """Shared WHERE-clause assembly for the audit-log SELECT/COUNT builders."""
     conditions: list[str] = ["project_id = %s", "agent_id = %s"]
     params: list[Any] = []
     if key is not None:
@@ -549,13 +546,65 @@ def build_query_audit_sql(
     if until is not None:
         conditions.append("timestamp <= %s")
         params.append(until)
+    return conditions, params
 
+
+def build_query_audit_sql(
+    *,
+    key: str | None,
+    event_type: str | None,
+    since: str | None,
+    until: str | None,
+    newest_first: bool = False,
+) -> tuple[Composable, list[Any]]:
+    """Compose the audit-log SELECT + per-filter params.
+
+    Returns ``(stmt, extra_params)``.  Caller must prepend
+    ``[project_id, agent_id]`` to ``extra_params`` and append the trailing
+    ``LIMIT`` value.  The returned ``stmt`` is a ``psycopg.sql.Composable``
+    (parameterised LIMIT placeholder); it executes the same against both
+    sync and async cursors.
+
+    ``newest_first=True`` orders descending so ``LIMIT n`` returns the *most
+    recent* n rows — with the default ascending order a limited query can
+    only ever see the oldest rows, making recent activity unreachable once
+    the log outgrows the limit.
+
+    Uses ``psycopg.sql`` composition (not f-string concatenation) because
+    the WHERE clauses are joined with ``AND`` separators that depend on
+    which filters are present — psycopg.sql.SQL guarantees correct joining
+    without manual delimiter bookkeeping.
+    """
+    from psycopg import sql as pgsql
+
+    conditions, params = _audit_filter_conditions(
+        key=key, event_type=event_type, since=since, until=until
+    )
+    order = "DESC" if newest_first else "ASC"
     where = pgsql.SQL(" AND ").join(pgsql.SQL(c) for c in conditions)
     stmt = pgsql.SQL(
         "SELECT timestamp, event_type, key, details "
         "FROM audit_log WHERE {} "
-        "ORDER BY timestamp ASC, id ASC LIMIT {}"
+        f"ORDER BY timestamp {order}, id {order} LIMIT {{}}"
     ).format(where, pgsql.Placeholder())
+    return stmt, params
+
+
+def build_count_audit_sql(
+    *,
+    key: str | None,
+    event_type: str | None,
+) -> tuple[Composable, list[Any]]:
+    """Compose a COUNT(*) over ``audit_log`` with the same filter contract.
+
+    Callers previously counted via ``len(query(limit=10_000))``, which
+    silently undercounts on busy tenants — the audit log grows unboundedly.
+    """
+    from psycopg import sql as pgsql
+
+    conditions, params = _audit_filter_conditions(key=key, event_type=event_type)
+    where = pgsql.SQL(" AND ").join(pgsql.SQL(c) for c in conditions)
+    stmt = pgsql.SQL("SELECT COUNT(*) FROM audit_log WHERE {}").format(where)
     return stmt, params
 
 

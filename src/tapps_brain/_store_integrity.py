@@ -10,11 +10,18 @@ persisting the rehash); it now persists via ``self._persistence``.
 
 from __future__ import annotations
 
+import hmac
 from typing import Any
 
 import structlog
 
 from tapps_brain._store_base import _MemoryStoreBase
+from tapps_brain.integrity import (
+    INTEGRITY_HASH_VERSION,
+    compute_integrity_hash,
+    compute_integrity_hash_v1,
+    verify_integrity_hash,
+)
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -23,6 +30,18 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 #: correctly-signed rows alongside a restored-under-a-different-key bulk still
 #: reads as a key mismatch.
 _KEY_MISMATCH_RATIO = 0.95
+
+
+def _hash_field_strs(entry: Any) -> tuple[str, str]:  # noqa: ANN401 — MemoryEntry duck-typed
+    """Return ``(tier_str, source_str)`` in the canonical form used for hashing.
+
+    Tier/source may be enums or raw strings (profile layers); the integrity
+    hash always uses the enum ``.value`` when present.  Shared by all three
+    integrity methods so the canonical form cannot drift.
+    """
+    tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
+    source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+    return tier_str, source_str
 
 
 class IntegrityMixin(_MemoryStoreBase):
@@ -39,12 +58,6 @@ class IntegrityMixin(_MemoryStoreBase):
             Dict with ``total``, ``verified``, ``tampered``, ``no_hash``,
             ``tampered_keys``, ``missing_hash_keys``, ``tampered_details``.
         """
-        from tapps_brain.integrity import (
-            compute_integrity_hash,
-            compute_integrity_hash_v1,
-            verify_integrity_hash,
-        )
-
         self._metrics.increment("store.verify_integrity")
 
         # Include durable overflow beyond the cold-start cache cap.
@@ -64,8 +77,7 @@ class IntegrityMixin(_MemoryStoreBase):
                 missing_hash_keys.append(entry.key)
                 continue
 
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            tier_str, source_str = _hash_field_strs(entry)
             hash_version = getattr(entry, "integrity_hash_v", 1)
 
             # Use the version-appropriate verifier so legacy v1 rows don't
@@ -75,9 +87,7 @@ class IntegrityMixin(_MemoryStoreBase):
                 v1_expected = compute_integrity_hash_v1(
                     entry.key, entry.value, tier_str, source_str
                 )
-                import hmac as _hmac
-
-                if _hmac.compare_digest(v1_expected, stored_hash):
+                if hmac.compare_digest(v1_expected, stored_hash):
                     verified += 1
                     continue
             elif verify_integrity_hash(entry.key, entry.value, tier_str, source_str, stored_hash):
@@ -154,16 +164,6 @@ class IntegrityMixin(_MemoryStoreBase):
             Dict with ``upgraded``, ``tampered``, ``skipped_no_hash``,
             ``already_v2`` counts.
         """
-        import hmac as _hmac
-
-        from tapps_brain.integrity import (
-            INTEGRITY_HASH_VERSION as _HASH_V,
-        )
-        from tapps_brain.integrity import (
-            compute_integrity_hash,
-            compute_integrity_hash_v1,
-        )
-
         upgraded = 0
         tampered = 0
         skipped_no_hash = 0
@@ -188,12 +188,11 @@ class IntegrityMixin(_MemoryStoreBase):
                 already_v2 += 1
                 continue
 
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            tier_str, source_str = _hash_field_strs(entry)
 
             # Verify that the stored v1 hash is still intact before upgrading.
             v1_expected = compute_integrity_hash_v1(entry.key, entry.value, tier_str, source_str)
-            if not _hmac.compare_digest(v1_expected, stored_hash):
+            if not hmac.compare_digest(v1_expected, stored_hash):
                 tampered += 1
                 logger.warning(
                     "rehash_integrity_v1.tampered_skipped",
@@ -205,7 +204,7 @@ class IntegrityMixin(_MemoryStoreBase):
             # v1 hash is intact — upgrade to v2.
             new_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
             upgraded_entry = entry.model_copy(
-                update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
+                update={"integrity_hash": new_hash, "integrity_hash_v": INTEGRITY_HASH_VERSION}
             )
             with self._serialized():
                 previous = entry
@@ -258,13 +257,6 @@ class IntegrityMixin(_MemoryStoreBase):
         Returns:
             Dict with ``resigned`` and ``skipped_no_change`` counts.
         """
-        from tapps_brain.integrity import (
-            INTEGRITY_HASH_VERSION as _HASH_V,
-        )
-        from tapps_brain.integrity import (
-            compute_integrity_hash,
-        )
-
         self._merge_durable_entries()
         with self._serialized():
             keys = list(self._entries.keys())
@@ -278,19 +270,18 @@ class IntegrityMixin(_MemoryStoreBase):
             if entry is None:
                 continue
 
-            tier_str = entry.tier.value if hasattr(entry.tier, "value") else str(entry.tier)
-            source_str = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
+            tier_str, source_str = _hash_field_strs(entry)
             new_hash = compute_integrity_hash(entry.key, entry.value, tier_str, source_str)
 
             if (
                 getattr(entry, "integrity_hash", None) == new_hash
-                and getattr(entry, "integrity_hash_v", 1) == _HASH_V
+                and getattr(entry, "integrity_hash_v", 1) == INTEGRITY_HASH_VERSION
             ):
                 skipped_no_change += 1
                 continue
 
             resigned_entry = entry.model_copy(
-                update={"integrity_hash": new_hash, "integrity_hash_v": _HASH_V}
+                update={"integrity_hash": new_hash, "integrity_hash_v": INTEGRITY_HASH_VERSION}
             )
             with self._serialized():
                 previous = entry

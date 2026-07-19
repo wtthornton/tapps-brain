@@ -178,10 +178,11 @@ def _apply_migrations(
 
     Dedup is by bare version number: a version already present in the version
     table is skipped.  Bundled files must therefore use unique version
-    numbers — when several files share one (e.g. the three ``015_*`` private
-    migrations), a DB that recorded the version before all of them were
-    bundled will silently skip the rest forever.  A warning is emitted when
-    duplicates are detected so the situation is at least visible.
+    numbers — when several files share one, a DB that recorded the version
+    before all of them were bundled will silently skip the rest forever.
+    (The historical three-way ``015_*`` collision was repaired by renumbering to
+    026/027 with IF NOT EXISTS bodies so affected DBs self-heal.)  A warning
+    is emitted when duplicates are detected so the situation is visible.
     """
     try:
         import psycopg

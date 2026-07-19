@@ -4061,18 +4061,23 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             limit: Maximum number of entries to return.
 
         Returns:
-            List of ``AuditEntry`` objects matching the filters.
+            The *most recent* ``limit`` matching ``AuditEntry`` objects, in
+            chronological (oldest-first) order.  Previously the limit was
+            applied to an ascending scan, so once the log outgrew ``limit``
+            this method could only ever return the first events recorded.
         """
         from tapps_brain.audit import AuditReader
 
         reader = AuditReader(self._persistence)
-        return reader.query(
+        entries = reader.query(
             key=key,
             event_type=event_type,
             since=since,
             until=until,
             limit=limit,
+            newest_first=True,
         )
+        return list(reversed(entries))
 
     def get_metrics(self) -> MetricsSnapshot:
         """Return a snapshot of in-process operation metrics.

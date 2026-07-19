@@ -26,6 +26,32 @@ import structlog
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+_PSYCOPG_IMPORT_ERROR_MSG = (
+    "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
+    "Install with: pip install 'psycopg[binary]' psycopg_pool"
+)
+
+# TAP-514: session variables wiped by the pool's reset callback on connection
+# return.  One constant shared by the sync and async callbacks so the variable
+# list cannot drift between the two paths.
+_RESET_SESSION_VARS_SQL = (
+    "RESET app.project_id; RESET app.agent_id; RESET app.is_admin; RESET tapps.current_namespace"
+)
+
+# TAP-512 privileged-role probes, shared by the sync and async guards.
+_ROLE_PROBE_SQL = (
+    "SELECT current_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+)
+# TAP-2673: only ownership of tables WITHOUT FORCE ROW LEVEL SECURITY defeats
+# isolation — a FORCE-RLS owner is subject to the policies like any role.
+_OWNED_UNFORCED_TABLES_SQL = (
+    "SELECT relname FROM pg_class "
+    "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
+    "WHERE relname IN ('private_memories', 'project_profiles') "
+    "  AND pg_get_userbyid(relowner) = current_user "
+    "  AND relforcerowsecurity = false"
+)
+
 
 def is_postgres_dsn(dsn: str | None) -> bool:
     """Return True when *dsn* uses a Postgres URI scheme (case-insensitive).
@@ -93,7 +119,7 @@ class PostgresConnectionManager:
     ) -> None:
         # Validate DSN scheme at construction time (ADR-007 — Postgres-only).
         if not is_postgres_dsn(dsn):
-            scheme = dsn.split("://")[0] if dsn and "://" in dsn else "(no scheme)"
+            scheme = dsn.split("://", 1)[0] if dsn and "://" in dsn else "(no scheme)"
             raise ValueError(
                 f"Invalid PostgreSQL DSN: must begin with 'postgres://' or 'postgresql://' "
                 f"(ADR-007 — Postgres-only). Got scheme '{scheme}'. "
@@ -194,34 +220,32 @@ class PostgresConnectionManager:
         # would silently undo the RESETs and leak the previous borrower's
         # session identity into the next borrow.
         with conn.cursor() as cur:
-            cur.execute(
-                "RESET app.project_id; "
-                "RESET app.agent_id; "
-                "RESET app.is_admin; "
-                "RESET tapps.current_namespace"
-            )
+            cur.execute(_RESET_SESSION_VARS_SQL)
         conn.commit()
 
-    def _ensure_pool(self) -> None:
+    def _ensure_pool(self) -> Any:  # noqa: ANN401 — psycopg ConnectionPool (lazy dep)
         """Create the connection pool on first use (lazy, thread-safe).
 
         First-open is serialised behind ``_pool_init_lock`` (double-checked)
         — the same pattern ``_ensure_async_pool`` uses — so concurrent first
         calls from multiple threads cannot each build a pool and leak the
         overwritten one's connections.
+
+        Returns the live pool.  Borrow sites must use the returned reference
+        instead of re-reading ``self._pool`` — a concurrent :meth:`close`
+        between ``_ensure_pool()`` and a second attribute read would nil the
+        slot and raise ``AttributeError`` mid-borrow.
         """
-        if self._pool is not None:
-            return
+        pool = self._pool
+        if pool is not None:
+            return pool
         with self._pool_init_lock:
             if self._pool is not None:
-                return
+                return self._pool
             try:
                 from psycopg_pool import ConnectionPool
             except ImportError:
-                raise ImportError(
-                    "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
-                    "Install with: pip install 'psycopg[binary]' psycopg_pool"
-                ) from None
+                raise ImportError(_PSYCOPG_IMPORT_ERROR_MSG) from None
 
             kwargs: dict[str, Any] = {
                 "min_size": self._min_size,
@@ -255,50 +279,23 @@ class PostgresConnectionManager:
                 self._pool.close()
                 self._pool = None
                 raise
+            return self._pool
 
-    def _assert_non_privileged_role(self) -> None:
-        """Verify the connected role cannot bypass RLS on tenanted tables.
+    @staticmethod
+    def _role_check_facts(
+        row: tuple[Any, ...] | None, owned_unforced: list[str]
+    ) -> tuple[str, list[str]]:
+        """Turn the role-probe query results into ``(current_user, violations)``.
 
-        Raises ``RuntimeError`` when the role is a superuser, has
-        ``BYPASSRLS = true``, or owns ``private_memories`` /
-        ``project_profiles`` — unless ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1``
-        is set, in which case the violation is logged at WARNING but
-        startup proceeds.
+        Shared by the sync and async privileged-role guards so the violation
+        taxonomy (superuser / BYPASSRLS / unforced table ownership) cannot
+        drift between the two paths.  A missing ``pg_roles`` row is treated
+        as privileged out of caution.
         """
-        allow_override = os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1"
-        # TAP-783: assert is stripped by Python -O; use an explicit guard.
-        if self._pool is None:  # pragma: no cover
-            raise RuntimeError(
-                "_assert_non_privileged_role called before connection pool was created"
-            )
-        with self._pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT current_user, rolsuper, rolbypassrls "
-                "FROM pg_roles WHERE rolname = current_user"
-            )
-            row = cur.fetchone()
-            if row is None:
-                # No matching pg_roles row — extremely unlikely but treat as
-                # privileged out of caution.
-                current_user, is_super, bypass_rls = "(unknown)", True, True
-            else:
-                current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
-
-            # Owning a tenanted table only defeats isolation when the table
-            # does NOT have FORCE ROW LEVEL SECURITY: a plain owner bypasses
-            # RLS, but a FORCE-RLS owner is subject to the policies like any
-            # role (migration 012_rls_force.sql).  So only flag owned tables
-            # whose relforcerowsecurity is false — this lets a de-privileged
-            # NOSUPERUSER/NOBYPASSRLS migrator role that owns FORCE-RLS tables
-            # pass the guard without the override flag (TAP-2673).
-            cur.execute(
-                "SELECT relname FROM pg_class "
-                "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
-                "WHERE relname IN ('private_memories', 'project_profiles') "
-                "  AND pg_get_userbyid(relowner) = current_user "
-                "  AND relforcerowsecurity = false"
-            )
-            owned_unforced = sorted(r[0] for r in cur.fetchall())
+        if row is None:
+            current_user, is_super, bypass_rls = "(unknown)", True, True
+        else:
+            current_user, is_super, bypass_rls = str(row[0]), bool(row[1]), bool(row[2])
 
         violations: list[str] = []
         if is_super:
@@ -310,19 +307,33 @@ class PostgresConnectionManager:
                 f"role owns tenanted tables {owned_unforced} without FORCE ROW LEVEL "
                 "SECURITY (table owners bypass RLS unless FORCE is set)"
             )
+        return current_user, violations
 
+    @staticmethod
+    def _handle_role_violations(
+        current_user: str,
+        violations: list[str],
+        *,
+        ok_event: str,
+        pool: str | None = None,
+    ) -> None:
+        """Log or raise for the outcome of a privileged-role check.
+
+        No violations → INFO log.  Violations with the
+        ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1`` override → ERROR audit log
+        (TAP-783: prominent so operators can detect accidental production
+        use).  Violations without the override → ``RuntimeError``.
+        """
         if not violations:
             logger.info(
-                "postgres.role_check_ok",
+                ok_event,
                 current_user=current_user,
                 tables_force_rls=["private_memories", "project_profiles"],
             )
             return
 
-        if allow_override:
-            # TAP-783: emit a prominent audit record so operators can detect
-            # accidental production use of the override flag.  Level is ERROR
-            # (not WARNING) so log aggregators can alert on it.
+        if os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1":
+            extra = {"pool": pool} if pool else {}
             logger.error(
                 "postgres.privileged_role_audit_override",
                 current_user=current_user,
@@ -333,6 +344,7 @@ class PostgresConnectionManager:
                     "isolation is NOT enforced for this connection.  "
                     "Acceptable in CI/dev only — must not appear in production logs."
                 ),
+                **extra,
             )
             return
 
@@ -345,6 +357,29 @@ class PostgresConnectionManager:
             "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1."
         )
 
+    def _assert_non_privileged_role(self) -> None:
+        """Verify the connected role cannot bypass RLS on tenanted tables.
+
+        Raises ``RuntimeError`` when the role is a superuser, has
+        ``BYPASSRLS = true``, or owns ``private_memories`` /
+        ``project_profiles`` — unless ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1``
+        is set, in which case the violation is logged (ERROR-level audit
+        record) but startup proceeds.
+        """
+        # TAP-783: assert is stripped by Python -O; use an explicit guard.
+        if self._pool is None:  # pragma: no cover
+            raise RuntimeError(
+                "_assert_non_privileged_role called before connection pool was created"
+            )
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(_ROLE_PROBE_SQL)
+            row = cur.fetchone()
+            cur.execute(_OWNED_UNFORCED_TABLES_SQL)
+            owned_unforced = sorted(r[0] for r in cur.fetchall())
+
+        current_user, violations = self._role_check_facts(row, owned_unforced)
+        self._handle_role_violations(current_user, violations, ok_event="postgres.role_check_ok")
+
     @contextmanager
     def get_connection(self) -> Iterator[Any]:
         """Yield a connection from the pool (context-managed).
@@ -355,16 +390,76 @@ class PostgresConnectionManager:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
         """
-        self._ensure_pool()
-        with self._pool.connection() as conn:
+        pool = self._ensure_pool()
+        with pool.connection() as conn:
             yield conn
 
     def close(self) -> None:
-        """Shut down the connection pool, releasing all connections."""
-        if self._pool is not None:
-            self._pool.close()
-            self._pool = None
+        """Shut down the connection pool, releasing all connections.
+
+        Serialised behind ``_pool_init_lock`` so it cannot race a concurrent
+        first-open (which would leak the freshly built pool past close) or a
+        borrower between ``_ensure_pool()`` and its pool use.  The manager
+        stays lazily re-openable by design — a later borrow rebuilds the
+        pool via ``_ensure_pool``.
+        """
+        with self._pool_init_lock:
+            pool, self._pool = self._pool, None
+        if pool is not None:
+            pool.close()
             logger.info("postgres.pool_closed")
+
+    def _pool_stats_for(
+        self,
+        pool: Any,  # noqa: ANN401 — psycopg (Async)ConnectionPool (lazy dep)
+        *,
+        unavailable_event: str,
+    ) -> dict[str, Any]:
+        """Build the stats dict shared by :meth:`get_pool_stats` and
+        :meth:`get_async_pool_stats`.
+
+        ``get_stats()`` is a plain synchronous method on both ``ConnectionPool``
+        and ``AsyncConnectionPool`` (it only reads in-memory counters), so one
+        helper serves both pools.
+        """
+        base: dict[str, Any] = {
+            "pool_min": self._min_size,
+            "pool_max": self._max_size,
+            "pool_size": 0,
+            "pool_available": 0,
+            "pool_saturation": 0.0,
+            "idle_timeout": self._idle_timeout,
+            "max_waiting": self._max_waiting,
+            "max_lifetime": self._max_lifetime,
+            "pool_stats_available": False,
+        }
+        if pool is None:
+            return base
+        try:
+            raw = pool.get_stats()
+            size = int(raw.get("pool_size", 0))
+            available = int(raw.get("pool_available", 0))
+            saturation = (size - available) / self._max_size if self._max_size > 0 else 0.0
+            base.update(
+                {
+                    "pool_size": size,
+                    "pool_available": available,
+                    "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
+                    "pool_stats_available": True,
+                }
+            )
+        except Exception as exc:
+            # get_stats() can raise if the pool is in a transient bad state or
+            # if the psycopg_pool API has changed (e.g. renamed method).  Log
+            # at DEBUG so operators can detect the observability gap without
+            # noisy ERROR-level alerts on a non-critical path.
+            logger.debug(
+                unavailable_event,
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            # pool_stats_available stays False; size/saturation stay at 0.
+        return base
 
     def get_pool_stats(self) -> dict[str, Any]:
         """Return current pool statistics.
@@ -386,44 +481,9 @@ class PostgresConnectionManager:
         ``pool_size`` and ``pool_available`` will be 0, ``pool_saturation``
         will be 0.0, and ``pool_stats_available`` will be ``False``.
         """
-        base: dict[str, Any] = {
-            "pool_min": self._min_size,
-            "pool_max": self._max_size,
-            "pool_size": 0,
-            "pool_available": 0,
-            "pool_saturation": 0.0,
-            "idle_timeout": self._idle_timeout,
-            "max_waiting": self._max_waiting,
-            "max_lifetime": self._max_lifetime,
-            "pool_stats_available": False,
-        }
-        if self._pool is None:
-            return base
-        try:
-            raw = self._pool.get_stats()
-            size = int(raw.get("pool_size", 0))
-            available = int(raw.get("pool_available", 0))
-            saturation = (size - available) / self._max_size if self._max_size > 0 else 0.0
-            base.update(
-                {
-                    "pool_size": size,
-                    "pool_available": available,
-                    "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
-                    "pool_stats_available": True,
-                }
-            )
-        except Exception as exc:
-            # get_stats() can raise if the pool is in a transient bad state or
-            # if the psycopg_pool API has changed (e.g. renamed method).  Log
-            # at DEBUG so operators can detect the observability gap without
-            # noisy ERROR-level alerts on a non-critical path.
-            logger.debug(
-                "postgres_connection.pool_stats_unavailable",
-                error=type(exc).__name__,
-                detail=str(exc),
-            )
-            # pool_stats_available stays False; size/saturation stay at 0.
-        return base
+        return self._pool_stats_for(
+            self._pool, unavailable_event="postgres_connection.pool_stats_unavailable"
+        )
 
     # -- Async pool (STORY-072.1) ---------------------------------------------
 
@@ -441,12 +501,7 @@ class PostgresConnectionManager:
         # instead of discarding it, and a commit (not rollback) is
         # required to make the RESETs persist past the next borrow.
         async with conn.cursor() as cur:
-            await cur.execute(
-                "RESET app.project_id; "
-                "RESET app.agent_id; "
-                "RESET app.is_admin; "
-                "RESET tapps.current_namespace"
-            )
+            await cur.execute(_RESET_SESSION_VARS_SQL)
         await conn.commit()
 
     async def _ensure_async_pool(self) -> None:
@@ -470,10 +525,7 @@ class PostgresConnectionManager:
             try:
                 from psycopg_pool import AsyncConnectionPool
             except ImportError:
-                raise ImportError(
-                    "psycopg and psycopg_pool are required for PostgreSQL backends.\n"
-                    "Install with: pip install 'psycopg[binary]' psycopg_pool"
-                ) from None
+                raise ImportError(_PSYCOPG_IMPORT_ERROR_MSG) from None
 
             kwargs: dict[str, Any] = {
                 "min_size": self._min_size,
@@ -512,75 +564,19 @@ class PostgresConnectionManager:
 
     async def _assert_non_privileged_role_async(self) -> None:
         """Async parity for :meth:`_assert_non_privileged_role`."""
-        allow_override = os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", "") == "1"
         if self._async_pool is None:  # pragma: no cover
             raise RuntimeError(
                 "_assert_non_privileged_role_async called before async pool was created"
             )
         async with self._async_pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(
-                "SELECT current_user, rolsuper, rolbypassrls "
-                "FROM pg_roles WHERE rolname = current_user"
-            )
+            await cur.execute(_ROLE_PROBE_SQL)
             row = await cur.fetchone()
-            if row is None:
-                current_user, is_super, bypass_rls = "(unknown)", True, True
-            else:
-                current_user, is_super, bypass_rls = row[0], bool(row[1]), bool(row[2])
-
-            # TAP-2673 parity with the sync check: only flag owned tables
-            # without FORCE ROW LEVEL SECURITY — a FORCE-RLS owner is subject
-            # to the policies like any role.
-            await cur.execute(
-                "SELECT relname FROM pg_class "
-                "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
-                "WHERE relname IN ('private_memories', 'project_profiles') "
-                "  AND pg_get_userbyid(relowner) = current_user "
-                "  AND relforcerowsecurity = false"
-            )
+            await cur.execute(_OWNED_UNFORCED_TABLES_SQL)
             owned = sorted(r[0] for r in await cur.fetchall())
 
-        violations: list[str] = []
-        if is_super:
-            violations.append("rolsuper=true (superuser bypasses RLS)")
-        if bypass_rls:
-            violations.append("rolbypassrls=true (BYPASSRLS bypasses RLS)")
-        if owned:
-            violations.append(
-                f"role owns tenanted tables {owned} without FORCE ROW LEVEL "
-                "SECURITY (table owners bypass RLS unless FORCE is set)"
-            )
-
-        if not violations:
-            logger.info(
-                "postgres.async_role_check_ok",
-                current_user=current_user,
-                tables_force_rls=["private_memories", "project_profiles"],
-            )
-            return
-
-        if allow_override:
-            logger.error(
-                "postgres.privileged_role_audit_override",
-                current_user=current_user,
-                violations=violations,
-                allow_privileged_role_env="TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1",
-                pool="async",
-                detail=(
-                    "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 is set; tenant "
-                    "isolation is NOT enforced for this connection.  "
-                    "Acceptable in CI/dev only — must not appear in production logs."
-                ),
-            )
-            return
-
-        raise RuntimeError(
-            "tapps-brain refuses to start as a privileged Postgres role "
-            f"({current_user}): {'; '.join(violations)}.  Connect as a "
-            "non-owner role with BYPASSRLS=false (see "
-            "migrations/roles/001_db_roles.sql for the recommended "
-            "tapps_runtime role).  To override for CI/dev, set "
-            "TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1."
+        current_user, violations = self._role_check_facts(row, owned)
+        self._handle_role_violations(
+            current_user, violations, ok_event="postgres.async_role_check_ok", pool="async"
         )
 
     async def get_async_pool(self) -> Any:  # noqa: ANN401 — psycopg AsyncConnectionPool
@@ -628,49 +624,27 @@ class PostgresConnectionManager:
         stats can be read.  Safe to call from sync code: it does not touch
         the event loop, only inspects in-memory pool state.
         """
-        base: dict[str, Any] = {
-            "pool_min": self._min_size,
-            "pool_max": self._max_size,
-            "pool_size": 0,
-            "pool_available": 0,
-            "pool_saturation": 0.0,
-            "idle_timeout": self._idle_timeout,
-            "max_waiting": self._max_waiting,
-            "max_lifetime": self._max_lifetime,
-            "pool_stats_available": False,
-        }
-        if self._async_pool is None:
-            return base
-        try:
-            raw = self._async_pool.get_stats()
-            size = int(raw.get("pool_size", 0))
-            available = int(raw.get("pool_available", 0))
-            saturation = (size - available) / self._max_size if self._max_size > 0 else 0.0
-            base.update(
-                {
-                    "pool_size": size,
-                    "pool_available": available,
-                    "pool_saturation": round(max(0.0, min(1.0, saturation)), 4),
-                    "pool_stats_available": True,
-                }
-            )
-        except Exception as exc:
-            logger.debug(
-                "postgres_connection.async_pool_stats_unavailable",
-                error=type(exc).__name__,
-                detail=str(exc),
-            )
-        return base
+        return self._pool_stats_for(
+            self._async_pool,
+            unavailable_event="postgres_connection.async_pool_stats_unavailable",
+        )
 
     @contextmanager
     def namespace_context(self, namespace: str) -> Iterator[Any]:
         """Yield a connection with ``tapps.current_namespace`` session variable set.
 
-        Documented pattern for enforcing namespace-based Row Level
-        Security (RLS) on ``hive_memories`` (EPIC-063 STORY-063.3).  All
+        Opt-in pattern for enforcing namespace-based Row Level Security
+        (RLS) on ``hive_memories`` (EPIC-063 STORY-063.3).  All
         transactions executed against the yielded connection see the
         ``hive_namespace_isolation`` policy applied with the bound
         namespace.
+
+        .. note::
+            No production path currently routes through this context —
+            ``PostgresHiveBackend`` does not use it, so the RLS policy from
+            ``migrations/hive/002_rls_spike.sql`` is only engaged when a
+            caller opts in explicitly.  Do not assume hive namespace
+            isolation is active just because the policy exists.
 
         TAP-514 — uses session-level ``SET`` (not ``SET LOCAL``) so the
         binding survives multiple transactions inside one borrow; the
@@ -684,8 +658,8 @@ class PostgresConnectionManager:
             empty; pass ``""`` only to explicitly invoke the admin-bypass
             policy (all rows visible, no isolation).
         """
-        self._ensure_pool()
-        with self._pool.connection() as conn:
+        pool = self._ensure_pool()
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
@@ -732,8 +706,8 @@ class PostgresConnectionManager:
                 "project_context requires a non-empty project_id; "
                 "use admin_context() for registry / admin paths."
             )
-        self._ensure_pool()
-        with self._pool.connection() as conn:
+        pool = self._ensure_pool()
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
@@ -747,6 +721,12 @@ class PostgresConnectionManager:
         STORY-070.7 — threads the per-call ``agent_id`` into Postgres so
         any row-level security policy (or audit trigger) that filters by
         agent can see the caller identity.
+
+        .. note::
+            No production path currently routes through this context (only
+            integration tests exercise it); backends carry tenant identity
+            in SQL parameters instead.  It remains available for RLS/audit
+            policies that need the GUC.
 
         TAP-514 — uses session-level ``SET`` so the binding survives
         multiple transactions inside one borrow; the pool's ``reset``
@@ -766,8 +746,8 @@ class PostgresConnectionManager:
         """
         if not agent_id or not agent_id.strip():
             raise ValueError("agent_context requires a non-empty agent_id")
-        self._ensure_pool()
-        with self._pool.connection() as conn:
+        pool = self._ensure_pool()
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 from psycopg import sql as pgsql
 
@@ -793,8 +773,8 @@ class PostgresConnectionManager:
         temporarily DISABLE the table's RLS (TAP-512 added FORCE so
         owner-bypass no longer works).
         """
-        self._ensure_pool()
-        with self._pool.connection() as conn:
+        pool = self._ensure_pool()
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SET app.is_admin = 'true'")
             yield conn

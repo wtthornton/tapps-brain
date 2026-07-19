@@ -46,7 +46,7 @@ class TestAsyncAuditWithBackend:
 
         result = await ams.audit(key="k1", limit=10)
 
-        async_backend.query_audit.assert_awaited_once_with(key="k1", limit=10)
+        async_backend.query_audit.assert_awaited_once_with(newest_first=True, key="k1", limit=10)
         sync_store.audit.assert_not_called()
         assert len(result) == 1
         assert isinstance(result[0], AuditEntry)
