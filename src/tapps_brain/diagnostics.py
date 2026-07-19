@@ -134,7 +134,8 @@ def adjust_weights_for_correlation(
     """
     if len(history_rows) < min_rows:
         return base_weights, False
-    series: dict[str, list[float]] = {d: [] for d in dim_names}
+    # Keep whole parsed rows so pairs can be aligned per row below.
+    parsed_rows: list[dict[str, float]] = []
     for row in history_rows:
         dims = row.get("dimensions") or row.get("dimension_scores") or {}
         if isinstance(dims, str):
@@ -144,12 +145,11 @@ def adjust_weights_for_correlation(
                 continue
         if not isinstance(dims, dict):
             continue
-        for d in dim_names:
-            v = dims.get(d)
-            if isinstance(v, (int, float)):
-                series[d].append(float(v))
-    lengths = [len(series[d]) for d in dim_names]
-    if min(lengths) < min_rows:
+        parsed_rows.append(
+            {d: float(v) for d in dim_names if isinstance(v := dims.get(d), (int, float))}
+        )
+    lengths = [sum(1 for pr in parsed_rows if d in pr) for d in dim_names]
+    if not lengths or min(lengths) < min_rows:
         return base_weights, False
 
     w = dict(base_weights)
@@ -157,7 +157,15 @@ def adjust_weights_for_correlation(
     factor = 1.0 - reduction / 2
     for i, da in enumerate(dim_names):
         for db in dim_names[i + 1 :]:
-            r = pearson_r(series[da], series[db])
+            # Align samples per row: only rows containing BOTH dimensions
+            # contribute a pair.  Building independent per-dimension series
+            # let pearson_r pair dimension A's newest values against
+            # dimension B's oldest when dimension sets differed across rows.
+            xs = [pr[da] for pr in parsed_rows if da in pr and db in pr]
+            ys = [pr[db] for pr in parsed_rows if da in pr and db in pr]
+            if len(xs) < min_rows:
+                continue
+            r = pearson_r(xs, ys)
             if r is not None and r > corr_threshold:
                 w[da] = max(0.0, w.get(da, 0) * factor)
                 w[db] = max(0.0, w.get(db, 0) * factor)
@@ -685,11 +693,9 @@ class InMemoryDiagnosticsHistoryStore:
     def record(self, report: DiagnosticsReport, *, circuit_state: str = "closed") -> str:
         rid = str(uuid.uuid4())
         dim_json = json.dumps({k: v.score for k, v in report.dimensions.items()})
-        recorded = report.recorded_at
-        recorded_str = recorded.isoformat() if hasattr(recorded, "isoformat") else str(recorded)
         row: dict[str, Any] = {
             "id": rid,
-            "recorded_at": recorded_str,
+            "recorded_at": str(report.recorded_at),
             "composite_score": float(report.composite_score),
             "dimension_scores": dim_json,
             "circuit_state": circuit_state,
@@ -701,8 +707,11 @@ class InMemoryDiagnosticsHistoryStore:
 
     def history(self, *, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
-            # Most recent first, matching Postgres ORDER BY recorded_at DESC
-            return list(reversed(self._records[-limit:])) if self._records else []
+            # Most recent first, matching Postgres ORDER BY recorded_at DESC.
+            # Return copies: the Postgres twin builds fresh dicts per call,
+            # and callers mutate returned rows (store.diagnostics_history
+            # setdefaults project_id), which would corrupt internal state.
+            return [dict(r) for r in reversed(self._records[-limit:])]
 
     def prune_older_than(self, days: int) -> int:
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
@@ -790,10 +799,12 @@ class AnomalyDetector:
                 continue
             if prev_m is None:
                 continue
-            v = max(1e-9, prev_v)
-            sigma = math.sqrt(v)
-            if sigma < 1e-6:
-                continue
+            # The 1e-9 variance floor is intentional: a perfectly constant
+            # baseline must still alert on a genuine drop (see
+            # test_anomaly_detector_z_score_uses_pre_update_ewma).  A
+            # sigma < 1e-6 guard here was unreachable dead code — the floor
+            # already keeps sigma >= 3.16e-5.
+            sigma = math.sqrt(max(1e-9, prev_v))
             z = abs(ds.score - prev_m) / sigma
             level = None
             if z >= self.crit_sigma:
@@ -834,13 +845,17 @@ class CircuitBreaker:
     def transition(self, composite: float) -> CircuitState:
         prev = self.state
         if self.state == CircuitState.HALF_OPEN:
-            if composite >= 0.6:
-                self.state = CircuitState.CLOSED
-                self.half_open_probes = 0
-            elif composite >= 0.3:
-                self.state = CircuitState.DEGRADED
-            else:
+            # Stay HALF_OPEN until probes_required probes have been observed
+            # (record_probe is called once per diagnostics run before this).
+            # Exiting on the first probe made the multi-probe recovery
+            # mechanism dead code: a single good composite fully closed the
+            # circuit straight from HALF_OPEN.
+            if composite < 0.3:
                 self.state = CircuitState.OPEN
+                self.half_open_probes = 0
+            elif self.half_open_probes >= self.probes_required:
+                self.state = CircuitState.CLOSED if composite >= 0.6 else CircuitState.DEGRADED
+                self.half_open_probes = 0
         elif composite >= 0.6:
             self.state = CircuitState.CLOSED
         elif composite >= 0.3:
@@ -892,7 +907,11 @@ def maybe_remediate(
     inte = report.dimensions.get("integrity")
 
     def _cool_ok(key: str) -> bool:
-        return now_mono - breaker._last_remediation_mono.get(key, 0.0) >= breaker.cooldown_seconds
+        # Missing key means remediation never ran — cooldown is satisfied.
+        # Defaulting to monotonic epoch 0 silently blocked the first
+        # remediation on any host whose uptime was below cooldown_seconds.
+        last = breaker._last_remediation_mono.get(key)
+        return last is None or now_mono - last >= breaker.cooldown_seconds
 
     if dup and dup.score < 0.5 and _cool_ok("consolidate"):
         try:

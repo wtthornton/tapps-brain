@@ -86,7 +86,10 @@ def index_session(
     """
     if not session_id or not session_id.strip():
         return 0
-    trimmed = [c[:max_chars_per_chunk] for c in chunks[:max_chunks] if c and c.strip()]
+    # Truncate BEFORE filtering: a chunk whose first max_chars are all
+    # whitespace but has content later would otherwise be stored as junk
+    # whitespace (counted, unsearchable).
+    trimmed = [t for t in (c[:max_chars_per_chunk] for c in chunks[:max_chunks]) if t.strip()]
     if not trimmed:
         return 0
 
@@ -114,8 +117,14 @@ def index_session(
             # falls back to tuple key order).  This is acceptable for the fallback
             # index — true FIFO within a batch is not guaranteed.
             if is_new and len(bucket) > _max_in_memory:
-                oldest = min(bucket, key=lambda k: bucket[k]["created_at"])
-                del bucket[oldest]
+                # Never evict chunks of the session being written right now:
+                # re-indexing an old session with more chunks at cap would
+                # otherwise evict its own freshly written chunk 0 (upserts
+                # keep the original created_at, making it the "oldest").
+                candidates = [k for k in bucket if k[0] != session_id]
+                if candidates:
+                    oldest = min(candidates, key=lambda k: bucket[k]["created_at"])
+                    del bucket[oldest]
         # Drop surplus indices from a prior longer write so re-index replaces
         # the session rather than leaving stale searchable orphans.
         for surplus_key in [k for k in bucket if k[0] == session_id and k[1] >= len(trimmed)]:
@@ -229,7 +238,9 @@ class SessionIndex:
             logger.warning("session_index_skip_empty_id")
             return 0
 
-        trimmed = [c[:max_chars_per_chunk] for c in chunks[:max_chunks] if c and c.strip()]
+        # Truncate before filtering so whitespace-only prefixes are dropped
+        # rather than persisted as junk rows with empty tsvectors.
+        trimmed = [t for t in (c[:max_chars_per_chunk] for c in chunks[:max_chunks]) if t.strip()]
         if not trimmed:
             return 0
 

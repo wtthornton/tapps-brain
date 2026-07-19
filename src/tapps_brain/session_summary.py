@@ -121,9 +121,11 @@ def session_summary_save(
         else:
             budget = max_chars - len(ellipsis)
             head = summary[:budget]
-            cut = head.rsplit(None, 1)[0] if any(c.isspace() for c in head) else head
-            if not cut:
-                cut = head
+            # rsplit(None, 1) returns [] for all-whitespace heads (e.g. a
+            # summary pasted with leading blank lines) — indexing [0]
+            # unguarded crashed the whole save with IndexError.
+            parts = head.rsplit(None, 1)
+            cut = parts[0] if parts and parts[0] else head
             summary = cut + ellipsis
         truncated = True
 
@@ -168,6 +170,18 @@ def session_summary_save(
     if isinstance(result, dict) and result.get("error"):
         return result
 
+    # save(dedup=True) can short-circuit on a near-duplicate value and
+    # reinforce an EXISTING entry under a different key (repeated "no changes
+    # this session" summaries are legitimate).  Report the entry that was
+    # actually touched — returning the fabricated timestamped key gave
+    # callers a key that store.get() resolves to None.
+    from tapps_brain.models import MemoryEntry
+
+    status = "saved"
+    if isinstance(result, MemoryEntry) and result.key != key:
+        key = result.key
+        status = "deduplicated"
+
     # Optionally write daily note. The note filename uses the *local* date —
     # it is a human-facing journal file, and "today" means the user's today,
     # not UTC's (which flips before local midnight in western timezones).
@@ -177,7 +191,7 @@ def session_summary_save(
 
     out: dict[str, Any] = {
         "key": key,
-        "status": "saved",
+        "status": status,
         "tags": all_tags,
         "tier": resolved_tier,
         "scope": scope,
@@ -198,5 +212,5 @@ def _append_daily_note(workspace: Path, today: str, summary: str) -> None:
     timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%H:%M UTC")
     block = f"\n## Session End — {timestamp}\n\n{summary}\n"
 
-    with open(note_path, "a") as f:
+    with open(note_path, "a", encoding="utf-8") as f:
         f.write(block)

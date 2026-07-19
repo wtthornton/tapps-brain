@@ -1208,7 +1208,10 @@ def build_visual_snapshot(
 
     feedback_events: list[dict[str, Any]] = []
     try:
-        _events = store.query_feedback(limit=200)
+        # query_feedback is oldest-first with LIMIT, so limit=200 alone would
+        # permanently pin the dashboard to the OLDEST 200 events once the
+        # store grows past 200.  Over-fetch and keep the newest window.
+        _events = store.query_feedback(limit=10_000)[-200:]
         for _ev in _events:
             _dump = _ev.model_dump(mode="json")
             # Do NOT impute project_id here — preserve None for legacy/unknown

@@ -274,7 +274,11 @@ class FeedbackStore:
                     event.entry_key,
                     event.session_id,
                     event.utility_score,
-                    json.dumps(event.details, ensure_ascii=False),
+                    # default=str matches the Hive path (record_feedback_event):
+                    # FeedbackEvent.details is dict[str, Any] and the in-memory
+                    # twin accepts datetime/Path values, so this store must not
+                    # crash on the same event.
+                    json.dumps(event.details, ensure_ascii=False, default=str),
                     event.timestamp,
                 ),
             )
@@ -415,11 +419,16 @@ class InMemoryFeedbackStore:
         config: FeedbackConfig | None = None,
         *,
         shared_events: list[Any] | None = None,
+        shared_lock: threading.Lock | None = None,
     ) -> None:
         # When shared_events is provided (e.g. from InMemoryPrivateBackend),
         # all MemoryStore instances sharing the same backend see the same events.
+        # A shared list needs a shared lock: a fresh per-instance lock cannot
+        # make the dedup scan + append in record() atomic across instances,
+        # so two sharers could both append the same event id — something the
+        # Postgres ON CONFLICT emulation must never allow.
         self._events: list[FeedbackEvent] = shared_events if shared_events is not None else []
-        self._lock = threading.Lock()
+        self._lock = shared_lock if shared_lock is not None else threading.Lock()
         self._config: FeedbackConfig = config if config is not None else FeedbackConfig()
 
     def record(self, event: FeedbackEvent) -> None:

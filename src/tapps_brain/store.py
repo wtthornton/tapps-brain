@@ -4384,9 +4384,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
     def close(self) -> None:
         """Close the underlying persistence layer."""
-        if self._feedback_store_instance is not None:
-            self._feedback_store_instance.close()
-            self._feedback_store_instance = None
+        # Swap under the store lock so a concurrent _get_feedback_store()
+        # (double-checked init) cannot observe a half-closed instance.
+        with self._serialized():
+            fb, self._feedback_store_instance = self._feedback_store_instance, None
+        if fb is not None:
+            fb.close()
         if self._diagnostics_history_store is not None:
             self._diagnostics_history_store.close()
             self._diagnostics_history_store = None

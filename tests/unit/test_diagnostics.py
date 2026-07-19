@@ -176,6 +176,10 @@ def test_circuit_breaker_transitions() -> None:
     cb.transition(0.2)
     assert cb.state == CircuitState.OPEN
     cb.state = CircuitState.HALF_OPEN
+    # HALF_OPEN holds until probes_required probes have been recorded.
+    cb.transition(0.65)
+    assert cb.state == CircuitState.HALF_OPEN
+    cb.half_open_probes = cb.probes_required
     cb.transition(0.65)
     assert cb.state == CircuitState.CLOSED
 
@@ -392,6 +396,10 @@ def test_circuit_half_open_low_composite_opens() -> None:
 def test_circuit_half_open_mid_composite_degraded() -> None:
     cb = CircuitBreaker()
     cb.state = CircuitState.HALF_OPEN
+    # Mid composite keeps probing until probes_required is reached.
+    cb.transition(0.4)
+    assert cb.state == CircuitState.HALF_OPEN
+    cb.half_open_probes = cb.probes_required
     cb.transition(0.4)
     assert cb.state == CircuitState.DEGRADED
 

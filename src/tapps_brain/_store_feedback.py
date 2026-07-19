@@ -9,6 +9,7 @@ in-class definitions.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any, cast
 
 import structlog
@@ -33,6 +34,11 @@ _RATING_SCORES: dict[str, float] = {
     "irrelevant": 0.0,
     "outdated": 0.0,
 }
+
+#: Guards creation of the per-backend ``_feedback_events_lock`` attribute so
+#: two MemoryStore instances sharing one backend cannot each install a
+#: different lock (each store serializes only on its own ``_serialized()``).
+_shared_feedback_lock_guard = threading.Lock()
 
 
 class FeedbackMixin(_MemoryStoreBase):
@@ -68,6 +74,9 @@ class FeedbackMixin(_MemoryStoreBase):
         """Ranked knowledge gaps (explicit reports + zero-result recall)."""
         from tapps_brain.flywheel import GapTracker
 
+        if limit <= 0:
+            # Slicing with a negative limit would drop a suffix instead.
+            return []
         gaps = GapTracker().analyze_gaps(
             cast("MemoryStore", self), use_semantic_clustering=semantic
         )
@@ -102,7 +111,15 @@ class FeedbackMixin(_MemoryStoreBase):
         The in-memory store persists events for the lifetime of the
         :class:`MemoryStore` instance only — it is not durable.
         """
-        if self._feedback_store_instance is None:
+        if self._feedback_store_instance is not None:
+            return self._feedback_store_instance
+        # Double-checked init under the store lock: an unlocked check-then-act
+        # let two threads racing the first feedback op each build a store, and
+        # events recorded through the discarded instance were silently lost on
+        # the in-memory fallback path.
+        with self._serialized():
+            if self._feedback_store_instance is not None:
+                return self._feedback_store_instance
             cm = getattr(self._persistence, "_cm", None)
             project_id = getattr(self._persistence, "_project_id", None)
             agent_id = getattr(self._persistence, "_agent_id", None)
@@ -117,8 +134,23 @@ class FeedbackMixin(_MemoryStoreBase):
                 # instances sharing the same InMemoryPrivateBackend (same
                 # project_root in tests) see the same feedback data.
                 shared = getattr(self._persistence, "_feedback_events", None)
+                shared_lock: threading.Lock | None = None
+                if shared is not None:
+                    # One lock per shared list, stored on the backend so every
+                    # sharer serializes on the same object (a per-instance
+                    # lock cannot protect a cross-instance list).
+                    with _shared_feedback_lock_guard:
+                        shared_lock = getattr(self._persistence, "_feedback_events_lock", None)
+                        if shared_lock is None:
+                            shared_lock = threading.Lock()
+                            try:
+                                self._persistence._feedback_events_lock = (  # type: ignore[attr-defined]
+                                    shared_lock
+                                )
+                            except AttributeError:
+                                shared_lock = None
                 self._feedback_store_instance = InMemoryFeedbackStore(
-                    config=config, shared_events=shared
+                    config=config, shared_events=shared, shared_lock=shared_lock
                 )
             else:
                 self._feedback_store_instance = FeedbackStore(
@@ -127,7 +159,7 @@ class FeedbackMixin(_MemoryStoreBase):
                     agent_id=agent_id,
                     config=config,
                 )
-        return self._feedback_store_instance
+            return self._feedback_store_instance
 
     def _propagate_feedback_to_hive(self, event: FeedbackEvent, session_id: str | None) -> None:
         """Mirror feedback to the Hive when the entry was Hive-sourced (STORY-029.7).
@@ -212,7 +244,10 @@ class FeedbackMixin(_MemoryStoreBase):
             entry_key=entry_key,
             session_id=session_id,
             utility_score=_RATING_SCORES[rating],
-            details={"rating": rating, **(details or {})},
+            # Caller details spread FIRST so the canonical, validated key
+            # wins — the flywheel reads details["rating"], and a colliding
+            # caller key silently flipped the Bayesian update direction.
+            details={**(details or {}), "rating": rating},
             project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
@@ -245,7 +280,7 @@ class FeedbackMixin(_MemoryStoreBase):
         event = FeedbackEvent(
             event_type="gap_reported",
             session_id=session_id,
-            details={"query": query, **(details or {})},
+            details={**(details or {}), "query": query},
             project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
@@ -280,7 +315,7 @@ class FeedbackMixin(_MemoryStoreBase):
             event_type="issue_flagged",
             entry_key=entry_key,
             session_id=session_id,
-            details={"issue": issue, **(details or {})},
+            details={**(details or {}), "issue": issue},
             project_id=self._project_id,
         )
         self._get_feedback_store().record(event)
