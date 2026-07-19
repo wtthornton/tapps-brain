@@ -172,6 +172,7 @@ _FLASHRANK_CACHE: dict[str, FlashRankReranker] = {}
 
 
 def get_reranker(
+    *,
     enabled: bool,
     model: str | None = None,
 ) -> Reranker:

@@ -1,6 +1,7 @@
 """BM25 scoring engine for memory retrieval.
 
-Implements Okapi BM25 with basic text preprocessing (lowercasing,
+Implements the BM25+ variant of Okapi BM25 (lower-bound ``delta`` bonus,
+see :class:`BM25Scorer`) with basic text preprocessing (lowercasing,
 stop-word removal, suffix stripping).  Pure Python, no external deps.
 """
 
@@ -252,10 +253,7 @@ class BM25Scorer:
         if not self._doc_count or self._avgdl == 0.0 or not query_terms:
             return [0.0] * self._doc_count
 
-        scores: list[float] = []
-        for idx in range(self._doc_count):
-            scores.append(self._score_doc(query_terms, idx))
-        return scores
+        return [self._score_doc(query_terms, idx) for idx in range(self._doc_count)]
 
     def score_batch(self, queries: list[str]) -> list[list[float]]:
         """Score every indexed document against each query in *queries*.

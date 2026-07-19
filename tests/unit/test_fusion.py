@@ -227,7 +227,7 @@ class TestHybridWeightsQueryLength:
 
     def test_weights_sum_to_one_for_all_lengths(self) -> None:
         """bm25_w + vec_w == 1.0 regardless of query length."""
-        for n in range(0, 12):
+        for n in range(12):
             query = " ".join(f"word{i}" for i in range(n))
             bm25_w, vec_w = hybrid_rrf_weights_for_query(query)
             assert bm25_w + vec_w == pytest.approx(1.0), f"Failed for n={n}: {query!r}"

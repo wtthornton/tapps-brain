@@ -29,6 +29,7 @@ may still index the full corpus for IDF; ranking applies the filters above.
 from __future__ import annotations
 
 import contextlib
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from pydantic import BaseModel, Field
 
 from tapps_brain.bm25 import BM25Scorer, preprocess
 from tapps_brain.decay import DecayConfig, calculate_decayed_confidence, is_stale
+from tapps_brain.fusion import hybrid_rrf_weights_for_query, reciprocal_rank_fusion_weighted
 from tapps_brain.lexical import LexicalRetrievalConfig
 from tapps_brain.models import MemoryEntry, MemorySource, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import (
@@ -52,6 +54,7 @@ from tapps_brain.profile import (
     SCORING_WEIGHT_SUM_MIN,
     composite_scoring_weight_total,
 )
+from tapps_brain.relations import RelationEntry, expand_via_relations
 from tapps_brain.reranker import RERANKER_TOP_CANDIDATES, Reranker
 
 if TYPE_CHECKING:
@@ -170,6 +173,9 @@ _EDGE_SOURCE_TRUST: dict[str, float] = {
 
 _SECONDS_PER_DAY = 86_400.0
 
+# pgvector column dimension — vector(384), migration 001 (ADR-007).
+_PGVECTOR_DIM = 384
+
 # Per-source trust multipliers applied to composite score (M2).
 # These are post-composite multipliers, not additive weights.
 _DEFAULT_SOURCE_TRUST: dict[str, float] = {
@@ -205,8 +211,6 @@ def score_edge(edge: dict[str, Any]) -> float:
     Returns:
         Composite score in [0, 1].
     """
-    import math
-
     # Confidence component (already 0-1 from DB)
     confidence = float(edge.get("edge_confidence") or 0.0)
     confidence = max(0.0, min(1.0, confidence))
@@ -846,14 +850,6 @@ class MemoryRetriever:
         load relations from the persistence layer and expand with connected
         entities. Falls back to the original query on any error.
         """
-        try:
-            from tapps_brain.relations import (
-                RelationEntry,
-                expand_via_relations,
-            )
-        except ImportError:
-            return query
-
         # Load relations from persistence if available
         try:
             persistence = getattr(store, "_persistence", None)
@@ -917,7 +913,7 @@ class MemoryRetriever:
             expand = getattr(store, "_parse_relative_time", None)
             raw = expand(value) if callable(expand) else value
             try:
-                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(str(raw))
             except (ValueError, TypeError):
                 return None
             return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
@@ -934,7 +930,7 @@ class MemoryRetriever:
             ts: datetime | None = None
             if isinstance(raw_ts, str) and raw_ts:
                 try:
-                    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                    ts = datetime.fromisoformat(raw_ts)
                 except (ValueError, TypeError):
                     ts = None
                 if ts is not None and ts.tzinfo is None:
@@ -996,7 +992,7 @@ class MemoryRetriever:
     @staticmethod
     def _corpus_fingerprint(entries: list[MemoryEntry]) -> int:
         """Compute a fingerprint that changes when any entry is added, removed, or updated."""
-        return hash(tuple((e.key, e.updated_at if e.updated_at else "") for e in entries))
+        return hash(tuple((e.key, e.updated_at or "") for e in entries))
 
     def _ensure_bm25_index(
         self, entries: list[MemoryEntry], *, group_key: str | None = None
@@ -1113,8 +1109,6 @@ class MemoryRetriever:
             top_k_lexical = getattr(self._hybrid_config, "top_k_lexical", 20)
             top_k_dense = getattr(self._hybrid_config, "top_k_dense", 20)
             rrf_k = getattr(self._hybrid_config, "rrf_k", 60)
-
-        from tapps_brain.fusion import hybrid_rrf_weights_for_query, reciprocal_rank_fusion_weighted
 
         adaptive_fusion = _hybrid_adaptive_fusion_enabled(self._hybrid_config)
         bm25_w, vector_w = (1.0, 1.0)
@@ -1239,7 +1233,7 @@ class MemoryRetriever:
         # Skip the DB round-trip when the query dim cannot match, so we do not
         # sticky-flag knn_search_degraded on expected dimension mismatches.
         # Do not gate on list_all() — cold/empty cache can still have vectors in DB.
-        if len(q) == 384:
+        if len(q) == _PGVECTOR_DIM:
             try:
                 knn = store.knn_search(q, limit)
             except Exception as e:
@@ -1280,7 +1274,7 @@ class MemoryRetriever:
             logger.info(
                 "vector_search_knn_skipped_dim",
                 query_dim=len(q),
-                expected_dim=384,
+                expected_dim=_PGVECTOR_DIM,
                 hint="pgvector column is vector(384); falling back to corpus scoring",
             )
 
@@ -1344,10 +1338,10 @@ class MemoryRetriever:
                 else:
                     # Entry not in index (new entry?), use word overlap
                     results.append((entry, self._word_overlap_score(query, entry)))
-            return results
         except Exception:
             logger.warning("bm25_scoring_failed_using_word_overlap", query=query, exc_info=True)
             return [(entry, self._word_overlap_score(query, entry)) for entry in entries]
+        return results
 
     def _bm25_full_scan(
         self,
@@ -1446,7 +1440,7 @@ class MemoryRetriever:
                 updated = updated.replace(tzinfo=UTC)
         except (ValueError, TypeError):
             return 0.5
-        days = max((now - updated).total_seconds() / 86400.0, 0.0)
+        days = max((now - updated).total_seconds() / _SECONDS_PER_DAY, 0.0)
         return 1.0 / (1.0 + days)
 
     def _frequency_score(self, entry: MemoryEntry) -> float:

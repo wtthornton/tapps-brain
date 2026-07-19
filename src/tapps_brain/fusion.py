@@ -80,8 +80,14 @@ def hybrid_rrf_weights_for_query(query: str) -> tuple[float, float]:
             "describe ",
             "tell me ",
             "find anything ",
+            "what's ",
+            "how's ",
+            "where's ",
+            "who's ",
+            "why's ",
+            "when's ",
         )
-    ) or lower.startswith(("what's ", "how's ", "where's ", "who's ", "why's ", "when's ")):
+    ):
         bias -= 1
     if any(p in lower for p in ("similar to", "anything about", "related to")):
         bias -= 1

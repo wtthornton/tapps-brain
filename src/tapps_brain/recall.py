@@ -16,12 +16,15 @@ Thread-safe: multiple concurrent ``recall()`` calls are safe.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import structlog
 
+from tapps_brain import recall_quality_buffer
 from tapps_brain.injection import InjectionConfig, estimate_tokens, inject_memories
 from tapps_brain.models import (
     KGEdgeView,
@@ -62,8 +65,6 @@ def _compute_recall_quality(
     if not memories:
         return None, None
 
-    from datetime import UTC, datetime
-
     scores: list[float] = []
     ages_days: list[float] = []
     now = datetime.now(tz=UTC)
@@ -74,7 +75,7 @@ def _compute_recall_quality(
         raw_ts = mem.get("last_accessed", "")
         if isinstance(raw_ts, str) and raw_ts:
             try:
-                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                ts = datetime.fromisoformat(raw_ts)
                 # Imported / legacy rows may be tz-naive — assume UTC (matches
                 # tapps_brain.models._parse_iso / decay._days_since).
                 if ts.tzinfo is None:
@@ -283,8 +284,6 @@ class RecallOrchestrator:
             )
         project_id = getattr(self._store, "_project_id", None) or ""
         if project_id:
-            from tapps_brain import recall_quality_buffer
-
             recall_quality_buffer.record(
                 project_id=project_id,
                 top_score=top_score,
@@ -545,6 +544,7 @@ class RecallOrchestrator:
         boosted: list[dict[str, object]] = []
         for mem in memories:
             key = str(mem.get("key", ""))
+            item = mem
             if key in connected:
                 hop = connected[key]
                 # Boost inversely proportional to hop distance
@@ -552,8 +552,8 @@ class RecallOrchestrator:
                 raw_score = mem.get("score", 0.0)
                 score = float(raw_score) if isinstance(raw_score, (int, float)) else 0.0
                 new_score = min(score + hop_boost, 1.0)
-                mem = {**mem, "score": new_score, "graph_boosted": True}
-            boosted.append(mem)
+                item = {**mem, "score": new_score, "graph_boosted": True}
+            boosted.append(item)
 
         # Re-sort by score descending
         def _score(m: dict[str, object]) -> float:
@@ -572,8 +572,6 @@ class RecallOrchestrator:
         """
         if not overrides:
             return self._config
-
-        import dataclasses
 
         vals: dict[str, object] = dataclasses.asdict(self._config)
         vals["dedupe_window"] = list(self._config.dedupe_window)

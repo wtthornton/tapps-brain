@@ -36,6 +36,7 @@ from tapps_brain.recall_diagnostics import (
     RECALL_EMPTY_SEARCH_FAILED,
     RECALL_EMPTY_STORE_EMPTY,
 )
+from tapps_brain.reranker import get_reranker, reranker_provider_label
 from tapps_brain.retrieval import MemoryRetriever
 from tapps_brain.safety import check_content_safety
 
@@ -330,8 +331,6 @@ def inject_memories(  # noqa: PLR0915
             ruleset_ver = getattr(_safety_prof, "ruleset_version", None)
     injection_metrics = getattr(store, "_metrics", None)
 
-    from tapps_brain.reranker import get_reranker, reranker_provider_label
-
     reranker = get_reranker(enabled=config.reranker_enabled) if config.reranker_enabled else None
     retriever = MemoryRetriever(
         config=decay_config,
@@ -427,15 +426,16 @@ def inject_memories(  # noqa: PLR0915
             metrics=injection_metrics,
         )
         if safety.safe:
+            safe_item = scored
             if safety.sanitised_content is not None:
-                scored = scored.model_copy(
+                safe_item = scored.model_copy(
                     update={
                         "entry": scored.entry.model_copy(
                             update={"value": safety.sanitised_content},
                         ),
                     },
                 )
-            safe_results.append(scored)
+            safe_results.append(safe_item)
         else:
             logger.warning(
                 "memory_injection_blocked",

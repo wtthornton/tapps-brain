@@ -98,25 +98,25 @@ _OBJ = r"(" + _WORD + r"(?:\s+" + _WORD + r"){0,7})"
 _SEGMENT_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n+")
 
 _RELATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(_SUBJ + r"\s+manages\s+" + _OBJ, re.I), "manages"),
-    (re.compile(_SUBJ + r"\s+owns\s+" + _OBJ, re.I), "owns"),
-    (re.compile(_SUBJ + r"\s+handles\s+" + _OBJ, re.I), "handles"),
-    (re.compile(_SUBJ + r"\s+uses\s+" + _OBJ, re.I), "uses"),
-    (re.compile(_SUBJ + r"\s+depends\s+on\s+" + _OBJ, re.I), "depends on"),
-    (re.compile(_SUBJ + r"\s+creates\s+" + _OBJ, re.I), "creates"),
-    (re.compile(_SUBJ + r"\s+provides\s+" + _OBJ, re.I), "provides"),
+    (re.compile(_SUBJ + r"\s+manages\s+" + _OBJ, re.IGNORECASE), "manages"),
+    (re.compile(_SUBJ + r"\s+owns\s+" + _OBJ, re.IGNORECASE), "owns"),
+    (re.compile(_SUBJ + r"\s+handles\s+" + _OBJ, re.IGNORECASE), "handles"),
+    (re.compile(_SUBJ + r"\s+uses\s+" + _OBJ, re.IGNORECASE), "uses"),
+    (re.compile(_SUBJ + r"\s+depends\s+on\s+" + _OBJ, re.IGNORECASE), "depends on"),
+    (re.compile(_SUBJ + r"\s+creates\s+" + _OBJ, re.IGNORECASE), "creates"),
+    (re.compile(_SUBJ + r"\s+provides\s+" + _OBJ, re.IGNORECASE), "provides"),
 ]
 
 # Query patterns that indicate relationship lookups. Every pattern carries
 # a concrete predicate — there is no "match any predicate" query form.
 _QUERY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"(?:who|what)\s+handles\s+(.+)", re.I), "handles"),
-    (re.compile(r"(?:who|what)\s+manages\s+(.+)", re.I), "manages"),
-    (re.compile(r"(?:who|what)\s+owns\s+(.+)", re.I), "owns"),
-    (re.compile(r"(?:who|what)\s+uses\s+(.+)", re.I), "uses"),
-    (re.compile(r"(?:who|what)\s+creates\s+(.+)", re.I), "creates"),
-    (re.compile(r"(?:who|what)\s+provides\s+(.+)", re.I), "provides"),
-    (re.compile(r"(?:who|what)\s+depends\s+on\s+(.+)", re.I), "depends on"),
+    (re.compile(r"(?:who|what)\s+handles\s+(.+)", re.IGNORECASE), "handles"),
+    (re.compile(r"(?:who|what)\s+manages\s+(.+)", re.IGNORECASE), "manages"),
+    (re.compile(r"(?:who|what)\s+owns\s+(.+)", re.IGNORECASE), "owns"),
+    (re.compile(r"(?:who|what)\s+uses\s+(.+)", re.IGNORECASE), "uses"),
+    (re.compile(r"(?:who|what)\s+creates\s+(.+)", re.IGNORECASE), "creates"),
+    (re.compile(r"(?:who|what)\s+provides\s+(.+)", re.IGNORECASE), "provides"),
+    (re.compile(r"(?:who|what)\s+depends\s+on\s+(.+)", re.IGNORECASE), "depends on"),
 ]
 
 
@@ -130,8 +130,7 @@ def _clean_entity(raw: str) -> str:
     # Strip leading/trailing whitespace and common noise
     cleaned = raw.strip().strip(".,;:!?\"'")
     # Collapse internal whitespace
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned
+    return re.sub(r"\s+", " ", cleaned)
 
 
 # ---------------------------------------------------------------------------

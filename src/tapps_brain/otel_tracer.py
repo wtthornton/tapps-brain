@@ -852,7 +852,7 @@ def rm_increment_rrf_fusions() -> None:
 
 def rm_add_recall_latency_ms(ms: float) -> None:
     """Record one recall latency observation (milliseconds)."""
-    global _rm_latency_sum_ms, _rm_latency_count, _rm_latency_samples
+    global _rm_latency_sum_ms, _rm_latency_count
     if ms < 0:
         return
     with _rm_lock:
