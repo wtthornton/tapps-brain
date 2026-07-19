@@ -8,13 +8,13 @@ identical to the original in-class definitions.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from tapps_brain._store_base import _MemoryStoreBase
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from datetime import datetime
 
     from tapps_brain.models import MemoryEntry
     from tapps_brain.relations import RelationEntry
@@ -89,6 +89,27 @@ class RelationsMixin(_MemoryStoreBase):
         """
         return {key: self.get_relations(key) for key in keys}
 
+    def _rebuild_relations_cache_from_durable(self) -> None:
+        """Rebuild the in-memory relations cache from the durable store.
+
+        No-op when the backend does not expose ``list_relations``.  The cache
+        is *replaced*, not merged — every cached relation is write-through
+        from the durable store, so merging would only preserve stale buckets
+        for durably deleted relations (double-counting them as orphans and
+        resurrecting deleted graph edges).
+        """
+        list_rels = getattr(self._persistence, "list_relations", None)
+        if not callable(list_rels):
+            return
+        all_relations = list_rels()
+        with self._serialized():
+            rebuilt: dict[str, list[dict[str, Any]]] = {}
+            for rel in all_relations:
+                for src_key in rel.get("source_entry_keys") or []:
+                    rebuilt.setdefault(str(src_key), []).append(rel)
+            self._relations.clear()
+            self._relations.update(rebuilt)
+
     # ------------------------------------------------------------------
     # Health-check helpers (TAP-722)
     # ------------------------------------------------------------------
@@ -115,19 +136,7 @@ class RelationsMixin(_MemoryStoreBase):
         per-reference semantics).
         """
         self._merge_durable_entries()
-        list_rels = getattr(self._persistence, "list_relations", None)
-        if callable(list_rels):
-            all_relations = list_rels()
-            with self._serialized():
-                rebuilt: dict[str, list[dict[str, Any]]] = {}
-                for rel in all_relations:
-                    for src_key in rel.get("source_entry_keys") or []:
-                        rebuilt.setdefault(str(src_key), []).append(rel)
-                # Replace, don't merge: the durable store is authoritative here.
-                # ``update()`` would leave stale buckets for relations that were
-                # deleted durably, double-counting them as orphans.
-                self._relations.clear()
-                self._relations.update(rebuilt)
+        self._rebuild_relations_cache_from_durable()
 
         with self._serialized():
             entry_keys = set(self._entries.keys())
@@ -151,10 +160,7 @@ class RelationsMixin(_MemoryStoreBase):
         lies at or before *now*.  ``valid_at`` / ``valid_from`` are start-of-
         truth fields and must not be treated as expiry.
         """
-        from datetime import UTC
-        from datetime import datetime as _datetime
-
-        _now = now if now is not None else _datetime.now(tz=UTC)
+        _now = now if now is not None else datetime.now(tz=UTC)
 
         self._merge_durable_entries()
         with self._serialized():
@@ -170,7 +176,7 @@ class RelationsMixin(_MemoryStoreBase):
             if end_str is None:
                 continue
             try:
-                end_dt = _datetime.fromisoformat(end_str)
+                end_dt = datetime.fromisoformat(end_str)
                 if end_dt.tzinfo is None:
                     end_dt = end_dt.replace(tzinfo=UTC)
             except (ValueError, TypeError):
@@ -206,19 +212,7 @@ class RelationsMixin(_MemoryStoreBase):
             raise KeyError(key)
 
         # Refresh relation graph from durable store so cold/missed edges participate.
-        list_rels = getattr(self._persistence, "list_relations", None)
-        if callable(list_rels):
-            all_relations = list_rels()
-            with self._serialized():
-                rebuilt: dict[str, list[dict[str, Any]]] = {}
-                for rel in all_relations:
-                    for src_key in rel.get("source_entry_keys") or []:
-                        rebuilt.setdefault(str(src_key), []).append(rel)
-                # Replace, don't merge — every cached relation is write-through
-                # from the durable store, so merging only preserves stale edges
-                # for durably deleted relations.
-                self._relations.clear()
-                self._relations.update(rebuilt)
+        self._rebuild_relations_cache_from_durable()
 
         with self._serialized():
             # Build entity -> set[entry_key] index from all relations

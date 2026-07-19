@@ -8,7 +8,9 @@ helpers.  Behaviour is identical to the original in-class definitions.
 
 from __future__ import annotations
 
+import re
 import time
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import structlog
@@ -253,9 +255,6 @@ class QueryMixin(_MemoryStoreBase):
             "1m"  -> ISO string 30 days ago
             "2026-01-01T00:00:00Z" -> "2026-01-01T00:00:00Z" (passthrough)
         """
-        import re
-        from datetime import UTC, datetime, timedelta
-
         m = re.fullmatch(r"(\d+)([dwm])", value.strip())
         if m is None:
             return value
