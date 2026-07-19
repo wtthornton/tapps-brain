@@ -27,6 +27,10 @@ import structlog
 import yaml
 from pydantic import BaseModel, Field
 
+from tapps_brain.contradictions import detect_save_conflicts
+from tapps_brain.models import ConsolidatedEntry
+from tapps_brain.similarity import DEFAULT_TEXT_WEIGHT, find_consolidation_groups
+
 if TYPE_CHECKING:
     from tapps_brain.models import MemoryEntry
     from tapps_brain.store import MemoryStore
@@ -88,10 +92,10 @@ class EvalCorpus(BaseModel):
         docs: dict[str, EvalDoc] = {}
         with path.open(encoding="utf-8") as fh:
             for line in fh:
-                line = line.strip()
-                if not line:
+                stripped = line.strip()
+                if not stripped:
                     continue
-                row = json.loads(line)
+                row = json.loads(stripped)
                 d = EvalDoc.model_validate(row)
                 docs[d.id] = d
         return cls(docs=docs)
@@ -116,10 +120,10 @@ class EvalQueries(BaseModel):
         queries: dict[str, EvalQuery] = {}
         with path.open(encoding="utf-8") as fh:
             for line in fh:
-                line = line.strip()
-                if not line:
+                stripped = line.strip()
+                if not stripped:
                     continue
-                row = json.loads(line)
+                row = json.loads(stripped)
                 q = EvalQuery.model_validate(row)
                 queries[q.id] = q
         return cls(queries=queries)
@@ -135,12 +139,12 @@ class EvalQrels(BaseModel):
         qrels: dict[str, dict[str, int]] = {}
         with path.open(encoding="utf-8") as fh:
             for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#"):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
                     continue
-                parts = line.split("\t")
+                parts = stripped.split("\t")
                 if len(parts) < 3:
-                    parts = line.split()
+                    parts = stripped.split()
                 if len(parts) < 3:
                     continue
                 qid, did, score_s = parts[0], parts[1], parts[2]
@@ -210,13 +214,12 @@ class EvalSuite(BaseModel):
             raise FileNotFoundError(
                 f"BEIR directory {d} must contain corpus.jsonl, queries.jsonl, qrels.tsv"
             )
-        suite = cls(
+        return cls(
             name=name or d.name,
             corpus=EvalCorpus.load_jsonl(corpus_path),
             queries=EvalQueries.load_jsonl(queries_path),
             qrels=EvalQrels.load_tsv(qrels_path),
         )
-        return suite
 
 
 LEXICAL_GOLDEN_EVAL_SUITE_NAME = "lexical_golden_v1"
@@ -280,7 +283,7 @@ def load_eval_suite_into_store(
     store: MemoryStore, suite: EvalSuite, *, tier: str = "pattern"
 ) -> None:
     """Persist each corpus document as a memory entry (``key`` = doc id, ``value`` = text)."""
-    for _doc_id, doc in suite.corpus.docs.items():
+    for doc in suite.corpus.docs.values():
         text = (doc.text or "").strip()
         if not text and doc.title:
             text = doc.title.strip()
@@ -416,12 +419,6 @@ def run_consolidation_threshold_sweep(
             subclasses and ``contradicted`` rows (same filter as periodic scan).
     """
     _pin_seeds()
-    from tapps_brain.models import ConsolidatedEntry
-    from tapps_brain.similarity import (
-        DEFAULT_TEXT_WEIGHT,
-        find_consolidation_groups,
-    )
-
     # Keep tag_weight=None unresolved: the periodic scan passes None through,
     # which means "path-appropriate default" (0.3 on the embedding path, 0.4
     # on the text path).  Eagerly collapsing it to 0.4 changed the embedding
@@ -542,9 +539,6 @@ def run_save_conflict_candidate_report(
             ``entries``).
     """
     _pin_seeds()
-    from tapps_brain.contradictions import detect_save_conflicts
-    from tapps_brain.models import ConsolidatedEntry
-
     source_n = len(entries)
     if active_only:
         analyzed = [
@@ -628,6 +622,48 @@ class EvalReport(BaseModel):
     thresholds: EvalThresholds = Field(default_factory=EvalThresholds)
 
 
+def _query_metrics(
+    qid: str, ranked: list[str], qrels: dict[str, int], k_eff: int
+) -> EvalPerQueryMetrics:
+    """Compute the per-query IR metric row shared by both evaluate entry-points."""
+    return EvalPerQueryMetrics(
+        query_id=qid,
+        precision_at_k=round(precision_at_k(ranked, qrels, k_eff), 6),
+        recall_at_k=round(recall_at_k(ranked, qrels, k_eff), 6),
+        reciprocal_rank=round(reciprocal_rank(ranked, qrels), 6),
+        ndcg_at_k=round(ndcg_at_k(ranked, qrels, k_eff), 6),
+        ranked_doc_ids=list(ranked),
+    )
+
+
+def _finalize_report(
+    suite_name: str,
+    timestamp: str,
+    k_eff: int,
+    thr: EvalThresholds,
+    per_query: list[EvalPerQueryMetrics],
+) -> EvalReport:
+    """Aggregate per-query rows into an :class:`EvalReport` (shared tail)."""
+    nq = len(per_query)
+    mean_p = sum(m.precision_at_k for m in per_query) / nq if nq else 0.0
+    mean_r = sum(m.recall_at_k for m in per_query) / nq if nq else 0.0
+    mrr = sum(m.reciprocal_rank for m in per_query) / nq if nq else 0.0
+    mean_n = sum(m.ndcg_at_k for m in per_query) / nq if nq else 0.0
+    passed = mrr >= thr.min_mrr and mean_n >= thr.min_ndcg_at_k
+    return EvalReport(
+        suite_name=suite_name,
+        timestamp=timestamp,
+        k=k_eff,
+        per_query=per_query,
+        mean_precision_at_k=round(mean_p, 6),
+        mean_recall_at_k=round(mean_r, 6),
+        mrr=round(mrr, 6),
+        mean_ndcg_at_k=round(mean_n, 6),
+        passed=passed,
+        thresholds=thr,
+    )
+
+
 def evaluate(
     store: MemoryStore,
     suite: EvalSuite,
@@ -644,10 +680,6 @@ def evaluate(
     retriever = MemoryRetriever()
     now = datetime.now(tz=UTC).isoformat()
     per_query: list[EvalPerQueryMetrics] = []
-    mrr_acc: list[float] = []
-    p_acc: list[float] = []
-    r_acc: list[float] = []
-    n_acc: list[float] = []
 
     for qid, q in sorted(suite.queries.queries.items(), key=lambda x: x[0]):
         qrels = suite.qrels.qrels.get(qid, {})
@@ -659,45 +691,9 @@ def evaluate(
             continue
         scored = retriever.search(text, store, limit=k_eff, min_confidence=0.0)
         ranked = [s.entry.key for s in scored]
+        per_query.append(_query_metrics(qid, ranked, qrels, k_eff))
 
-        p = precision_at_k(ranked, qrels, k_eff)
-        r = recall_at_k(ranked, qrels, k_eff)
-        rr = reciprocal_rank(ranked, qrels)
-        n = ndcg_at_k(ranked, qrels, k_eff)
-        per_query.append(
-            EvalPerQueryMetrics(
-                query_id=qid,
-                precision_at_k=round(p, 6),
-                recall_at_k=round(r, 6),
-                reciprocal_rank=round(rr, 6),
-                ndcg_at_k=round(n, 6),
-                ranked_doc_ids=list(ranked),
-            )
-        )
-        mrr_acc.append(rr)
-        p_acc.append(p)
-        r_acc.append(r)
-        n_acc.append(n)
-
-    nq = len(per_query)
-    mean_p = sum(p_acc) / nq if nq else 0.0
-    mean_r = sum(r_acc) / nq if nq else 0.0
-    mrr = sum(mrr_acc) / nq if nq else 0.0
-    mean_n = sum(n_acc) / nq if nq else 0.0
-
-    passed = mrr >= thr.min_mrr and mean_n >= thr.min_ndcg_at_k
-    return EvalReport(
-        suite_name=suite.name,
-        timestamp=now,
-        k=k_eff,
-        per_query=per_query,
-        mean_precision_at_k=round(mean_p, 6),
-        mean_recall_at_k=round(mean_r, 6),
-        mrr=round(mrr, 6),
-        mean_ndcg_at_k=round(mean_n, 6),
-        passed=passed,
-        thresholds=thr,
-    )
+    return _finalize_report(suite.name, now, k_eff, thr, per_query)
 
 
 # ---------------------------------------------------------------------------
@@ -815,7 +811,7 @@ class CascadedJudge:
 
     @property
     def escalation_rate(self) -> float:
-        """Escalations per call (informal; reset escalations for a fresh rate)."""
+        """Total escalation *count* as a float (not per-call; name is historical)."""
         return float(self.escalations)
 
 
@@ -840,10 +836,6 @@ def evaluate_with_judge(
     retriever = MemoryRetriever()
     now = datetime.now(tz=UTC).isoformat()
     per_query: list[EvalPerQueryMetrics] = []
-    mrr_acc: list[float] = []
-    p_acc: list[float] = []
-    r_acc: list[float] = []
-    n_acc: list[float] = []
 
     for qid, qtext in queries:
         text = (qtext or "").strip()
@@ -861,40 +853,6 @@ def evaluate_with_judge(
         if not ranked:
             continue
 
-        p = precision_at_k(ranked, qrels, k_eff)
-        r = recall_at_k(ranked, qrels, k_eff)
-        rr = reciprocal_rank(ranked, qrels)
-        n = ndcg_at_k(ranked, qrels, k_eff)
-        per_query.append(
-            EvalPerQueryMetrics(
-                query_id=qid,
-                precision_at_k=round(p, 6),
-                recall_at_k=round(r, 6),
-                reciprocal_rank=round(rr, 6),
-                ndcg_at_k=round(n, 6),
-                ranked_doc_ids=list(ranked),
-            )
-        )
-        mrr_acc.append(rr)
-        p_acc.append(p)
-        r_acc.append(r)
-        n_acc.append(n)
+        per_query.append(_query_metrics(qid, ranked, qrels, k_eff))
 
-    nq = len(per_query)
-    mean_p = sum(p_acc) / nq if nq else 0.0
-    mean_r = sum(r_acc) / nq if nq else 0.0
-    mrr = sum(mrr_acc) / nq if nq else 0.0
-    mean_n = sum(n_acc) / nq if nq else 0.0
-    passed = mrr >= thr.min_mrr and mean_n >= thr.min_ndcg_at_k
-    return EvalReport(
-        suite_name="llm_judge",
-        timestamp=now,
-        k=k_eff,
-        per_query=per_query,
-        mean_precision_at_k=round(mean_p, 6),
-        mean_recall_at_k=round(mean_r, 6),
-        mrr=round(mrr, 6),
-        mean_ndcg_at_k=round(mean_n, 6),
-        passed=passed,
-        thresholds=thr,
-    )
+    return _finalize_report("llm_judge", now, k_eff, thr, per_query)

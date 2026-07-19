@@ -9,6 +9,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from tapps_brain.agent_scope import normalize_agent_scope
+from tapps_brain.memory_group import normalize_memory_group
+
 
 def _utc_now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
@@ -398,8 +401,6 @@ class MemoryEntry(BaseModel):
     @field_validator("agent_scope")
     @classmethod
     def _validate_agent_scope(cls, v: str) -> str:
-        from tapps_brain.agent_scope import normalize_agent_scope
-
         try:
             return normalize_agent_scope(v)
         except ValueError as exc:
@@ -414,8 +415,6 @@ class MemoryEntry(BaseModel):
         if not isinstance(v, str):
             msg = f"memory_group must be a string or None. Got: {type(v).__name__}"
             raise ValueError(msg)
-        from tapps_brain.memory_group import normalize_memory_group
-
         return normalize_memory_group(v)
 
     @model_validator(mode="after")

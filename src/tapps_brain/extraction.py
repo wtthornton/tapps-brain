@@ -109,9 +109,9 @@ def _slugify(text: str, max_len: int = 64) -> str:
     if not text:
         text = "fact"
     # Ensure starts with alphanumeric
-    if text and text[0] not in "abcdefghijklmnopqrstuvwxyz0123456789":
+    if text[0] not in "abcdefghijklmnopqrstuvwxyz0123456789":
         text = "x-" + text
-    return text[:max_len] if len(text) > max_len else text
+    return text[:max_len]
 
 
 # Ellipsis length reserved when truncating extracted fact values.
@@ -201,7 +201,10 @@ def extract_durable_facts(
             if pattern.search(text):
                 value = _truncate(text, max_value_chars)
                 if value in seen_values:
-                    continue
+                    # The value depends only on the chunk, not the pattern —
+                    # trying further patterns would re-derive the same
+                    # duplicate, so skip the chunk entirely.
+                    break
                 seen_values.add(value)
                 key = _slugify(value[:80])
                 # Ensure unique key

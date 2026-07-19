@@ -29,6 +29,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from tapps_brain.models import MemoryEntry
+from tapps_brain.similarity import text_similarity
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -48,6 +49,11 @@ class SaveConflictHit(NamedTuple):
 
     entry: MemoryEntry
     similarity: float
+
+
+def _normalize_ws(text: str) -> str:
+    """Lowercase and collapse whitespace for identity comparison."""
+    return " ".join(text.lower().split())
 
 
 def format_save_conflict_reason(
@@ -91,12 +97,7 @@ def detect_save_conflicts(
         Hits sorted by similarity descending, then key (deterministic). Each hit
         includes the similarity score used for audit / ``contradiction_reason``.
     """
-    from tapps_brain.similarity import text_similarity
-
-    def _normalize(text: str) -> str:
-        return " ".join(text.lower().split())
-
-    new_value_norm = _normalize(new_value)
+    new_value_norm = _normalize_ws(new_value)
 
     # Build a temporary entry for text_similarity (needs a MemoryEntry)
     _sentinel = MemoryEntry(
@@ -115,7 +116,7 @@ def detect_save_conflicts(
             continue
 
         # Skip identical entries (normalized)
-        if _normalize(entry.value) == new_value_norm:
+        if _normalize_ws(entry.value) == new_value_norm:
             continue
 
         sim = text_similarity(_sentinel, entry)
