@@ -107,13 +107,12 @@ def _parse_and_import(text: str, store: MemoryStore) -> int:
             continue
 
         # Truncate value if too long
-        if len(value) > MAX_VALUE_LENGTH:
-            value = value[:MAX_VALUE_LENGTH]
+        body = value[:MAX_VALUE_LENGTH]
 
         with batch_exempt_scope("import_markdown"):
             saved = store.save(
                 key=key,
-                value=value,
+                value=body,
                 tier=tier.value,
                 source=MemorySource.system.value,
             )
@@ -260,12 +259,11 @@ def import_openclaw_workspace(
                 logger.debug("markdown_import.skip_duplicate", key=key)
                 skipped += 1
                 continue
-            if len(value) > MAX_VALUE_LENGTH:
-                value = value[:MAX_VALUE_LENGTH]
+            body = value[:MAX_VALUE_LENGTH]
             with batch_exempt_scope("import_markdown"):
                 store.save(
                     key=key,
-                    value=value,
+                    value=body,
                     tier=tier.value,
                     source=MemorySource.system.value,
                 )

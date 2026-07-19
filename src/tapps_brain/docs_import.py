@@ -79,7 +79,7 @@ def import_cache_dir(
                 if meta_path.is_file():
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
                     if isinstance(meta, dict):
-                        context7_id = meta.get("context7_id") if meta.get("context7_id") else None
+                        context7_id = meta.get("context7_id") or None
                         provider_source = str(meta.get("provider_source") or provider_source)
                         library = str(meta.get("library") or library)
                         topic = str(meta.get("topic") or topic)
@@ -113,6 +113,5 @@ def list_import_candidates(cache_dir: Path) -> list[tuple[str, str]]:
         return []
     pairs: list[tuple[str, str]] = []
     for lib_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
-        for md_path in sorted(lib_dir.glob("*.md")):
-            pairs.append((lib_dir.name, md_path.stem))
+        pairs.extend((lib_dir.name, md_path.stem) for md_path in sorted(lib_dir.glob("*.md")))
     return pairs

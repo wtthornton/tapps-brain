@@ -548,6 +548,7 @@ def _import_memory_md_sync(
             skipped += 1
             continue
 
+        body = value
         if len(value) > MAX_VALUE_LENGTH:
             logger.warning(
                 "markdown_sync.value_truncated",
@@ -555,12 +556,12 @@ def _import_memory_md_sync(
                 original_length=len(value),
                 truncated_to=MAX_VALUE_LENGTH,
             )
-            value = value[:MAX_VALUE_LENGTH]
+            body = value[:MAX_VALUE_LENGTH]
             truncated += 1
 
         store.save(
             key=key,
-            value=value,
+            value=body,
             tier=tier_str,
             source=MemorySource.system.value,
         )

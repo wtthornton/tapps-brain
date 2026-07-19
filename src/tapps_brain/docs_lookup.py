@@ -16,17 +16,16 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
 
+from tapps_brain.backends import resolve_hive_backend_from_env, resolve_private_backend_from_env
 from tapps_brain.context7_sync import Context7Error, SyncContext7Client
 from tapps_brain.llms_txt_sync import LlmsTxtError, SyncLlmsTxtClient
 from tapps_brain.memory_group import normalize_memory_group
 from tapps_brain.services import memory_service
-
-if TYPE_CHECKING:
-    from tapps_brain.store import MemoryStore
+from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
 
@@ -100,9 +99,6 @@ def open_docs_store(
     not the MCP caller's project.  Callers must ``close()`` when done unless using
     :func:`get_docs_store` (process-wide cache for MCP tools).
     """
-    from tapps_brain.backends import resolve_hive_backend_from_env, resolve_private_backend_from_env
-    from tapps_brain.store import MemoryStore
-
     resolved = cfg or DocsConfig.from_env()
     backend = resolve_private_backend_from_env(resolved.project_id, resolved.agent_id)
     if backend is None:
@@ -183,7 +179,7 @@ def _parse_cached_at(payload: dict[str, Any]) -> datetime | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return datetime.fromisoformat(raw)
     except ValueError:
         return None
 

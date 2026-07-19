@@ -8,11 +8,20 @@ bool). Wrappers in ``mcp_server`` / ``http_adapter`` are responsible for
 from __future__ import annotations
 
 import json
+import re
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import structlog
+from pydantic import ValidationError as _PydanticValidationError
 
+from tapps_brain.agent_brain import _content_key
+from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normalize_agent_scope
+from tapps_brain.memory_group import MEMORY_GROUP_UNSET
+from tapps_brain.models import MemoryStatus, MemoryTier, tier_str
+from tapps_brain.otel_tracer import start_mcp_tool_span
 from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST
+from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
 
@@ -54,14 +63,6 @@ def brain_remember(
     the word-prefix of the new key, a ``supersession_candidate`` key is
     returned in the response so the caller can confirm with a follow-up call.
     """
-    from tapps_brain.agent_brain import _content_key
-    from tapps_brain.agent_scope import (
-        agent_scope_valid_values_for_errors,
-        normalize_agent_scope,
-    )
-    from tapps_brain.models import MemoryStatus
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
         key = _content_key(fact)
 
@@ -158,10 +159,6 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
 
     Returns the first matching key, or ``None``.
     """
-    import re
-
-    from tapps_brain.models import MemoryStatus
-
     # Extract word-prefix: strip the trailing "-{16hexchars}" hash suffix.
     _hash_suffix = re.compile(r"-[0-9a-f]{16}$")
     prefix = _hash_suffix.sub("", new_key)
@@ -218,9 +215,6 @@ def brain_recall(
         filter_memory_class: Restrict to entries with this semantic class
             (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
     """
-    from tapps_brain.models import MemoryStatus
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     _excluded_statuses = {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
 
     with start_mcp_tool_span("brain_recall"):
@@ -275,8 +269,6 @@ def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dic
     Returns ``{"forgotten": True, "key": key}`` on success or
     ``{"forgotten": False, "reason": "not_found"}`` when the key is unknown.
     """
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     with start_mcp_tool_span("brain_forget"):
         entry = store.get(key)
         if entry is None:
@@ -293,9 +285,6 @@ def brain_learn_success(
     The key is derived from a content hash of the description so identical
     descriptions deduplicate. Adds ``success`` and optional ``task:<id>`` tags.
     """
-    from tapps_brain.agent_brain import _content_key
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     with start_mcp_tool_span("brain_learn_success"):
         key = _content_key(f"success-{task_description}")
         tags = ["success"]
@@ -319,9 +308,6 @@ def brain_learn_failure(
     Key derives from a content hash; optional ``error`` is appended to the
     stored value. Tagged with ``failure`` and optional ``task:<id>``.
     """
-    from tapps_brain.agent_brain import _content_key
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     with start_mcp_tool_span("brain_learn_failure"):
         key = _content_key(f"failure-{description}")
         value = f"{description}\n\nError: {error}" if error else description
@@ -384,8 +370,6 @@ def audit_consumers(
         ``as_of``, ``project_id``, ``window_effective``, ``since_requested``.
         On ``since`` parse failure: ``{"error": "invalid_since", ...}``.
     """
-    from datetime import UTC, datetime
-
     if since:
         try:
             datetime.fromisoformat(since)
@@ -468,8 +452,6 @@ def recall_quality_metrics(
         Percentile fields are ``None`` when the relevant sub-sample is empty.
         On invalid *window_seconds*: ``{"error": "invalid_window", ...}``.
     """
-    from datetime import UTC, datetime
-
     if window_seconds <= 0:
         return {
             "error": "invalid_window",
@@ -547,8 +529,6 @@ _REDACTION_PATTERNS: tuple[tuple[str, str], ...] = (
 
 def _redact_value(text: str) -> tuple[str, int]:
     """Apply the redaction pattern set to *text*; return (clean_text, hit_count)."""
-    import re
-
     redacted = text
     hits = 0
     for pattern, replacement in _REDACTION_PATTERNS:
@@ -576,8 +556,6 @@ def _recency_score(last_accessed: str) -> float:
     """
     if not last_accessed:
         return 0.0
-    from datetime import UTC, datetime
-
     try:
         ts = datetime.fromisoformat(last_accessed)
         # Imported / legacy rows may be tz-naive — assume UTC so ranking does
@@ -597,8 +575,6 @@ def _rank_score(entry: Any) -> float:
 
 def _build_frontmatter(entry: Any, *, redacted_value: str) -> str:
     """Render the per-file frontmatter + body for *entry*."""
-    from tapps_brain.models import tier_str
-
     tags = list(getattr(entry, "tags", []) or [])
     source = getattr(entry, "source", "agent")
     source_value = source.value if hasattr(source, "value") else str(source)
@@ -632,8 +608,6 @@ def _build_okf_doc(entry: Any, *, redacted_value: str) -> str:
     values (colons, quotes) stay parseable YAML. The READ-ONLY banner moves into
     the body so it does not break frontmatter position.
     """
-    from tapps_brain.models import tier_str
-
     tier = tier_str(entry.tier)
     tags = list(getattr(entry, "tags", []) or [])
     source = getattr(entry, "source", "agent")
@@ -744,7 +718,6 @@ def brain_export(
         ``skipped_secret_tag``, ``redacted_fields``, ``files_written``.
         On invalid input: ``{"error": <code>, "message": <text>}``.
     """
-    from datetime import UTC, datetime
     from pathlib import Path
 
     if layout not in _EXPORT_VALID_LAYOUTS:
@@ -782,8 +755,6 @@ def brain_export(
         if _EXPORT_SECRET_TAG in (getattr(entry, "tags", []) or []):
             skipped_secret += 1
             continue
-        from tapps_brain.models import tier_str
-
         tier_key = tier_str(entry.tier)
         per_tier.setdefault(tier_key, []).append(entry)
 
@@ -889,14 +860,6 @@ def _validate_and_normalize_save(
     :meth:`MemoryStore.save_many`.  Centralising this keeps the single-save and
     batch-save validation byte-identical.
     """
-    from tapps_brain.agent_scope import (
-        agent_scope_valid_values_for_errors,
-        normalize_agent_scope,
-    )
-    from tapps_brain.memory_group import MEMORY_GROUP_UNSET
-    from tapps_brain.models import MemoryTier
-    from tapps_brain.tier_normalize import normalize_save_tier
-
     try:
         agent_scope = normalize_agent_scope(agent_scope)
     except ValueError as exc:
@@ -984,8 +947,6 @@ def memory_save(
     )
     if "error" in validated:
         return validated
-
-    from pydantic import ValidationError as _PydanticValidationError
 
     try:
         result = store.save(**validated)
@@ -1247,8 +1208,6 @@ def memory_save_many(
     Partial failures are surfaced in the per-item result and do **not** abort
     the remaining items.
     """
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
     if len(entries) > limit:
         return {
@@ -1362,8 +1321,6 @@ def memory_recall_many(
     Each inner list follows the same shape as a single :func:`memory_recall`
     response.
     """
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     limit = _batch_limit(_DEFAULT_MAX_BATCH_READ)
     if len(queries) > limit:
         return {
@@ -1428,8 +1385,6 @@ def memory_reinforce_many(
 
     Per-item results follow the same shape as :func:`memory_reinforce`.
     """
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
     if len(entries) > limit:
         return {
@@ -1516,8 +1471,6 @@ def memory_ingest(
     to find decision-like statements, then saves each as a new entry. Returns
     the list of created keys plus a count.
     """
-    from tapps_brain.agent_scope import normalize_agent_scope
-
     try:
         agent_scope = normalize_agent_scope(agent_scope)
     except ValueError as exc:
@@ -1658,7 +1611,6 @@ def memory_capture(
     like statements from ``response`` and saves each as a new entry. Returns
     the list of created keys.
     """
-    from tapps_brain.agent_scope import normalize_agent_scope
     from tapps_brain.recall import RecallOrchestrator
 
     try:
@@ -2075,14 +2027,6 @@ async def async_memory_save(
     wired sends the Postgres I/O to ``AsyncPostgresPrivateBackend`` instead
     of the default thread pool.
     """
-    from tapps_brain.agent_scope import (
-        agent_scope_valid_values_for_errors,
-        normalize_agent_scope,
-    )
-    from tapps_brain.memory_group import MEMORY_GROUP_UNSET
-    from tapps_brain.models import MemoryTier
-    from tapps_brain.tier_normalize import normalize_save_tier
-
     try:
         agent_scope = normalize_agent_scope(agent_scope)
     except ValueError as exc:
@@ -2115,8 +2059,6 @@ async def async_memory_save(
         }
     resolved_agent = source_agent or agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
-
-    from pydantic import ValidationError as _PydanticValidationError
 
     try:
         result = await async_store.save(
@@ -2175,8 +2117,6 @@ async def async_brain_learn_success(
     Same key derivation and tagging; the Postgres write goes through the
     async backend when one is wired.
     """
-    from tapps_brain.agent_brain import _content_key
-
     key = _content_key(f"success-{task_description}")
     tags = ["success"]
     if task_id:
@@ -2199,8 +2139,6 @@ async def async_brain_learn_failure(
     Same key derivation, tagging, and ``error``-append behaviour; the
     Postgres write goes through the async backend when one is wired.
     """
-    from tapps_brain.agent_brain import _content_key
-
     key = _content_key(f"failure-{description}")
     value = f"{description}\n\nError: {error}" if error else description
     tags = ["failure"]
@@ -2264,8 +2202,6 @@ async def async_memory_reinforce_many(
     Loops :func:`async_memory_reinforce` so each per-item reinforce gets the
     async-native write path while preserving partial-failure semantics.
     """
-    from tapps_brain.otel_tracer import start_mcp_tool_span
-
     limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
     if len(entries) > limit:
         return {

@@ -380,7 +380,6 @@ class FeedbackStore:
 
     def close(self) -> None:
         """No-op: the connection manager is owned by the caller."""
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +396,7 @@ def _timestamp_sort_key(ts: str) -> tuple[int, Any]:
     bound. Unparseable strings sort after parseable ones, lexically.
     """
     try:
-        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(str(ts))
     except (ValueError, TypeError):
         return (1, str(ts))
     if dt.tzinfo is None:
@@ -483,4 +482,3 @@ class InMemoryFeedbackStore:
 
     def close(self) -> None:
         """No-op."""
-        return None

@@ -3220,9 +3220,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             await validator.apply_results(rep, self)
             return rep
 
-        report = asyncio.run(_run_validation())
-
-        return report
+        return asyncio.run(_run_validation())
 
     # ------------------------------------------------------------------
     # Bi-temporal versioning (EPIC-004)
@@ -4513,8 +4511,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             remaining.append((past_query, past_keys, past_time))
             sim = _jaccard_similarity(current_query, past_query)
             if sim > 0.5:
-                for key in past_keys:
-                    targets.append((key, sim))
+                targets.extend((key, sim) for key in past_keys)
         self._session_query_log[session_id] = remaining
         return targets
 

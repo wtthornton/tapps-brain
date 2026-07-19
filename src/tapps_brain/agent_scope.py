@@ -60,7 +60,7 @@ def hive_group_name_from_scope(normalized_scope: str) -> str | None:
     if not normalized_scope.startswith(GROUP_AGENT_SCOPE_PREFIX):
         return None
     rest = normalized_scope[len(GROUP_AGENT_SCOPE_PREFIX) :]
-    return rest if rest else None
+    return rest or None
 
 
 def agent_scope_valid_values_for_errors() -> list[str]:
