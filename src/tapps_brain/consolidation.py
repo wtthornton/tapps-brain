@@ -17,15 +17,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from tapps_brain.models import (
+    MAX_KEY_LENGTH,
     ConsolidatedEntry,
     ConsolidationReason,
     MemoryEntry,
     MemorySource,
     MemoryTier,
+    _parse_iso,
 )
 from tapps_brain.relations import RelationEntry
 from tapps_brain.similarity import (
     DEFAULT_SIMILARITY_THRESHOLD,
+    compute_similarity,
     find_similar,
     is_same_topic,
 )
@@ -41,6 +44,21 @@ DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE = 2
 MAX_CONSOLIDATED_VALUE_LENGTH = 4096
 _MIN_PREFIX_LENGTH = 3
 _MIN_ENTRIES_FOR_CONSOLIDATION = DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE
+
+
+def _updated_at_key(entry: MemoryEntry) -> datetime:
+    """Chronological sort key for ``updated_at``.
+
+    A lexical string sort is only correct when every timestamp shares one
+    UTC-offset representation — entries hydrated from Postgres carry the
+    session timezone's offset and ``Z``-suffixed imports mis-order against
+    ``+00:00`` strings, so "newest wins" could pick the wrong entry.
+    Unparseable values sort oldest so they never win a merge.
+    """
+    try:
+        return _parse_iso(entry.updated_at)
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +109,11 @@ def generate_consolidated_key(entries: list[MemoryEntry]) -> str:
     if not clean_prefix:
         clean_prefix = "consolidated"
 
+    # Keys are capped at MAX_KEY_LENGTH; sources sharing a very long prefix
+    # would otherwise produce a key the validator rejects, making the merge
+    # fail (and silently retry forever).  Reserve room for "-<8-char hash>".
+    clean_prefix = clean_prefix[: MAX_KEY_LENGTH - len(hash_suffix) - 1].rstrip("-._")
+
     return f"{clean_prefix}-{hash_suffix}"
 
 
@@ -136,10 +159,10 @@ def merge_values(entries: list[MemoryEntry]) -> str:
     if len(entries) == 1:
         return entries[0].value
 
-    # Sort by updated_at (newest first)
+    # Sort by updated_at (newest first, chronologically parsed)
     sorted_entries = sorted(
         entries,
-        key=lambda e: e.updated_at,
+        key=_updated_at_key,
         reverse=True,
     )
 
@@ -208,10 +231,10 @@ def calculate_weighted_confidence(entries: list[MemoryEntry]) -> float:
     if len(entries) == 1:
         return entries[0].confidence
 
-    # Sort by updated_at (newest first)
+    # Sort by updated_at (newest first, chronologically parsed)
     sorted_entries = sorted(
         entries,
-        key=lambda e: e.updated_at,
+        key=_updated_at_key,
         reverse=True,
     )
 
@@ -343,9 +366,13 @@ def consolidate(
     # Track source IDs
     source_ids = [e.key for e in entries]
 
-    # Use newest entry's scope and project-local group (GitHub #49)
-    sorted_by_updated = sorted(entries, key=lambda e: e.updated_at, reverse=True)
+    # Use newest entry's scope and project-local group (GitHub #49).
+    # ``branch`` must travel with scope: MemoryEntry validation requires a
+    # branch name when scope == branch, so omitting it made consolidation
+    # raise (and silently retry forever) for branch-scoped sources.
+    sorted_by_updated = sorted(entries, key=_updated_at_key, reverse=True)
     scope = sorted_by_updated[0].scope
+    branch = sorted_by_updated[0].branch
     memory_group = sorted_by_updated[0].memory_group
 
     # Create consolidated entry
@@ -358,6 +385,7 @@ def consolidate(
         source=MemorySource.system,
         source_agent="tapps-consolidation",
         scope=scope,
+        branch=branch,
         memory_group=memory_group,
         tags=tags,
         created_at=now,
@@ -431,6 +459,12 @@ def should_consolidate(
     # entries merge even when their text similarity is low.
     same_topic_matches = [c for c in active_candidates if is_same_topic(entry, c)]
     if same_topic_matches:
+        # Honor the documented "best match first" contract on this path too:
+        # callers truncate (matches[:min_entries-1]), so raw list_all() order
+        # would merge arbitrary same-topic entries instead of the strongest.
+        same_topic_matches.sort(
+            key=lambda c: compute_similarity(entry, c).combined_score, reverse=True
+        )
         return same_topic_matches
 
     # Fall back to similarity-based detection, preserving find_similar's
@@ -465,6 +499,11 @@ def merge_entry_relations(
         Deduplicated list of :class:`RelationEntry` instances.
     """
     seen: dict[tuple[str, str, str], RelationEntry] = {}
+    # A relation row shared by several sources (multi-key source_entry_keys
+    # after an earlier merge) appears once per source's get_relations list;
+    # absorbing each appearance would duplicate its confidence_history —
+    # unbounded growth across merges, and a skew for averaging aggregators.
+    absorbed_rows: set[tuple[tuple[str, str, str], tuple[str, ...], tuple[float, ...]]] = set()
     for rels in relation_lists:
         for r in rels:
             triple = (
@@ -475,6 +514,14 @@ def merge_entry_relations(
             dup_confidence = float(r.get("confidence", 0.8))
             # Use existing history from the dict if present, else seed from confidence.
             dup_history: list[float] = list(r.get("confidence_history") or [dup_confidence])
+            row_identity = (
+                triple,
+                tuple(sorted(str(k) for k in (r.get("source_entry_keys") or []))),
+                tuple(dup_history),
+            )
+            if row_identity in absorbed_rows:
+                continue
+            absorbed_rows.add(row_identity)
             # Carry the contributors' existing key linkage forward. Dropping it
             # (previous behavior: always [target_key]) meant the Postgres upsert
             # on the shared triple overwrote the sources' linkage, detaching

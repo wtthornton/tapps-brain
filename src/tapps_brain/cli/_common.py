@@ -219,11 +219,20 @@ def _output(data: Any, as_json: bool) -> None:  # noqa: ANN401
         typer.echo(str(data))
 
 
-def _entry_to_row(entry: Any) -> dict[str, Any]:  # noqa: ANN401
-    """Convert a MemoryEntry to a display-friendly dict."""
+def _entry_to_row(entry: Any, decay_config: Any = None) -> dict[str, Any]:  # noqa: ANN401
+    """Convert a MemoryEntry to a display-friendly dict.
+
+    *decay_config* should be the store's profile-derived config
+    (``store._get_decay_config()``): a bare ``DecayConfig()`` has no profile
+    layers, so entries saved under custom-layer tiers (e.g. ``identity``
+    from personal-assistant profiles) make decay raise ``ValueError`` and
+    crash read-only CLI rendering.
+    """
     from tapps_brain.decay import DecayConfig, get_effective_confidence
 
-    eff_conf, _ = get_effective_confidence(entry, DecayConfig())
+    eff_conf, _ = get_effective_confidence(
+        entry, decay_config if decay_config is not None else DecayConfig()
+    )
     row: dict[str, Any] = {
         "key": entry.key,
         "tier": str(entry.tier),

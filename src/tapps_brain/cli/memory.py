@@ -159,9 +159,11 @@ def memory_show(
         if as_json:
             _output(entry.model_dump(mode="json"), as_json=True)
         else:
-            from tapps_brain.decay import DecayConfig, get_effective_confidence
+            from tapps_brain.decay import get_effective_confidence
 
-            eff_conf, _ = get_effective_confidence(entry, DecayConfig())
+            # Profile-derived config: a bare DecayConfig() raises on
+            # custom-layer tiers (e.g. "identity"), crashing `memory show`.
+            eff_conf, _ = get_effective_confidence(entry, store._get_decay_config())
             typer.echo(f"Key:           {entry.key}")
             typer.echo(f"Value:         {entry.value}")
             typer.echo(f"Tier:          {entry.tier!s}")
@@ -204,7 +206,7 @@ def memory_history(
     try:
         chain = store.history(key)
         if as_json:
-            _output([_entry_to_row(e) for e in chain], as_json=True)
+            _output([_entry_to_row(e, store._get_decay_config()) for e in chain], as_json=True)
         else:
             for i, entry in enumerate(chain):
                 marker = " (current)" if not entry.superseded_by else " (superseded)"
@@ -305,13 +307,20 @@ def memory_search(
         if as_json:
             _output(
                 [
-                    {"key": s.entry.key, "score": round(s.score, 4), **_entry_to_row(s.entry)}
+                    {
+                        "key": s.entry.key,
+                        "score": round(s.score, 4),
+                        **_entry_to_row(s.entry, store._get_decay_config()),
+                    }
                     for s in scored
                 ],
                 as_json=True,
             )
         else:
-            rows = [{"score": f"{s.score:.3f}", **_entry_to_row(s.entry)} for s in scored]
+            rows = [
+                {"score": f"{s.score:.3f}", **_entry_to_row(s.entry, store._get_decay_config())}
+                for s in scored
+            ]
             _print_table(rows, columns=["score", "key", "tier", "confidence", "effective"])
             typer.echo(f"\n{len(scored)} results")
     finally:

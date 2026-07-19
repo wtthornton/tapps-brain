@@ -2546,10 +2546,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Runs consolidation in a non-reentrant manner to prevent infinite
         loops when consolidation saves new entries.
         """
-        if self._consolidation_in_progress:
-            return
-
-        self._consolidation_in_progress = True
+        # Compare-and-set under the store lock: an unlocked check-then-set
+        # let two concurrent saves both pass the guard and run overlapping
+        # merges, where the second merge's superseded_by marks clobbered the
+        # first's linkage (breaking its undo).
+        with self._serialized():
+            if self._consolidation_in_progress:
+                return
+            self._consolidation_in_progress = True
         try:
             from tapps_brain.auto_consolidation import check_consolidation_on_save
 
@@ -3692,11 +3696,29 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if skip_consolidation_scan or _over_scan_cap:
             consolidation_candidates = self._last_consolidation_candidates
         else:
-            groups = find_consolidation_groups(
-                entries,
-                threshold=self._consolidation_config.threshold,
-            )
-            consolidation_candidates = sum(len(g) for g in groups)
+            # Mirror the periodic scanner's semantics — active rows only,
+            # partitioned by memory_group, scanner's min group size —
+            # otherwise the gauge counts merges that can never happen
+            # (contradicted sources stay similar to their merge blob forever,
+            # permanently inflating the metric after any merge).
+            _scan_pool = [
+                e
+                for e in entries
+                if not e.contradicted
+                and e.superseded_by is None
+                and str(getattr(e, "status", "active")) == "active"
+            ]
+            _by_group: dict[str | None, list[MemoryEntry]] = {}
+            for e in _scan_pool:
+                _by_group.setdefault(e.memory_group, []).append(e)
+            consolidation_candidates = 0
+            for _group_entries in _by_group.values():
+                groups = find_consolidation_groups(
+                    _group_entries,
+                    threshold=self._consolidation_config.threshold,
+                    min_group_size=self._consolidation_config.min_entries,
+                )
+                consolidation_candidates += sum(len(g) for g in groups)
             # Update tapps_brain.consolidation.candidates gauge (STORY-032.6).
             self._last_consolidation_candidates = consolidation_candidates
 

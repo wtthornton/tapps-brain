@@ -23,6 +23,7 @@ from tapps_brain.similarity import _term_frequency, cosine_similarity
 
 if TYPE_CHECKING:
     from tapps_brain._protocols import LookupEngineLike
+    from tapps_brain.decay import DecayConfig
     from tapps_brain.models import MemoryEntry
     from tapps_brain.store import MemoryStore
 
@@ -741,15 +742,21 @@ class MemoryDocValidator:
         *,
         confidence_threshold: float = 0.5,
         max_entries: int = 10,
+        decay_config: DecayConfig | None = None,
     ) -> ValidationReport:
         """Validate entries whose effective confidence is below threshold.
 
         Entries are sorted by confidence ascending (stalest first) and
         capped at max_entries.
+
+        *decay_config* should be the store's profile-derived config
+        (``store._get_decay_config()``) when entries may carry custom-layer
+        tiers — a bare ``DecayConfig()`` raises ``ValueError`` on tiers
+        outside the built-in enum, aborting validation entirely.
         """
         from tapps_brain.decay import DecayConfig, calculate_decayed_confidence
 
-        config = DecayConfig()
+        config = decay_config if decay_config is not None else DecayConfig()
         stale = [
             e
             for e in entries

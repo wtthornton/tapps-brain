@@ -180,6 +180,23 @@ def _strip_key_from_relations(store: MemoryStore, consolidated_key: str) -> None
         store._persistence.save_relations(rel.source_entry_keys[0], [rel])
 
 
+def _strip_key_from_relations_best_effort(store: MemoryStore, consolidated_key: str) -> None:
+    """Strip relations after the durable entry delete already succeeded.
+
+    A failure here leaves only a dangling consolidated key inside relation
+    rows (nothing resolves it), so log rather than roll the undo back into a
+    ghost state where the entry is durably gone but reported as restored.
+    """
+    try:
+        _strip_key_from_relations(store, consolidated_key)
+    except Exception:
+        logger.warning(
+            "undo_consolidation_strip_relations_failed",
+            consolidated_key=consolidated_key,
+            exc_info=True,
+        )
+
+
 def undo_consolidation_merge(  # noqa: PLR0911
     store: MemoryStore,
     consolidated_key: str,
@@ -318,11 +335,14 @@ def undo_consolidation_merge(  # noqa: PLR0911
         try:
             for sk in source_keys:
                 store._persistence.save(store._entries[sk])
-            _strip_key_from_relations(store, consolidated_key)
             deleted = store._persistence.delete(consolidated_key)
             if not deleted:
                 msg = "consolidated_row_delete_failed"
                 raise RuntimeError(msg)
+            # Strip only AFTER the durable delete succeeds: stripping first
+            # meant a failed delete left the merge in place with its
+            # knowledge-graph edges already gone — and never restored.
+            _strip_key_from_relations_best_effort(store, consolidated_key)
         except Exception:
             store._entries[consolidated_key] = backup_consolidated
             for sk, old in backup_sources.items():

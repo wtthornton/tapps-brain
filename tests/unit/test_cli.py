@@ -453,9 +453,12 @@ class TestMemoryCommands:
             contradicted=True,
             contradiction_reason="overlap",
         )
+        from tapps_brain.decay import DecayConfig
+
         mock_store = MagicMock()
         mock_store.get.return_value = fake
         mock_store.close = MagicMock()
+        mock_store._get_decay_config.return_value = DecayConfig()
         monkeypatch.setattr(cli_mod, "_get_store", lambda _pd=None: mock_store)
         monkeypatch.setattr(cli_memory_mod, "_get_store", lambda _pd=None: mock_store)
         r = runner.invoke(

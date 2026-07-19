@@ -383,7 +383,9 @@ class ConsolidationThresholdSweepReport(BaseModel):
     source_entry_count: int = Field(ge=0)
     analyzed_entry_count: int = Field(ge=0)
     min_group_size: int = Field(ge=2)
-    tag_weight: float
+    # ``None`` means "similarity path default" (0.3 tag on the embedding
+    # path, 0.4 on the text path) — exactly what the periodic scan uses.
+    tag_weight: float | None
     text_weight: float
     active_only: bool
     rows: list[ConsolidationThresholdSweepRow] = Field(default_factory=list)
@@ -416,12 +418,14 @@ def run_consolidation_threshold_sweep(
     _pin_seeds()
     from tapps_brain.models import ConsolidatedEntry
     from tapps_brain.similarity import (
-        DEFAULT_TAG_WEIGHT,
         DEFAULT_TEXT_WEIGHT,
         find_consolidation_groups,
     )
 
-    tw = DEFAULT_TAG_WEIGHT if tag_weight is None else tag_weight
+    # Keep tag_weight=None unresolved: the periodic scan passes None through,
+    # which means "path-appropriate default" (0.3 on the embedding path, 0.4
+    # on the text path).  Eagerly collapsing it to 0.4 changed the embedding
+    # blend and made the sweep unfaithful to the scan it is meant to predict.
     tx = DEFAULT_TEXT_WEIGHT if text_weight is None else text_weight
 
     source_n = len(entries)
@@ -433,21 +437,32 @@ def run_consolidation_threshold_sweep(
         analyzed = list(entries)
     analyzed_n = len(analyzed)
 
+    # Partition by memory_group like the periodic scan — a cross-group merge
+    # never happens (GitHub #49), so grouping the whole pool at once would
+    # systematically overstate merge activity on multi-group stores.
+    by_group: dict[str | None, list[MemoryEntry]] = {}
+    for e in analyzed:
+        by_group.setdefault(e.memory_group, []).append(e)
+
     raw_thr = thresholds if thresholds is not None else DEFAULT_CONSOLIDATION_SWEEP_THRESHOLDS
     thr_sorted = sorted({round(float(t), 4) for t in raw_thr})
 
     rows: list[ConsolidationThresholdSweepRow] = []
     for t in thr_sorted:
-        groups = find_consolidation_groups(
-            analyzed,
-            threshold=t,
-            min_group_size=min_group_size,
-            tag_weight=tw,
-            text_weight=tx,
-        )
-        group_count = len(groups)
-        entries_in_groups = sum(len(g) for g in groups)
-        largest = max((len(g) for g in groups), default=0)
+        group_count = 0
+        entries_in_groups = 0
+        largest = 0
+        for partition in by_group.values():
+            groups = find_consolidation_groups(
+                partition,
+                threshold=t,
+                min_group_size=min_group_size,
+                tag_weight=tag_weight,
+                text_weight=tx,
+            )
+            group_count += len(groups)
+            entries_in_groups += sum(len(g) for g in groups)
+            largest = max(largest, max((len(g) for g in groups), default=0))
         rows.append(
             ConsolidationThresholdSweepRow(
                 threshold=t,
@@ -462,7 +477,7 @@ def run_consolidation_threshold_sweep(
         source_entry_count=source_n,
         analyzed_entry_count=analyzed_n,
         min_group_size=min_group_size,
-        tag_weight=tw,
+        tag_weight=tag_weight,
         text_weight=tx,
         active_only=active_only,
         rows=rows,

@@ -76,9 +76,9 @@ def store_list(
             memory_group=group,
         )
         if as_json:
-            _output([_entry_to_row(e) for e in entries], as_json=True)
+            _output([_entry_to_row(e, store._get_decay_config()) for e in entries], as_json=True)
         else:
-            rows = [_entry_to_row(e) for e in entries]
+            rows = [_entry_to_row(e, store._get_decay_config()) for e in entries]
             base_cols = ["key", "tier", "confidence", "effective", "scope", "group", "created"]
             _print_table(rows, columns=base_cols)
             typer.echo(f"\n{len(entries)} entries")
@@ -126,9 +126,9 @@ def store_search(
     try:
         results = store.search(query, tier=tier, scope=scope, as_of=as_of, memory_group=group)
         if as_json:
-            _output([_entry_to_row(e) for e in results], as_json=True)
+            _output([_entry_to_row(e, store._get_decay_config()) for e in results], as_json=True)
         else:
-            rows = [_entry_to_row(e) for e in results]
+            rows = [_entry_to_row(e, store._get_decay_config()) for e in results]
             _print_table(rows, columns=["key", "tier", "confidence", "effective", "scope", "group"])
             typer.echo(f"\n{len(results)} results")
     finally:

@@ -5,12 +5,12 @@ Automatically seeds the memory store with facts detected by
 with ``auto-seeded`` and ``source=system``.
 
 **Save path:** each seed uses ``MemoryStore.save()`` inside a
-:func:`~tapps_brain.rate_limiter.batch_exempt_scope` context.
-Save-time ``conflict_check`` runs like any other write; first-run seeding only
-fires on an **empty** store, and ``reseed_from_profile`` deletes prior
-``auto-seeded`` rows first, so collisions are rare. Custom integrators may call
-``save(..., conflict_check=False)`` for deterministic bulk seeds when they
-accept the risk (see tests).
+:func:`~tapps_brain.rate_limiter.batch_exempt_scope` context, with
+``skip_consolidation=True`` and ``conflict_check=False``: seeds are
+independent facts produced by one deterministic detector, so merging or
+contradiction-flagging sibling seeds (e.g. "Project uses C" vs "Project
+uses C++") is always wrong. Existing entries without the ``auto-seeded``
+tag are never overwritten.
 
 **Profile version:** when ``MemoryProfile.seeding.seed_version`` is set, seed and
 reseed summaries include ``profile_seed_version`` for operator diffing. The same
@@ -118,7 +118,8 @@ def reseed_from_profile(
         profile: Detected project profile.
 
     Returns:
-        Summary dict with ``seeded_count``, ``updated_count``.
+        Summary dict with ``seeded_count``, ``skipped``, and ``deleted_old``
+        (count of prior auto-seeded rows removed before re-creating).
     """
     # Delete existing auto-seeded memories.
     # list_all(tags=[_SEEDED_TAG]) already filters by tag, so no need to
@@ -144,7 +145,15 @@ def _seed_one(
     tag: str,
     confidence: float = _DEFAULT_CONFIDENCE,
 ) -> int:
-    """Save one seed memory; return 1 on success, 0 on failure (logged)."""
+    """Save one seed memory; return 1 on success, 0 on failure/skip (logged)."""
+    # Contract: seeding never overwrites human/agent-created memories.
+    # store.save is an upsert by key, so a human entry that happens to use a
+    # seed key (e.g. "project-type") would be silently replaced without this
+    # guard.  Only rows carrying the auto-seeded tag are fair game.
+    existing = store.get(key)
+    if existing is not None and _SEEDED_TAG not in (existing.tags or []):
+        logger.info("seed_skipped_existing_entry", key=key)
+        return 0
     saved = store.save(
         key=key,
         value=value,
@@ -154,6 +163,15 @@ def _seed_one(
         scope=MemoryScope.project.value,
         tags=_make_seed_tags(tag),
         confidence=confidence,
+        # Seeds are independent facts by construction; without these the
+        # shared auto-seeded tag gives same-tier seeds >= 50% tag overlap,
+        # so is_same_topic fires at the third seed and auto-consolidation
+        # merges the fresh seeds into blobs (leaving most of them
+        # contradicted) on any default-config store.  Likewise
+        # conflict_check flags near-identical sibling values ("Project
+        # uses C" vs "Project uses C++") as contradictions.
+        skip_consolidation=True,
+        conflict_check=False,
     )
     if isinstance(saved, dict):
         logger.warning("seed_save_failed", key=key, error=saved.get("error"))
@@ -255,10 +273,14 @@ def _do_seed(
 def _slugify(text: str) -> str:
     """Convert text to a simple slug for use as a memory key suffix.
 
-    Strips characters that are illegal in MemoryEntry keys (e.g. ``+``, ``#``)
-    so languages like ``C++`` / ``C#`` seed successfully.
+    Transliterates key-illegal characters that distinguish real language
+    names (``+`` -> ``p``, ``#`` -> ``sharp``) before stripping: plain
+    removal collapsed ``C``, ``C++``, and ``C#`` to the same slug ``c``, so
+    the later seed silently upserted over the earlier one and a language
+    fact was lost.
     """
     slug = text.lower().strip().replace(" ", "-").replace("_", "-")
+    slug = slug.replace("+", "p").replace("#", "sharp")
     slug = re.sub(r"[^a-z0-9._-]+", "-", slug)
     slug = re.sub(r"[-_.]{2,}", "-", slug).strip("-._")
     return slug or "x"
