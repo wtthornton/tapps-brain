@@ -190,7 +190,9 @@ def undo_consolidation_merge(  # noqa: PLR0911
     source row must still be ``contradicted``, ``superseded_by`` the consolidated key,
     and ``contradiction_reason`` exactly ``consolidated into <key>`` (same string
     auto-consolidation writes). On success, appends ``consolidation_merge_undo`` to
-    the JSONL audit log and removes relations tied to the consolidated key.
+    the audit trail via ``append_audit`` (the Postgres ``audit_log`` table in
+    production; a JSONL file only under the test fake) and removes relations
+    tied to the consolidated key.
 
     The store serialization lock (``store._serialized()``) is held for the full
     in-memory + persistence sequence so concurrent saves do not interleave with undo
@@ -331,6 +333,15 @@ def undo_consolidation_merge(  # noqa: PLR0911
             except Exception:
                 logger.warning("undo_consolidation_merge_rollback_failed", exc_info=True)
             raise
+
+        # Coherence steps store.delete would have performed (bypassed here to
+        # avoid its wholesale delete_relations): the removal tombstone stops
+        # a concurrent _merge_durable_entries (list_all/count/gc) whose
+        # pre-undo load_all snapshot still contains the consolidated row from
+        # resurrecting it as a cache-only ghost, and the entity-index cleanup
+        # stops graph-centrality scoring from counting the deleted key.
+        store._note_removed_locked(consolidated_key)
+        store._remove_entry_entities(consolidated_key)
 
         store._relations.pop(consolidated_key, None)
         for sk in source_keys:
@@ -483,6 +494,7 @@ def check_consolidation_on_save(
         audit_threshold=threshold,
         audit_similarity_score=audit_similarity_score,
         audit_merge_rule=audit_merge_rule,
+        source_snapshots={e.key: e for e in entries_to_consolidate},
     )
 
     logger.info(
@@ -562,6 +574,7 @@ def _persist_consolidated_entry(
     audit_threshold: float | None = None,
     audit_similarity_score: float | None = None,
     audit_merge_rule: str = "text_similarity",
+    source_snapshots: dict[str, MemoryEntry] | None = None,
 ) -> None:
     """Persist the consolidated entry and mark sources as consolidated.
 
@@ -570,6 +583,16 @@ def _persist_consolidated_entry(
 
     STORY-SC03 (TAP-559): *audit_similarity_score* and *audit_merge_rule* are
     forwarded to :func:`_append_consolidation_audit` for operator traceability.
+
+    *source_snapshots* carries the entries the merged value was computed
+    from.  Before a source is superseded its live ``value`` is compared
+    against the snapshot — a concurrent ``save()`` landing new content
+    between snapshot and marking means the fresh write is absent from the
+    merged value, and superseding the source anyway would hide it from
+    recall (lost update).  On mismatch the merge is aborted and rolled back.
+    (``value`` is compared rather than ``updated_at`` because save-path
+    metadata re-stamps — access counts, embeddings, reinforcement — touch
+    ``updated_at`` without invalidating the merged content.)
     """
     consolidated_saved = False
     try:
@@ -614,6 +637,16 @@ def _persist_consolidated_entry(
         now = _utc_now_iso()
         for key in source_keys:
             if key != consolidated.key:
+                if source_snapshots is not None:
+                    snap = source_snapshots.get(key)
+                    current = store._entries.get(key)
+                    if snap is not None and current is not None and current.value != snap.value:
+                        msg = (
+                            f"source '{key}' content changed concurrently since the "
+                            f"merge snapshot; aborting merge '{consolidated.key}' "
+                            f"to avoid superseding the fresh write"
+                        )
+                        raise RuntimeError(msg)
                 updated = store.update_fields(
                     key,
                     contradicted=True,
@@ -663,6 +696,14 @@ def _persist_consolidated_entry(
                             consolidated_key=consolidated.key,
                             exc_info=True,
                         )
+                # Detach the merge key from shared relation rows BEFORE
+                # store.delete: delete_relations removes every row whose
+                # source_entry_keys *contains* the key, and after
+                # save_relations above those rows also carry the sources'
+                # linkage — deleting them outright would permanently orphan
+                # the sources' graph edges (same hazard the undo path guards
+                # against via _strip_key_from_relations).
+                _strip_key_from_relations(store, consolidated.key)
                 store.delete(consolidated.key)
             except Exception:
                 logger.warning(
@@ -715,8 +756,19 @@ def run_periodic_consolidation_scan(
     # saved via store.save() are always MemoryEntry instances (not ConsolidatedEntry
     # subclass), so the isinstance check is a forward-compat guard only — filtering
     # on ``contradicted`` is what actually excludes processed source entries.
+    # TAP-732: also exclude retired lifecycle rows.  ``contradicted`` alone
+    # misses entries retired via the supersession flow (status=superseded,
+    # contradicted=False) and status=stale rows — merging those would
+    # resurface content retrieval deliberately hides, and marking them
+    # ``superseded_by=<merge key>`` would clobber the original supersession
+    # pointer the status flow exists to preserve.
     active_entries = [
-        e for e in all_entries if not isinstance(e, ConsolidatedEntry) and not e.contradicted
+        e
+        for e in all_entries
+        if not isinstance(e, ConsolidatedEntry)
+        and not e.contradicted
+        and e.superseded_by is None
+        and getattr(e, "status", "active") not in ("stale", "superseded", "archived")
     ]
 
     if len(active_entries) < min_group_size:
@@ -782,15 +834,32 @@ def run_periodic_consolidation_scan(
             )
             continue
 
-        _persist_consolidated_entry(
-            store,
-            consolidated,
-            group_keys,
-            audit_trigger="periodic_scan",
-            audit_threshold=threshold,
-            audit_similarity_score=periodic_sim_score,
-            audit_merge_rule=periodic_merge_rule,
-        )
+        try:
+            _persist_consolidated_entry(
+                store,
+                consolidated,
+                group_keys,
+                audit_trigger="periodic_scan",
+                audit_threshold=threshold,
+                audit_similarity_score=periodic_sim_score,
+                audit_merge_rule=periodic_merge_rule,
+                source_snapshots={e.key: e for e in group_entries},
+            )
+        except Exception:
+            # One failing group (write-policy rejection, vanished source,
+            # profile value-length limit, concurrent-modification abort) must
+            # not abort the whole scan: _persist rolled itself back, so log
+            # and move on.  Previously the exception escaped the loop,
+            # skipping remaining groups, losing the PeriodicScanResult for
+            # merges already applied, and never advancing the scan timestamp
+            # — deterministic failures then re-ran on every session start.
+            logger.warning(
+                "periodic_consolidation_group_persist_failed",
+                group_keys=group_keys,
+                consolidated_key=consolidated.key,
+                exc_info=True,
+            )
+            continue
         consolidated_keys.append(consolidated.key)
         total_entries_consolidated += len(group_entries)
 
@@ -826,6 +895,11 @@ def _get_last_scan_time(project_root: Path) -> datetime | None:
 
     with contextlib.suppress(json.JSONDecodeError, ValueError, OSError):
         data = json.loads(state_path.read_text(encoding="utf-8"))
+        # Valid-but-non-dict JSON (null, [], "x") parses fine and would raise
+        # AttributeError on .get — outside the suppressed set — crashing the
+        # scan this helper is documented to shield from state-file corruption.
+        if not isinstance(data, dict):
+            return None
         last_scan_str = data.get("last_scan")
         if last_scan_str:
             dt = datetime.fromisoformat(last_scan_str)
@@ -847,7 +921,11 @@ def _update_last_scan_time(project_root: Path) -> None:
         data: dict[str, Any] = {}
         with contextlib.suppress(json.JSONDecodeError, ValueError):
             if state_path.exists():
-                data = json.loads(state_path.read_text(encoding="utf-8"))
+                loaded = json.loads(state_path.read_text(encoding="utf-8"))
+                # Non-dict JSON would raise TypeError on item assignment
+                # below — treat it as corrupt state and start fresh.
+                if isinstance(loaded, dict):
+                    data = loaded
 
         data["last_scan"] = datetime.now(tz=UTC).isoformat()
         state_path.write_text(json.dumps(data, indent=2), encoding="utf-8")

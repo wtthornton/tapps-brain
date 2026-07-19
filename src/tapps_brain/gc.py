@@ -131,14 +131,20 @@ def aggregate_gc_reason_counts(details: list[StaleCandidateDetail]) -> dict[str,
     return dict(sorted(counts.items()))
 
 
-def archive_entries_jsonl_utf8_bytes(entries: list[MemoryEntry], archived_at_iso: str) -> int:
-    """UTF-8 byte size of the candidate set serialized as JSONL (dry-run estimate)."""
+def archive_entries_jsonl_utf8_bytes(entries: list[MemoryEntry]) -> int:
+    """UTF-8 byte size the candidate set would occupy in ``gc_archive`` (dry-run estimate).
+
+    Mirrors ``PostgresPrivateBackend.archive_entry`` exactly — same
+    ``model_dump()`` payload, same ``json.dumps(..., default=str)`` recipe,
+    no injected ``archived_at`` field or trailing newline — so a dry run
+    predicts the same ``archive_bytes`` a live run reports for the identical
+    candidate set.  (``archived_at`` lives in a separate column, not in the
+    payload.)
+    """
     total = 0
     for entry in entries:
-        record = entry.model_dump()
-        record["archived_at"] = archived_at_iso
-        line = json.dumps(record, ensure_ascii=False) + "\n"
-        total += len(line.encode("utf-8"))
+        payload_json = json.dumps(entry.model_dump(), default=str)
+        total += len(payload_json.encode("utf-8"))
     return total
 
 
@@ -248,12 +254,18 @@ class MemoryGarbageCollector:
         # never auto-archive either.  Stale entries await a replacement; superseded entries
         # preserve audit history so the supersession chain can be inspected before cleanup.
         # Both remain visible (filtered from brain_recall by default) until manually archived.
+        # ``superseded_by`` is checked independently of status: consolidation sources are
+        # written as contradicted=True + superseded_by=<merge key> with status=active, and
+        # archiving one silently breaks undo_consolidation_merge forever (the documented
+        # EPIC-044.4 undo guarantee) — the same supersession-chain rationale applies.
         from tapps_brain.models import MemoryStatus
 
         if getattr(entry, "status", MemoryStatus.active) in {
             MemoryStatus.stale,
             MemoryStatus.superseded,
         }:
+            return []
+        if entry.superseded_by is not None:
             return []
 
         reasons: list[str] = []

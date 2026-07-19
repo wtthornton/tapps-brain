@@ -3898,9 +3898,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 archived_keys=candidate_keys,
                 dry_run=True,
                 reason_counts=reason_counts,
-                estimated_archive_bytes=archive_entries_jsonl_utf8_bytes(
-                    candidates, archived_at_iso=now.isoformat()
-                ),
+                estimated_archive_bytes=archive_entries_jsonl_utf8_bytes(candidates),
                 demoted_count=len(demoted_keys),
                 demoted_keys=demoted_keys,
             )

@@ -20,8 +20,17 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from tapps_brain.backends import create_hive_backend
+from tapps_brain._save_propagation import propagate_group_save
+from tapps_brain.agent_scope import hive_group_name_from_scope, normalize_agent_scope
+from tapps_brain.backends import (
+    create_hive_backend,
+    derive_project_id,
+    resolve_private_backend_from_env,
+)
 from tapps_brain.models import MemoryEntry, MemoryTier
+from tapps_brain.postgres_connection import is_postgres_dsn
+from tapps_brain.postgres_migrations import maybe_auto_migrate_private
+from tapps_brain.project_resolver import validate_project_id
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -164,16 +173,11 @@ class AgentBrain:
         # MemoryStore.__init__ also performs this check, but we call it here so
         # AgentBrain users see the error before the backend is constructed.
         _auto_migrate_dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")
-        if _auto_migrate_dsn:
-            from tapps_brain.postgres_connection import is_postgres_dsn
-
-            if is_postgres_dsn(_auto_migrate_dsn):
-                # Any failure (MigrationDowngradeError, ImportError, transient
-                # DB errors) propagates to the caller — surfacing schema
-                # problems before the backend is constructed.
-                from tapps_brain.postgres_migrations import maybe_auto_migrate_private
-
-                maybe_auto_migrate_private(_auto_migrate_dsn)
+        if _auto_migrate_dsn and is_postgres_dsn(_auto_migrate_dsn):
+            # Any failure (MigrationDowngradeError, ImportError, transient
+            # DB errors) propagates to the caller — surfacing schema
+            # problems before the backend is constructed.
+            maybe_auto_migrate_private(_auto_migrate_dsn)
 
         # ADR-007: resolve the Postgres private backend from
         # TAPPS_BRAIN_DATABASE_URL.  No SQLite fallback — when the env var is
@@ -181,16 +185,12 @@ class AgentBrain:
         _private_backend = None
         _effective_agent_id = self._agent_id or "unknown"
         try:
-            from tapps_brain.backends import derive_project_id, resolve_private_backend_from_env
-
             # EPIC-069 / ADR-010: honor TAPPS_BRAIN_PROJECT (human-readable
             # slug) before the legacy path-hash.  Matches MemoryStore.__init__
             # so library-path users hit the project registry by slug, not by
             # per-directory hash.
             _env_project = (os.environ.get("TAPPS_BRAIN_PROJECT") or "").strip()
             if _env_project:
-                from tapps_brain.project_resolver import validate_project_id
-
                 _project_id = validate_project_id(_env_project)
             else:
                 _project_id = derive_project_id(self._project_dir)
@@ -358,8 +358,6 @@ class AgentBrain:
             # bumped access_count/last_accessed on the just-saved entry,
             # skewing frequency/recency ranking vs single-group saves.
             if len(groups) > 1 and self._hive is not None:
-                from tapps_brain._save_propagation import propagate_group_save
-
                 propagate_group_save(
                     entry=entry,
                     agent_scope="group",
@@ -399,8 +397,6 @@ class AgentBrain:
         # case-sensitively (it is a Hive namespace).
         _normalised_scope: str | None = None
         if scope != "all":
-            from tapps_brain.agent_scope import normalize_agent_scope
-
             try:
                 _normalised_scope = normalize_agent_scope(scope)
             except ValueError as exc:
@@ -410,18 +406,17 @@ class AgentBrain:
         # Convert MemoryEntry objects to dicts and limit results.
         # MemoryStore.search() always returns list[MemoryEntry], so no dict
         # branch is needed here.
-        results: list[dict[str, Any]] = []
-        for entry in entries[:max_results]:
-            results.append(
-                {
-                    "key": entry.key,
-                    "value": entry.value,
-                    "tier": str(entry.tier),
-                    "confidence": entry.confidence,
-                    "tags": list(entry.tags) if entry.tags else [],
-                    "agent_scope": entry.agent_scope,
-                }
-            )
+        results: list[dict[str, Any]] = [
+            {
+                "key": entry.key,
+                "value": entry.value,
+                "tier": str(entry.tier),
+                "confidence": entry.confidence,
+                "tags": list(entry.tags) if entry.tags else [],
+                "agent_scope": entry.agent_scope,
+            }
+            for entry in entries[:max_results]
+        ]
 
         # Shared scopes must also query the Hive — private FTS only sees this
         # agent's own rows, so memories shared *by other agents* were
@@ -448,8 +443,6 @@ class AgentBrain:
         """Search Hive namespaces matching *normalised_scope*; local keys win."""
         if self._hive is None or limit <= 0:
             return []
-        from tapps_brain.agent_scope import hive_group_name_from_scope
-
         group_name = hive_group_name_from_scope(normalised_scope)
         if group_name is not None:
             namespaces = [group_name]

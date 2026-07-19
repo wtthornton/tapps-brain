@@ -37,6 +37,28 @@ logger = structlog.get_logger(__name__)
 
 _DEFAULT_SEED_PROFILE = "repo-brain"
 
+_ARGON2_IMPORT_ERROR_MSG = (
+    "argon2-cffi is required for per-tenant auth.\nInstall with: pip install 'tapps-brain[http]'"
+)
+
+
+def _row_to_record(row: tuple[Any, ...]) -> ProjectRecord:
+    """Build a :class:`ProjectRecord` from a ``project_profiles`` row.
+
+    Shared by :meth:`ProjectRegistry.get` and :meth:`ProjectRegistry.list_all`
+    so the JSON-vs-dict profile handling cannot drift between the two.
+    """
+    pid, profile_json, approved, source, notes = row
+    return ProjectRecord(
+        project_id=pid,
+        profile=MemoryProfile.model_validate(
+            profile_json if isinstance(profile_json, dict) else json.loads(profile_json)
+        ),
+        approved=bool(approved),
+        source=source,
+        notes=notes or "",
+    )
+
 
 class ProjectNotRegisteredError(LookupError):
     """Raised in strict mode when ``project_id`` has no registered profile."""
@@ -86,16 +108,7 @@ class ProjectRegistry:
             row = cur.fetchone()
         if row is None:
             return None
-        pid, profile_json, approved, source, notes = row
-        return ProjectRecord(
-            project_id=pid,
-            profile=MemoryProfile.model_validate(
-                profile_json if isinstance(profile_json, dict) else json.loads(profile_json)
-            ),
-            approved=bool(approved),
-            source=source,
-            notes=notes or "",
-        )
+        return _row_to_record(row)
 
     def list_all(self, *, approved: bool | None = None) -> list[ProjectRecord]:
         """Return every row, optionally filtered by approval status."""
@@ -108,18 +121,7 @@ class ProjectRegistry:
         with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
-        return [
-            ProjectRecord(
-                project_id=pid,
-                profile=MemoryProfile.model_validate(
-                    pj if isinstance(pj, dict) else json.loads(pj)
-                ),
-                approved=bool(ap),
-                source=src,
-                notes=nt or "",
-            )
-            for pid, pj, ap, src, nt in rows
-        ]
+        return [_row_to_record(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Writes
@@ -225,10 +227,7 @@ class ProjectRegistry:
         try:
             from argon2 import PasswordHasher  # type: ignore[import-not-found]
         except ImportError as exc:  # pragma: no cover
-            raise ImportError(
-                "argon2-cffi is required for per-tenant auth.\n"
-                "Install with: pip install 'tapps-brain[http]'"
-            ) from exc
+            raise ImportError(_ARGON2_IMPORT_ERROR_MSG) from exc
 
         plaintext = secrets.token_urlsafe(32)
         ph = PasswordHasher()
@@ -287,10 +286,7 @@ class ProjectRegistry:
                 VerifyMismatchError,
             )
         except ImportError as exc:  # pragma: no cover
-            raise ImportError(
-                "argon2-cffi is required for per-tenant auth.\n"
-                "Install with: pip install 'tapps-brain[http]'"
-            ) from exc
+            raise ImportError(_ARGON2_IMPORT_ERROR_MSG) from exc
 
         with self._cm.admin_context() as conn, conn.cursor() as cur:
             cur.execute(
@@ -306,7 +302,6 @@ class ProjectRegistry:
         ph = PasswordHasher()
         try:
             ph.verify(hashed, token)
-            return True
         except VerifyMismatchError:
             return False
         except VerifyInvalidError:
@@ -321,12 +316,16 @@ class ProjectRegistry:
         except Exception:
             # TAP-782: re-raise unexpected argon2 / system errors so the caller
             # (auth.py) can handle them explicitly (fail closed with 503) rather
-            # than silently swallowing them.
+            # than silently swallowing them.  exc_info so the operator sees the
+            # actual failure, not just the event name.
             logger.error(
                 "registry.verify_token_unexpected_error",
                 project_id=project_id,
+                exc_info=True,
             )
             raise
+        else:
+            return True
 
     # ------------------------------------------------------------------
     # Resolution

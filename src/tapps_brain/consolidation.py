@@ -408,11 +408,17 @@ def should_consolidate(
     # break undo of the original merge (the periodic scan applies the same filter).
     # Note: ``is_consolidated`` only guards in-memory ConsolidatedEntry instances;
     # rows persisted via store.save() are plain MemoryEntry and re-mergeable.
+    # TAP-732: status/superseded_by exclusions mirror the periodic scan —
+    # rows retired via the supersession flow carry status=superseded with
+    # contradicted=False, and re-merging them would overwrite the original
+    # supersession pointer.
     active_candidates = [
         c
         for c in candidates
         if not getattr(c, "is_consolidated", False)
         and not getattr(c, "contradicted", False)
+        and getattr(c, "superseded_by", None) is None
+        and str(getattr(c, "status", "active")) not in ("stale", "superseded", "archived")
         and c.key != entry.key
         and c.memory_group == entry.memory_group
     ]
