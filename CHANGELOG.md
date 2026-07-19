@@ -12,6 +12,24 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.26.1] — 2026-07-19
+
+Patch release: overnight hourly audit sweep (iterations 1–8) fixed ~110 real defects across the codebase. No new features.
+
+### Fixed
+
+- **Retrieval stack** — 25 fixes across `retrieval.py`, `bm25.py`, `fusion.py`, `embeddings.py`, `reranker.py` (`5e56229`).
+- **Storage layer** — 13 store-layer defects, 9 postgres-backend defects, 9 async-wrapper (`aio`) defects; stdlib imports hoisted out of hot paths and duplicate relation-cache rebuilds removed (`4e1e57c`, `b87e7f4`, `9147b2e`, `29f89f7`).
+- **Memory lifecycle** — 23 decay/auto-consolidation/gc/seeding/sweep defects across two passes (`d836c4e`, `c8e732e`).
+- **Hive + agent facade** — agent-facade, hive/federation/registry defects (`a38f8ab`).
+- **Quality loop** — 17 diagnostics/session/feedback defects and 4 flywheel feedback-processor defects (`f56911f`, `6696f85`).
+- **Eval + extraction** — eval-harness and extraction/model hot-path defects (`458380d`).
+- **Client tooling & services** — client/aio/migrations/scripts cleanup, gc/decay/consolidation/visual/flywheel cleanup, `memory_service` hot-path imports (`d322d45`, `cb3e6ab`, `da87c4a`).
+
+### Changed
+
+- **Private migration renumber** — duplicate version-015 migrations renumbered to 026 (`memory_class`) and 027 (`memory_status`); OpenAPI snapshot `x-schema-version` moved 25 → 27 (`ad3532a`).
+
 ## [3.26.0] — 2026-07-18
 
 Bug-fix sweep release: six themed audit passes (retrieval & ranking, memory lifecycle, storage layer, models & extraction, agent API & recall, HTTP/MCP surface) fixed ~190 real defects. No new features; the headline items below are the ones observable from the deployed service.
