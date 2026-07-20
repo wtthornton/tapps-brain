@@ -23,6 +23,11 @@ diagnostics_history
 diagnostics_report
 docs_lookup
 docs_warm
+document_delete
+document_get
+document_list
+document_put
+document_search
 feedback_gap
 feedback_issue
 feedback_query

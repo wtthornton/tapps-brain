@@ -118,13 +118,13 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_69_tools(self) -> None:
-        """Golden file for 'full' must list exactly 69 tools."""
-        assert len(_load_golden("full")) == 69
+    def test_full_golden_has_74_tools(self) -> None:
+        """Golden file for 'full' must list exactly 74 tools."""
+        assert len(_load_golden("full")) == 74
 
-    def test_operator_golden_has_82_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 82 tools."""
-        assert len(_load_golden("operator")) == 82
+    def test_operator_golden_has_87_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 87 tools."""
+        assert len(_load_golden("operator")) == 87
 
     def test_coder_golden_has_21_tools(self) -> None:
         """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
@@ -219,16 +219,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_82(self) -> None:
-        """The MCP server must have exactly 82 registered tools (69 standard + 13 operator)."""
+    def test_registered_tool_count_is_87(self) -> None:
+        """The MCP server must have exactly 87 registered tools (74 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 82, (
-            f"Expected 82 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 87, (
+            f"Expected 87 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 82 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 87 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -305,7 +305,7 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 69
+        assert len(result) == 74
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -504,7 +504,7 @@ class TestBackwardsCompat:
         """No profile header → list_tools returns the full callable surface."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 69
+        assert len(full_tools) == 74
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -513,7 +513,7 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 69
+        assert len(result) == 74
         assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
@@ -585,9 +585,9 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 69),
+            ("full", 74),
             ("coder", 21),
-            ("reviewer", 9),
+            ("reviewer", 10),
             ("seeder", 6),
         ],
     )
@@ -610,14 +610,14 @@ class TestEndToEndProfileFiltering:
 
     @pytest.mark.asyncio
     async def test_no_profile_returns_full_tool_set(self, _mcp_server) -> None:
-        """No REQUEST_PROFILE (None) → same 60-tool surface as 'full' profile (TAP-1973)."""
+        """No REQUEST_PROFILE (None) → same tool surface as 'full' profile (TAP-1973)."""
         from tapps_brain.mcp_server import REQUEST_PROFILE
 
         # Ensure contextvar is None (simulates no X-Brain-Profile header)
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 60
+            assert len(tools) == 74
         finally:
             REQUEST_PROFILE.reset(token)
 

@@ -505,6 +505,40 @@ class KGProfileConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Document plane profile config (TAP-4998)
+# ---------------------------------------------------------------------------
+
+
+class DocumentsConfig(BaseModel):
+    """Document plane limits (TAP-4998; docs/planning/DESIGN-DOCUMENT-STORE.md).
+
+    Maps to ``documents:`` in the profile YAML.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_doc_bytes: int = Field(
+        default=2_097_152,
+        ge=1,
+        description=(
+            "Maximum original-content size per document (bytes). Larger puts "
+            "are rejected with 413 document_too_large. Default 2 MiB — the "
+            "inline BYTEA comfort range."
+        ),
+    )
+    max_docs_per_project: int = Field(
+        default=500,
+        ge=1,
+        description="Maximum documents per project; puts beyond this are rejected.",
+    )
+    max_chunks_per_doc: int = Field(
+        default=256,
+        ge=1,
+        description="Upper bound on retrieval chunks per document (bounds embed cost).",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Write-path policy profile config (TAP-560 / STORY-SC04)
 # ---------------------------------------------------------------------------
 
@@ -657,6 +691,10 @@ class MemoryProfile(BaseModel):
     kg: KGProfileConfig = Field(
         default_factory=KGProfileConfig,
         description="Knowledge Graph settings (EPIC-075 / ADR-009).",
+    )
+    documents: DocumentsConfig = Field(
+        default_factory=DocumentsConfig,
+        description="Document plane limits (TAP-4998).",
     )
 
     @model_validator(mode="after")

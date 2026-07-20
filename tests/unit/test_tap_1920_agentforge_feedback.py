@@ -459,13 +459,30 @@ class TestRestProfileGate:
 
     def test_validate_route_map_accepts_complete_catalog(self) -> None:
         from tapps_brain.http.rest_profile_gate import (
+            REST_ROUTE_EQUIVALENT_TOOLS,
             REST_ROUTE_TO_TOOL,
             validate_rest_route_map,
         )
 
         known = frozenset(REST_ROUTE_TO_TOOL.values())
+        for tools in REST_ROUTE_EQUIVALENT_TOOLS.values():
+            known |= tools
         # No raise expected when every mapped tool is known.
         validate_rest_route_map(known)
+
+    def test_document_routes_map_to_document_tools(self) -> None:
+        from tapps_brain.http.rest_profile_gate import (
+            resolve_tool_for_path,
+            tools_for_path,
+        )
+
+        assert resolve_tool_for_path("/v1/documents") == "document_put"
+        assert resolve_tool_for_path("/v1/documents:search") == "document_search"
+        assert resolve_tool_for_path("/v1/documents/abc123") == "document_get"
+        assert tools_for_path("/v1/documents") == frozenset({"document_put", "document_list"})
+        assert tools_for_path("/v1/documents/abc123") == frozenset(
+            {"document_get", "document_delete"}
+        )
 
     def test_validate_route_map_raises_on_drift(self) -> None:
         from tapps_brain.http.rest_profile_gate import validate_rest_route_map

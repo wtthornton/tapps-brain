@@ -273,6 +273,12 @@ class TestCoreTools:
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",
+            # Document plane (TAP-4998 / TAP-5003)
+            "document_put",
+            "document_get",
+            "document_search",
+            "document_list",
+            "document_delete",
         }
         assert expected == tool_names, (
             f"Tool mismatch.\n"

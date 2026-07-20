@@ -856,6 +856,31 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             agent_id=agent_id,
         )
 
+    def document_store(self) -> Any:  # noqa: ANN401
+        """Return a :class:`PostgresDocumentStore` for this tenant, or ``None``.
+
+        Mirrors :meth:`_postgres_session_index` — requires the private
+        backend's connection manager and a project id (TAP-4998).  Reads are
+        project-scoped; ``agent_id`` records the writer.
+        """
+        cm = getattr(self._persistence, "_cm", None)
+        project_id = self._project_id
+        if cm is None or not project_id:
+            return None
+        from tapps_brain.documents import PostgresDocumentStore
+
+        backend_agent = getattr(self._persistence, "_agent_id", None)
+        agent_id = (
+            str(backend_agent)
+            if backend_agent is not None and str(backend_agent)
+            else (self._agent_id or "unknown")
+        )
+        return PostgresDocumentStore(
+            cm,
+            project_id=str(project_id),
+            agent_id=agent_id,
+        )
+
     def _merge_durable_entries(self, *, limit: int | None = None) -> None:
         """Fill cache misses from ``load_all`` (durable overflow beyond cold-start).
 
@@ -3767,6 +3792,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         prof_name, seed_ver, eff_ruleset = self._resolve_health_profile_metadata()
 
+        # Document plane stats (TAP-5005) — best-effort; a missing table or
+        # connection hiccup must not fail the whole health probe.
+        document_count = 0
+        document_total_bytes = 0
+        doc_store = self.document_store()
+        if doc_store is not None:
+            try:
+                document_count = doc_store.count()
+                document_total_bytes = doc_store.total_bytes()
+            except Exception:
+                logger.warning("health.document_stats_failed", exc_info=True)
+
         _snap = self._metrics.snapshot()
         save_phases = compact_save_phase_summary(_snap)
         _ctr = _snap.counters
@@ -3809,6 +3846,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             active_session_count=self.active_session_count(),
             bloom_saturation=self._bloom.approximate_false_positive_rate(),
             embeddings_enabled=self._embedding_provider is not None,
+            document_count=document_count,
+            document_total_bytes=document_total_bytes,
         )
 
     @staticmethod
@@ -3991,6 +4030,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if session_chunks_deleted:
             self._metrics.increment("store.gc.session_chunks_deleted", session_chunks_deleted)
 
+        # Document plane retention sweep (TAP-5005): remove documents whose
+        # expires_at has passed; chunks cascade via the FK.
+        documents_expired = 0
+        doc_store = self.document_store()
+        if doc_store is not None:
+            try:
+                documents_expired = doc_store.delete_expired()
+            except Exception:
+                logger.warning("gc.documents_expiry_sweep_failed", exc_info=True)
+        if documents_expired:
+            self._metrics.increment("store.gc.documents_expired", documents_expired)
+
         # TAP-549: sweep the in-memory session-state helper dicts so
         # ``session_id`` rotation by long-lived clients cannot slow-burn
         # OOM the adapter.  Runs unconditionally on live GC (dry_run was
@@ -4017,6 +4068,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             reason_counts=reason_counts,
             archive_bytes=archive_bytes,
             session_chunks_deleted=session_chunks_deleted,
+            documents_expired=documents_expired,
             demoted_count=len(demoted_keys),
             demoted_keys=demoted_keys,
         )

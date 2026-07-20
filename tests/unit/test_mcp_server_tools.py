@@ -311,6 +311,46 @@ def test_profile_info_no_operator_gate(mcp: Any, fake_ctx: ToolContext) -> None:
 
 
 # ---------------------------------------------------------------------------
+# register_document_tools (TAP-4998)
+# ---------------------------------------------------------------------------
+
+
+def test_register_document_tools_registers_five(mcp: Any, fake_ctx: ToolContext) -> None:
+    from tapps_brain.mcp_server.tools_documents import register_document_tools
+
+    register_document_tools(mcp, fake_ctx)
+    names = _tool_names(mcp)
+    for expected in [
+        "document_put",
+        "document_get",
+        "document_search",
+        "document_list",
+        "document_delete",
+    ]:
+        assert expected in names, f"missing tool {expected}"
+
+
+def test_document_tools_delegate_to_service(mcp: Any, fake_ctx: ToolContext) -> None:
+    from tapps_brain.mcp_server.tools_documents import register_document_tools
+
+    with patch("tapps_brain.mcp_server.tools_documents.document_service") as svc:
+        svc.document_put.return_value = {"status": "stored", "doc_id": "abc"}
+        svc.document_get.return_value = {"document": {"doc_id": "abc"}}
+        svc.document_search.return_value = {"results": [], "count": 0}
+        svc.document_list.return_value = {"documents": [], "count": 0}
+        svc.document_delete.return_value = {"status": "deleted", "doc_id": "abc"}
+        register_document_tools(mcp, fake_ctx)
+        by_name = {t.name: t for t in mcp._tool_manager.list_tools()}
+        assert json.loads(by_name["document_put"].fn(title="t", content="hello"))["status"] == (
+            "stored"
+        )
+        assert json.loads(by_name["document_get"].fn(doc_id="abc"))["document"]["doc_id"] == "abc"
+        assert json.loads(by_name["document_search"].fn(query="q"))["count"] == 0
+        assert json.loads(by_name["document_list"].fn())["count"] == 0
+        assert json.loads(by_name["document_delete"].fn(doc_id="abc"))["status"] == "deleted"
+
+
+# ---------------------------------------------------------------------------
 # register_hive_tools
 # ---------------------------------------------------------------------------
 

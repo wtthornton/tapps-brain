@@ -182,6 +182,16 @@ _KG_MAX_BODY_BYTES: int = 65_536
 _EXPERIENCE_MAX_BODY_BYTES: int = 262_144
 _EXPERIENCE_BATCH_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB total for batch.
 _EXPERIENCE_BATCH_MAX_ITEMS: int = 100
+# PUT /v1/documents (TAP-5003): documents.max_doc_bytes defaults to 2 MiB of
+# raw content; base64 transport inflates by 4/3, plus JSON envelope headroom.
+_DOCUMENTS_MAX_BODY_BYTES: int = 3_145_728  # 3 MiB
+
+# Service error code → HTTP status for /v1/documents routes.
+_DOCUMENT_ERROR_STATUS: dict[str, int] = {
+    "document_too_large": 413,
+    "not_found": 404,
+    "documents_unavailable": 503,
+}
 
 # ---------------------------------------------------------------------------
 # OpenAPI spec — generated from FastAPI's route table and enriched with
@@ -248,7 +258,9 @@ def _validate_uuid_field(value: Any, field_name: str) -> str:
         ) from None
 
 
-async def _parse_json_object_body(request: Request) -> dict[str, Any]:
+async def _parse_json_object_body(
+    request: Request, *, max_bytes: int = 65_536
+) -> dict[str, Any]:
     """Parse a JSON object request body with standard size and shape guards."""
     try:
         raw = await request.body()
@@ -262,10 +274,10 @@ async def _parse_json_object_body(request: Request) -> dict[str, Any]:
             status_code=400,
             detail={"error": "bad_request", "detail": "Empty request body."},
         )
-    if len(raw) > 65_536:
+    if len(raw) > max_bytes:
         raise HTTPException(
             status_code=413,
-            detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+            detail={"error": "payload_too_large", "detail": f"Max {max_bytes} bytes."},
         )
     try:
         body = json.loads(raw.decode("utf-8"))
@@ -2918,6 +2930,162 @@ def create_app(
         if isinstance(result, dict) and result.get("error"):
             raise HTTPException(status_code=400, detail=result)
         return JSONResponse(status_code=200, content=result)
+
+    # ------------------------------------------------------------------
+    # Document plane routes (TAP-4998 / TAP-5003)
+    # ------------------------------------------------------------------
+
+    def _require_project_id(request: Request) -> str:
+        project_id = (request.headers.get("x-project-id") or "").strip()
+        if not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            )
+        return project_id
+
+    def _document_response(result: dict[str, Any]) -> JSONResponse:
+        error = result.get("error") if isinstance(result, dict) else None
+        if error is not None:
+            return JSONResponse(
+                status_code=_DOCUMENT_ERROR_STATUS.get(str(error), 400),
+                content=result,
+            )
+        return JSONResponse(status_code=200, content=result)
+
+    @app.put("/v1/documents", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_documents_put(request: Request) -> JSONResponse:
+        """Store a document durably with optional deterministic chunk + embed indexing.
+
+        Request headers:
+          - ``X-Project-Id`` (required): project identifier.
+          - ``X-Agent-Id`` (optional): agent identifier (recorded as writer).
+
+        Request body (JSON):
+          ``{ "title": str, "content"?: str, "content_base64"?: str,
+              "content_type"?: str, "tags"?: [str], "index"?: bool = true,
+              "retention"?: "project" | "days:<n>" }``
+
+        Content above ``documents.max_doc_bytes`` (default 2 MiB) is rejected
+        with 413 ``document_too_large``.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request, max_bytes=_DOCUMENTS_MAX_BODY_BYTES)
+
+        tags = body.get("tags")
+        if tags is not None and not (
+            isinstance(tags, list) and all(isinstance(t, str) for t in tags)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "tags must be a list of strings."},
+            )
+
+        from tapps_brain.services import document_service as _docs_svc
+
+        result = await asyncio.to_thread(
+            _docs_svc.document_put,
+            store,
+            project_id,
+            agent_id,
+            title=str(body.get("title") or ""),
+            content=str(body.get("content") or ""),
+            content_base64=str(body.get("content_base64") or ""),
+            content_type=str(body.get("content_type") or "text/plain"),
+            tags=tags,
+            index=bool(body.get("index", True)),
+            retention=str(body.get("retention") or "project"),
+        )
+        return _document_response(result)
+
+    @app.get("/v1/documents", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_documents_list(
+        request: Request,
+        tag: str = Query("", description="Only documents carrying this tag."),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> JSONResponse:
+        """List document metadata for the project (newest first)."""
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+
+        from tapps_brain.services import document_service as _docs_svc
+
+        result = await asyncio.to_thread(
+            _docs_svc.document_list,
+            store,
+            project_id,
+            agent_id,
+            tag=tag,
+            limit=limit,
+        )
+        return _document_response(result)
+
+    @app.post("/v1/documents:search", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_documents_search(request: Request) -> JSONResponse:
+        """Hybrid tsvector + pgvector search over document chunks, RRF-fused.
+
+        Request body (JSON): ``{ "query": str, "limit"?: int = 10 }``
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import document_service as _docs_svc
+
+        result = await asyncio.to_thread(
+            _docs_svc.document_search,
+            store,
+            project_id,
+            agent_id,
+            query=str(body.get("query") or ""),
+            limit=_coerce_int(body, "limit", 10),
+        )
+        return _document_response(result)
+
+    @app.get("/v1/documents/{doc_id}", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_documents_get(
+        request: Request,
+        doc_id: str,
+        meta_only: int = Query(0, description="1 to omit content from the response."),
+    ) -> JSONResponse:
+        """Fetch one document's metadata and (unless ``meta_only=1``) its content."""
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+
+        from tapps_brain.services import document_service as _docs_svc
+
+        result = await asyncio.to_thread(
+            _docs_svc.document_get,
+            store,
+            project_id,
+            agent_id,
+            doc_id=doc_id,
+            meta_only=bool(meta_only),
+        )
+        return _document_response(result)
+
+    @app.delete("/v1/documents/{doc_id}", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_documents_delete(request: Request, doc_id: str) -> JSONResponse:
+        """Delete a document; its chunks cascade."""
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+
+        from tapps_brain.services import document_service as _docs_svc
+
+        result = await asyncio.to_thread(
+            _docs_svc.document_delete,
+            store,
+            project_id,
+            agent_id,
+            doc_id=doc_id,
+        )
+        return _document_response(result)
 
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:

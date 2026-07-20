@@ -5,8 +5,8 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-06):
-#   full        (69 tools, all eager) — default fallback; full tools/list surface
-#   operator    (82 tools, all eager) — full + operator-only maintenance tools
+#   full        (74 tools, all eager) — default fallback; full tools/list surface
+#   operator    (87 tools, all eager) — full + operator-only maintenance tools
 #   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
@@ -48,6 +48,11 @@ profiles:
       - diagnostics_report
       - docs_lookup
       - docs_warm
+      - document_delete
+      - document_get
+      - document_list
+      - document_put
+      - document_search
       - feedback_gap
       - feedback_issue
       - feedback_query
@@ -123,6 +128,11 @@ profiles:
       - diagnostics_report
       - docs_lookup
       - docs_warm
+      - document_delete
+      - document_get
+      - document_list
+      - document_put
+      - document_search
       - feedback_gap
       - feedback_issue
       - feedback_query

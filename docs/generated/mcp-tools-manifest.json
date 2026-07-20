@@ -1,6 +1,19 @@
 {
-  "source": "src/tapps_brain/mcp_server.py",
-  "tool_count": 65,
+  "source": "src/tapps_brain/mcp_server/tools_*.py",
+  "sources": [
+    "src/tapps_brain/mcp_server/tools_agents.py",
+    "src/tapps_brain/mcp_server/tools_brain.py",
+    "src/tapps_brain/mcp_server/tools_docs.py",
+    "src/tapps_brain/mcp_server/tools_documents.py",
+    "src/tapps_brain/mcp_server/tools_feedback.py",
+    "src/tapps_brain/mcp_server/tools_hive.py",
+    "src/tapps_brain/mcp_server/tools_kg.py",
+    "src/tapps_brain/mcp_server/tools_maintenance.py",
+    "src/tapps_brain/mcp_server/tools_memory.py",
+    "src/tapps_brain/mcp_server/tools_profile.py",
+    "src/tapps_brain/mcp_server/tools_resources.py"
+  ],
+  "tool_count": 87,
   "resource_count": 8,
   "core_tool_count": 19,
   "core_tools": [
@@ -42,8 +55,24 @@
       "description": "Register an agent in the Hive."
     },
     {
+      "name": "brain_audit_consumers",
+      "description": "Surface declared-but-silent agents for a project (TAP-2093)."
+    },
+    {
+      "name": "brain_explain_connection",
+      "description": "Find the shortest path between two KG entities."
+    },
+    {
+      "name": "brain_export",
+      "description": "Snapshot top-N memories per tier into a Managed Agents folder (TAP-2099)."
+    },
+    {
       "name": "brain_forget",
-      "description": "Archive a memory by key. The memory is not permanently deleted."
+      "description": "Archive a memory by key (to gc_archive); not permanently deleted."
+    },
+    {
+      "name": "brain_get_neighbors",
+      "description": "Return the neighbourhood graph around one or more KG entities."
     },
     {
       "name": "brain_learn_failure",
@@ -54,12 +83,40 @@
       "description": "Record a successful task outcome."
     },
     {
+      "name": "brain_profile_get",
+      "description": "Read profile-scoped learned data for the current project."
+    },
+    {
+      "name": "brain_profile_set",
+      "description": "Store profile-scoped learned data for the current project."
+    },
+    {
+      "name": "brain_query_events",
+      "description": "Query stored experience events with full payload round-trip."
+    },
+    {
       "name": "brain_recall",
       "description": "Recall memories matching a query."
     },
     {
+      "name": "brain_record_event",
+      "description": "Record an experience event with optional KG side-effects."
+    },
+    {
+      "name": "brain_record_events_batch",
+      "description": "Record many experience events in one MCP round-trip (TAP-1973)."
+    },
+    {
+      "name": "brain_record_feedback",
+      "description": "Record feedback for a KG edge or a private memory entry."
+    },
+    {
       "name": "brain_remember",
       "description": "Save a memory to the agent's brain."
+    },
+    {
+      "name": "brain_resolve_entity",
+      "description": "Resolve an entity name to its UUID, creating the entity if absent."
     },
     {
       "name": "brain_status",
@@ -72,6 +129,34 @@
     {
       "name": "diagnostics_report",
       "description": "Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."
+    },
+    {
+      "name": "docs_lookup",
+      "description": "Fetch library documentation from the brain-central doc cache."
+    },
+    {
+      "name": "docs_warm",
+      "description": "Batch pre-fetch library docs into the brain-central cache."
+    },
+    {
+      "name": "document_delete",
+      "description": "Delete a stored document and its chunks."
+    },
+    {
+      "name": "document_get",
+      "description": "Fetch a stored document's metadata and content by doc_id."
+    },
+    {
+      "name": "document_list",
+      "description": "List stored documents (metadata only), optionally filtered by tag."
+    },
+    {
+      "name": "document_put",
+      "description": "Store a document durably (text or base64 bytes) with optional hybrid indexing."
+    },
+    {
+      "name": "document_search",
+      "description": "Hybrid search (tsvector + pgvector, RRF-fused) over indexed document chunks."
     },
     {
       "name": "feedback_gap",
@@ -231,11 +316,19 @@
     },
     {
       "name": "memory_recall",
-      "description": "Run auto-recall for a message and return ranked memories."
+      "description": "Run auto-recall for a query and return ranked memories."
+    },
+    {
+      "name": "memory_recall_many",
+      "description": "Run recall against multiple queries in a single call."
     },
     {
       "name": "memory_reinforce",
       "description": "Reinforce a memory entry, boosting its confidence and resetting decay."
+    },
+    {
+      "name": "memory_reinforce_many",
+      "description": "Reinforce multiple memory entries in a single call."
     },
     {
       "name": "memory_relations",
@@ -248,6 +341,10 @@
     {
       "name": "memory_save",
       "description": "Save or update a memory entry."
+    },
+    {
+      "name": "memory_save_many",
+      "description": "Save multiple memory entries in a single call."
     },
     {
       "name": "memory_search",
@@ -272,6 +369,10 @@
     {
       "name": "profile_switch",
       "description": "Switch to a different built-in memory profile."
+    },
+    {
+      "name": "recall_quality_metrics",
+      "description": "Aggregate recall-quality samples over the last *window_seconds* (TAP-2094)."
     },
     {
       "name": "tapps_brain_health",

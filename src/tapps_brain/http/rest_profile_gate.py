@@ -52,6 +52,10 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/kg/feedback": "brain_record_feedback",
     "/v1/kg/resolve_entity": "brain_resolve_entity",  # TAP-2725
     "/v1/kg/resolve_entities": "brain_resolve_entity",  # TAP-3249 — same tool, batch
+    # Document plane (TAP-4998 / TAP-5003)
+    "/v1/documents": "document_put",  # PUT; GET list via equiv below
+    "/v1/documents:search": "document_search",
+    "/v1/documents/{doc_id}": "document_get",  # GET; DELETE via equiv below
 }
 
 # Routes whose REST handler is shape-compatible with more than one MCP tool.
@@ -61,6 +65,10 @@ REST_ROUTE_EQUIVALENT_TOOLS: dict[str, frozenset[str]] = {
     "/v1/remember": frozenset({"brain_remember", "memory_save"}),
     # coder exposes brain_record_events_batch; agent_brain exposes brain_record_event.
     "/v1/experience:batch": frozenset({"brain_record_event", "brain_record_events_batch"}),
+    # GET /v1/documents lists; PUT stores — both authorized by either tool.
+    "/v1/documents": frozenset({"document_put", "document_list"}),
+    # GET fetches; DELETE removes — both authorized by either tool.
+    "/v1/documents/{doc_id}": frozenset({"document_get", "document_delete"}),
 }
 
 # Paths that bypass profile gating entirely.  Mirrors the
@@ -79,6 +87,20 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
 )
 
 
+def _canonical_route_path(path: str) -> str:
+    """Map a concrete request path onto its :data:`REST_ROUTE_TO_TOOL` key.
+
+    Most routes are exact matches.  Document get/delete use a path parameter
+    (``/v1/documents/{doc_id}``); any non-colon segment after ``/v1/documents/``
+    collapses to that template key.
+    """
+    if path in REST_ROUTE_TO_TOOL:
+        return path
+    if path.startswith("/v1/documents/") and ":" not in path:
+        return "/v1/documents/{doc_id}"
+    return path
+
+
 def resolve_tool_for_path(path: str) -> str | None:
     """Return the primary tool name a REST path maps to, or ``None``.
 
@@ -88,15 +110,16 @@ def resolve_tool_for_path(path: str) -> str | None:
     not gated by this middleware.  See :func:`tools_for_path` when a route
     accepts more than one equivalent tool.
     """
-    return REST_ROUTE_TO_TOOL.get(path)
+    return REST_ROUTE_TO_TOOL.get(_canonical_route_path(path))
 
 
 def tools_for_path(path: str) -> frozenset[str] | None:
     """Return the set of MCP tools that authorize *path*, or ``None`` if unmapped."""
-    primary = REST_ROUTE_TO_TOOL.get(path)
+    canonical = _canonical_route_path(path)
+    primary = REST_ROUTE_TO_TOOL.get(canonical)
     if primary is None:
         return None
-    return REST_ROUTE_EQUIVALENT_TOOLS.get(path, frozenset({primary}))
+    return REST_ROUTE_EQUIVALENT_TOOLS.get(canonical, frozenset({primary}))
 
 
 def validate_rest_route_map(known_tools: frozenset[str]) -> None:

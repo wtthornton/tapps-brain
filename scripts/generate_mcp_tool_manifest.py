@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit a JSON manifest of MCP tools + resources from ``mcp_server.py``.
+"""Emit a JSON manifest of MCP tools + resources from ``mcp_server/``.
 
 Run from repo root:
 
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MCP_PATH = PROJECT_ROOT / "src" / "tapps_brain" / "mcp_server.py"
+MCP_DIR = PROJECT_ROOT / "src" / "tapps_brain" / "mcp_server"
 OUT_PATH = PROJECT_ROOT / "docs" / "generated" / "mcp-tools-manifest.json"
 
 # ---------------------------------------------------------------------------
@@ -91,59 +91,56 @@ def _resource_uri_from_decorator(dec: ast.expr) -> str | None:
     return None
 
 
-def _find_create_server(tree: ast.Module) -> ast.FunctionDef | None:
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "create_server":
-            return node
-    return None
+def _first_doc_line(node: ast.FunctionDef) -> str:
+    doc = ast.get_docstring(node) or ""
+    return (doc.strip().split("\n") or [""])[0].strip()
 
 
-def _iter_mcp_tools(create_fn: ast.FunctionDef) -> list[tuple[str, str]]:
-    out: list[tuple[str, str]] = []
-    for node in ast.walk(create_fn):
+def _collect_from_file(path: Path) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Return ``(tools, resources)`` from one ``tools_*.py`` module."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tools: list[tuple[str, str]] = []
+    resources: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
             continue
         if any(_is_mcp_tool_decorator(d) for d in node.decorator_list):
-            doc = ast.get_docstring(node) or ""
-            first = (doc.strip().split("\n") or [""])[0].strip()
-            out.append((node.name, first))
-    return sorted(out, key=lambda x: x[0])
-
-
-def _iter_mcp_resources(create_fn: ast.FunctionDef) -> list[tuple[str, str]]:
-    out: list[tuple[str, str]] = []
-    for node in ast.walk(create_fn):
-        if not isinstance(node, ast.FunctionDef):
+            tools.append((node.name, _first_doc_line(node)))
             continue
         for dec in node.decorator_list:
             if _is_mcp_resource_decorator(dec):
                 uri = _resource_uri_from_decorator(dec)
                 if uri:
-                    doc = ast.get_docstring(node) or ""
-                    first = (doc.strip().split("\n") or [""])[0].strip()
-                    out.append((uri, first))
+                    resources.append((uri, _first_doc_line(node)))
                 break
-    return sorted(out, key=lambda x: x[0])
+    return tools, resources
 
 
 def main() -> int:
-    if not MCP_PATH.is_file():
-        print(f"missing {MCP_PATH}", file=sys.stderr)
+    if not MCP_DIR.is_dir():
+        print(f"missing {MCP_DIR}", file=sys.stderr)
         return 1
-    tree = ast.parse(MCP_PATH.read_text(encoding="utf-8"))
-    cs = _find_create_server(tree)
-    if cs is None:
-        print("create_server not found in mcp_server.py", file=sys.stderr)
-        return 1
-    tools = [{"name": n, "description": d} for n, d in _iter_mcp_tools(cs)]
-    resources = [{"uri": u, "description": d} for u, d in _iter_mcp_resources(cs)]
 
-    # Validate core tool names are present in the full tool list
-    all_tool_names = {t["name"] for t in tools}
+    tool_map: dict[str, str] = {}
+    resource_map: dict[str, str] = {}
+    sources: list[str] = []
+    for path in sorted(MCP_DIR.glob("tools_*.py")):
+        tools, resources = _collect_from_file(path)
+        if tools or resources:
+            sources.append(str(path.relative_to(PROJECT_ROOT)))
+        for name, desc in tools:
+            tool_map[name] = desc
+        for uri, desc in resources:
+            resource_map[uri] = desc
+
+    tools_out = [{"name": n, "description": tool_map[n]} for n in sorted(tool_map)]
+    resources_out = [{"uri": u, "description": resource_map[u]} for u in sorted(resource_map)]
+
+    all_tool_names = set(tool_map)
     missing_core = CORE_TOOL_NAMES - all_tool_names
     if missing_core:
         print(
-            f"WARNING: CORE_TOOL_NAMES contains names not found in mcp_server.py: "
+            f"WARNING: CORE_TOOL_NAMES contains names not found in mcp_server/: "
             f"{sorted(missing_core)}",
             file=sys.stderr,
         )
@@ -152,17 +149,18 @@ def main() -> int:
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "source": "src/tapps_brain/mcp_server.py",
-        "tool_count": len(tools),
-        "resource_count": len(resources),
+        "source": "src/tapps_brain/mcp_server/tools_*.py",
+        "sources": sources,
+        "tool_count": len(tools_out),
+        "resource_count": len(resources_out),
         "core_tool_count": len(core_tools),
         "core_tools": core_tools,
-        "tools": tools,
-        "resources": resources,
+        "tools": tools_out,
+        "resources": resources_out,
     }
     OUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
-        f"Wrote {OUT_PATH} ({len(tools)} tools, {len(resources)} resources, "
+        f"Wrote {OUT_PATH} ({len(tools_out)} tools, {len(resources_out)} resources, "
         f"{len(core_tools)} core tools)"
     )
     return 0

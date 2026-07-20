@@ -98,6 +98,14 @@ class GCResult(BaseModel):
         ge=0,
         description="Session index rows pruned by TTL this run (live runs only).",
     )
+    documents_expired: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Documents removed because expires_at passed (document plane "
+            "retention sweep, TAP-5005; live runs only)."
+        ),
+    )
     demoted_count: int = Field(
         default=0,
         ge=0,
