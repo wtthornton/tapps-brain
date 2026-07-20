@@ -182,7 +182,9 @@ ${COMPOSE} up -d --build
 echo ""
 echo "==> Waiting for health probes…"
 
-wait_for_url "http://localhost:${ADAPTER_PORT}/health" "tapps-brain-http /health" || {
+# /health is a shallow liveness probe (always 200 once the process answers).
+# Wait on /healthz so smoke does not race a still-warming DB/MCP stack.
+wait_for_url "http://localhost:${ADAPTER_PORT}/healthz" "tapps-brain-http /healthz" || {
     echo ""
     echo "ERROR: tapps-brain-http did not become healthy. Container logs:"
     ${COMPOSE} logs tapps-brain-http | tail -40

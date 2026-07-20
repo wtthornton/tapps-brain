@@ -378,6 +378,40 @@ class FeedbackStore:
                 raise
         return results
 
+    def count(
+        self,
+        *,
+        event_type: str | None = None,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        """Return the number of feedback events matching the filters (no LIMIT)."""
+        conditions: list[str] = ["project_id = %s", "agent_id = %s"]
+        params: list[Any] = [self._project_id, self._agent_id]
+        if event_type is not None:
+            conditions.append("event_type = %s")
+            params.append(event_type)
+        if entry_key is not None:
+            conditions.append("entry_key = %s")
+            params.append(entry_key)
+        if session_id is not None:
+            conditions.append("session_id = %s")
+            params.append(session_id)
+        if since is not None:
+            conditions.append("timestamp >= %s")
+            params.append(since)
+        if until is not None:
+            conditions.append("timestamp <= %s")
+            params.append(until)
+        where = " AND ".join(conditions)
+        sql = f"SELECT COUNT(*) FROM feedback_events WHERE {where}"  # nosec B608
+        with self._lock, self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
     def close(self) -> None:
         """No-op: the connection manager is owned by the caller."""
 
@@ -479,6 +513,27 @@ class InMemoryFeedbackStore:
         # Match FeedbackStore: ORDER BY timestamp ASC before applying LIMIT.
         results.sort(key=lambda e: _timestamp_sort_key(e.timestamp))
         return results[:limit]
+
+    def count(
+        self,
+        *,
+        event_type: str | None = None,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        """Return the number of feedback events matching the filters (no LIMIT)."""
+        return len(
+            self.query(
+                event_type=event_type,
+                entry_key=entry_key,
+                session_id=session_id,
+                since=since,
+                until=until,
+                limit=2**31 - 1,
+            )
+        )
 
     def close(self) -> None:
         """No-op."""

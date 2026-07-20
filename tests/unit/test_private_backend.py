@@ -757,3 +757,35 @@ class TestResolveHnswEfSearch:
         monkeypatch.setenv("TAPPS_BRAIN_HNSW_EF_SEARCH", "-10")
         with pytest.raises(ValueError, match=">= 1"):
             _resolve_hnsw_ef_search()
+
+
+class TestBuildKnnSearchSqlAsOf:
+    """Point-in-time KNN SQL must mirror FTS bi-temporal filtering."""
+
+    def test_default_includes_live_row_predicate(self) -> None:
+        from tapps_brain import _postgres_private_sql as _sql
+
+        sql, mid = _sql.build_knn_search_sql()
+        assert "superseded_by IS NULL" in sql
+        assert "invalid_at" in sql
+        assert mid == []
+
+    def test_as_of_stands_down_live_row_and_binds_window(self) -> None:
+        from tapps_brain import _postgres_private_sql as _sql
+
+        as_of = "2026-01-01T00:00:00+00:00"
+        sql, mid = _sql.build_knn_search_sql(as_of=as_of)
+        assert "valid_at" in sql
+        assert "valid_from" in sql
+        assert "valid_until" in sql
+        assert "superseded_by IS NULL" not in sql
+        assert mid == [as_of, as_of, as_of, as_of]
+
+    def test_knn_search_passes_as_of_params(self) -> None:
+        backend, cur = _make_backend(rows=[("k1", 0.1)])
+        as_of = "2026-06-01T12:00:00+00:00"
+        backend.knn_search([0.1], k=3, as_of=as_of)
+        knn_call = cur.execute.call_args_list[2]
+        params = knn_call.args[1]
+        assert params[-5:-1] == (as_of, as_of, as_of, as_of)
+        assert params[-1] == 3

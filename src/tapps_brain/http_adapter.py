@@ -54,13 +54,13 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from pydantic import ValidationError
 
 try:
-    from fastapi import Depends, FastAPI, HTTPException, Request, Response
+    from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
     from fastapi.responses import JSONResponse, PlainTextResponse
 except ImportError as exc:  # pragma: no cover — http extra not installed
     raise ImportError(
@@ -122,6 +122,7 @@ from tapps_brain.http.middleware import (
     RestProfileGateMiddleware,
     _mcp_auth_error_body,
     _peek_mcp_tool_name,
+    _resolve_tenant_headers,
 )
 
 # probe cache
@@ -1123,35 +1124,52 @@ def create_app(
     # call — and therefore each TestClient context — starts with an empty
     # table, preventing state leakage across test cases.
     # ------------------------------------------------------------------
-    _idem_guards: dict[str, asyncio.Lock] = {}
+    # Each entry is ``[lock, refcount]``.  The refcount tracks every request
+    # registered on the guard (holder + waiters).  ``asyncio.Lock.release()``
+    # clears ``locked()`` synchronously while waiters only resume on a later
+    # event-loop iteration, so a ``locked()`` check at release time always saw
+    # ``False`` and dropped the entry while duplicates were still queued on it
+    # — a third duplicate then minted a fresh lock and ran concurrently,
+    # re-opening the TAP-629 window.  Refcounting closes that hole.
+    _idem_guards: dict[str, list[Any]] = {}
 
     def _idem_guard_key(pid: str, ikey: str) -> str:
         return f"{pid}\x00{ikey}"
 
-    def _ensure_idem_guard(pid: str, ikey: str) -> asyncio.Lock:
-        """Return (creating if absent) the asyncio.Lock for ``(pid, ikey)``.
+    async def _acquire_idem_guard(pid: str, ikey: str) -> asyncio.Lock:
+        """Register on and acquire the guard lock for ``(pid, ikey)``.
 
-        Uses ``dict.setdefault`` so the check-and-insert is a single atomic
-        dict operation on CPython, avoiding the two-step check-then-assign
-        race if this function is ever called from an executor thread or if a
-        future refactor introduces a yield point between the two lines.
+        The refcount is incremented *before* awaiting the lock so that the
+        holder's release path cannot drop the entry while this coroutine is
+        still queued on it.
         """
         gk = _idem_guard_key(pid, ikey)
-        return _idem_guards.setdefault(gk, asyncio.Lock())
+        entry = _idem_guards.setdefault(gk, [asyncio.Lock(), 0])
+        entry[1] += 1
+        try:
+            await entry[0].acquire()
+        except BaseException:
+            entry[1] -= 1
+            if entry[1] <= 0:
+                _idem_guards.pop(gk, None)
+            raise
+        return cast("asyncio.Lock", entry[0])
 
-    def _drop_idem_guard(pid: str, ikey: str) -> None:
-        """Remove the guard for ``(pid, ikey)`` when no coroutine is waiting."""
+    def _release_idem_guard(pid: str, ikey: str) -> None:
+        """Release the guard lock and drop the entry once no request holds it."""
         gk = _idem_guard_key(pid, ikey)
-        lk = _idem_guards.get(gk)
-        if lk is not None and not lk.locked():
+        entry = _idem_guards.get(gk)
+        if entry is None:  # pragma: no cover - release always follows acquire
+            return
+        entry[0].release()
+        entry[1] -= 1
+        if entry[1] <= 0:
             _idem_guards.pop(gk, None)
 
     def _idempotency_check(
         istore: Any, project_id: str, ikey: str
     ) -> tuple[int, dict[str, Any]] | None:
         """Run idempotency check (raises IdempotencyUnavailableError on failure)."""
-        from typing import cast
-
         return cast(
             "tuple[int, dict[str, Any]] | None",
             istore.check(project_id, ikey),
@@ -1238,7 +1256,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard BEFORE the cache check so that
@@ -1249,8 +1268,7 @@ def create_app(
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             # Cache check — inside the guard so we observe the result
@@ -1384,10 +1402,8 @@ def create_app(
         finally:
             # Release the per-key guard so any waiting duplicates can wake
             # up, re-check the cache, and return the stored response.
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/reinforce", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_reinforce(request: Request) -> JSONResponse:
@@ -1410,15 +1426,15 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard before cache check (see _v1_remember).
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             # Cache check inside the guard.
@@ -1509,7 +1525,8 @@ def create_app(
                     confidence_boost=_coerce_float(body, "confidence_boost", 0.0),
                 )
             if isinstance(result, dict) and "error" in result:
-                status_code = 400
+                # Taxonomy: not_found → 404; other service errors stay 400.
+                status_code = 404 if result.get("error") == "not_found" else 400
             else:
                 status_code = 200
 
@@ -1530,10 +1547,8 @@ def create_app(
             return JSONResponse(status_code=status_code, content=result)
 
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     # -------- bulk data-plane routes (STORY-070.6) --------
 
@@ -1558,7 +1573,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -1568,8 +1584,7 @@ def create_app(
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -1650,10 +1665,8 @@ def create_app(
                     ) from exc
             return JSONResponse(status_code=status_code, content=result)
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/recall:batch", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_recall_batch(request: Request) -> JSONResponse:
@@ -1675,7 +1688,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -1746,7 +1760,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -1756,8 +1771,7 @@ def create_app(
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -1846,10 +1860,8 @@ def create_app(
                     ) from exc
             return JSONResponse(status_code=status_code, content=result)
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     # -------- agent-brain data-plane routes (TAP-993; AgentForge HTTP-only) --------
 
@@ -1877,7 +1889,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -1923,6 +1936,23 @@ def create_app(
 
         from tapps_brain.services import memory_service as _ms
 
+        filter_tags = body.get("filter_tags")
+        filter_tags_any = body.get("filter_tags_any")
+        for field_name, tags_val in (
+            ("filter_tags", filter_tags),
+            ("filter_tags_any", filter_tags_any),
+        ):
+            if tags_val is None:
+                continue
+            if not isinstance(tags_val, list) or not all(isinstance(t, str) for t in tags_val):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "bad_request",
+                        "detail": f"{field_name} must be a JSON array of strings.",
+                    },
+                )
+
         # TAP-1099: offload sync recall (BM25 + vector + decay + Hive merge) to
         # a worker thread so the FastAPI event loop keeps serving concurrent
         # requests instead of blocking on a single in-flight DB round-trip.
@@ -1935,8 +1965,8 @@ def create_app(
             max_results=max_results,
             include_stale=bool(body.get("include_stale", False)),
             filter_tier=body.get("filter_tier"),
-            filter_tags=body.get("filter_tags"),
-            filter_tags_any=body.get("filter_tags_any"),
+            filter_tags=filter_tags,
+            filter_tags_any=filter_tags_any,
             filter_memory_class=body.get("filter_memory_class"),
         )
         return JSONResponse(status_code=200, content={"results": results, "query": query})
@@ -1946,7 +1976,8 @@ def create_app(
         """Archive a memory by key.
 
         REST counterpart of the ``brain_forget`` MCP tool. The entry is
-        archived (status flip), not permanently deleted.
+        archived to the ``gc_archive`` table and removed from the active
+        store — not permanently deleted.
 
         Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
         A duplicate key within 24 h replays the original response.
@@ -1966,14 +1997,14 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -2070,10 +2101,8 @@ def create_app(
             return JSONResponse(status_code=status_code, content=result)
 
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/learn_success", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_learn_success(request: Request) -> JSONResponse:
@@ -2098,14 +2127,14 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -2164,11 +2193,17 @@ def create_app(
                     },
                 )
 
-            task_description = (body.get("task_description") or "").strip()
+            # Accept MCP-style ``description`` or REST ``task_description``.
+            task_description = (
+                body.get("description") or body.get("task_description") or ""
+            ).strip()
             if not task_description:
                 raise HTTPException(
                     status_code=400,
-                    detail={"error": "bad_request", "detail": "task_description is required."},
+                    detail={
+                        "error": "bad_request",
+                        "detail": "description or task_description is required.",
+                    },
                 )
 
             from tapps_brain.services import memory_service as _ms
@@ -2192,7 +2227,7 @@ def create_app(
                     task_description=task_description,
                     task_id=str(body.get("task_id") or ""),
                 )
-            status_code = 200
+            status_code = 400 if isinstance(result, dict) and "error" in result else 200
 
             if ikey and istore is not None:
                 from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -2211,10 +2246,8 @@ def create_app(
             return JSONResponse(status_code=status_code, content=result)
 
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/learn_failure", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_learn_failure(request: Request) -> JSONResponse:
@@ -2240,14 +2273,14 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -2336,7 +2369,7 @@ def create_app(
                     task_id=str(body.get("task_id") or ""),
                     error=str(body.get("error") or ""),
                 )
-            status_code = 200
+            status_code = 400 if isinstance(result, dict) and "error" in result else 200
 
             if ikey and istore is not None:
                 from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -2355,10 +2388,8 @@ def create_app(
             return JSONResponse(status_code=status_code, content=result)
 
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     # -------- KG + experience routes (EPIC-076 STORY-076.5) --------
 
@@ -2413,7 +2444,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
@@ -2422,8 +2454,7 @@ def create_app(
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -2492,25 +2523,50 @@ def create_app(
             cm = _get_kg_cm_or_503()
             from tapps_brain.services import kg_service as _kg_svc
 
-            result = await asyncio.to_thread(
-                _kg_svc.record_event,
-                cm,
-                project_id,
-                _kg_brain_id(),
-                agent_id,
-                event_type=event_type,
-                subject_key=body.get("subject_key") or None,
-                utility_score=_coerce_float(body, "utility_score", 0.0),
-                payload=body.get("payload") or {},
-                entities=list(body.get("entities") or []),
-                edges=list(body.get("edges") or []),
-                evidence=list(body.get("evidence") or []),
-                memory_key=body.get("memory_key") or None,
-                memory_value=body.get("memory_value") or None,
-                memory_tier=str(body.get("memory_tier") or "pattern"),
-                session_id=body.get("session_id") or None,
-                workflow_run_id=body.get("workflow_run_id") or None,
-            )
+            if "payload" not in body or body.get("payload") is None:
+                payload: dict[str, Any] = {}
+            else:
+                payload_raw = body.get("payload")
+                if not isinstance(payload_raw, dict):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "bad_request",
+                            "detail": "payload must be a JSON object.",
+                        },
+                    )
+                payload = payload_raw
+
+            try:
+                result = await asyncio.to_thread(
+                    _kg_svc.record_event,
+                    cm,
+                    project_id,
+                    _kg_brain_id(),
+                    agent_id,
+                    event_type=event_type,
+                    subject_key=body.get("subject_key") or None,
+                    utility_score=_coerce_float(body, "utility_score", 0.0),
+                    payload=payload,
+                    entities=list(body.get("entities") or []),
+                    edges=list(body.get("edges") or []),
+                    evidence=list(body.get("evidence") or []),
+                    memory_key=body.get("memory_key") or None,
+                    memory_value=body.get("memory_value") or None,
+                    memory_tier=str(body.get("memory_tier") or "pattern"),
+                    session_id=body.get("session_id") or None,
+                    workflow_run_id=body.get("workflow_run_id") or None,
+                )
+            except Exception as exc:
+                # Pydantic ValidationError (and similar) → 400, not ASGI 500.
+                from pydantic import ValidationError as _PydanticValidationError
+
+                if isinstance(exc, _PydanticValidationError):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"error": "bad_request", "detail": str(exc)},
+                    ) from exc
+                raise
             # Hydrate tenant MemoryStore cache after out-of-band private_memories write.
             mem_key = result.get("memory_key") if isinstance(result, dict) else None
             if mem_key:
@@ -2538,10 +2594,8 @@ def create_app(
             # /v1/learn_*, /v1/reinforce and the documented OpenAPI contract).
             return JSONResponse(status_code=200, content=result)
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/experience:batch", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_experience_batch(request: Request) -> JSONResponse:
@@ -2574,7 +2628,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
@@ -2583,8 +2638,7 @@ def create_app(
         ikey, istore = _get_ikey_and_istore(request)
         guard: asyncio.Lock | None = None
         if ikey and istore is not None:
-            guard = _ensure_idem_guard(project_id, ikey)
-            await guard.acquire()
+            guard = await _acquire_idem_guard(project_id, ikey)
 
         try:
             if ikey and istore is not None:
@@ -2695,10 +2749,8 @@ def create_app(
             # /v1/experience endpoint and the documented OpenAPI contract).
             return JSONResponse(status_code=200, content=result)
         finally:
-            if guard is not None:
-                guard.release()
-                if ikey:
-                    _drop_idem_guard(project_id, ikey)
+            if guard is not None and ikey:
+                _release_idem_guard(project_id, ikey)
 
     @app.post("/v1/experience:query", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_experience_query(request: Request) -> JSONResponse:
@@ -2966,7 +3018,15 @@ def create_app(
         return JSONResponse(status_code=200, content=result)
 
     @app.get("/snapshot/graph", dependencies=[Depends(require_data_plane_auth)])
-    async def _snapshot_graph(request: Request) -> JSONResponse:
+    async def _snapshot_graph(
+        request: Request,
+        entity: str = Query(..., description="Focal entity UUID."),
+        project: str | None = Query(
+            None,
+            description="Tenant id (required unless X-Project-Id header is set).",
+        ),
+        limit: int = Query(40, ge=1, le=200, description="Max neighbours to return."),
+    ) -> JSONResponse:
         """Focus view of the knowledge graph around one entity (1-hop star).
 
         Powers the brain-visual KG panel: the focal entity plus its direct
@@ -2981,9 +3041,7 @@ def create_app(
         the same way; API clients may use the ``X-Project-Id`` header instead.
         Response: ``{root, nodes, edges, node_count, edge_count}``.
         """
-        project_id = (
-            request.query_params.get("project") or request.headers.get("x-project-id") or ""
-        ).strip()
+        project_id = (project or request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
                 status_code=400,
@@ -2992,11 +3050,7 @@ def create_app(
                     "detail": "project is required (query ?project= or X-Project-Id header).",
                 },
             )
-        entity_id = _validate_uuid_field(request.query_params.get("entity", ""), "entity")
-        try:
-            limit = max(1, min(int(request.query_params.get("limit", "40")), 200))
-        except (TypeError, ValueError):
-            limit = 40
+        entity_id = _validate_uuid_field(entity, "entity")
 
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
@@ -3019,7 +3073,13 @@ def create_app(
         )
 
     @app.get("/snapshot/graph/health", dependencies=[Depends(require_data_plane_auth)])
-    async def _snapshot_graph_health(request: Request) -> JSONResponse:
+    async def _snapshot_graph_health(
+        request: Request,
+        project: str | None = Query(
+            None,
+            description="Tenant id (required unless X-Project-Id header is set).",
+        ),
+    ) -> JSONResponse:
         """KG-graph health for a project: orphan entities, stale/superseded and
         contradicted edge ratios — the graph rot the memory-store scorecard
         (freshness/staleness/GC) does not cover.
@@ -3028,9 +3088,7 @@ def create_app(
         ``{entities_active, orphan_entities, orphan_ratio, edges_*, stale_ratio,
         contradicted_ratio, status, recommendations}``.
         """
-        project_id = (
-            request.query_params.get("project") or request.headers.get("x-project-id") or ""
-        ).strip()
+        project_id = (project or request.headers.get("x-project-id") or "").strip()
         if not project_id:
             raise HTTPException(
                 status_code=400,
@@ -3129,6 +3187,9 @@ def create_app(
             object_id=object_id,
             max_hops=max(1, min(_coerce_int(body, "max_hops", 3), ceiling)),
         )
+        if isinstance(result, dict) and result.get("error"):
+            status = 400 if result.get("error") == "bad_request" else 503
+            raise HTTPException(status_code=status, detail=result)
         return JSONResponse(status_code=200, content=result)
 
     @app.post("/v1/kg/feedback", dependencies=[Depends(require_data_plane_auth)])
@@ -3153,7 +3214,8 @@ def create_app(
                 status_code=400,
                 detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
             )
-        agent_id = (request.headers.get("x-agent-id") or "").strip() or "unknown"
+        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -3234,7 +3296,29 @@ def create_app(
         if isinstance(result, dict) and result.get("error") == "bad_request":
             raise HTTPException(status_code=400, detail=result)
 
-        return JSONResponse(status_code=200, content=result)
+        # Normalize to the MCP {recorded, edge_id, feedback_type, kg_update}
+        # shape and map missing edges to 404 (audit may still have been written).
+        kg_upd = result.get("kg_update") if isinstance(result, dict) else None
+        if isinstance(kg_upd, dict) and kg_upd.get("reason") == "edge_not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "not_found",
+                    "detail": f"KG edge not found: {edge_id}",
+                    "edge_id": edge_id,
+                },
+            )
+        content: dict[str, Any] = {
+            "recorded": True,
+            "edge_id": edge_id,
+            "feedback_type": feedback_type,
+        }
+        if isinstance(result, dict):
+            if "kg_update" in result:
+                content["kg_update"] = result["kg_update"]
+            if "event" in result:
+                content["event"] = result["event"]
+        return JSONResponse(status_code=200, content=content)
 
     @app.post("/v1/kg/resolve_entity", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_resolve_entity(request: Request) -> JSONResponse:

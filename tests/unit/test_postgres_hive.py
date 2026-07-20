@@ -125,6 +125,95 @@ class TestPostgresHiveBackendSave:
         assert result is None
 
 
+class TestPostgresHiveBackendSupersedeTip:
+    """Repeated supersede under a logical key must invalidate the live tip."""
+
+    def test_supersede_invalidates_tip_key_not_logical_tombstone(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+
+        tombstone = (
+            "universal",
+            "foo",
+            "v0",
+            "agent-1",
+            "pattern",
+            0.5,
+            "agent",
+            "[]",
+            "2025-01-01",
+            "2025-01-02",  # invalid_at set
+            "foo-v1",
+            None,
+            "supersede",
+            None,
+            "2025-01-01",
+            "2025-01-02",
+            None,
+        )
+        tip = (
+            "universal",
+            "foo-v1",
+            "v1",
+            "agent-1",
+            "pattern",
+            0.6,
+            "agent",
+            "[]",
+            "2025-01-02",
+            None,  # live
+            None,
+            None,
+            "supersede",
+            None,
+            "2025-01-02",
+            "2025-01-02",
+            None,
+        )
+        mock_cursor.description = [
+            ("namespace",),
+            ("key",),
+            ("value",),
+            ("source_agent",),
+            ("tier",),
+            ("confidence",),
+            ("source",),
+            ("tags",),
+            ("valid_at",),
+            ("invalid_at",),
+            ("superseded_by",),
+            ("memory_group",),
+            ("conflict_policy",),
+            ("embedding",),
+            ("created_at",),
+            ("updated_at",),
+            ("search_vector",),
+        ]
+        # save(): SELECT logical key → tombstone; _follow_live_tip → tip
+        mock_cursor.fetchone.side_effect = [tombstone, tip]
+
+        result = backend.save(
+            key="foo",
+            value="v2",
+            namespace="universal",
+            source_agent="agent-1",
+            conflict_policy="supersede",
+        )
+        assert result is not None
+        assert result["key"].startswith("foo-v")
+
+        update_sql = None
+        update_params = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call[0][0]
+            if isinstance(sql, str) and sql.strip().startswith("UPDATE hive_memories"):
+                update_sql = sql
+                update_params = call[0][1]
+                break
+        assert update_sql is not None
+        # Tip key foo-v1 must be invalidated — not the already-dead logical key.
+        assert update_params[3] == "foo-v1"
+
+
 class TestPostgresHiveBackendGet:
     def test_get_returns_dict_when_found(self) -> None:
         backend, _, _, mock_cursor = _make_backend()

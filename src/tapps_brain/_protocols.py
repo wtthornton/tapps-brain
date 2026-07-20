@@ -435,7 +435,12 @@ class PrivateBackend(Protocol):
     def get_schema_version(self) -> int: ...
 
     def knn_search(
-        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+        self,
+        query_embedding: list[float],
+        k: int,
+        *,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]: ...
 
     def vector_row_count(self) -> int: ...

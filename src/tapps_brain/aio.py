@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 import threading
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -74,6 +75,7 @@ class _CapturePersistenceBackend:
         self._deleted_relations: list[str] = []
         self._relations: list[tuple[str, list[Any]]] = []
         self._audit: list[tuple[str, str, dict[str, Any] | None]] = []
+        self._archives: list[Any] = []
         self._lock = threading.Lock()
 
     # --- Captured writes ---------------------------------------------------
@@ -216,8 +218,24 @@ class _CapturePersistenceBackend:
             fn(key, value)
 
     def archive_entry(self, entry: Any) -> int:
-        fn = getattr(self._real, "archive_entry", None)
-        return fn(entry) if callable(fn) else 0
+        """Queue a GC archive write for async flush (do not hit sync Postgres).
+
+        Returns a JSON size *estimate* so ``MemoryStore.gc`` can queue
+        deletes (it gates on ``nbytes > 0``).  The estimate is not proof of
+        durability — :meth:`AsyncMemoryStore._flush_capture` awaits the real
+        async ``archive_entry`` and fails closed (raises, skips deletes) when
+        that call returns ``0``.
+        """
+        try:
+            payload = entry.model_dump() if hasattr(entry, "model_dump") else entry
+            nbytes = len(json.dumps(payload, default=str).encode("utf-8"))
+        except Exception:
+            nbytes = 0
+        if nbytes <= 0:
+            return 0
+        with self._lock:
+            self._archives.append(entry)
+        return nbytes
 
     def list_archive(self, **kwargs: Any) -> list[Any]:
         fn = getattr(self._real, "list_archive", None)
@@ -255,20 +273,23 @@ class _CapturePersistenceBackend:
         list[str],
         list[tuple[str, list[Any]]],
         list[tuple[str, str, dict[str, Any] | None]],
+        list[Any],
     ]:
-        """Return captured saves/deletes/relations/audit and clear the queues."""
+        """Return captured saves/deletes/relations/audit/archives and clear queues."""
         with self._lock:
             saves = list(self._saved)
             deletes = list(self._deleted)
             deleted_relations = list(self._deleted_relations)
             relations = list(self._relations)
             audit = list(self._audit)
+            archives = list(self._archives)
             self._saved.clear()
             self._deleted.clear()
             self._deleted_relations.clear()
             self._relations.clear()
             self._audit.clear()
-        return saves, deletes, deleted_relations, relations, audit
+            self._archives.clear()
+        return saves, deletes, deleted_relations, relations, audit, archives
 
 
 class AsyncMemoryStore:
@@ -542,6 +563,33 @@ class AsyncMemoryStore:
             finally:
                 self._write_inflight -= 1
 
+    async def _flush_durable_archives(self, archives: list[Any]) -> None:
+        """Persist queued GC archives; raise if any durable write returns 0.
+
+        Capture only estimates nbytes so ``MemoryStore.gc`` can schedule
+        deletes.  The async ``archive_entry`` return is authoritative
+        (same gate as sync ``store.py``).  Callers must not delete until
+        this returns successfully.
+        """
+        if self._async_backend is None:  # pragma: no cover
+            raise RuntimeError("aio: _async_backend not initialised before archive flush")
+        for archived in archives:
+            key = str(getattr(archived, "key", "") or "")
+            arch = getattr(self._async_backend, "archive_entry", None)
+            nbytes = 0
+            if callable(arch):
+                maybe_arch = arch(archived)
+                if inspect.isawaitable(maybe_arch):
+                    nbytes = int(await maybe_arch)
+                elif maybe_arch is not None:
+                    nbytes = int(maybe_arch)
+            if nbytes <= 0:
+                msg = (
+                    f"aio: durable archive failed for key {key!r}; "
+                    "skipping deletes so cache can roll back"
+                )
+                raise RuntimeError(msg)
+
     async def _flush_capture(self, capture: _CapturePersistenceBackend) -> None:
         """Drain captured writes (saves, deletes, relations, audit) via the async backend.
 
@@ -552,7 +600,7 @@ class AsyncMemoryStore:
         # unreachable: callers guard on _async_backend is not None before calling
         if self._async_backend is None:  # pragma: no cover
             raise RuntimeError("aio: _async_backend not initialised before write")
-        saves, deletes, deleted_relations, relations, audit = capture.flush()
+        saves, deletes, deleted_relations, relations, audit, archives = capture.flush()
         # Prefer atomic batch when available so a mid-list failure cannot leave
         # a partial durable write against an already-updated in-memory cache.
         try:
@@ -567,6 +615,8 @@ class AsyncMemoryStore:
                 if not batch_done:
                     for entry in saves:
                         await self._async_backend.save(entry)
+            # Archives before deletes — fail closed on nbytes==0 (no delete).
+            await self._flush_durable_archives(archives)
             for k in deletes:
                 await self._async_backend.delete(k)
             for rel_key in deleted_relations:
@@ -580,6 +630,7 @@ class AsyncMemoryStore:
                 "aio.flush_capture_failed",
                 save_count=len(saves),
                 delete_count=len(deletes),
+                archive_count=len(archives),
                 exc_info=True,
             )
             raise
@@ -785,6 +836,7 @@ class AsyncMemoryStore:
             try:
                 with self._store._serialized():
                     prior = dict(self._store._entries)
+                    prior_relations = {k: list(v) for k, v in self._store._relations.items()}
                 capture = _CapturePersistenceBackend(self._store._persistence)
                 result = await self._captured_thread(capture, self._store.gc, dry_run=dry_run)
                 try:
@@ -793,6 +845,11 @@ class AsyncMemoryStore:
                     with self._store._serialized():
                         self._store._entries.clear()
                         self._store._entries.update(prior)
+                        # delete() already cleared relation cache for GC'd keys;
+                        # restore so a failed flush does not leave live entries
+                        # with a missing in-memory graph.
+                        self._store._relations.clear()
+                        self._store._relations.update(prior_relations)
                     raise
                 return result
             finally:

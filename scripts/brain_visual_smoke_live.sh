@@ -8,7 +8,8 @@
 #   bash scripts/brain_visual_smoke_live.sh   # from repo root
 #   make brain-visual-smoke-live              # via Makefile
 #
-# Auth: TAPPS_BRAIN_AUTH_TOKEN from the environment, else .env, else docker/.env.
+# Auth: TAPPS_BRAIN_AUTH_TOKEN from the environment, else docker/.env, else .env.
+# Prefer docker/.env — live hive stack source of truth (root .env is often stale).
 # Override URLs:
 #   TAPPS_VISUAL_BASE_URL=http://host:port   (default http://127.0.0.1:8088)
 #   TAPPS_BRAIN_BASE_URL=http://host:port    (default http://127.0.0.1:8080)
@@ -19,21 +20,21 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
-    if [[ -f .env ]]; then
-        set -o allexport
-        # shellcheck disable=SC1091
-        source .env
-        set +o allexport
-    elif [[ -f docker/.env ]]; then
+    if [[ -f docker/.env ]]; then
         set -o allexport
         # shellcheck disable=SC1091
         source docker/.env
+        set +o allexport
+    elif [[ -f .env ]]; then
+        set -o allexport
+        # shellcheck disable=SC1091
+        source .env
         set +o allexport
     fi
 fi
 
 if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
-    echo "ERROR: TAPPS_BRAIN_AUTH_TOKEN is not set (.env or docker/.env)." >&2
+    echo "ERROR: TAPPS_BRAIN_AUTH_TOKEN is not set (docker/.env or .env)." >&2
     exit 1
 fi
 

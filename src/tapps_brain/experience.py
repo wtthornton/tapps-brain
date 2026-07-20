@@ -121,14 +121,26 @@ def _build_entity_lookup(
     *entity_ids* is index-aligned with *entities*; ``None`` slots (failed
     upserts) are skipped so a later success is never paired with an earlier
     entity's UUID.
+
+    Bare-name lookup omits names that map to more than one entity type in
+    this event (ambiguous ``subject_key`` / ``object_key`` must fail closed).
     """
     typed: dict[tuple[str, str], str] = {}
     by_name: dict[str, str] = {}
+    ambiguous: set[str] = set()
     for spec, entity_id in zip(entities, entity_ids, strict=True):
         if entity_id is None:
             continue
         typed[(spec.entity_type, spec.canonical_name)] = entity_id
-        by_name[spec.canonical_name] = entity_id
+        name = spec.canonical_name
+        if name in ambiguous:
+            continue
+        prior = by_name.get(name)
+        if prior is None:
+            by_name[name] = entity_id
+        elif prior != entity_id:
+            ambiguous.add(name)
+            del by_name[name]
     return typed, by_name
 
 
@@ -368,12 +380,19 @@ class ExperienceResult(BaseModel):
 
     event_id: str = Field(description="UUID of the persisted experience_events row.")
     memory_key: str | None = Field(default=None, description="Key of the memory written, if any.")
-    entity_ids: list[str] = Field(
-        default_factory=list, description="UUIDs of upserted KG entities, in input order."
-    )
-    edge_ids: list[str] = Field(
+    entity_ids: list[str | None] = Field(
         default_factory=list,
-        description="UUIDs of upserted or reinforced KG edges, in input order.",
+        description=(
+            "UUIDs of upserted KG entities, index-aligned with the input entities "
+            "list (None marks a failed upsert at that index)."
+        ),
+    )
+    edge_ids: list[str | None] = Field(
+        default_factory=list,
+        description=(
+            "UUIDs of upserted or reinforced KG edges, index-aligned with the "
+            "input edges list (None marks a skipped/unresolved edge at that index)."
+        ),
     )
     evidence_ids: list[str] = Field(
         default_factory=list, description="UUIDs of attached evidence rows, in input order."
@@ -445,6 +464,15 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     agent_scope        = EXCLUDED.agent_scope,
     tags               = EXCLUDED.tags,
     updated_at         = now(),
+    -- Resurrect rows that were superseded / invalidated so re-recording the
+    -- same key is visible to live recall (same contract as MemoryStore.save).
+    invalid_at         = NULL,
+    superseded_by      = NULL,
+    contradicted       = FALSE,
+    contradiction_reason = NULL,
+    status             = 'active',
+    stale_reason       = NULL,
+    stale_date         = NULL,
     embedding_model_id = COALESCE(EXCLUDED.embedding_model_id, private_memories.embedding_model_id),
     embedding          = COALESCE(EXCLUDED.embedding, private_memories.embedding)
 RETURNING key
@@ -566,9 +594,9 @@ class ExperienceEventRecorder:
         edges: list[EdgeSpec],
         entities: list[EntitySpec],
         entity_ids: list[str | None],
-    ) -> tuple[list[str], list[dict[str, Any]]]:
+    ) -> tuple[list[str | None], list[dict[str, Any]]]:
         """Upsert edges after resolving key/ref endpoints against same-event entities."""
-        edge_ids: list[str] = []
+        edge_ids: list[str | None] = [None] * len(edges)
         warnings: list[dict[str, Any]] = []
         typed, by_name = _build_entity_lookup(entities, entity_ids)
 
@@ -617,7 +645,9 @@ class ExperienceEventRecorder:
             )
             existing = cur.fetchone()
             if existing is not None:
-                edge_ids.append(str(existing[0]))
+                edge_id = str(existing[0])
+                self._reinforce_existing_edge(cur, existing, layer=edge_spec.layer)
+                edge_ids[index] = edge_id
             else:
                 cur.execute(
                     _kg_sql.INSERT_EDGE_SQL,
@@ -640,9 +670,37 @@ class ExperienceEventRecorder:
                 )
                 row = cur.fetchone()
                 if row:
-                    edge_ids.append(str(row[0]))
+                    edge_ids[index] = str(row[0])
 
         return edge_ids, warnings
+
+    def _reinforce_existing_edge(
+        self,
+        cur: Any,  # noqa: ANN401 — psycopg cursor
+        existing: Any,  # noqa: ANN401 — DB row
+        *,
+        layer: str | None,
+    ) -> None:
+        """Bump FSRS + reinforce_count for an already-active SPO edge."""
+        from tapps_brain.decay import DecayConfig, update_stability
+        from tapps_brain.postgres_kg import _EdgeDecayAdapter
+
+        # GET_ACTIVE_EDGE_SQL: [0]=id [1]=confidence [2]=stability [3]=difficulty
+        # [4]=last_reinforced [5]=reinforce_count [6]=source_agent
+        # [7]=created_at [8]=updated_at
+        edge_id = str(existing[0])
+        adapter = _EdgeDecayAdapter(
+            stability=float(existing[2] or 0.0),
+            difficulty=float(existing[3] or 0.0),
+            layer=layer,
+            last_reinforced=existing[4],
+            updated_at=existing[8],
+        )
+        new_s, new_d = update_stability(adapter, DecayConfig(), True)  # type: ignore[arg-type]
+        cur.execute(
+            _kg_sql.REINFORCE_EDGE_SQL,
+            (new_s, new_d, edge_id, self._brain_id),
+        )
 
     def _upsert_entities(
         self,
@@ -713,12 +771,11 @@ class ExperienceEventRecorder:
         """
         event_id = str(_uuid_mod.uuid4())
         entity_ids: list[str | None] = []
-        edge_ids: list[str] = []
+        edge_ids: list[str | None] = []
         evidence_ids: list[str] = []
         memory_key: str | None = None
         edge_warnings: list[dict[str, Any]] = []
         entity_warnings: list[dict[str, Any]] = []
-        resolved_entity_ids: list[str] = []
 
         log = logger.bind(event_type=event.event_type, event_id=event_id)
 
@@ -807,9 +864,8 @@ class ExperienceEventRecorder:
                     evidence_ids.append(str(row[0]))
 
             # Step 6 — patch event cross-reference columns.
-            resolved_entity_ids = [eid for eid in entity_ids if eid is not None]
-            first_entity_id = resolved_entity_ids[0] if resolved_entity_ids else None
-            first_edge_id = edge_ids[0] if edge_ids else None
+            first_entity_id = next((eid for eid in entity_ids if eid is not None), None)
+            first_edge_id = next((eid for eid in edge_ids if eid is not None), None)
             if memory_key or first_entity_id or first_edge_id:
                 cur.execute(
                     _UPDATE_EVENT_XREFS_SQL,
@@ -819,15 +875,15 @@ class ExperienceEventRecorder:
         log.info(
             "experience_event_recorded",
             memory_key=memory_key,
-            entity_count=len(resolved_entity_ids),
-            edge_count=len(edge_ids),
+            entity_count=sum(1 for eid in entity_ids if eid is not None),
+            edge_count=sum(1 for eid in edge_ids if eid is not None),
             evidence_count=len(evidence_ids),
         )
 
         return ExperienceResult(
             event_id=event_id,
             memory_key=memory_key,
-            entity_ids=resolved_entity_ids,
+            entity_ids=list(entity_ids),
             edge_ids=edge_ids,
             evidence_ids=evidence_ids,
             warnings=edge_warnings + entity_warnings,
@@ -875,7 +931,7 @@ class ExperienceEventRecorder:
             for event, (emb_pgv, emb_model_id) in zip(events, event_embeddings, strict=True):
                 event_id = str(_uuid_mod.uuid4())
                 entity_ids: list[str | None] = []
-                edge_ids: list[str] = []
+                edge_ids: list[str | None] = []
                 evidence_ids: list[str] = []
                 memory_key: str | None = None
                 edge_warnings: list[dict[str, Any]] = []
@@ -955,9 +1011,8 @@ class ExperienceEventRecorder:
                     if row:
                         evidence_ids.append(str(row[0]))
 
-                resolved_entity_ids = [eid for eid in entity_ids if eid is not None]
-                first_entity_id = resolved_entity_ids[0] if resolved_entity_ids else None
-                first_edge_id = edge_ids[0] if edge_ids else None
+                first_entity_id = next((eid for eid in entity_ids if eid is not None), None)
+                first_edge_id = next((eid for eid in edge_ids if eid is not None), None)
                 if memory_key or first_entity_id or first_edge_id:
                     cur.execute(
                         _UPDATE_EVENT_XREFS_SQL,
@@ -968,7 +1023,7 @@ class ExperienceEventRecorder:
                     ExperienceResult(
                         event_id=event_id,
                         memory_key=memory_key,
-                        entity_ids=resolved_entity_ids,
+                        entity_ids=list(entity_ids),
                         edge_ids=edge_ids,
                         evidence_ids=evidence_ids,
                         warnings=edge_warnings + entity_warnings,

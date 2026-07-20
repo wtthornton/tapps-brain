@@ -98,8 +98,13 @@ brain-migrate:  ## Apply all pending schema migrations (private, hive, federatio
 # Testing
 # ---------------------------------------------------------------------------
 
+# Both DSN vars are required: the requires_postgres skip gate in
+# tests/conftest.py keys off TAPPS_BRAIN_DATABASE_URL, while some
+# integration fixtures read TAPPS_TEST_POSTGRES_DSN. Setting only the
+# latter silently skipped every requires_postgres test.
 brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate, or external DSN)
 	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
+	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
 	  $(PYTEST) tests/ -v --tb=short \
 	    -m "not benchmark" \
 	    --cov=tapps_brain \
@@ -108,6 +113,7 @@ brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate
 
 brain-test-fast:  ## Tests excluding slow/benchmark, no coverage, parallel (rapid iteration)
 	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
+	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
 	  $(PYTEST) tests/ --tb=short -q -m "not benchmark and not slow" -x $(PYTEST_XDIST_FLAG)
 
 # ---------------------------------------------------------------------------
@@ -193,6 +199,15 @@ check-brain-env:  ## Abort if docker/.env is missing or has placeholder values
 	  echo "       docker-compose.hive.yaml sets TAPPS_BRAIN_STRICT=1 — the brain will"; \
 	  echo "       crash-loop without allowed origins. Add (local dev example):"; \
 	  echo "         TAPPS_BRAIN_ALLOWED_ORIGINS=http://127.0.0.1:8088,http://localhost:8088"; \
+	  echo ""; \
+	  exit 1; \
+	fi
+	@if ! grep -qE '^TAPPS_BRAIN_INTEGRITY_KEY=.+' docker/.env; then \
+	  echo ""; \
+	  echo "ERROR: TAPPS_BRAIN_INTEGRITY_KEY is missing or empty in docker/.env."; \
+	  echo "       Without it, integrity HMAC is disabled and verify_integrity is a no-op."; \
+	  echo "       Generate and set (example):"; \
+	  echo "         openssl rand -base64 32   # → TAPPS_BRAIN_INTEGRITY_KEY=..."; \
 	  echo ""; \
 	  exit 1; \
 	fi

@@ -408,13 +408,17 @@ def effective_half_life(entry: MemoryEntry, config: DecayConfig) -> float:
     # top of the velocity hint (consistent ordering: velocity x importance x model).
     effective_hl *= _TEMPORAL_SENSITIVITY_MULTIPLIERS.get(entry.temporal_sensitivity, 1.0)
 
-    # EPIC-010: Importance tags — boost effective half-life
+    # EPIC-010: Importance tags — boost effective half-life.
+    # Case-insensitive: profile YAML often uses lowercase keys while entries
+    # may carry title-case tags from human/LLM writers.
     importance_tags = config.layer_importance_tags.get(tier_str, {})
     if importance_tags and entry.tags:
+        tags_lc = {str(k).lower(): float(v) for k, v in importance_tags.items()}
         max_multiplier = 1.0
         for tag in entry.tags:
-            if tag in importance_tags:
-                max_multiplier = max(max_multiplier, importance_tags[tag])
+            mult = tags_lc.get(str(tag).lower())
+            if mult is not None:
+                max_multiplier = max(max_multiplier, mult)
         effective_hl = effective_hl * max_multiplier
 
     return effective_hl

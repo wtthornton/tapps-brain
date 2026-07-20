@@ -38,20 +38,23 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
         hive_status = get_hive_schema_status(dsn)
         private_status = get_private_schema_status(dsn)
         federation_status = get_federation_schema_status(dsn)
-        version = hive_status.current_version or None
+        # Top-level migration_version aligns with /info.schema_version (private
+        # max). Hive/federation versions stay in the detail string.
+        hive_ver = hive_status.current_version
+        priv_ver = private_status.current_version
+        fed_ver = federation_status.current_version
+        version = priv_ver or None
         pending = (
             len(hive_status.pending_migrations)
             + len(private_status.pending_migrations)
             + len(federation_status.pending_migrations)
         )
-        priv_ver = private_status.current_version
-        fed_ver = federation_status.current_version
         if pending > 0:
             result: tuple[bool, int | None, str] = (
                 False,
                 version,
                 (
-                    f"not ready (hive_migration={version}, private_migration={priv_ver}, "
+                    f"not ready (hive_migration={hive_ver}, private_migration={priv_ver}, "
                     f"federation_migration={fed_ver}, pending={pending})"
                 ),
             )
@@ -60,7 +63,7 @@ def _probe_db(dsn: str | None) -> tuple[bool, int | None, str]:
                 True,
                 version,
                 (
-                    f"ready (hive_migration={version}, private_migration={priv_ver}, "
+                    f"ready (hive_migration={hive_ver}, private_migration={priv_ver}, "
                     f"federation_migration={fed_ver})"
                 ),
             )

@@ -390,35 +390,26 @@ class AsyncPostgresKnowledgeGraphStore:
             msg = f"direction must be one of {_VALID_DIRECTIONS}, got {direction!r}"
             raise ValueError(msg)
 
-        results: list[dict[str, Any]] = []
-
+        pf = predicate
         async with await self._scoped_conn() as conn, conn.cursor() as cur:
-            if direction in ("out", "both"):
+            if direction == "both":
+                arm = (self._brain_id, entity_id, pf, pf)
+                await cur.execute(
+                    _sql.GET_BOTH_NEIGHBORS_SQL,
+                    (*arm, *arm, limit),
+                )
+            elif direction == "out":
                 await cur.execute(
                     _sql.GET_OUTGOING_NEIGHBORS_SQL,
-                    (self._brain_id, entity_id),
+                    (self._brain_id, entity_id, pf, pf, limit),
                 )
-                rows = await cur.fetchmany(limit)
-                for row in rows:
-                    d = _row_to_dict(row, cur.description)
-                    d["direction"] = "out"
-                    if predicate is None or d.get("predicate") == predicate:
-                        results.append(d)
-
-            if direction in ("in", "both") and len(results) < limit:
-                remaining = limit - len(results)
+            else:
                 await cur.execute(
                     _sql.GET_INCOMING_NEIGHBORS_SQL,
-                    (self._brain_id, entity_id),
+                    (self._brain_id, entity_id, pf, pf, limit),
                 )
-                rows = await cur.fetchmany(remaining)
-                for row in rows:
-                    d = _row_to_dict(row, cur.description)
-                    d["direction"] = "in"
-                    if predicate is None or d.get("predicate") == predicate:
-                        results.append(d)
-
-        return results
+            rows = await cur.fetchall()
+            return [_row_to_dict(row, cur.description) for row in rows]
 
     async def get_neighbors_multi(
         self,
@@ -439,28 +430,18 @@ class AsyncPostgresKnowledgeGraphStore:
 
         async with await self._scoped_conn() as conn, conn.cursor() as cur:
             if hops == 1:
+                # Params repeated once per UNION arm (out + in).
+                arm = (self._brain_id, entity_ids, ih, ih, pf, pf)
                 await cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_1HOP_SQL,
-                    (self._brain_id, entity_ids, ih, ih, pf, pf, limit),
+                    (*arm, *arm, limit),
                 )
             else:
+                base_arm = (self._brain_id, entity_ids, ih, ih, pf, pf)
+                rec_arm = (self._brain_id, ih, ih, pf, pf, hops)
                 await cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
-                    (
-                        self._brain_id,
-                        entity_ids,
-                        ih,
-                        ih,
-                        pf,
-                        pf,
-                        self._brain_id,
-                        ih,
-                        ih,
-                        pf,
-                        pf,
-                        hops,
-                        limit,
-                    ),
+                    (*base_arm, *base_arm, *rec_arm, limit),
                 )
             rows = await cur.fetchall()
             results: list[dict[str, Any]] = [_row_to_dict(row, cur.description) for row in rows]

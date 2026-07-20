@@ -323,6 +323,53 @@ def _build_temporal_kwargs(
     return kw
 
 
+def _entry_matches_temporal_window(
+    entry: MemoryEntry,
+    *,
+    as_of: str | None,
+    since: str | None,
+    until: str | None,
+    time_field: str,
+    include_superseded: bool,
+) -> bool:
+    """Return True when *entry* belongs in a BM25/LIKE fallback corpus.
+
+    Mirrors the FTS live-row contract: exclude temporally invalid rows unless
+    ``include_superseded``, honour ``as_of``, and apply an optional
+    ``[since, until)`` window on *time_field*.
+    """
+    if not include_superseded and not entry.is_temporally_valid(as_of):
+        return False
+    if since is None and until is None:
+        return True
+
+    field_name = time_field if time_field in {"updated_at", "last_accessed"} else "created_at"
+    raw_ts = getattr(entry, field_name, None)
+    ts: datetime | None = None
+    if isinstance(raw_ts, str) and raw_ts:
+        try:
+            ts = datetime.fromisoformat(raw_ts)
+        except (ValueError, TypeError):
+            ts = None
+        if ts is not None and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+    if ts is None:
+        return True
+
+    def _bound(value: str | None) -> datetime | None:
+        if value is None:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return None
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+    lo = _bound(since)
+    hi = _bound(until)
+    return not ((lo is not None and ts < lo) or (hi is not None and ts >= hi))
+
+
 # ---------------------------------------------------------------------------
 # MemoryRetriever
 # ---------------------------------------------------------------------------
@@ -1075,8 +1122,18 @@ class MemoryRetriever:
         except Exception:
             logger.warning("fts_search_failed", query=query, exc_info=True)
 
-        # Fallback: full corpus BM25 scan
-        results = self._bm25_full_scan(query, store, memory_group=memory_group)
+        # Fallback: full corpus BM25 scan (honour the same live-row / temporal
+        # contract as the FTS path — do not pull superseded/expired rows).
+        results = self._bm25_full_scan(
+            query,
+            store,
+            memory_group=memory_group,
+            since=since,
+            until=until,
+            time_field=time_field,
+            as_of=as_of,
+            include_superseded=include_superseded,
+        )
         rm_add_bm25_candidates(len(results))
         return results
 
@@ -1142,7 +1199,12 @@ class MemoryRetriever:
         def run_vector() -> None:
             nonlocal vector_keys
             vector_results = self._vector_search(
-                query, store, limit=top_k_dense, memory_group=memory_group
+                query,
+                store,
+                limit=top_k_dense,
+                memory_group=memory_group,
+                include_expired=include_superseded,
+                as_of=as_of,
             )
             vector_keys = [k for k, _ in vector_results]
 
@@ -1203,11 +1265,18 @@ class MemoryRetriever:
         limit: int = 20,
         *,
         memory_group: str | None = None,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]:
         """Epic 65.8: Embed query, cosine similarity with entry embeddings.
 
         Uses on-the-fly embedding when stored embeddings are unavailable.
         Returns [(entry_key, score), ...] sorted by score descending.
+
+        *include_expired* is forwarded to ``store.knn_search`` so the hybrid
+        dense channel matches BM25's ``include_superseded`` historical window.
+        *as_of* is forwarded so point-in-time hybrid recall uses the same
+        bi-temporal window on the dense channel as FTS.
         """
         empty: list[tuple[str, float]] = []
 
@@ -1235,7 +1304,9 @@ class MemoryRetriever:
         # Do not gate on list_all() — cold/empty cache can still have vectors in DB.
         if len(q) == _PGVECTOR_DIM:
             try:
-                knn = store.knn_search(q, limit)
+                knn = store.knn_search(
+                    q, limit, include_expired=include_expired, as_of=as_of
+                )
             except Exception as e:
                 logger.warning("vector_search_knn_failed", error=str(e), exc_info=True)
                 # Surface degradation so health/injection do not treat this as
@@ -1278,13 +1349,18 @@ class MemoryRetriever:
                 hint="pgvector column is vector(384); falling back to corpus scoring",
             )
 
-        all_entries = store.list_all(memory_group=memory_group)
+        # Match KNN's include_expired contract: default list_all returns
+        # superseded/expired rows, which then steal hybrid RRF slots.
+        all_entries = store.list_all(
+            memory_group=memory_group,
+            include_superseded=include_expired,
+        )
         if not all_entries:
             return empty
         # Corpus embeddings are the most expensive computation in this module —
         # cache them by (group, corpus fingerprint) so repeated fallback queries
         # against an unchanged corpus do not re-embed every entry.
-        cache_key = (memory_group, self._corpus_fingerprint(all_entries))
+        cache_key = (memory_group, include_expired, self._corpus_fingerprint(all_entries))
         if cache_key == self._emb_cache_key and len(self._emb_cache) == len(all_entries):
             entry_embs = self._emb_cache
         else:
@@ -1349,12 +1425,33 @@ class MemoryRetriever:
         store: MemoryStore,
         *,
         memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
+        as_of: str | None = None,
+        include_superseded: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Full corpus BM25 scan as fallback.
 
         Falls back to word overlap if BM25 fails.
         """
-        all_entries = store.list_all(memory_group=memory_group)
+        all_entries = store.list_all(
+            memory_group=memory_group,
+            include_superseded=include_superseded,
+        )
+        if not include_superseded or as_of or since or until:
+            all_entries = [
+                e
+                for e in all_entries
+                if _entry_matches_temporal_window(
+                    e,
+                    as_of=as_of,
+                    since=since,
+                    until=until,
+                    time_field=time_field,
+                    include_superseded=include_superseded,
+                )
+            ]
         if not all_entries:
             return []
 
@@ -1368,7 +1465,16 @@ class MemoryRetriever:
             ]
         except Exception:
             logger.warning("bm25_full_scan_failed_using_word_overlap", query=query, exc_info=True)
-            return self._like_search(query, store, memory_group=memory_group)
+            return self._like_search(
+                query,
+                store,
+                memory_group=memory_group,
+                since=since,
+                until=until,
+                time_field=time_field,
+                as_of=as_of,
+                include_superseded=include_superseded,
+            )
 
     def _like_search(
         self,
@@ -1376,13 +1482,34 @@ class MemoryRetriever:
         store: MemoryStore,
         *,
         memory_group: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        time_field: str = "created_at",
+        as_of: str | None = None,
+        include_superseded: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Fallback LIKE-based search with simple word overlap scoring."""
         query_words = set(query.lower().split())
         if not query_words:
             return []
 
-        all_entries = store.list_all(memory_group=memory_group)
+        all_entries = store.list_all(
+            memory_group=memory_group,
+            include_superseded=include_superseded,
+        )
+        if not include_superseded or as_of or since or until:
+            all_entries = [
+                e
+                for e in all_entries
+                if _entry_matches_temporal_window(
+                    e,
+                    as_of=as_of,
+                    since=since,
+                    until=until,
+                    time_field=time_field,
+                    include_superseded=include_superseded,
+                )
+            ]
         results: list[tuple[MemoryEntry, float]] = []
 
         for entry in all_entries:

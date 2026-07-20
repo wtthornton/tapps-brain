@@ -9,7 +9,9 @@
 #   bash scripts/brain_smoke_live.sh          # from repo root
 #   make brain-smoke-live                     # via Makefile
 #
-# Auth: TAPPS_BRAIN_AUTH_TOKEN from the environment, else .env, else docker/.env.
+# Auth: TAPPS_BRAIN_AUTH_TOKEN from the environment, else docker/.env, else .env.
+# Prefer docker/.env — that is the live hive stack's source of truth; root .env
+# is often a stale/dev-only token that fails against :8080.
 # Override base URL: TAPPS_BRAIN_BASE_URL=http://host:port
 
 set -euo pipefail
@@ -18,21 +20,21 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
-    if [[ -f .env ]]; then
-        set -o allexport
-        # shellcheck disable=SC1091
-        source .env
-        set +o allexport
-    elif [[ -f docker/.env ]]; then
+    if [[ -f docker/.env ]]; then
         set -o allexport
         # shellcheck disable=SC1091
         source docker/.env
+        set +o allexport
+    elif [[ -f .env ]]; then
+        set -o allexport
+        # shellcheck disable=SC1091
+        source .env
         set +o allexport
     fi
 fi
 
 if [[ -z "${TAPPS_BRAIN_AUTH_TOKEN:-}" ]]; then
-    echo "ERROR: TAPPS_BRAIN_AUTH_TOKEN is not set (.env or docker/.env)." >&2
+    echo "ERROR: TAPPS_BRAIN_AUTH_TOKEN is not set (docker/.env or .env)." >&2
     exit 1
 fi
 

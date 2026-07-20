@@ -199,7 +199,9 @@ services:
       # proxy so the dashboard can call the authed brain endpoint without
       # exposing credentials to the browser.
       TAPPS_BRAIN_AUTH_TOKEN: ${TAPPS_BRAIN_AUTH_TOKEN:?set TAPPS_BRAIN_AUTH_TOKEN in docker/.env}
-      TAPPS_BRAIN_PROJECT: ${TAPPS_BRAIN_PROJECT:-default}
+      TAPPS_BRAIN_PROJECT: ${TAPPS_BRAIN_PROJECT:-api}
+      # Seeded into the dashboard project filter (RLS blocks tenant enumeration).
+      TAPPS_BRAIN_PROJECT_OPTIONS: ${TAPPS_BRAIN_PROJECT_OPTIONS:-api,main}
     ports:
       - "${TAPPS_VISUAL_PORT:-8088}:80"
     depends_on:

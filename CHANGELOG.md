@@ -12,6 +12,18 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.26.2] — 2026-07-20
+
+Patch release: eight-hour functional bug-hunt across store, retrieval, experience/KG, HTTP/MCP, visual, and deploy tooling. No new features.
+
+### Fixed
+
+- **Experience / KG** — memory upsert resurrects superseded rows for live recall; edge upserts reinforce existing SPO edges and return index-aligned `edge_ids`; ambiguous bare `subject_key`/`object_key` fail closed; migration 025 supersedes colliding edges before entity repoint.
+- **Retrieval** — BM25/LIKE full-scan fallback honors `include_superseded` / `as_of` / `since` / `until` (parity with FTS/KNN); decay importance tags are case-insensitive; hybrid expired-row leaks closed earlier in the sweep.
+- **HTTP / MCP / SDK** — `/v1/kg/explain` maps service errors to 400/503; `/v1/remember` and `/v1/experience:batch` profile gates accept dual tools; MCP `_meta.idempotency_key` wired for `brain_*` writes and `memory_delete` / `supersede` / `*_many`; SDK `memory_*` methods raise on soft error envelopes.
+- **Store / lifecycle** — `record_access` respects source confidence ceilings; markdown sync no longer counts blocked saves as imported; consolidation/flywheel/cursor and related lifecycle defects from hours 4–7.
+- **Deploy / visual / contracts** — smoke scripts prefer `docker/.env`; `check-brain-env` requires `TAPPS_BRAIN_INTEGRITY_KEY`; visual Entries KPI labeled store-global under project filter; OpenAPI documents `/snapshot/graph` query params and reinforce 404.
+
 ## [3.26.1] — 2026-07-19
 
 Patch release: overnight hourly audit sweep (iterations 1–8) fixed ~110 real defects across the codebase. No new features.

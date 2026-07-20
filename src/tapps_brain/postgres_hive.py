@@ -11,7 +11,6 @@ EPIC-055 STORIES 055.3-055.6 — full Postgres-backed Hive with:
 from __future__ import annotations
 
 import json
-import select
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -92,6 +91,9 @@ class PostgresHiveBackend:
             if existing is not None:
                 col_names = [desc[0] for desc in cur.description]
                 existing_dict = dict(zip(col_names, existing, strict=False))
+                # Walk tombstones to the live tip so a second supersede of the
+                # logical key invalidates foo-v1, not the already-dead foo row.
+                existing_dict = self._follow_live_tip(cur, namespace, existing_dict)
 
                 resolved = self._resolve_conflict(
                     policy=policy,
@@ -163,6 +165,32 @@ class PostgresHiveBackend:
         # supersede (default)
         return "supersede_version"
 
+    def _follow_live_tip(
+        self,
+        cur: psycopg.Cursor[Any],
+        namespace: str,
+        row: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Follow ``superseded_by`` until a live tip (or chain end) is reached."""
+        current = row
+        seen: set[str] = set()
+        while current.get("invalid_at") is not None:
+            nxt = current.get("superseded_by")
+            cur_key = str(current.get("key", ""))
+            if not nxt or cur_key in seen:
+                break
+            seen.add(cur_key)
+            cur.execute(
+                "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
+                (namespace, nxt),
+            )
+            nxt_row = cur.fetchone()
+            if nxt_row is None:
+                break
+            col_names = [desc[0] for desc in cur.description]
+            current = dict(zip(col_names, nxt_row, strict=False))
+        return current
+
     def _supersede_existing(
         self,
         cur: psycopg.Cursor[Any],
@@ -180,12 +208,18 @@ class PostgresHiveBackend:
         memory_group: str | None,
         embedding: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Mark old version invalid and write new versioned key."""
+        """Mark the live tip invalid and write a new versioned key.
+
+        Invalidates ``existing["key"]`` (the tip), not necessarily the
+        caller-supplied logical *key* — after the first supersede the tip is
+        ``{key}-v…`` while saves still arrive under the logical name.
+        """
+        tip_key = str(existing.get("key") or key)
         new_key = f"{key}-v{now.replace(':', '').replace('-', '').replace('+', '')[:22]}"
         cur.execute(
             "UPDATE hive_memories SET invalid_at = %s, superseded_by = %s "
             "WHERE namespace = %s AND key = %s",
-            (now, new_key, namespace, key),
+            (now, new_key, namespace, tip_key),
         )
         return self._write_entry(
             cur,
@@ -315,17 +349,37 @@ class PostgresHiveBackend:
                     "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
                     (namespace, key),
                 )
-            else:
-                cur.execute(
-                    "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s "
-                    "AND invalid_at IS NULL",
-                    (namespace, key),
-                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                col_names = [desc[0] for desc in cur.description]
+                return self._row_to_dict(dict(zip(col_names, row, strict=False)))
+
+            cur.execute(
+                "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s "
+                "AND invalid_at IS NULL",
+                (namespace, key),
+            )
             row = cur.fetchone()
-            if row is None:
-                return None
             col_names = [desc[0] for desc in cur.description]
-            return self._row_to_dict(dict(zip(col_names, row, strict=False)))
+            if row is not None:
+                return self._row_to_dict(dict(zip(col_names, row, strict=False)))
+
+            # Logical key may be a tombstone after supersede — follow tip.
+            cur.execute(
+                "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
+                (namespace, key),
+            )
+            tomb = cur.fetchone()
+            if tomb is None:
+                return None
+            tomb_cols = [desc[0] for desc in cur.description]
+            tip = self._follow_live_tip(
+                cur, namespace, dict(zip(tomb_cols, tomb, strict=False))
+            )
+            if tip.get("invalid_at") is not None:
+                return None
+            return self._row_to_dict(tip)
 
     def search(
         self,
@@ -651,16 +705,21 @@ class PostgresHiveBackend:
         is unavailable (e.g., pooled connections that don't support it).
         """
         # Try LISTEN/NOTIFY approach first.
+        start = time.monotonic()
         try:
             return self._wait_with_listen(
                 since_revision=since_revision,
                 timeout_sec=timeout_sec,
             )
         except Exception:
-            # Fallback to polling.
+            # Fallback to polling — with only the *remaining* budget.  The
+            # listen attempt may already have blocked for part (or all) of
+            # ``timeout_sec``; restarting the full window here made callers
+            # wait up to 2x the requested timeout.
+            remaining = max(0.0, float(timeout_sec) - (time.monotonic() - start))
             return self._wait_with_polling(
                 since_revision=since_revision,
-                timeout_sec=timeout_sec,
+                timeout_sec=remaining,
                 poll_interval_sec=poll_interval_sec,
             )
 
@@ -670,9 +729,22 @@ class PostgresHiveBackend:
         since_revision: int,
         timeout_sec: float,
     ) -> dict[str, Any]:
-        """Use PostgreSQL LISTEN/NOTIFY for change detection."""
-        with self._cm.get_connection() as conn:
-            conn.autocommit = True
+        """Use PostgreSQL LISTEN/NOTIFY for change detection.
+
+        Uses a dedicated short-lived autocommit connection rather than a
+        pooled one: LISTEN requires autocommit, and neither the flipped
+        ``autocommit`` flag nor the LISTEN subscription is reset by the
+        pool's reset path — a borrowed connection would be recycled poisoned,
+        silently breaking transaction semantics for the next borrower.
+
+        The previous implementation also used the psycopg2 notification API
+        (``conn.poll()`` / ``conn.notifies`` as a list), which raises
+        ``AttributeError`` on psycopg 3 the moment a notification actually
+        arrived — the success path always crashed into the polling fallback.
+        """
+        import psycopg  # lazy: Postgres deps only required when using Postgres DSN
+
+        with psycopg.connect(self._cm.dsn, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute("LISTEN hive_memories_changed")
 
@@ -681,26 +753,17 @@ class PostgresHiveBackend:
             if state["revision"] > since_revision:
                 return {**state, "changed": True, "timed_out": False}
 
-            # Wait for notification.
-            fd = conn.fileno()
-            ready = select.select([fd], [], [], max(0.0, timeout_sec))
-            if ready[0]:
-                conn.poll()
-                # Drain notifications.
-                while conn.notifies:
-                    conn.notifies.pop(0)
-                state = self._get_state_from_conn(conn)
-                return {
-                    **state,
-                    "changed": state["revision"] > since_revision,
-                    "timed_out": False,
-                }
+            # Block until a notification arrives or the timeout elapses
+            # (psycopg 3 API: notifies() is a generator).
+            timed_out = True
+            for _ in conn.notifies(timeout=max(0.0, timeout_sec), stop_after=1):
+                timed_out = False
 
             state = self._get_state_from_conn(conn)
             return {
                 **state,
                 "changed": state["revision"] > since_revision,
-                "timed_out": True,
+                "timed_out": timed_out,
             }
 
     def _wait_with_polling(

@@ -8,7 +8,7 @@ description: >-
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__nlt-build__tapps_domain_playbook mcp__nlt-build__tapps_lookup_docs mcp__nlt-build__tapps_quick_check mcp__nlt-build__tapps_validate_changed mcp__nlt-build__tapps_checklist
 ---
 
-1. Invoke `/tapps-domain-frontend` steps 1–5, **or** run this shortcut:
+1. Invoke `/tapps-domain-frontend` steps 1-5, **or** run this shortcut:
    - `tapps_domain_playbook(domain="user-experience")`
    - `tapps_lookup_docs` for UI libraries in scope
 2. `/tapps-finish-task` with `task_type=frontend`

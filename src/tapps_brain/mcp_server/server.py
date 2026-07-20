@@ -28,6 +28,7 @@ from typing import Any
 
 from tapps_brain.mcp_server.context import (
     ToolContext,
+    _current_request_agent_id,
     _current_request_project_id,
     _get_store_for_project,
     _raise_project_not_registered,
@@ -370,7 +371,12 @@ def create_server(  # noqa: PLR0915
         # warn=False: the tool body already resolved (and warned) once for
         # this call — a second WARNING here would double-log every mismatch.
         eff = _resolve_per_call_agent_id(call_agent_id, default=_server_agent_id, warn=False)
-        if eff == _server_agent_id:
+        # StoreProxy re-reads the header agent on every attribute access.  When
+        # the *winning* agent is the server default but the header names a
+        # different agent (kwarg won with the default), returning the proxy
+        # would silently open the header's store — ignore the kwarg win.
+        header_aid = _current_request_agent_id()
+        if eff == _server_agent_id and (not header_aid or header_aid == _server_agent_id):
             return store
         pid = _current_request_project_id()
         default_target = store._default_store
@@ -380,7 +386,7 @@ def create_server(  # noqa: PLR0915
                 default_store=default_target,
                 enable_hive=enable_hive,
                 agent_id=_server_agent_id,
-                call_agent_id=eff,
+                call_agent_id=eff if eff != _server_agent_id else None,
             )
         except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError

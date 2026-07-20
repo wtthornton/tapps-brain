@@ -208,6 +208,8 @@
     });
   }
 
+  var loadGen = 0;
+
   function loadGraph(entity) {
     entity = (entity || "").trim();
     var input = document.getElementById("kg-entity");
@@ -215,13 +217,20 @@
     if (!entity) { setMsg("Enter an entity UUID and press Load."); return; }
 
     var project = currentProject();
+    if (!project) {
+      setMsg("Select a project in the top filter before loading the graph "
+        + "(All projects would silently hit the nginx default tenant).");
+      return;
+    }
     var limitEl = document.getElementById("kg-limit");
     var limit = limitEl && limitEl.value ? parseInt(limitEl.value, 10) : 40;
     if (!(limit > 0)) limit = 40;
 
-    var url = graphBaseUrl() + "?entity=" + encodeURIComponent(entity) + "&limit=" + limit;
-    if (project) url += "&project=" + encodeURIComponent(project);
+    var url = graphBaseUrl() + "?entity=" + encodeURIComponent(entity)
+      + "&limit=" + limit
+      + "&project=" + encodeURIComponent(project);
 
+    var gen = ++loadGen;
     setMsg("Loading " + entity + "…");
     fetch(url, { cache: "no-store" })
       .then(function (resp) {
@@ -231,6 +240,7 @@
         return resp.json();
       })
       .then(function (graph) {
+        if (gen !== loadGen) return; // stale expand — a newer click won
         setKpis(graph);
         render(graph);
         var nn = (graph.nodes || []).length;
@@ -239,6 +249,7 @@
           : "Showing " + (nn - 1) + " neighbour(s). Click a node to expand, an edge for evidence.");
       })
       .catch(function (err) {
+        if (gen !== loadGen) return;
         var m = String(err && err.message ? err.message : err).slice(0, 120);
         setMsg("Could not load graph: " + m
           + (currentProject() ? "" : " (tip: select a project in the top filter)."));
@@ -247,8 +258,11 @@
 
   function loadHealth() {
     var project = currentProject();
-    var url = graphBaseUrl() + "/health";
-    if (project) url += "?project=" + encodeURIComponent(project);
+    if (!project) {
+      setMsg("Select a project in the top filter before loading graph health.");
+      return;
+    }
+    var url = graphBaseUrl() + "/health?project=" + encodeURIComponent(project);
     setMsg("Loading graph health…");
     fetch(url, { cache: "no-store" })
       .then(function (resp) {

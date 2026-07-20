@@ -277,7 +277,12 @@ class AsyncPostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     async def knn_search(
-        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+        self,
+        query_embedding: list[float],
+        k: int,
+        *,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -286,18 +291,24 @@ class AsyncPostgresPrivateBackend:
         are not silently truncated by the pgvector default (ef=40).  Both GUCs
         use ``SET LOCAL`` so they are transaction-scoped and cannot leak to
         other queries on the same pooled connection.
+
+        *as_of* mirrors FTS point-in-time filtering (live-row predicate stands
+        down; bi-temporal window applies).
         """
         if not query_embedding:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        knn_sql, mid_params = _sql.build_knn_search_sql(
+            include_expired=include_expired, as_of=as_of
+        )
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
                 # TAP-2728: HNSW GUCs for filtered recall correctness.
                 await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
                 await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 await cur.execute(
-                    _sql.build_knn_search_sql(include_expired=include_expired),
-                    (vec_str, self._project_id, self._agent_id, k),
+                    knn_sql,
+                    (vec_str, self._project_id, self._agent_id, *mid_params, k),
                 )
                 rows = await cur.fetchall()
             # Clear the degraded latch on success — the flag reflects the most
@@ -565,6 +576,27 @@ class AsyncPostgresPrivateBackend:
                 }
             )
         return results
+
+    async def count_audit(
+        self,
+        *,
+        key: str | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        """Exact matching-row count over ``audit_log`` (no LIMIT cap)."""
+        stmt, extra_params = _sql.build_count_audit_sql(key=key, event_type=event_type)
+        params: list[Any] = [self._project_id, self._agent_id, *extra_params]
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(stmt, params)
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def keys_missing_embedding(self) -> list[str]:
+        """Keys whose durable row has a NULL embedding (backfill candidates)."""
+        async with self._scoped_conn() as conn, conn.cursor() as cur:
+            await cur.execute(_sql.KEYS_MISSING_EMBEDDING_SQL, (self._project_id, self._agent_id))
+            rows = await cur.fetchall()
+        return [str(r[0]) for r in rows]
 
     # ------------------------------------------------------------------
     # Flywheel meta

@@ -172,11 +172,19 @@ def raise_for_response(
         status_code: HTTP status code from the response.
         body: Parsed JSON body, or ``None`` if the body was not JSON.
         message: Human-readable description; falls back to the body's
-            ``"message"`` field, then ``"HTTP <status_code>"``.
+            ``"detail"`` field (canonical envelope, see
+            ``tapps_brain.openapi_contract``), then the legacy ``"message"``
+            field, then ``"HTTP <status_code>"``.
     """
     body = body or {}
     if not message:
-        message = str(body.get("message") or f"HTTP {status_code}")
+        # Canonical envelope is {"error": <code>, "detail": <text>}; some
+        # service-layer envelopes (TAP-747) still use "message".  Reading only
+        # "message" degraded most server errors to a bare "HTTP <status>".
+        detail = body.get("detail")
+        if isinstance(detail, dict):  # nested legacy HTTPException shape
+            detail = detail.get("detail") or detail.get("message")
+        message = str(detail or body.get("message") or f"HTTP {status_code}")
     return exception_for_status(status_code)(
         message,
         status_code=status_code,

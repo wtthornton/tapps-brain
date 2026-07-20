@@ -95,6 +95,23 @@ def test_raise_for_response_explicit_message_wins() -> None:
     assert exc.message == "explicit"
 
 
+def test_raise_for_response_reads_canonical_detail_envelope() -> None:
+    """The canonical server envelope is {"error", "detail"} — not "message"."""
+    exc = raise_for_response(400, {"error": "bad_request", "detail": "key and value are required."})
+    assert exc.message == "key and value are required."
+
+
+def test_raise_for_response_reads_nested_httpexception_detail() -> None:
+    """FastAPI's default wrapping nests the envelope under "detail"."""
+    exc = raise_for_response(400, {"detail": {"error": "bad_request", "detail": "nested text"}})
+    assert exc.message == "nested text"
+
+
+def test_raise_for_response_detail_wins_over_legacy_message() -> None:
+    exc = raise_for_response(400, {"detail": "canonical", "message": "legacy"})
+    assert exc.message == "canonical"
+
+
 # ---------------------------------------------------------------------------
 # Semantic catchability — existing wire-code classes must be catchable
 # under the new semantic supertype.

@@ -338,13 +338,15 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
             PUBLIC_PATHS,
             out_of_profile_response_body,
             resolve_tool_for_path,
+            tools_for_path,
         )
 
         if path in PUBLIC_PATHS:
             return await call_next(request)  # type: ignore[no-any-return]
 
         tool = resolve_tool_for_path(path)
-        if tool is None:
+        allowed_for_route = tools_for_path(path)
+        if tool is None or allowed_for_route is None:
             # Unmapped /v1/* path — let it through (admin / future routes).
             return await call_next(request)  # type: ignore[no-any-return]
 
@@ -393,7 +395,7 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        if tool not in allowed_tools:
+        if allowed_for_route.isdisjoint(allowed_tools):
             # TAP-1972: hint the smallest profile that exposes the tool so
             # consumers (`tapps doctor`, operator scripts) can surface
             # "switch to profile X" without re-parsing the YAML.

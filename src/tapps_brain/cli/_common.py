@@ -175,6 +175,14 @@ def _resolve_project_dir(project_dir: Path | None) -> Path:
     return (project_dir or Path.cwd()).resolve()
 
 
+def _parse_csv_env(var: str) -> list[str]:
+    """Parse a comma-separated environment variable into a list of strings."""
+    import os
+
+    raw = os.environ.get(var, "")
+    return [x.strip() for x in raw.split(",") if x.strip()] if raw else []
+
+
 def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
     """Open a MemoryStore from the resolved project dir."""
     from tapps_brain.backends import resolve_hive_backend_from_env
@@ -187,6 +195,8 @@ def _get_store(project_dir: Path | None) -> Any:  # noqa: ANN401
         agent_id=agent_id,
         hive_store=resolve_hive_backend_from_env(),
         hive_agent_id=agent_id or "cli",
+        groups=_parse_csv_env("TAPPS_BRAIN_GROUPS"),
+        expert_domains=_parse_csv_env("TAPPS_BRAIN_EXPERT_DOMAINS"),
     )
 
 

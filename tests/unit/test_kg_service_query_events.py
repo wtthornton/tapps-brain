@@ -56,6 +56,30 @@ def test_query_events_requires_event_type() -> None:
     assert out == {"error": "bad_request", "detail": "event_type is required."}
 
 
+@pytest.mark.parametrize("field", ["since", "until"])
+def test_query_events_rejects_malformed_timestamp(field: str) -> None:
+    """Malformed since/until must 400, not reach Postgres and 500 (TAP-2140 class)."""
+    cm = _FakeCM([])
+    out = kg_service.query_events(cm, "proj", event_type="quality_metric", **{field: "yesterday"})
+    assert out["error"] == "bad_request"
+    assert field in out["detail"]
+    assert cm.last_sql == ""  # never reached the cursor
+
+
+def test_query_events_accepts_valid_iso_timestamps() -> None:
+    cm = _FakeCM([])
+    out = kg_service.query_events(
+        cm,
+        "proj",
+        event_type="quality_metric",
+        since="2026-07-01T00:00:00+00:00",
+        until="2026-07-19",
+    )
+    assert out["count"] == 0
+    assert "event_time >= %s" in cm.last_sql
+    assert "event_time <= %s" in cm.last_sql
+
+
 def test_query_events_maps_rows_to_contract() -> None:
     ts = datetime(2026, 6, 9, 12, 0, 1, tzinfo=UTC)
     rows = [

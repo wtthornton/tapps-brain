@@ -237,7 +237,7 @@ class SentenceTransformerProvider:
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text using the sentence-transformers model."""
-        vec = self._model.encode(text, normalize_embeddings=True)
+        vec = self._model.encode(text, normalize_embeddings=True, show_progress_bar=False)
         return [float(x) for x in vec]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:

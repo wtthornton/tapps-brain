@@ -388,7 +388,11 @@ def cli_remember(
     try:
         key = _content_key(fact)
         agent_scope = "group" if share else "private"
-        store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        out = store.save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        if isinstance(out, dict) and out.get("error"):
+            detail = out.get("detail") or out.get("message") or out.get("reason") or out["error"]
+            typer.echo(f"Remember failed: {detail}", err=True)
+            raise typer.Exit(code=1)
         typer.echo(f"Remembered: {key}")
     finally:
         store.close()
@@ -429,14 +433,17 @@ def cli_forget(
     key: Annotated[str, typer.Argument(help="Memory key to archive.")],
     project_dir: ProjectDir = None,
 ) -> None:
-    """Archive a memory."""
+    """Archive a memory (gc_archive then delete — same as MCP brain_forget)."""
+    from tapps_brain.services import memory_service
+
     store = _get_store(project_dir)
     try:
-        entry = store.get(key)
-        if entry is None:
+        project_id = getattr(store, "project_id", None) or getattr(store, "_project_id", "") or ""
+        agent_id = getattr(store, "agent_id", None) or getattr(store, "_agent_id", "") or ""
+        result = memory_service.brain_forget(store, str(project_id), str(agent_id), key=key)
+        if not result.get("forgotten"):
             typer.echo(f"Not found: {key}")
             raise typer.Exit(code=1)
-        store.delete(key)
         typer.echo(f"Forgotten: {key}")
     finally:
         store.close()

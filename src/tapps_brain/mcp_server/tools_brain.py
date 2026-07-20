@@ -14,10 +14,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from tapps_brain.mcp_server.context import ToolContext
 
+from tapps_brain.mcp_server.context import (
+    _mcp_idempotency_check,
+    _mcp_idempotency_record,
+)
 from tapps_brain.services import memory_service
 
 
-def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
+def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0915
     """Register the six Agent Brain tools on *mcp*."""
     _server_aid = ctx.server_agent_id
     _resolve = ctx.resolve_store_for_call
@@ -61,24 +65,32 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         Pass ``failed_approaches`` to record dead-end investigation paths so future
         agents don't repeat them (max 5 items).  These are surfaced in brain_recall
         responses when non-empty.
+
+        When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
+        for duplicate-safe writes.
         """
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.brain_remember(
-                s,
-                _pid(),
-                eff_aid,
-                fact=fact,
-                tier=tier,
-                share=share,
-                share_with=share_with,
-                agent_scope=agent_scope,
-                memory_group=memory_group,
-                temporal_sensitivity=temporal_sensitivity,
-                failed_approaches=failed_approaches,
-            )
+        result = memory_service.brain_remember(
+            s,
+            project_id,
+            eff_aid,
+            fact=fact,
+            tier=tier,
+            share=share,
+            share_with=share_with,
+            agent_scope=agent_scope,
+            memory_group=memory_group,
+            temporal_sensitivity=temporal_sensitivity,
+            failed_approaches=failed_approaches,
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_recall(query: str, max_results: int = 5, agent_id: str = "") -> str:
@@ -102,10 +114,17 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_forget(key: str, agent_id: str = "") -> str:
-        """Archive a memory by key. The memory is not permanently deleted."""
+        """Archive a memory by key (to gc_archive); not permanently deleted."""
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(memory_service.brain_forget(s, _pid(), eff_aid, key=key))
+        result = memory_service.brain_forget(s, project_id, eff_aid, key=key)
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_learn_success(
@@ -121,17 +140,22 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         if not description.strip():
             return json.dumps({"error": "bad_request", "detail": "'description' is required."})
 
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.brain_learn_success(
-                s,
-                _pid(),
-                eff_aid,
-                task_description=description,
-                task_id=task_id,
-            )
+        result = memory_service.brain_learn_success(
+            s,
+            project_id,
+            eff_aid,
+            task_description=description,
+            task_id=task_id,
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_learn_failure(
@@ -148,18 +172,23 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401
         if not description.strip():
             return json.dumps({"error": "bad_request", "detail": "'description' is required."})
 
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.brain_learn_failure(
-                s,
-                _pid(),
-                eff_aid,
-                description=description,
-                task_id=task_id,
-                error=error,
-            )
+        result = memory_service.brain_learn_failure(
+            s,
+            project_id,
+            eff_aid,
+            description=description,
+            task_id=task_id,
+            error=error,
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_status(agent_id: str = "") -> str:

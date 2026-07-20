@@ -1284,11 +1284,13 @@ def build_kg_graph(
     """Transform a 1-hop ``get_neighbors_multi`` result into a ``{nodes, edges}`` graph.
 
     Star topology: the focal entity plus one node per distinct neighbour and one
-    edge per neighbour row (``root -> neighbor``). Edge attributes carry the
-    signals that make the KG richer than a plain hyperlink graph — ``confidence``,
-    ``status``, ``contradicted``, ``stability`` (FSRS decay), ``evidence_count`` —
-    so the panel can encode them (opacity, fade, flag). Expand-on-click re-roots on
-    a neighbour, which is why a correct 1-hop star (not an ambiguous multi-hop dump)
+    edge per neighbour row. Outgoing rows orient ``root -> neighbor``; incoming
+    rows (``direction="in"``) orient ``neighbor -> root`` so Cytoscape preserves
+    real subject/object polarity. Edge attributes carry the signals that make the
+    KG richer than a plain hyperlink graph — ``confidence``, ``status``,
+    ``contradicted``, ``stability`` (FSRS decay), ``evidence_count`` — so the
+    panel can encode them (opacity, fade, flag). Expand-on-click re-roots on a
+    neighbour, which is why a correct 1-hop star (not an ambiguous multi-hop dump)
     is the right primitive.
 
     Pure function — no DB. ``neighbors`` comes from
@@ -1316,12 +1318,17 @@ def build_kg_graph(
                 "confidence": _as_float(row.get("entity_confidence"), 0.0),
                 "is_root": False,
             }
-        edge_id = str(row.get("edge_id", "") or f"{root_entity_id}->{neighbor_id}")
+        direction = str(row.get("direction") or "out").lower()
+        if direction == "in":
+            source, target = neighbor_id, root_entity_id
+        else:
+            source, target = root_entity_id, neighbor_id
+        edge_id = str(row.get("edge_id", "") or f"{source}->{target}")
         edges.append(
             {
                 "id": edge_id,
-                "source": root_entity_id,
-                "target": neighbor_id,
+                "source": source,
+                "target": target,
                 "predicate": str(row.get("predicate", "") or ""),
                 "confidence": _as_float(row.get("edge_confidence"), 0.0),
                 "status": str(row.get("edge_status", "") or "active"),
@@ -1329,6 +1336,7 @@ def build_kg_graph(
                 "stability": _as_float(row.get("stability"), 0.0),
                 "evidence_count": int(row.get("evidence_count") or 0),
                 "hop": int(row.get("hop") or 1),
+                "direction": direction if direction in {"in", "out"} else "out",
             }
         )
     return {

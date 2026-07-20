@@ -655,7 +655,16 @@ def _persist_consolidated_entry(
             if key != consolidated.key:
                 if source_snapshots is not None:
                     snap = source_snapshots.get(key)
-                    current = store._entries.get(key)
+                    # Hydrate from durable store — a cold-cache miss must not
+                    # skip the lost-update guard (that would supersede a fresh
+                    # write that never lived in ``_entries``).
+                    current = store._ensure_entry_cached(key)
+                    if snap is not None and current is None:
+                        msg = (
+                            f"source '{key}' missing from store while consolidating "
+                            f"into '{consolidated.key}'; aborting merge"
+                        )
+                        raise RuntimeError(msg)
                     if snap is not None and current is not None and current.value != snap.value:
                         msg = (
                             f"source '{key}' content changed concurrently since the "

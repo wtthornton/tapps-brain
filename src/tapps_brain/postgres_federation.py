@@ -45,14 +45,17 @@ class PostgresFederationBackend:
 
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             for entry in entries:
-                agent_scope = getattr(entry, "agent_scope", None) or "private"
-                # Refuse private-scoped rows — federation is cross-project share.
-                if agent_scope == "private":
+                # Federation eligibility is MemoryScope.shared (cross-project),
+                # not Hive agent_scope.  Gating on agent_scope refused legitimate
+                # shared+private rows and allowed project+hive rows onto the hub.
+                scope = getattr(entry, "scope", None)
+                scope_val = getattr(scope, "value", scope) if scope is not None else ""
+                if str(scope_val) != "shared":
                     logger.warning(
-                        "federation.pg.publish_refused_private",
+                        "federation.pg.publish_refused_non_shared",
                         project_id=project_id,
                         key=getattr(entry, "key", None),
-                        agent_scope=agent_scope,
+                        scope=str(scope_val) if scope_val else None,
                     )
                     continue
                 # `or []` guards entries whose tags attribute is None — json.dumps(None)
@@ -117,19 +120,42 @@ class PostgresFederationBackend:
         return published
 
     def unpublish(self, project_id: str, keys: list[str] | None = None) -> int:
-        """Remove memories from the federation hub."""
+        """Remove memories from the federation hub.
+
+        ``keys=None`` (omitted) deletes every hub row for *project_id*.
+        ``keys=[]`` is a no-op — an empty filter must not wipe the tenant.
+        """
+        if keys is not None and not keys:
+            return 0
+
+        now = datetime.now(tz=UTC).isoformat()
         with self._cm.get_connection() as conn, conn.cursor() as cur:
-            if keys:
-                cur.execute(
-                    "DELETE FROM federated_memories WHERE project_id = %s AND key = ANY(%s)",
-                    (project_id, keys),
-                )
-            else:
+            if keys is None:
                 cur.execute(
                     "DELETE FROM federated_memories WHERE project_id = %s",
                     (project_id,),
                 )
+            else:
+                cur.execute(
+                    "DELETE FROM federated_memories WHERE project_id = %s AND key = ANY(%s)",
+                    (project_id, keys),
+                )
             removed = cur.rowcount
+
+            # Keep federation_meta.entry_count in sync (publish already does this).
+            cur.execute(
+                """
+                    INSERT INTO federation_meta (project_id, last_sync, entry_count)
+                    VALUES (
+                        %s, %s,
+                        (SELECT COUNT(*) FROM federated_memories WHERE project_id = %s)
+                    )
+                    ON CONFLICT (project_id) DO UPDATE SET
+                        last_sync = EXCLUDED.last_sync,
+                        entry_count = EXCLUDED.entry_count
+                    """,
+                (project_id, now, project_id),
+            )
 
         logger.info("federation.pg.unpublished", project_id=project_id, count=removed)
         return int(removed)
@@ -162,11 +188,18 @@ class PostgresFederationBackend:
             clauses.append("memory_group = %s")
             params.append(memory_group)
 
-        # Tag filtering happens in Python: fetch extra rows, then intersect the
-        # requested tags with each row's tags (JSONB array overlap in SQL is
-        # less straightforward than a set intersection here).
-        sql_limit = limit * 3 if tags else limit
-        params.append(sql_limit)
+        # Push tag overlap into SQL so sparse tag matches are not truncated by
+        # a pre-filter LIMIT (limit*3 + Python intersect under-delivered).
+        if tags:
+            clauses.append(
+                "EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements_text(tags) AS t(elem) "
+                "WHERE t.elem = ANY(%s::text[])"
+                ")"
+            )
+            params.append(list(tags))
+
+        params.append(limit)
 
         from psycopg import sql as pgsql
 
@@ -190,15 +223,12 @@ class PostgresFederationBackend:
             row_tags = d.get("tags") or []
             if isinstance(row_tags, str):
                 row_tags = json.loads(row_tags) or []
-            # Python-side tag filtering.
-            if tags and not set(tags) & set(row_tags):
-                continue
             d["tags"] = row_tags
             d.pop("search_vector", None)
             d.pop("rank", None)
             results.append(d)
 
-        return results[:limit]
+        return results
 
     def get_project_entries(
         self,

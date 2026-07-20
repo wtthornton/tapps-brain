@@ -252,7 +252,12 @@ class InMemoryPrivateBackend:
         return 1
 
     def knn_search(
-        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+        self,
+        query_embedding: list[float],
+        k: int,
+        *,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]:
         return []  # tests that exercise vector recall must use a real backend
 

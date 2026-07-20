@@ -312,6 +312,10 @@ _SEARCH_BASE_SQL = (
 #: like ``"2026-99-99"`` pass the prefix check but still blow up the cast.
 #: Non-parseable values are treated as expired, mirroring
 #: ``MemoryEntry.is_temporally_valid`` which returns False instead of raising.
+# Conflict invalidation (store.py) sets invalid_at (timestamptz) without
+# superseded_by / valid_until.  Those rows must not consume FTS/KNN top-K.
+# Unlike text ``valid_until``, ``invalid_at`` is a real timestamptz column —
+# never compare it to '' (raises InvalidDatetimeFormat and 500s recall).
 _LIVE_ROW_PREDICATE_SQL = (
     " AND superseded_by IS NULL"
     " AND ("
@@ -319,12 +323,27 @@ _LIVE_ROW_PREDICATE_SQL = (
     " OR (CASE WHEN pg_input_is_valid(valid_until, 'timestamptz')"
     " THEN valid_until::timestamptz > now() ELSE false END)"
     ")"
+    " AND (invalid_at IS NULL OR invalid_at > now())"
 )
 _SEARCH_FILTER_MEMORY_GROUP_SQL = " AND memory_group = %s"
 _SEARCH_FILTER_MEMORY_CLASS_SQL = " AND memory_class = %s"
+#: Point-in-time window matching :meth:`MemoryEntry.is_temporally_valid`.
+#: Binds the same ``as_of`` timestamptz four times: valid_at, invalid_at,
+#: valid_from, valid_until.  Text alias columns use ``pg_input_is_valid`` so a
+#: single malformed legacy value cannot abort the whole recall query.
 _SEARCH_FILTER_AS_OF_SQL = (
     " AND (valid_at IS NULL OR valid_at <= %s::timestamptz)"
     " AND (invalid_at IS NULL OR invalid_at > %s::timestamptz)"
+    " AND ("
+    "valid_from IS NULL OR valid_from = ''"
+    " OR (CASE WHEN pg_input_is_valid(valid_from, 'timestamptz')"
+    " THEN valid_from::timestamptz <= %s::timestamptz ELSE false END)"
+    ")"
+    " AND ("
+    "valid_until IS NULL OR valid_until = ''"
+    " OR (CASE WHEN pg_input_is_valid(valid_until, 'timestamptz')"
+    " THEN valid_until::timestamptz > %s::timestamptz ELSE false END)"
+    ")"
 )
 _SEARCH_ORDER_LIMIT_SQL = " ORDER BY _rank DESC LIMIT 100"
 
@@ -387,12 +406,12 @@ def build_search_sql(
         params.append(memory_class)
     if as_of is not None:
         sql += _SEARCH_FILTER_AS_OF_SQL
-        params.extend([as_of, as_of])
+        params.extend([as_of, as_of, as_of, as_of])
     # TAP-4586: exclude expired/superseded rows from top-K — but NOT when a
     # point-in-time (`as_of`) query is running.  For `as_of`, the bi-temporal
-    # `valid_at`/`invalid_at` window (added just above) is the authoritative
-    # gate; a superseded row is *expected* to be returned for the timestamp at
-    # which it was still valid, so the live-row predicate must stand down.
+    # window (added just above) is the authoritative gate; a superseded row is
+    # *expected* to be returned for the timestamp at which it was still valid,
+    # so the live-row predicate must stand down.
     if not include_expired and as_of is None:
         sql += _LIVE_ROW_PREDICATE_SQL
 
@@ -417,21 +436,34 @@ _KNN_SEARCH_TAIL_SQL = " ORDER BY distance LIMIT %s"
 KNN_SEARCH_SQL = _KNN_SEARCH_HEAD_SQL + _LIVE_ROW_PREDICATE_SQL + _KNN_SEARCH_TAIL_SQL
 
 
-def build_knn_search_sql(*, include_expired: bool = False) -> str:
-    """Compose the KNN recall SQL (TAP-4586).
+def build_knn_search_sql(
+    *, include_expired: bool = False, as_of: str | None = None
+) -> tuple[str, list[Any]]:
+    """Compose the KNN recall SQL + mid-params (TAP-4586 + point-in-time).
 
-    When *include_expired* is ``False`` (default), the live-row predicate is
-    pushed into the WHERE so expired/superseded rows do not occupy a top-K
-    slot when live rows exist.  Pass ``True`` from the ``include_historical``
+    Returns ``(sql, mid_params)``.  Caller binds
+    ``(vec, project_id, agent_id, *mid_params, k)``.
+
+    When *include_expired* is ``False`` (default) and *as_of* is unset, the
+    live-row predicate is pushed into the WHERE so expired/superseded rows do
+    not occupy a top-K slot.  Pass ``True`` from the ``include_historical``
     recall path so stale rows still reach the Python filter.
 
-    The predicate adds no bound parameters, so the caller's positional
-    ``(vec, project_id, agent_id, k)`` tuple is unchanged in either case.
-    Tenant/RLS predicates (``project_id`` / ``agent_id``) are untouched.
+    When *as_of* is set, the bi-temporal validity window (including
+    ``valid_from``/``valid_until``) is applied and the live-row predicate
+    stands down — same contract as :func:`build_search_sql` — so versions
+    valid at that timestamp can rank even if they are superseded now.
+    *mid_params* is then ``[as_of, as_of, as_of, as_of]``.
     """
-    if include_expired:
-        return _KNN_SEARCH_HEAD_SQL + _KNN_SEARCH_TAIL_SQL
-    return KNN_SEARCH_SQL
+    sql = _KNN_SEARCH_HEAD_SQL
+    mid_params: list[Any] = []
+    if as_of is not None:
+        sql += _SEARCH_FILTER_AS_OF_SQL
+        mid_params.extend([as_of, as_of, as_of, as_of])
+    if not include_expired and as_of is None:
+        sql += _LIVE_ROW_PREDICATE_SQL
+    sql += _KNN_SEARCH_TAIL_SQL
+    return sql, mid_params
 
 
 VECTOR_ROW_COUNT_SQL = (
@@ -495,7 +527,7 @@ DO UPDATE SET
             private_relations.source_entry_keys || EXCLUDED.source_entry_keys
         ) AS e
     ),
-    confidence        = EXCLUDED.confidence
+    confidence        = GREATEST(private_relations.confidence, EXCLUDED.confidence)
 """
 
 DELETE_RELATIONS_BY_KEY_SQL = """

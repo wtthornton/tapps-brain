@@ -10,7 +10,7 @@
 #   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (15 tools) — TAP-1579 brain_* facade (+ v3.24 experience/profile KV)
+#   agent_brain (16 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # defer_loading (TAP-1985) is disabled in the Docker reference stack so every
 # registered tool appears in the default tools/list response. Re-enable per-tool
@@ -256,5 +256,6 @@ profiles:
       - brain_record_events_batch
       - brain_record_feedback
       - brain_remember
+      - brain_resolve_entity
       - brain_status
 

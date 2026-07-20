@@ -13,6 +13,7 @@ Covers the four AC bullets from EPIC-071.md §STORY-071.2:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -424,3 +425,49 @@ def test_unwrap_mcp_result_ignores_non_dict_content() -> None:
 
     envelope = {"result": {"content": ["not-a-dict"]}}
     assert _unwrap_mcp_result(envelope) is envelope
+
+
+def test_unwrap_mcp_result_raises_on_is_error_envelope() -> None:
+    from tapps_brain.client import _unwrap_mcp_result
+    from tapps_brain.exceptions import TappsBrainValidationError
+
+    envelope = {
+        "result": {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {"error": "tool_error", "message": "search failed", "tool": "memory_search"}
+                    ),
+                }
+            ],
+        }
+    }
+    with pytest.raises(TappsBrainValidationError, match="search failed"):
+        _unwrap_mcp_result(envelope)
+
+
+def test_unwrap_mcp_result_raises_on_is_error_empty_payload() -> None:
+    from tapps_brain.client import _unwrap_mcp_result
+    from tapps_brain.exceptions import TappsBrainError
+
+    envelope = {"result": {"isError": True, "content": [{"type": "text", "text": "{}"}]}}
+    with pytest.raises(TappsBrainError, match="isError=true"):
+        _unwrap_mcp_result(envelope)
+
+
+def test_unwrap_mcp_result_returns_parsed_success_payload() -> None:
+    from tapps_brain.client import _unwrap_mcp_result
+
+    payload = {"entries": [{"key": "k1"}], "count": 1}
+    envelope = {"result": {"content": [{"type": "text", "text": json.dumps(payload)}]}}
+    assert _unwrap_mcp_result(envelope) == payload
+
+
+def test_raise_if_tool_error_on_error_dict() -> None:
+    from tapps_brain.client import _raise_if_tool_error
+    from tapps_brain.exceptions import TappsBrainValidationError
+
+    with pytest.raises(TappsBrainValidationError, match="search failed"):
+        _raise_if_tool_error({"error": "tool_error", "message": "search failed"})

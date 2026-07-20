@@ -193,7 +193,7 @@ RETURNING id
 # ---------------------------------------------------------------------------
 
 #: Outgoing edges (subject = focal entity).
-#: Params: brain_id, subject_entity_id::uuid.
+#: Params: brain_id, subject_entity_id::uuid, predicate, predicate, limit.
 GET_OUTGOING_NEIGHBORS_SQL = """
 SELECT
     e.id            AS edge_id,
@@ -207,18 +207,20 @@ SELECT
     ent.id          AS neighbor_id,
     ent.entity_type,
     ent.canonical_name,
-    ent.confidence  AS entity_confidence
+    ent.confidence  AS entity_confidence,
+    'out'           AS direction
 FROM kg_edges e
 JOIN kg_entities ent ON ent.id = e.object_entity_id
 WHERE e.brain_id = %s
   AND e.subject_entity_id = %s::uuid
   AND e.status = 'active'
+  AND (%s::text IS NULL OR e.predicate = %s::text)
 ORDER BY e.confidence DESC
-LIMIT 100
+LIMIT %s
 """
 
 #: Incoming edges (object = focal entity).
-#: Params: brain_id, object_entity_id::uuid.
+#: Params: brain_id, object_entity_id::uuid, predicate, predicate, limit.
 GET_INCOMING_NEIGHBORS_SQL = """
 SELECT
     e.id            AS edge_id,
@@ -232,91 +234,117 @@ SELECT
     ent.id          AS neighbor_id,
     ent.entity_type,
     ent.canonical_name,
-    ent.confidence  AS entity_confidence
+    ent.confidence  AS entity_confidence,
+    'in'            AS direction
 FROM kg_edges e
 JOIN kg_entities ent ON ent.id = e.subject_entity_id
 WHERE e.brain_id = %s
   AND e.object_entity_id = %s::uuid
   AND e.status = 'active'
+  AND (%s::text IS NULL OR e.predicate = %s::text)
 ORDER BY e.confidence DESC
-LIMIT 100
+LIMIT %s
+"""
+
+#: Both directions for a single focal entity — out UNION in, ranked, then limited.
+#: Params: (brain_id, entity_id, predicate, predicate) x2, then limit.
+GET_BOTH_NEIGHBORS_SQL = """
+SELECT * FROM (
+    SELECT
+        e.id            AS edge_id,
+        e.predicate,
+        e.confidence    AS edge_confidence,
+        e.stability,
+        e.difficulty,
+        e.last_reinforced,
+        e.updated_at    AS edge_updated_at,
+        e.status        AS edge_status,
+        ent.id          AS neighbor_id,
+        ent.entity_type,
+        ent.canonical_name,
+        ent.confidence  AS entity_confidence,
+        'out'           AS direction
+    FROM kg_edges e
+    JOIN kg_entities ent ON ent.id = e.object_entity_id
+    WHERE e.brain_id = %s
+      AND e.subject_entity_id = %s::uuid
+      AND e.status = 'active'
+      AND (%s::text IS NULL OR e.predicate = %s::text)
+
+    UNION ALL
+
+    SELECT
+        e.id            AS edge_id,
+        e.predicate,
+        e.confidence    AS edge_confidence,
+        e.stability,
+        e.difficulty,
+        e.last_reinforced,
+        e.updated_at    AS edge_updated_at,
+        e.status        AS edge_status,
+        ent.id          AS neighbor_id,
+        ent.entity_type,
+        ent.canonical_name,
+        ent.confidence  AS entity_confidence,
+        'in'            AS direction
+    FROM kg_edges e
+    JOIN kg_entities ent ON ent.id = e.subject_entity_id
+    WHERE e.brain_id = %s
+      AND e.object_entity_id = %s::uuid
+      AND e.status = 'active'
+      AND (%s::text IS NULL OR e.predicate = %s::text)
+) both_dirs
+ORDER BY edge_confidence DESC
+LIMIT %s
 """
 
 # ---------------------------------------------------------------------------
 # Multi-entity neighbourhood queries (STORY-076.2)
 # ---------------------------------------------------------------------------
 
-#: 1-hop outgoing neighbourhood for a set of focal entity UUIDs.
-#: Includes evidence_count via a LEFT JOIN aggregate so callers can use it
-#: in the composite edge-score formula without a second round-trip.
-#: Params: brain_id, focal_ids::uuid[], include_historical (bool x2),
-#:         predicate_filter (str|None x2), limit (int).
+#: 1-hop neighbourhood (outgoing UNION incoming) for a set of focal entity UUIDs.
+#: Matches single-entity ``get_neighbors(direction="both")``: an edge where the
+#: focal is the *object* is a real neighbour and must appear in the graph panel
+#: and MCP neighbourhood tools.  Includes evidence_count via a LEFT JOIN
+#: aggregate so callers can use it in the composite edge-score formula without
+#: a second round-trip.
+#: Params (repeated once per UNION arm): brain_id, focal_ids::uuid[],
+#:         include_historical (bool x2), predicate_filter (str|None x2),
+#:         then limit (int).
 GET_MULTI_NEIGHBORS_1HOP_SQL = """
-SELECT
-    -- ::text for parity with the 2-hop query and neighbor_id below — both
-    -- paths return a string edge_id so MCP JSON serialization and callers see
-    -- one consistent type (TAP-2674).
-    e.id::text                      AS edge_id,
-    e.predicate,
-    e.confidence                    AS edge_confidence,
-    e.stability,
-    e.difficulty,
-    e.last_reinforced,
-    e.updated_at                    AS edge_updated_at,
-    e.status                        AS edge_status,
-    e.contradicted,
-    e.reinforce_count,
-    e.useful_access_count,
-    e.access_count,
-    e.source,
-    COALESCE(ev.evidence_count, 0)  AS evidence_count,
-    ent.id::text                    AS neighbor_id,
-    ent.entity_type,
-    ent.canonical_name,
-    ent.confidence                  AS entity_confidence,
-    1                               AS hop
-FROM  kg_edges e
-JOIN  kg_entities ent
-      ON ent.id = e.object_entity_id
-LEFT  JOIN (
-    SELECT edge_id, COUNT(*) AS evidence_count
-    FROM   kg_evidence
-    GROUP  BY edge_id
-) ev ON ev.edge_id = e.id
-WHERE e.brain_id = %s
-  AND e.subject_entity_id = ANY(%s::uuid[])
-  AND (e.status = 'active' OR %s)
-  AND (NOT e.contradicted OR %s)
-  AND (%s::text IS NULL OR e.predicate = %s::text)
-ORDER BY e.confidence DESC
-LIMIT %s
-"""
-
-#: 2-hop recursive neighbourhood for a set of focal entity UUIDs.
-#: Uses a recursive CTE (UNION ALL for performance; DISTINCT ON deduplicates)
-#: to follow outgoing edges up to ``max_hops`` levels deep.
-#: Params: brain_id, focal_ids::uuid[], include_historical (bool x2),
-#:         predicate_filter (str|None x2),
-#:         brain_id (again in recursive term), include_historical (bool x2),
-#:         predicate_filter (str|None x2), max_hops (int), limit (int).
-GET_MULTI_NEIGHBORS_2HOP_SQL = """
-WITH RECURSIVE neighbourhood(
-    edge_id, predicate, edge_confidence,
-    stability, difficulty, last_reinforced, edge_updated_at, edge_status,
-    contradicted, reinforce_count, useful_access_count, access_count, source,
-    neighbor_id, entity_type, canonical_name, entity_confidence, hop
-) AS (
-    -- Base case: direct neighbours of focal entities.
+SELECT * FROM (
     SELECT
-        e.id, e.predicate, e.confidence,
-        e.stability, e.difficulty, e.last_reinforced, e.updated_at,
-        e.status, e.contradicted, e.reinforce_count,
-        e.useful_access_count, e.access_count, e.source,
-        e.object_entity_id,
-        ent.entity_type, ent.canonical_name, ent.confidence,
-        1 AS hop
-    FROM kg_edges e
-    JOIN kg_entities ent ON ent.id = e.object_entity_id
+        -- ::text for parity with the 2-hop query and neighbor_id below — both
+        -- paths return a string edge_id so MCP JSON serialization and callers see
+        -- one consistent type (TAP-2674).
+        e.id::text                      AS edge_id,
+        e.predicate,
+        e.confidence                    AS edge_confidence,
+        e.stability,
+        e.difficulty,
+        e.last_reinforced,
+        e.updated_at                    AS edge_updated_at,
+        e.status                        AS edge_status,
+        e.contradicted,
+        e.reinforce_count,
+        e.useful_access_count,
+        e.access_count,
+        e.source,
+        COALESCE(ev.evidence_count, 0)  AS evidence_count,
+        ent.id::text                    AS neighbor_id,
+        ent.entity_type,
+        ent.canonical_name,
+        ent.confidence                  AS entity_confidence,
+        1                               AS hop,
+        'out'                           AS direction
+    FROM  kg_edges e
+    JOIN  kg_entities ent
+          ON ent.id = e.object_entity_id
+    LEFT  JOIN (
+        SELECT edge_id, COUNT(*) AS evidence_count
+        FROM   kg_evidence
+        GROUP  BY edge_id
+    ) ev ON ev.edge_id = e.id
     WHERE e.brain_id = %s
       AND e.subject_entity_id = ANY(%s::uuid[])
       AND (e.status = 'active' OR %s)
@@ -325,28 +353,129 @@ WITH RECURSIVE neighbourhood(
 
     UNION ALL
 
-    -- Recursive step: one hop further from the previous frontier.
+    SELECT
+        e.id::text                      AS edge_id,
+        e.predicate,
+        e.confidence                    AS edge_confidence,
+        e.stability,
+        e.difficulty,
+        e.last_reinforced,
+        e.updated_at                    AS edge_updated_at,
+        e.status                        AS edge_status,
+        e.contradicted,
+        e.reinforce_count,
+        e.useful_access_count,
+        e.access_count,
+        e.source,
+        COALESCE(ev.evidence_count, 0)  AS evidence_count,
+        ent.id::text                    AS neighbor_id,
+        ent.entity_type,
+        ent.canonical_name,
+        ent.confidence                  AS entity_confidence,
+        1                               AS hop,
+        'in'                            AS direction
+    FROM  kg_edges e
+    JOIN  kg_entities ent
+          ON ent.id = e.subject_entity_id
+    LEFT  JOIN (
+        SELECT edge_id, COUNT(*) AS evidence_count
+        FROM   kg_evidence
+        GROUP  BY edge_id
+    ) ev ON ev.edge_id = e.id
+    WHERE e.brain_id = %s
+      AND e.object_entity_id = ANY(%s::uuid[])
+      AND (e.status = 'active' OR %s)
+      AND (NOT e.contradicted OR %s)
+      AND (%s::text IS NULL OR e.predicate = %s::text)
+) both_dirs
+ORDER BY edge_confidence DESC
+LIMIT %s
+"""
+
+#: 2-hop recursive neighbourhood for a set of focal entity UUIDs.
+#: Undirected (matches 1-hop): parenthesized base (out UNION in) then a
+#: *single* recursive arm — PostgreSQL forbids multiple recursive self-refs.
+#: The recursive arm joins edges where the frontier is subject *or* object.
+#: Params:
+#:   base out: brain_id, focal_ids, ih x2, pf x2
+#:   base in:  brain_id, focal_ids, ih x2, pf x2
+#:   recursive: brain_id, ih x2, pf x2, max_hops
+#:   limit
+GET_MULTI_NEIGHBORS_2HOP_SQL = """
+WITH RECURSIVE neighbourhood(
+    edge_id, predicate, edge_confidence,
+    stability, difficulty, last_reinforced, edge_updated_at, edge_status,
+    contradicted, reinforce_count, useful_access_count, access_count, source,
+    neighbor_id, entity_type, canonical_name, entity_confidence, hop
+) AS (
+    (
+        -- Base: outgoing from focals.
+        SELECT
+            e.id, e.predicate, e.confidence,
+            e.stability, e.difficulty, e.last_reinforced, e.updated_at,
+            e.status, e.contradicted, e.reinforce_count,
+            e.useful_access_count, e.access_count, e.source,
+            e.object_entity_id,
+            ent.entity_type, ent.canonical_name, ent.confidence,
+            1 AS hop
+        FROM kg_edges e
+        JOIN kg_entities ent ON ent.id = e.object_entity_id
+        WHERE e.brain_id = %s
+          AND e.subject_entity_id = ANY(%s::uuid[])
+          AND (e.status = 'active' OR %s)
+          AND (NOT e.contradicted OR %s)
+          AND (%s::text IS NULL OR e.predicate = %s::text)
+
+        UNION ALL
+
+        -- Base: incoming to focals.
+        SELECT
+            e.id, e.predicate, e.confidence,
+            e.stability, e.difficulty, e.last_reinforced, e.updated_at,
+            e.status, e.contradicted, e.reinforce_count,
+            e.useful_access_count, e.access_count, e.source,
+            e.subject_entity_id,
+            ent.entity_type, ent.canonical_name, ent.confidence,
+            1 AS hop
+        FROM kg_edges e
+        JOIN kg_entities ent ON ent.id = e.subject_entity_id
+        WHERE e.brain_id = %s
+          AND e.object_entity_id = ANY(%s::uuid[])
+          AND (e.status = 'active' OR %s)
+          AND (NOT e.contradicted OR %s)
+          AND (%s::text IS NULL OR e.predicate = %s::text)
+    )
+
+    UNION ALL
+
+    -- Single recursive arm: expand both directions from the frontier.
     SELECT
         e2.id, e2.predicate, e2.confidence,
         e2.stability, e2.difficulty, e2.last_reinforced, e2.updated_at,
         e2.status, e2.contradicted, e2.reinforce_count,
         e2.useful_access_count, e2.access_count, e2.source,
-        e2.object_entity_id,
+        CASE
+            WHEN e2.subject_entity_id = n.neighbor_id THEN e2.object_entity_id
+            ELSE e2.subject_entity_id
+        END,
         ent2.entity_type, ent2.canonical_name, ent2.confidence,
         n.hop + 1
-    FROM kg_edges e2
-    JOIN neighbourhood n      ON n.neighbor_id = e2.subject_entity_id
-    JOIN kg_entities   ent2   ON ent2.id        = e2.object_entity_id
-    WHERE e2.brain_id = %s
-      AND (e2.status = 'active' OR %s)
+    FROM neighbourhood n
+    JOIN kg_edges e2
+      ON e2.brain_id = %s
+     AND (
+         e2.subject_entity_id = n.neighbor_id
+         OR e2.object_entity_id = n.neighbor_id
+     )
+    JOIN kg_entities ent2 ON ent2.id = CASE
+        WHEN e2.subject_entity_id = n.neighbor_id THEN e2.object_entity_id
+        ELSE e2.subject_entity_id
+    END
+    WHERE (e2.status = 'active' OR %s)
       AND (NOT e2.contradicted OR %s)
       AND (%s::text IS NULL OR e2.predicate = %s::text)
       AND n.hop < %s
 )
--- ``edge_id`` is qualified as ``n2.edge_id`` here: it exists in both
--- ``neighbourhood n2`` and the ``ev`` evidence subquery, so an unqualified
--- reference is AmbiguousColumn (TAP-2674 — surfaced once the $5 cast let the
--- 2-hop query reach execution).
 SELECT DISTINCT ON (n2.edge_id)
     n2.edge_id::text,
     predicate, edge_confidence, stability, difficulty,

@@ -474,6 +474,15 @@ def _dimension_recommendations(scores: dict[str, DimensionScore]) -> list[str]:
     return recs
 
 
+def _count_gap_reports(store: MemoryStore) -> int:
+    """Count ``gap_reported`` feedback events without an oldest-first LIMIT window."""
+    count_fn = getattr(store, "count_feedback", None)
+    if callable(count_fn):
+        return int(count_fn(event_type="gap_reported"))
+    # Fakes without count_feedback — still avoid the historical LIMIT 5000 ASC trap.
+    return len(store.query_feedback(event_type="gap_reported", limit=2**31 - 1))
+
+
 def run_diagnostics(
     store: MemoryStore,
     *,
@@ -517,7 +526,7 @@ def run_diagnostics(
     hive_diag, hive_comp = _hive_namespace_scores(store)
     gaps = 0
     try:
-        gaps = len(store.query_feedback(event_type="gap_reported", limit=5000))
+        gaps = _count_gap_reports(store)
     except Exception:
         logger.warning("diagnostics_gap_count_failed", exc_info=True)
     recs: list[str] = []

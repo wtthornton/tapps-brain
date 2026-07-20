@@ -34,12 +34,30 @@ if TYPE_CHECKING:
 
 # Routes that require the data-plane bearer token.
 _DATA_PLANE_PREFIXES = ("/v1/", "/snapshot", "/info")
+# Public scrape endpoints under /v1/ — no bearerAuth / tenant headers.
+_PUBLIC_V1_PATHS = frozenset({"/v1/tools/list", "/v1/skill"})
 # Routes that require the admin bearer token.
 _ADMIN_PREFIXES = ("/admin/",)
 # Routes that take ``X-Project-Id`` / ``X-Agent-Id`` tenant headers.
 _TENANT_HEADER_PREFIXES = ("/v1/", "/snapshot", "/mcp")
-# Routes that accept ``X-Idempotency-Key`` (write-side).
-_IDEMPOTENCY_PREFIXES = ("/v1/remember", "/v1/reinforce")
+# Routes whose handlers implement X-Idempotency-Key check/replay/save
+# (every http_adapter route that calls ``_get_ikey_and_istore``).  An explicit
+# set — the old prefix heuristic plus a blanket ``:batch`` suffix rule both
+# omitted implemented routes (/v1/forget, /v1/learn_*, /v1/experience) and
+# wrongly advertised the header on /v1/recall:batch, which never reads it.
+_IDEMPOTENCY_PATHS = frozenset(
+    {
+        "/v1/remember",
+        "/v1/remember:batch",
+        "/v1/reinforce",
+        "/v1/reinforce:batch",
+        "/v1/forget",
+        "/v1/learn_success",
+        "/v1/learn_failure",
+        "/v1/experience",
+        "/v1/experience:batch",
+    }
+)
 
 
 def _service_version() -> str:
@@ -120,8 +138,9 @@ def _common_parameters() -> dict[str, Any]:
             "required": False,
             "schema": {"type": "string"},
             "description": (
-                "Optional agent fingerprint string used for telemetry "
-                "labelling.  Distinct from ``X-Agent-Id``."
+                "Per-call agent identity (STORY-070.7).  When set, takes "
+                "precedence over ``X-Agent-Id`` for tenant routing on both "
+                "REST and MCP.  The HTTP SDK sends this header."
             ),
         },
         "XIdempotencyKey": {
@@ -260,10 +279,11 @@ def _path_needs(prefixes: tuple[str, ...], path: str) -> bool:
 def _enrich_path(path: str, methods: dict[str, Any]) -> None:
     """Mutate *methods* (a path item) in-place to add headers, security,
     and the standard error responses."""
-    is_data_plane = _path_needs(_DATA_PLANE_PREFIXES, path)
+    is_public_v1 = path in _PUBLIC_V1_PATHS
+    is_data_plane = _path_needs(_DATA_PLANE_PREFIXES, path) and not is_public_v1
     is_admin = _path_needs(_ADMIN_PREFIXES, path)
-    needs_tenant_headers = _path_needs(_TENANT_HEADER_PREFIXES, path)
-    needs_idempotency = _path_needs(_IDEMPOTENCY_PREFIXES, path)
+    needs_tenant_headers = _path_needs(_TENANT_HEADER_PREFIXES, path) and not is_public_v1
+    needs_idempotency = path in _IDEMPOTENCY_PATHS
 
     for verb, op in methods.items():
         if verb in ("parameters", "summary", "description"):
@@ -276,6 +296,8 @@ def _enrich_path(path: str, methods: dict[str, Any]) -> None:
             op["security"] = [{"adminBearerAuth": []}]
         elif is_data_plane:
             op["security"] = [{"bearerAuth": []}]
+        elif is_public_v1:
+            op["security"] = []
 
         # Parameters: append references to common headers if missing.
         params = op.setdefault("parameters", [])
@@ -291,7 +313,7 @@ def _enrich_path(path: str, methods: dict[str, Any]) -> None:
                     ("#/components/parameters/XTappsAgent", "X-Tapps-Agent"),
                 ]
             )
-        if needs_idempotency or path.endswith(":batch"):
+        if needs_idempotency:
             wanted.append(("#/components/parameters/XIdempotencyKey", "X-Idempotency-Key"))
         for ref, name in wanted:
             if ref not in existing_refs and name not in existing_names:
@@ -376,6 +398,17 @@ def build_openapi_spec(app: FastAPI) -> dict[str, Any]:
                     },
                 },
             )
+
+    # /v1/reinforce returns 404 when the key is missing (service ``not_found``).
+    reinforce_op = paths.get("/v1/reinforce", {}).get("post")
+    if isinstance(reinforce_op, dict):
+        reinforce_op.setdefault("responses", {}).setdefault(
+            "404",
+            {
+                "description": "Memory key not found for this tenant/agent.",
+                "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}},
+            },
+        )
 
     # Wire the Info schema into /info if FastAPI generated a generic 200.
     info_path = paths.get("/info")

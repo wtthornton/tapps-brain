@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#f0ede6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0e13" />
   <meta name="tapps-snapshot-url" content="/snapshot" />
+  <!-- Substituted at container start by docker/visual-entrypoint.sh -->
+  <meta name="tapps-project-options" content="__TAPPS_PROJECT_OPTIONS__" />
   <title>tapps-brain · NLT visual snapshot</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -3859,6 +3861,12 @@
             "Circuit is half-open: composite score was below 0.3 and a cooldown has elapsed. " +
             "tapps-brain is running probe recalls to determine if quality has recovered. " +
             "Recall returns a <code>quality_warning</code> on RecallResult.";
+        } else if (circuit.includes("DEGRADED")) {
+          badgeClass = "circuit-half";
+          badgeText = "◑ DEGRADED — reduced quality";
+          desc =
+            "Circuit is degraded: composite score is below 0.6 but above the 0.3 open threshold. " +
+            "Recall still serves results with reduced quality signals — worth watching before it trips open.";
         } else if (circuit.includes("OPEN")) {
           badgeClass = "circuit-open";
           badgeText = "○ OPEN — degraded";
@@ -4059,16 +4067,21 @@
       const w24h = num("writes_24h");
       const r24h = num("recalls_24h");
 
-      /** Returns "↑" when the 1 h rate exceeds the 24 h hourly average, else "↓". */
+      /** Returns "↑"/"↓"/"" when the 1 h rate is above/below/equal to the 24 h hourly average. */
       function arrow(count1h, count24h) {
         if (count1h === null || count24h === null) return "";
         const hourlyAvg = count24h / 24;
-        return count1h > hourlyAvg ? "↑" : "↓";
+        if (count1h > hourlyAvg) return "↑";
+        if (count1h < hourlyAvg) return "↓";
+        return "";
       }
 
       function arrowClass(count1h, count24h) {
         if (count1h === null || count24h === null) return "";
-        return count1h > count24h / 24 ? "kpi-arrow-up" : "kpi-arrow-down";
+        const hourlyAvg = count24h / 24;
+        if (count1h > hourlyAvg) return "kpi-arrow-up";
+        if (count1h < hourlyAvg) return "kpi-arrow-down";
+        return "";
       }
 
       const fmt = (n) => (n === null ? "N/A" : String(n));
@@ -4270,11 +4283,22 @@
             ? health.tier_distribution
             : {};
         const tierN = Object.values(tierObj).reduce((a, b) => a + Number(b || 0), 0);
+        // Entry/tier KPIs come from store health (agent-scoped), not the KG
+        // ?project= filter — label that so a filtered view is not misleading.
+        const projSel = document.getElementById("project-filter");
+        const projFilter =
+          projSel && projSel.value ? String(projSel.value).trim() : "";
+        const entriesSub =
+          projFilter
+            ? "store-global (not project filter)"
+            : maxEnt !== null
+              ? "of " + maxEnt + " max"
+              : "";
         const cells = [
           {
             lbl: "Entries",
             val: entryCount !== null ? String(entryCount) : "—",
-            sub: maxEnt !== null ? "of " + maxEnt + " max" : "",
+            sub: entriesSub,
           },
           { lbl: "DB schema", val: el("schema").textContent, sub: "Postgres schema version" },
           {
@@ -4493,21 +4517,27 @@
           }
         }
 
-        if (tableEl && !tableEl.dataset.sortBound) {
-          tableEl.dataset.sortBound = "1";
-          tableEl.querySelectorAll("th.sortable").forEach(function (th) {
-            th.addEventListener("click", function () {
-              if (!hh || !hh.connected) return;
-              const col = th.getAttribute("data-sort-col") || "name";
-              if (hiveNsSort.col === col) {
-                hiveNsSort.dir = hiveNsSort.dir === "asc" ? "desc" : "asc";
-              } else {
-                hiveNsSort.col = col;
-                hiveNsSort.dir = col === "name" ? "asc" : "desc";
-              }
-              renderNamespaceTable(normalizeNamespaceRows(hh));
+        if (tableEl) {
+          // Always refresh the snapshot handle so a once-bound sorter sees
+          // the latest poll, not the first connected snapshot.
+          tableEl._hiveHealth = hh;
+          if (!tableEl.dataset.sortBound) {
+            tableEl.dataset.sortBound = "1";
+            tableEl.querySelectorAll("th.sortable").forEach(function (th) {
+              th.addEventListener("click", function () {
+                const latest = tableEl._hiveHealth;
+                if (!latest || !latest.connected) return;
+                const col = th.getAttribute("data-sort-col") || "name";
+                if (hiveNsSort.col === col) {
+                  hiveNsSort.dir = hiveNsSort.dir === "asc" ? "desc" : "asc";
+                } else {
+                  hiveNsSort.col = col;
+                  hiveNsSort.dir = col === "name" ? "asc" : "desc";
+                }
+                renderNamespaceTable(normalizeNamespaceRows(latest));
+              });
             });
-          });
+          }
         }
       })();
 
@@ -4617,17 +4647,24 @@
           registryNote.hidden = true;
         }
 
-        function openRowDrawer(ev) {
-          const tr = ev.target && ev.target.closest ? ev.target.closest("tr[data-agent-idx]") : null;
-          if (!tr) return;
-          const i = Number(tr.getAttribute("data-agent-idx"));
-          const a = shownAgents[i];
-          if (a) openAgentDetailDrawer(a, tr);
+        // Keep the latest row set on the element; bind listeners once so each
+        // 30s poll does not stack another click/keydown handler.
+        tbody._shownAgents = shownAgents;
+        if (!tbody.dataset.rowBound) {
+          tbody.dataset.rowBound = "1";
+          function openRowDrawer(ev) {
+            const tr = ev.target && ev.target.closest ? ev.target.closest("tr[data-agent-idx]") : null;
+            if (!tr) return;
+            const i = Number(tr.getAttribute("data-agent-idx"));
+            const agents = tbody._shownAgents || [];
+            const a = agents[i];
+            if (a) openAgentDetailDrawer(a, tr);
+          }
+          tbody.addEventListener("click", openRowDrawer);
+          tbody.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRowDrawer(e); }
+          });
         }
-        tbody.addEventListener("click", openRowDrawer);
-        tbody.addEventListener("keydown", function (e) {
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRowDrawer(e); }
-        });
       })();
 
       /* Agent topology (SVG) — STORY-068.6 */
@@ -4863,6 +4900,8 @@
         _agentDrawerLastFocus = null;
       }
       (function bindAgentDrawer() {
+        if (document.documentElement.dataset.agentDrawerBound === "1") return;
+        document.documentElement.dataset.agentDrawerBound = "1";
         const closeBtn = el("agent-drawer-close");
         if (closeBtn) closeBtn.addEventListener("click", closeAgentDetailDrawer);
         const backdrop = el("help-backdrop");
@@ -5318,11 +5357,21 @@
       return base + sep + "project=" + encodeURIComponent(proj);
     }
 
-    // STORY-069.7: self-populate project dropdown from snapshot data.
+    // STORY-069.7: self-populate project dropdown from operator-seeded options
+    // (meta tag, filled by visual-entrypoint) plus snapshot history/events.
+    // RLS blocks enumerating kg_entities tenants from the runtime role, so the
+    // meta list is the only reliable source for real KG projects like api/main.
+    function _seededProjectOptions() {
+      const meta = document.querySelector('meta[name="tapps-project-options"]');
+      const raw = meta && meta.getAttribute("content") ? meta.getAttribute("content") : "";
+      if (!raw || raw.indexOf("__") === 0) return [];
+      return raw.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
     function _updateProjectFilterOptions(data) {
       const sel = document.getElementById("project-filter");
       if (!sel) return;
-      const ids = new Set();
+      const ids = new Set(_seededProjectOptions());
       const hist = (data && data.diagnostics_history) || [];
       const events = (data && data.feedback_events) || [];
       for (const r of hist) { if (r && r.project_id) ids.add(r.project_id); }
@@ -5469,6 +5518,17 @@
         }
         consecutiveErrors = 0;
         lastSuccessMs = Date.now();
+        // Drop stale in-flight responses when the user changed project/interval
+        // mid-fetch — otherwise we briefly paint the wrong tenant's KPIs.
+        if (gen !== pollGen) {
+          fetchInFlight = false;
+          if (pendingPollGen !== null) {
+            const pg = pendingPollGen;
+            pendingPollGen = null;
+            fetchSnapshot(pg);
+          }
+          return;
+        }
         _liveHideEmpty();
         _updateProjectFilterOptions(data);
         applySnapshot(data);
