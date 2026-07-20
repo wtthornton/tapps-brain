@@ -544,30 +544,63 @@ def maintenance_consolidation_config(
 @maintenance_app.command("migrate")
 def maintenance_migrate(
     project_dir: ProjectDir = None,
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="TAPPS_BRAIN_DATABASE_URL",
+            help="PostgreSQL DSN (or set TAPPS_BRAIN_DATABASE_URL).",
+        ),
+    ] = "",
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Show current schema version only.")
+        bool, typer.Option("--dry-run", help="Show pending migrations without applying.")
     ] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Run schema migrations."""
-    store = _get_store(project_dir)
-    try:
-        version = store.get_schema_version()
-        if dry_run:
-            data = {"current_version": version}
-            if as_json:
-                _output(data, as_json=True)
-            else:
-                typer.echo(f"Current schema version: v{version}")
+    """Apply pending private-memory schema migrations."""
+    import os
+
+    from tapps_brain.postgres_migrations import (
+        apply_private_migrations,
+        get_private_schema_status,
+    )
+
+    _ = project_dir  # retained for CLI signature compatibility
+    resolved = (dsn or os.environ.get("TAPPS_BRAIN_DATABASE_URL", "")).strip()
+    if not resolved:
+        typer.echo("Error: --dsn or TAPPS_BRAIN_DATABASE_URL is required.", err=True)
+        raise typer.Exit(code=1)
+
+    status = get_private_schema_status(resolved)
+    if dry_run:
+        pending = [{"version": v, "filename": f} for v, f in status.pending_migrations]
+        data = {
+            "current_version": status.current_version,
+            "pending_migrations": pending,
+            "dry_run": True,
+        }
+        if as_json:
+            _output(data, as_json=True)
+        elif not pending:
+            typer.echo(f"Current schema version: v{status.current_version} (up-to-date)")
         else:
-            # Migrations run automatically on store open
-            data = {"schema_version": version, "status": "up-to-date"}
-            if as_json:
-                _output(data, as_json=True)
-            else:
-                typer.echo(f"Schema version: v{version} (up-to-date)")
-    finally:
-        store.close()
+            typer.echo(f"Current schema version: v{status.current_version}")
+            typer.echo(f"Pending: {[p['version'] for p in pending]}")
+        return
+
+    applied = apply_private_migrations(resolved)
+    after = get_private_schema_status(resolved).current_version
+    data = {
+        "schema_version": after,
+        "applied_versions": applied,
+        "status": "up-to-date" if not applied else "applied",
+    }
+    if as_json:
+        _output(data, as_json=True)
+    elif not applied:
+        typer.echo(f"Schema version: v{after} (up-to-date)")
+    else:
+        typer.echo(f"Applied migrations: {applied} (now v{after})")
 
 
 @maintenance_app.command("health")
@@ -741,10 +774,24 @@ _PG_DSN_OPT = Annotated[
     str,
     typer.Option(
         "--dsn",
-        envvar="TAPPS_BRAIN_HIVE_POSTGRES_DSN",
-        help="PostgreSQL connection string (or set TAPPS_BRAIN_HIVE_POSTGRES_DSN).",
+        help=(
+            "PostgreSQL connection string. Falls back to TAPPS_BRAIN_HIVE_DSN, "
+            "TAPPS_BRAIN_HIVE_POSTGRES_DSN, then TAPPS_BRAIN_DATABASE_URL."
+        ),
     ),
 ]
+
+
+def _resolve_hive_cli_dsn(dsn: str) -> str:
+    """Resolve Hive DSN from --dsn or documented env vars."""
+    import os
+
+    return (
+        (dsn or "").strip()
+        or os.environ.get("TAPPS_BRAIN_HIVE_DSN", "").strip()
+        or os.environ.get("TAPPS_BRAIN_HIVE_POSTGRES_DSN", "").strip()
+        or os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
+    )
 
 
 @maintenance_app.command("migrate-hive")
@@ -756,13 +803,17 @@ def maintenance_migrate_hive(
     as_json: JsonFlag = False,
 ) -> None:
     """Apply pending PostgreSQL Hive schema migrations."""
-    if not dsn:
-        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_POSTGRES_DSN is required.", err=True)
+    resolved = _resolve_hive_cli_dsn(dsn)
+    if not resolved:
+        typer.echo(
+            "Error: --dsn or TAPPS_BRAIN_HIVE_DSN / TAPPS_BRAIN_DATABASE_URL is required.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     from tapps_brain.postgres_migrations import apply_hive_migrations
 
-    applied = apply_hive_migrations(dsn, dry_run=dry_run)
+    applied = apply_hive_migrations(resolved, dry_run=dry_run)
     data = {
         "applied_versions": applied,
         "dry_run": dry_run,
@@ -783,13 +834,17 @@ def maintenance_hive_schema_status(
     as_json: JsonFlag = False,
 ) -> None:
     """Show current PostgreSQL Hive schema version and pending migrations."""
-    if not dsn:
-        typer.echo("Error: --dsn or TAPPS_BRAIN_HIVE_POSTGRES_DSN is required.", err=True)
+    resolved = _resolve_hive_cli_dsn(dsn)
+    if not resolved:
+        typer.echo(
+            "Error: --dsn or TAPPS_BRAIN_HIVE_DSN / TAPPS_BRAIN_DATABASE_URL is required.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     from tapps_brain.postgres_migrations import get_hive_schema_status
 
-    status = get_hive_schema_status(dsn)
+    status = get_hive_schema_status(resolved)
     data = {
         "current_version": status.current_version,
         "applied_versions": status.applied_versions,

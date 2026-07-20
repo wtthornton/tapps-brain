@@ -559,12 +559,21 @@ def _import_memory_md_sync(
             body = value[:MAX_VALUE_LENGTH]
             truncated += 1
 
-        store.save(
+        saved = store.save(
             key=key,
             value=body,
             tier=tier_str,
             source=MemorySource.system.value,
         )
+        if isinstance(saved, dict) and saved.get("error"):
+            logger.warning(
+                "markdown_sync.save_failed",
+                key=key,
+                error=saved.get("error"),
+                detail=saved.get("detail") or saved.get("message"),
+            )
+            skipped += 1
+            continue
         imported += 1
         logger.debug("markdown_sync.imported", key=key, tier=tier_str)
 
@@ -631,12 +640,21 @@ def _import_daily_notes_sync(
             )
             truncated += 1
         value = text[:MAX_VALUE_LENGTH]
-        store.save(
+        saved = store.save(
             key=key,
             value=value,
             tier=MemoryTier.context.value,
             source=MemorySource.system.value,
         )
+        if isinstance(saved, dict) and saved.get("error"):
+            logger.warning(
+                "markdown_sync.daily_save_failed",
+                key=key,
+                error=saved.get("error"),
+                detail=saved.get("detail") or saved.get("message"),
+            )
+            skipped += 1
+            continue
         imported += 1
         logger.debug("markdown_sync.imported_daily", key=key, date=date_str)
 

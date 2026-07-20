@@ -30,6 +30,7 @@ from typing import Any
 # does not include the mapped tool, the middleware returns 403.
 REST_ROUTE_TO_TOOL: dict[str, str] = {
     # AgentBrain facade (TAP-993)
+    # Primary tool name used in out_of_profile errors / suggestions.
     "/v1/remember": "brain_remember",
     "/v1/recall": "brain_recall",
     "/v1/forget": "brain_forget",
@@ -53,6 +54,15 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/kg/resolve_entities": "brain_resolve_entity",  # TAP-3249 — same tool, batch
 }
 
+# Routes whose REST handler is shape-compatible with more than one MCP tool.
+# ``/v1/remember`` accepts memory_save-shaped {key,value}; seeder exposes
+# ``memory_save`` while agent_brain exposes ``brain_remember`` — allow either.
+REST_ROUTE_EQUIVALENT_TOOLS: dict[str, frozenset[str]] = {
+    "/v1/remember": frozenset({"brain_remember", "memory_save"}),
+    # coder exposes brain_record_events_batch; agent_brain exposes brain_record_event.
+    "/v1/experience:batch": frozenset({"brain_record_event", "brain_record_events_batch"}),
+}
+
 # Paths that bypass profile gating entirely.  Mirrors the
 # ``_ORIGIN_EXEMPT_PATHS`` allowlist in ``http_adapter`` plus the v1 catalog
 # read endpoint (which gets per-request profile filtering instead).
@@ -70,14 +80,23 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
 
 
 def resolve_tool_for_path(path: str) -> str | None:
-    """Return the tool name a REST path maps to, or ``None`` for unmapped paths.
+    """Return the primary tool name a REST path maps to, or ``None``.
 
     Used by :class:`tapps_brain.http.middleware.RestProfileGateMiddleware` to
     decide whether to gate the call.  Returns ``None`` for non-``/v1/*`` paths
     and unmapped ``/v1/*`` paths (admin routes, future endpoints) — those are
-    not gated by this middleware.
+    not gated by this middleware.  See :func:`tools_for_path` when a route
+    accepts more than one equivalent tool.
     """
     return REST_ROUTE_TO_TOOL.get(path)
+
+
+def tools_for_path(path: str) -> frozenset[str] | None:
+    """Return the set of MCP tools that authorize *path*, or ``None`` if unmapped."""
+    primary = REST_ROUTE_TO_TOOL.get(path)
+    if primary is None:
+        return None
+    return REST_ROUTE_EQUIVALENT_TOOLS.get(path, frozenset({primary}))
 
 
 def validate_rest_route_map(known_tools: frozenset[str]) -> None:
@@ -96,6 +115,10 @@ def validate_rest_route_map(known_tools: frozenset[str]) -> None:
     for route, tool in REST_ROUTE_TO_TOOL.items():
         if tool not in known_tools:
             missing.append(f"  {route!r} → {tool!r}")
+    for route, tools in REST_ROUTE_EQUIVALENT_TOOLS.items():
+        for tool in tools:
+            if tool not in known_tools:
+                missing.append(f"  {route!r} (equiv) → {tool!r}")
     if missing:
         raise ValueError(
             "REST route drift detected — update REST_ROUTE_TO_TOOL or "

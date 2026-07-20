@@ -945,25 +945,75 @@ class TestMaintenanceCommands:
     # file to poke and the equivalent Postgres path requires an ephemeral DB
     # fixture (tracked as a follow-up Postgres integration test).
 
-    def test_migrate(self, project_dir):
-        result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
-        assert result.exit_code == 0
-        assert "v" in result.stdout  # version number varies by backend
+    def test_migrate_requires_dsn(self, project_dir):
+        """Without --dsn / TAPPS_BRAIN_DATABASE_URL, migrate exits 1."""
+        import os
+        from unittest.mock import patch
+
+        env = {k: v for k, v in os.environ.items() if k != "TAPPS_BRAIN_DATABASE_URL"}
+        with patch.dict("os.environ", env, clear=True):
+            result = runner.invoke(app, ["maintenance", "migrate", "--project-dir", project_dir])
+        assert result.exit_code == 1
+        assert "TAPPS_BRAIN_DATABASE_URL" in (result.stderr or result.stdout)
 
     def test_migrate_dry_run(self, project_dir):
-        result = runner.invoke(
-            app, ["maintenance", "migrate", "--project-dir", project_dir, "--dry-run"]
-        )
+        from unittest.mock import MagicMock, patch
+
+        status = MagicMock()
+        status.current_version = 27
+        status.pending_migrations = []
+        with patch(
+            "tapps_brain.postgres_migrations.get_private_schema_status",
+            return_value=status,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "migrate",
+                    "--project-dir",
+                    project_dir,
+                    "--dsn",
+                    "postgres://tapps:tapps@localhost:5432/tapps_brain",
+                    "--dry-run",
+                ],
+            )
         assert result.exit_code == 0
-        assert "v" in result.stdout  # version number varies by backend
+        assert "v27" in result.stdout
+        assert "up-to-date" in result.stdout
 
     def test_migrate_json(self, project_dir):
-        result = runner.invoke(
-            app, ["maintenance", "migrate", "--project-dir", project_dir, "--json"]
-        )
+        from unittest.mock import MagicMock, patch
+
+        status = MagicMock()
+        status.current_version = 27
+        status.pending_migrations = []
+        with (
+            patch(
+                "tapps_brain.postgres_migrations.apply_private_migrations",
+                return_value=[],
+            ),
+            patch(
+                "tapps_brain.postgres_migrations.get_private_schema_status",
+                return_value=status,
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "maintenance",
+                    "migrate",
+                    "--project-dir",
+                    project_dir,
+                    "--dsn",
+                    "postgres://tapps:tapps@localhost:5432/tapps_brain",
+                    "--json",
+                ],
+            )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["schema_version"] >= 1
+        assert data["status"] == "up-to-date"
 
     def test_consolidation_merge_undo_dry_run_no_audit(self, project_dir):
         """--dry-run with no audit record exits 0 and leaves the store unchanged."""

@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from tapps_brain.mcp_server.context import _current_request_idempotency_key
+from tapps_brain.mcp_server.context import (
+    _current_request_idempotency_key,
+    _mcp_idempotency_check,
+    _mcp_idempotency_record,
+)
 from tapps_brain.services import memory_service
 
 if TYPE_CHECKING:
@@ -121,9 +125,16 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_delete(key: str, agent_id: str = "") -> str:
         """Delete a memory entry by key."""
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(memory_service.memory_delete(s, _pid(), eff_aid, key=key))
+        result = memory_service.memory_delete(s, project_id, eff_aid, key=key)
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_search(
@@ -279,20 +290,25 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         agent_id: str = "",
     ) -> str:
         """Create a new version of a memory, superseding the old one."""
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.memory_supersede(
-                s,
-                _pid(),
-                eff_aid,
-                old_key=old_key,
-                new_value=new_value,
-                key=key,
-                tier=tier,
-                tags=tags,
-            )
+        result = memory_service.memory_supersede(
+            s,
+            project_id,
+            eff_aid,
+            old_key=old_key,
+            new_value=new_value,
+            key=key,
+            tier=tier,
+            tags=tags,
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_history(key: str, agent_id: str = "") -> str:
@@ -326,17 +342,21 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
                 "error_count": int,
             }
         """
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.memory_save_many(
-                s,
-                _pid(),
-                eff_aid,
-                entries=list(entries),
-            ),
-            default=str,
+        result = memory_service.memory_save_many(
+            s,
+            project_id,
+            eff_aid,
+            entries=list(entries),
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_recall_many(queries: list[str], agent_id: str = "") -> str:
@@ -384,17 +404,21 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
                 "error_count": int,
             }
         """
+        project_id = _pid()
+        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        if cached is not None:
+            return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
-        return json.dumps(
-            memory_service.memory_reinforce_many(
-                s,
-                _pid(),
-                eff_aid,
-                entries=list(entries),
-            ),
-            default=str,
+        result = memory_service.memory_reinforce_many(
+            s,
+            project_id,
+            eff_aid,
+            entries=list(entries),
         )
+        if ikey and dsn:
+            _mcp_idempotency_record(dsn, project_id, ikey, result)
+        return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def memory_index_session(

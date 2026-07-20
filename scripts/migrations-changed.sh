@@ -21,8 +21,12 @@ MIGRATE_PATHS=(
 migration_fingerprint() {
   cd "$ROOT"
   if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
-    git ls-files "${MIGRATE_PATHS[@]}" \
-      | LC_ALL=C sort \
+    # --others --exclude-standard includes NEW (untracked) migration files;
+    # plain ls-files only saw tracked ones, so dev-deploy skipped the migrate
+    # sidecar for a freshly added migration until it was committed.
+    { git ls-files "${MIGRATE_PATHS[@]}"; \
+      git ls-files --others --exclude-standard "${MIGRATE_PATHS[@]}"; } \
+      | LC_ALL=C sort -u \
       | xargs -r sha256sum \
       | sha256sum \
       | awk '{print $1}'

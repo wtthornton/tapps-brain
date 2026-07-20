@@ -138,9 +138,9 @@ class TestGoldenFileContracts:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
 
-    def test_agent_brain_golden_has_15_tools(self) -> None:
-        """Golden file for 'agent_brain' must list exactly 15 brain_* tools (v3.24 +3)."""
-        assert len(_load_golden("agent_brain")) == 15
+    def test_agent_brain_golden_has_16_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 16 brain_* tools (+resolve)."""
+        assert len(_load_golden("agent_brain")) == 16
 
     def test_agent_brain_golden_is_brain_star_only(self) -> None:
         """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""

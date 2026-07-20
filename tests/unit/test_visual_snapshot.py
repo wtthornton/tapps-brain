@@ -1940,10 +1940,23 @@ def test_build_kg_graph_maps_edge_and_node_signals() -> None:
     assert edge["contradicted"] is False
     assert edge["stability"] == 12.5
     assert edge["evidence_count"] == 3
+    assert edge["direction"] == "out"
     neighbor = next(n for n in graph["nodes"] if not n["is_root"])
     assert neighbor["label"] == "auth"
     assert neighbor["type"] == "module"
     assert neighbor["confidence"] == 0.9
+
+
+def test_build_kg_graph_orients_incoming_edges_neighbor_to_root() -> None:
+    """Incoming neighbours must keep subject→object polarity (not force root→n)."""
+    graph = build_kg_graph(
+        "root-1",
+        [_neighbor_row(edge_id="e-in", neighbor_id="n-in", direction="in")],
+    )
+    edge = graph["edges"][0]
+    assert edge["source"] == "n-in"
+    assert edge["target"] == "root-1"
+    assert edge["direction"] == "in"
 
 
 def test_build_kg_graph_dedupes_repeated_neighbor_into_one_node_two_edges() -> None:

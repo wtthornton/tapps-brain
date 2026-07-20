@@ -404,7 +404,12 @@ class PostgresPrivateBackend:
     # ------------------------------------------------------------------
 
     def knn_search(
-        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+        self,
+        query_embedding: list[float],
+        k: int,
+        *,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -418,11 +423,18 @@ class PostgresPrivateBackend:
         are not silently truncated by the pgvector default (ef=40).  Both GUCs
         use ``SET LOCAL`` so they are transaction-scoped and cannot leak to
         other queries on the same pooled connection.
+
+        *as_of* applies the same bi-temporal window as FTS search and stands
+        the live-row predicate down so point-in-time hybrid recall can rank
+        versions that were valid then.
         """
         if not query_embedding:
             return []
 
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+        knn_sql, mid_params = _sql.build_knn_search_sql(
+            include_expired=include_expired, as_of=as_of
+        )
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
                 # TAP-2728: HNSW GUCs for filtered recall correctness.
@@ -431,8 +443,8 @@ class PostgresPrivateBackend:
                 cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
                 cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 cur.execute(
-                    _sql.build_knn_search_sql(include_expired=include_expired),
-                    (vec_str, self._project_id, self._agent_id, k),
+                    knn_sql,
+                    (vec_str, self._project_id, self._agent_id, *mid_params, k),
                 )
                 rows = cur.fetchall()
             # A successful query clears the degraded latch: the flag reflects

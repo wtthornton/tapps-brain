@@ -405,7 +405,9 @@ class TestSentenceTransformerProvider:
         with patch("tapps_brain.embeddings.SentenceTransformer", return_value=mock_model):
             provider = SentenceTransformerProvider(model_name="test-model")
         result = provider.embed("hello")
-        mock_model.encode.assert_called_once_with("hello", normalize_embeddings=True)
+        mock_model.encode.assert_called_once_with(
+            "hello", normalize_embeddings=True, show_progress_bar=False
+        )
         assert len(result) == 4
         assert all(isinstance(x, float) for x in result)
         assert result == pytest.approx([0.1, 0.2, 0.3, 0.4])

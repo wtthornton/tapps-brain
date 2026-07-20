@@ -1,46 +1,46 @@
 {
   "mcpServers": {
     "nlt-build": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8760/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
-      },
-      "nlt-memory": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8761/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
-      },
-      "nlt-setup": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8762/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
-      },
-      "nlt-linear-issues": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8763/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
-      },
-      "nlt-project-docs": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8764/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
-      },
-      "nlt-release-ship": {
-        "type": "streamableHttp",
-        "url": "http://127.0.0.1:8765/mcp",
-        "headers": {
-          "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
-        }
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8760/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
       }
+    },
+    "nlt-memory": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8761/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      }
+    },
+    "nlt-setup": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8762/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      }
+    },
+    "nlt-linear-issues": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8763/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      }
+    },
+    "nlt-project-docs": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8764/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      }
+    },
+    "nlt-release-ship": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8765/mcp",
+      "headers": {
+        "X-Tapps-Project-Root": "/home/wtthornton/code/tapps-brain"
+      }
+    }
   }
 }

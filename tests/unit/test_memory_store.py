@@ -1679,6 +1679,22 @@ class TestAdaptiveStabilityStore:
         finally:
             s.close()
 
+    def test_record_access_respects_agent_confidence_ceiling(self, tmp_path: Path) -> None:
+        """Useful accesses must not push agent-source confidence above the ceiling."""
+        from tapps_brain.decay import DecayConfig
+
+        s = MemoryStore(tmp_path)
+        try:
+            s.save(key="k", value="v", tier="pattern", source="agent", confidence=0.84)
+            for _ in range(20):
+                s.record_access("k", True)
+            entry = s.get("k")
+            assert entry is not None
+            ceiling = DecayConfig().agent_confidence_ceiling
+            assert entry.confidence <= ceiling + 1e-9
+        finally:
+            s.close()
+
 
 class TestSaveFailureRollback:
     """TAP-644: save() failure path — bloom filter, _entries, and relations must

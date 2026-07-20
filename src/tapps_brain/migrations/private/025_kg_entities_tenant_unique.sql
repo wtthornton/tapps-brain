@@ -31,7 +31,39 @@ BEGIN
         HAVING COUNT(*) > 1
     LOOP
         keeper_id := dup.ids[1];
-        -- Repoint edges referencing duplicate entity IDs.
+        -- Before repointing, supersede loser active edges that would collide
+        -- with an existing active keeper triple (uix_kg_edges_active_triple).
+        UPDATE kg_edges e_loser
+        SET status = 'superseded',
+            invalid_at = COALESCE(e_loser.invalid_at, now())
+        WHERE e_loser.status = 'active'
+          AND e_loser.invalid_at IS NULL
+          AND e_loser.subject_entity_id = ANY(dup.ids[2:array_length(dup.ids, 1)])
+          AND EXISTS (
+              SELECT 1 FROM kg_edges e_keep
+              WHERE e_keep.brain_id = e_loser.brain_id
+                AND e_keep.subject_entity_id = keeper_id
+                AND e_keep.predicate = e_loser.predicate
+                AND e_keep.object_entity_id = e_loser.object_entity_id
+                AND e_keep.status = 'active'
+                AND e_keep.invalid_at IS NULL
+          );
+        UPDATE kg_edges e_loser
+        SET status = 'superseded',
+            invalid_at = COALESCE(e_loser.invalid_at, now())
+        WHERE e_loser.status = 'active'
+          AND e_loser.invalid_at IS NULL
+          AND e_loser.object_entity_id = ANY(dup.ids[2:array_length(dup.ids, 1)])
+          AND EXISTS (
+              SELECT 1 FROM kg_edges e_keep
+              WHERE e_keep.brain_id = e_loser.brain_id
+                AND e_keep.subject_entity_id = e_loser.subject_entity_id
+                AND e_keep.predicate = e_loser.predicate
+                AND e_keep.object_entity_id = keeper_id
+                AND e_keep.status = 'active'
+                AND e_keep.invalid_at IS NULL
+          );
+        -- Repoint remaining edges referencing duplicate entity IDs.
         UPDATE kg_edges
         SET subject_entity_id = keeper_id
         WHERE subject_entity_id = ANY(dup.ids[2:array_length(dup.ids, 1)]);

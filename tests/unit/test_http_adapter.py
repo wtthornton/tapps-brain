@@ -168,8 +168,10 @@ class TestProbeDb:
         ):
             is_ready, version, msg = _probe_db("postgres://localhost/testdb")
         assert not is_ready
-        assert version == 2
+        # Top-level migration_version is the private schema version (aligns with /info).
+        assert version == 1
         assert "pending=1" in msg
+        assert "private_migration=1" in msg
 
     def test_ttl_cache_deduplicates_calls(self) -> None:
         """TAP-552: 100 calls within 1 s must trigger exactly one underlying connect."""

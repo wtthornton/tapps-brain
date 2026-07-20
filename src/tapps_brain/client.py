@@ -303,7 +303,11 @@ def _parse_error_response(status_code: int, body: dict[str, Any]) -> Exception |
     from tapps_brain.errors import EXCEPTION_BY_CODE, ErrorCode, ProjectNotFoundError
 
     error_code_str = body.get("error", "")
-    message: str = body.get("message", f"HTTP {status_code}")
+    # Canonical envelope is {"error", "detail"}; some paths still emit "message".
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        detail = detail.get("detail") or detail.get("message")
+    message = str(detail or body.get("message") or f"HTTP {status_code}")
 
     try:
         code = ErrorCode(error_code_str)
@@ -499,14 +503,56 @@ def _mcp_envelope(
     return json.dumps(payload).encode()
 
 
+def _raise_if_tool_error(result: Any) -> Any:
+    """Raise when a tool payload is an error envelope rather than success data."""
+    if not isinstance(result, dict) or "error" not in result:
+        return result
+    # Taxonomy codes (not_found, invalid_request, …) map to typed exceptions.
+    parsed = _parse_error_response(400, result)
+    if parsed is not None:
+        raise parsed
+    from tapps_brain.exceptions import TappsBrainValidationError
+
+    detail = result.get("detail") or result.get("message") or result["error"]
+    raise TappsBrainValidationError(str(detail), status_code=400, body=result)
+
+
 def _unwrap_mcp_result(data: Any) -> Any:
     """Pull the tool return value out of an MCP ``tools/call`` response.
 
     Accepts either an unwrapped dict (legacy REST shape) or a JSON-RPC
     envelope; returns the tool's Python-side value in both cases.
+    Raises on JSON-RPC ``error`` / ``isError`` so callers never treat
+    failures as empty success payloads.
     """
+    if isinstance(data, dict) and "error" in data and "result" not in data:
+        err = data["error"]
+        message = err.get("message") if isinstance(err, dict) else str(err)
+        from tapps_brain.exceptions import TappsBrainError
+
+        raise TappsBrainError(str(message or "MCP JSON-RPC error"), body=data)
+
     if isinstance(data, dict) and "result" in data:
-        content = data["result"].get("content", [])
+        result_obj = data["result"]
+        if isinstance(result_obj, dict) and result_obj.get("isError"):
+            content = result_obj.get("content", [])
+            raw = "{}"
+            if content and isinstance(content, list) and isinstance(content[0], dict):
+                raw = content[0].get("text", "{}")
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+            except (TypeError, json.JSONDecodeError):
+                parsed = {"error": "internal_error", "detail": str(raw)}
+            if not isinstance(parsed, dict) or "error" not in parsed:
+                from tapps_brain.exceptions import TappsBrainError
+
+                raise TappsBrainError(
+                    "MCP tool returned isError=true",
+                    body=parsed if isinstance(parsed, dict) else {"detail": str(parsed)},
+                )
+            return _raise_if_tool_error(parsed)
+
+        content = result_obj.get("content", []) if isinstance(result_obj, dict) else []
         if content and isinstance(content, list):
             first = content[0]
             if isinstance(first, dict):
@@ -903,6 +949,7 @@ class TappsBrainClient:
             memory_group=memory_group,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     def recall(
@@ -914,13 +961,13 @@ class TappsBrainClient:
     ) -> list[dict[str, Any]]:
         """Recall memories matching *query*."""
         result = self._tool("brain_recall", query=query, max_results=max_results, agent_id=agent_id)
-        if isinstance(result, list):
-            return result
+        _raise_if_tool_error(result)
         return result if isinstance(result, list) else []
 
     def forget(self, key: str, agent_id: str = "") -> bool:
         """Archive a memory by key."""
         result = self._tool("brain_forget", key=key, agent_id=agent_id)
+        _raise_if_tool_error(result)
         return bool(result.get("forgotten")) if isinstance(result, dict) else False
 
     def learn_success(self, description: str, *, task_id: str = "", agent_id: str = "") -> str:
@@ -931,6 +978,7 @@ class TappsBrainClient:
             task_id=task_id,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     def learn_failure(
@@ -944,42 +992,58 @@ class TappsBrainClient:
             error=error,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     def memory_save(self, key: str, value: str, **kwargs: Any) -> dict[str, Any]:
         """Save a raw memory entry."""
-        return self._tool("memory_save", key=key, value=value, **kwargs)
+        result = self._tool("memory_save", key=key, value=value, **kwargs)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_get(self, key: str) -> dict[str, Any]:
         """Retrieve a memory entry by key."""
-        return self._tool("memory_get", key=key)
+        result = self._tool("memory_get", key=key)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
         """Search memory entries."""
         result = self._tool("memory_search", query=query, **kwargs)
+        _raise_if_tool_error(result)
         return result if isinstance(result, list) else []
 
     def memory_recall(self, query: str, **kwargs: Any) -> dict[str, Any]:
         """Run auto-recall for a query."""
-        return self._tool("memory_recall", query=query, **kwargs)
+        result = self._tool("memory_recall", query=query, **kwargs)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_reinforce(self, key: str, *, confidence_boost: float = 0.0) -> dict[str, Any]:
         """Reinforce a memory entry."""
-        return self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
+        result = self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_save_many(self, entries: list[dict[str, Any]], agent_id: str = "") -> dict[str, Any]:
         """Bulk save memory entries."""
-        return self._tool("memory_save_many", entries=entries, agent_id=agent_id)
+        result = self._tool("memory_save_many", entries=entries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_recall_many(self, queries: list[str], agent_id: str = "") -> dict[str, Any]:
         """Bulk recall across multiple queries."""
-        return self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
+        result = self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def memory_reinforce_many(
         self, entries: list[dict[str, Any]], agent_id: str = ""
     ) -> dict[str, Any]:
         """Bulk reinforce memory entries."""
-        return self._tool("memory_reinforce_many", entries=entries, agent_id=agent_id)
+        result = self._tool("memory_reinforce_many", entries=entries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     def status(self, agent_id: str = "") -> dict[str, Any]:
         """Return agent status."""
@@ -1199,6 +1263,7 @@ class AsyncTappsBrainClient:
             memory_group=memory_group,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     async def recall(
@@ -1212,11 +1277,13 @@ class AsyncTappsBrainClient:
         result = await self._tool(
             "brain_recall", query=query, max_results=max_results, agent_id=agent_id
         )
+        _raise_if_tool_error(result)
         return result if isinstance(result, list) else []
 
     async def forget(self, key: str, agent_id: str = "") -> bool:
         """Archive a memory by key."""
         result = await self._tool("brain_forget", key=key, agent_id=agent_id)
+        _raise_if_tool_error(result)
         return bool(result.get("forgotten")) if isinstance(result, dict) else False
 
     async def learn_success(
@@ -1229,6 +1296,7 @@ class AsyncTappsBrainClient:
             task_id=task_id,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     async def learn_failure(
@@ -1242,44 +1310,60 @@ class AsyncTappsBrainClient:
             error=error,
             agent_id=agent_id,
         )
+        _raise_if_tool_error(result)
         return result.get("key", "") if isinstance(result, dict) else str(result)
 
     async def memory_save(self, key: str, value: str, **kwargs: Any) -> dict[str, Any]:
         """Save a raw memory entry."""
-        return await self._tool("memory_save", key=key, value=value, **kwargs)
+        result = await self._tool("memory_save", key=key, value=value, **kwargs)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_get(self, key: str) -> dict[str, Any]:
         """Retrieve a memory entry by key."""
-        return await self._tool("memory_get", key=key)
+        result = await self._tool("memory_get", key=key)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
         """Search memory entries."""
         result = await self._tool("memory_search", query=query, **kwargs)
+        _raise_if_tool_error(result)
         return result if isinstance(result, list) else []
 
     async def memory_recall(self, query: str, **kwargs: Any) -> dict[str, Any]:
         """Run auto-recall for a query."""
-        return await self._tool("memory_recall", query=query, **kwargs)
+        result = await self._tool("memory_recall", query=query, **kwargs)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_reinforce(self, key: str, *, confidence_boost: float = 0.0) -> dict[str, Any]:
         """Reinforce a memory entry."""
-        return await self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
+        result = await self._tool("memory_reinforce", key=key, confidence_boost=confidence_boost)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_save_many(
         self, entries: list[dict[str, Any]], agent_id: str = ""
     ) -> dict[str, Any]:
         """Bulk save memory entries."""
-        return await self._tool("memory_save_many", entries=entries, agent_id=agent_id)
+        result = await self._tool("memory_save_many", entries=entries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_recall_many(self, queries: list[str], agent_id: str = "") -> dict[str, Any]:
         """Bulk recall across multiple queries."""
-        return await self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
+        result = await self._tool("memory_recall_many", queries=queries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def memory_reinforce_many(
         self, entries: list[dict[str, Any]], agent_id: str = ""
     ) -> dict[str, Any]:
         """Bulk reinforce memory entries."""
-        return await self._tool("memory_reinforce_many", entries=entries, agent_id=agent_id)
+        result = await self._tool("memory_reinforce_many", entries=entries, agent_id=agent_id)
+        _raise_if_tool_error(result)
+        return result if isinstance(result, dict) else {"result": result}
 
     async def status(self, agent_id: str = "") -> dict[str, Any]:
         """Return agent status."""

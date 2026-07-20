@@ -286,7 +286,7 @@ class TestRecordHappyPath:
             )
         )
         assert result.event_id
-        assert result.edge_ids == []
+        assert result.edge_ids == [None]
         assert len(result.warnings) == 1
         assert result.warnings[0]["kind"] == "edge"
         assert result.warnings[0]["errors"][0]["field"] == "object_entity_id"

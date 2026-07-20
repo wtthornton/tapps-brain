@@ -5,11 +5,16 @@ FROM nginx:alpine
 COPY examples/brain-visual/index.html /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-help.js /usr/share/nginx/html/
 COPY examples/brain-visual/brain-visual-router.js /usr/share/nginx/html/
+COPY examples/brain-visual/brain-visual-graph.js /usr/share/nginx/html/
+COPY examples/brain-visual/cytoscape.min.js /usr/share/nginx/html/
 COPY examples/brain-visual/favicon.svg /usr/share/nginx/html/
 COPY examples/brain-visual/assets/ /usr/share/nginx/html/assets/
 COPY examples/brain-visual/README.md /usr/share/nginx/html/
 
-# Copy custom nginx config (adds /snapshot proxy with Authorization injection)
+# Pristine nginx template OUTSIDE /etc/nginx/templates/ — stock nginx
+# 20-envsubst-on-templates.sh would otherwise overwrite conf.d/default.conf
+# from that directory AFTER our sed, restoring unsubstituted placeholders.
+COPY docker/nginx-visual.conf /etc/nginx/visual/default.conf.template
 COPY docker/nginx-visual.conf /etc/nginx/conf.d/default.conf
 
 # Entrypoint substitutes the HTTP adapter bearer token from the mounted secret

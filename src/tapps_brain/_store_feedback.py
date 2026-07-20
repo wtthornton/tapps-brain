@@ -402,3 +402,37 @@ class FeedbackMixin(_MemoryStoreBase):
             until=until,
             limit=limit,
         )
+
+    def count_feedback(
+        self,
+        *,
+        event_type: str | None = None,
+        entry_key: str | None = None,
+        session_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        """Count recorded feedback events with optional filters (no row LIMIT)."""
+        fb = self._get_feedback_store()
+        count_fn = getattr(fb, "count", None)
+        if callable(count_fn):
+            return int(
+                count_fn(
+                    event_type=event_type,
+                    entry_key=entry_key,
+                    session_id=session_id,
+                    since=since,
+                    until=until,
+                )
+            )
+        # Older / minimal fakes that only implement query().
+        return len(
+            fb.query(
+                event_type=event_type,
+                entry_key=entry_key,
+                session_id=session_id,
+                since=since,
+                until=until,
+                limit=2**31 - 1,
+            )
+        )

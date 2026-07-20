@@ -12,4 +12,5 @@ brain_record_event
 brain_record_events_batch
 brain_record_feedback
 brain_remember
+brain_resolve_entity
 brain_status

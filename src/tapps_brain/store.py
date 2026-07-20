@@ -1668,12 +1668,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             MemorySource(item.get("source", "agent"))
             MemoryScope(item.get("scope", "project"))
         except ValueError as exc:
-            return {"error": "bad_request", "message": str(exc)}
+            # "detail" is the canonical envelope key (openapi_contract.py);
+            # "message" is kept as a legacy alias for older consumers.
+            return {"error": "bad_request", "detail": str(exc), "message": str(exc)}
         limit_error = self._profile_limit_error(
             key, _ensure_str_value(item.get("value", "")), item.get("tags")
         )
         if limit_error is not None:
-            return {"error": "bad_request", "message": limit_error}
+            return {"error": "bad_request", "detail": limit_error, "message": limit_error}
 
         prep = self._prepare_save(
             key=key,
@@ -1720,12 +1722,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # surfaces a structured error without aborting the batch.
             errs = exc.errors()
             msg = errs[0].get("msg", str(exc)) if errs else str(exc)
-            return {"error": "bad_request", "message": msg}
+            return {"error": "bad_request", "detail": msg, "message": msg}
         except ValueError as exc:
             # Bare ValueError from enum conversion or similar — surface as a
             # per-row error instead of aborting the batch (ValidationError is
             # a ValueError subclass, so this arm must come second).
-            return {"error": "bad_request", "message": str(exc)}
+            return {"error": "bad_request", "detail": str(exc), "message": str(exc)}
         return entry, existing
 
     def _persist_many_or_rollback(
@@ -2744,15 +2746,25 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         return self._persistence.get_schema_version()
 
     def knn_search(
-        self, query_embedding: list[float], k: int, *, include_expired: bool = False
+        self,
+        query_embedding: list[float],
+        k: int,
+        *,
+        include_expired: bool = False,
+        as_of: str | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate-nearest-neighbour search via pgvector HNSW.
 
         TAP-4586: *include_expired* (default ``False``) pushes the live-row
         predicate into recall SQL so expired/superseded rows do not consume a
         top-K slot.  Pass ``True`` only when historical rows are wanted.
+
+        *as_of* applies the FTS-equivalent bi-temporal window and stands the
+        live-row predicate down for point-in-time hybrid recall.
         """
-        return self._persistence.knn_search(query_embedding, k, include_expired=include_expired)
+        return self._persistence.knn_search(
+            query_embedding, k, include_expired=include_expired, as_of=as_of
+        )
 
     @property
     def vector_index_enabled(self) -> bool:
@@ -2958,7 +2970,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # Blend toward the Laplace usefulness estimate (see docstring).
             laplace_target = (new_useful + 1) / (new_total + 2)
             new_confidence = entry.confidence + 0.2 * (laplace_target - entry.confidence)
-            # Clamp to [0.0, 1.0]
+            # Cap at the source ceiling (same contract as reinforce) so agent
+            # memories cannot drift above agent_confidence_ceiling via useful
+            # access alone. Never *reduce* an already-over-ceiling value.
+            from tapps_brain.decay import _get_ceiling
+
+            ceiling = _get_ceiling(entry.source, self._get_decay_config())
+            new_confidence = min(new_confidence, max(ceiling, entry.confidence))
             new_confidence = max(0.0, min(1.0, new_confidence))
 
             updates: dict[str, object] = {
@@ -4053,6 +4071,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         from tapps_brain.gc import MemoryGarbageCollector
 
+        # Same durable merge as gc() so overflow rows beyond the cold-start
+        # cache limit appear in operator previews (CLI/HTTP stale).
+        self._merge_durable_entries()
         gc_collector = MemoryGarbageCollector(
             config=self._get_decay_config(),
             gc_config=self._gc_config,

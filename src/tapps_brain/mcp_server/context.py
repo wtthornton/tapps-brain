@@ -430,7 +430,7 @@ def _current_request_idempotency_key() -> str | None:
 
     When ``TAPPS_BRAIN_IDEMPOTENCY=1`` is set, the MCP client can pass an
     ``idempotency_key`` UUID inside the JSON-RPC ``_meta`` envelope to get
-    duplicate-safe ``memory_save`` / ``memory_reinforce`` calls::
+    duplicate-safe write tools (``memory_save``, ``brain_remember``, …)::
 
         {"method": "tools/call", "params": {
             "name": "memory_save",
@@ -456,6 +456,50 @@ def _current_request_idempotency_key() -> str | None:
         extra = getattr(meta, "model_extra", None) or {}
         ikey = extra.get("idempotency_key")
     return str(ikey).strip() or None if ikey else None
+
+
+def _mcp_idempotency_check(project_id: str) -> tuple[str | None, str | None, Any | None]:
+    """Return ``(ikey, dsn, cached_body)`` for the current MCP write tool call.
+
+    ``cached_body`` is non-``None`` when a prior successful call with the same
+    key should be replayed (caller must return it without re-executing).
+    """
+    import os
+
+    from tapps_brain.idempotency import get_shared_idempotency_store, is_idempotency_enabled
+
+    ikey = _current_request_idempotency_key()
+    dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
+    if not (ikey and is_idempotency_enabled() and dsn and project_id):
+        return None, None, None
+    cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+    if cached is not None:
+        _status, body = cached
+        return ikey, dsn, body
+    return ikey, dsn, None
+
+
+def _mcp_idempotency_record(
+    dsn: str,
+    project_id: str,
+    ikey: str,
+    result: Any,  # noqa: ANN401
+) -> None:
+    """Record *result* under *ikey*; never raise after a committed write."""
+    from tapps_brain.idempotency import (
+        IdempotencyUnavailableError,
+        get_shared_idempotency_store,
+    )
+
+    status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
+    try:
+        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result)
+    except IdempotencyUnavailableError:
+        _get_logger().warning(
+            "mcp.idempotency_record_failed",
+            idempotency_key=ikey,
+            hint="write committed; key not replayable",
+        )
 
 
 def _raise_project_not_registered(project_id: str | None) -> None:

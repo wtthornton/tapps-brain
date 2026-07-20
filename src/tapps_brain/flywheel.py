@@ -172,19 +172,15 @@ class FeedbackProcessor:
         last_ts: str | None = None
         last_id: str | None = None
         since_key = _timestamp_sort_key(since) if since is not None else None
-        # Cursor advancement with ``since``: advance over the CONTIGUOUS
-        # applied prefix only.  Advancing past since-skipped events would
-        # permanently drop them on retry, but never advancing (previous
-        # behavior) re-applied every since-applied event on the next plain
-        # run — and these deltas are not idempotent.  Skipped events sort
-        # before applied ones, so the prefix breaks at the first skip.
-        prefix_intact = True
+        # Cursor advancement: always advance over successfully applied events.
+        # ``since`` is an explicit lower bound — events before it are deferred
+        # out of this run by design.  Not advancing after a since-filtered
+        # apply caused the next bare process_feedback() to re-apply the same
+        # non-idempotent confidence deltas.
         for ev in events:
             if not _event_after_cursor(ev, cur_ts, cur_id):
                 continue
             apply_updates = since_key is None or _timestamp_sort_key(ev.timestamp) >= since_key
-            if not apply_updates:
-                prefix_intact = False
             if apply_updates:
                 for ek, d_pos, d_neg in _feedback_deltas(ev):
                     if not ek:
@@ -230,12 +226,11 @@ class FeedbackProcessor:
                         },
                     )
                     adjustments += 1
-                if prefix_intact:
-                    last_ts, last_id = ev.timestamp, ev.id
-                    # Persist every N events for mid-run crash safety (deltas
-                    # are not idempotent) without one meta upsert per event.
-                    if processed % _CURSOR_FLUSH_INTERVAL == _CURSOR_FLUSH_INTERVAL - 1:
-                        self._persist_cursor(store, last_ts, last_id)
+                last_ts, last_id = ev.timestamp, ev.id
+                # Persist every N events for mid-run crash safety (deltas
+                # are not idempotent) without one meta upsert per event.
+                if processed % _CURSOR_FLUSH_INTERVAL == _CURSOR_FLUSH_INTERVAL - 1:
+                    self._persist_cursor(store, last_ts, last_id)
             processed += 1
         if last_ts is not None and last_id is not None:
             self._persist_cursor(store, last_ts, last_id)
@@ -475,7 +470,11 @@ def knowledge_gap_summary_for_diagnostics(store: MemoryStore) -> str | None:
     if not gaps:
         return None
     try:
-        n = len(store.query_feedback(event_type="gap_reported", limit=5000))
+        count_fn = getattr(store, "count_feedback", None)
+        if callable(count_fn):
+            n = int(count_fn(event_type="gap_reported"))
+        else:
+            n = len(store.query_feedback(event_type="gap_reported", limit=2**31 - 1))
     except Exception:
         n = 0
     top = gaps[0]

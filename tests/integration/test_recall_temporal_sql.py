@@ -236,6 +236,28 @@ class TestFtsExcludesStale:
         keys = {e.key for e in results}
         assert "asof-old" in keys, "as_of point-in-time recall lost the superseded version"
 
+    def test_as_of_point_in_time_knn_returns_superseded_version(self, backend: Any) -> None:
+        """KNN must honour `as_of` the same way FTS does (hybrid dense parity)."""
+        now = datetime.now(tz=UTC)
+        past = (now - timedelta(days=3)).isoformat()
+        vec = _unit_vector(12)
+        backend.save(
+            _make_entry(
+                "asof-knn-old",
+                "vector point-in-time row",
+                valid_at=past,
+                invalid_at=now.isoformat(),
+                superseded_by="asof-knn-new",
+            )
+        )
+        _set_embedding(backend, "asof-knn-old", vec)
+
+        # Live-row default excludes the superseded version.
+        assert backend.knn_search(vec, k=5) == []
+        # Point-in-time: bi-temporal window stands live-row down.
+        keys = [k for k, _ in backend.knn_search(vec, k=5, as_of=past)]
+        assert keys == ["asof-knn-old"], f"as_of KNN lost superseded version: {keys}"
+
 
 # ---------------------------------------------------------------------------
 # RLS / project scoping is unchanged by the new predicate

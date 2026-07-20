@@ -16,7 +16,7 @@ End the session with a durable handoff the next chat can load via `/tapps-contin
 
 0. **Session bootstrap (if needed).** If `tapps_session_start()` was not called this session, call it now (cached is fine) so flywheel scope and checker context are correct. Skip when already called.
 
-1. **Draft handoff (5–10 bullets).** From this session's work, write:
+1. **Draft handoff (5-10 bullets).** From this session's work, write:
    - **Done** — what shipped or was verified
    - **Open** — in-progress or untested
    - **Next (P0)** — one concrete next action (plain prose)

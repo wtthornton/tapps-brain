@@ -123,6 +123,12 @@ def feedback_query(
     limit: int = 100,
 ) -> dict[str, Any]:
     """Query stored feedback events with optional filters on type, key, session, and date range."""
+    from tapps_brain.services._common import validate_iso_timestamp
+
+    for field_name, raw_ts in (("since", since), ("until", until)):
+        bad = validate_iso_timestamp(field_name, raw_ts)
+        if bad is not None:
+            return bad
     events = store.query_feedback(
         event_type=event_type.strip() or None,
         entry_key=entry_key.strip() or None,

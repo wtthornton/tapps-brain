@@ -20,10 +20,22 @@ from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normali
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import start_mcp_tool_span
-from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST
+from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST, validate_iso_timestamp
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
+
+
+def _save_rejection(result: Any) -> dict[str, Any] | None:
+    """If ``MemoryStore.save`` returned an error dict, normalise it for callers."""
+    if isinstance(result, dict) and result.get("error"):
+        detail = str(result.get("detail") or result.get("message") or result.get("reason") or "")
+        return {
+            "error": str(result.get("error")),
+            "detail": detail,
+            "message": detail or str(result.get("error")),
+        }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -87,9 +99,25 @@ def brain_remember(
             elif share_with:
                 resolved_scope = f"group:{share_with}"
 
-        # -------------------------------------------------------
-        # Supersession: mark the old entry before saving new one.
-        # -------------------------------------------------------
+        save_kwargs: dict[str, Any] = {
+            "key": key,
+            "value": fact,
+            "tier": tier,
+            "agent_scope": resolved_scope,
+            "temporal_sensitivity": temporal_sensitivity,
+            "failed_approaches": failed_approaches,
+            "status": MemoryStatus.active.value,
+        }
+        if memory_group:
+            save_kwargs["memory_group"] = memory_group
+        # Save the new entry first. Marking supersedes beforehand orphans the
+        # prior row when this save is rejected (safety / write-rules).
+        result = store.save(**save_kwargs)
+        if isinstance(result, dict) and "error" in result:
+            return result
+
+        response: dict[str, Any] = {"saved": True, "key": key}
+
         if supersedes:
             old_entry = store.get(supersedes)
             if old_entry is not None:
@@ -112,25 +140,6 @@ def brain_remember(
                     conflict_check=False,
                     dedup=False,
                 )
-
-        save_kwargs: dict[str, Any] = {
-            "key": key,
-            "value": fact,
-            "tier": tier,
-            "agent_scope": resolved_scope,
-            "temporal_sensitivity": temporal_sensitivity,
-            "failed_approaches": failed_approaches,
-            "status": MemoryStatus.active.value,
-        }
-        if memory_group:
-            save_kwargs["memory_group"] = memory_group
-        result = store.save(**save_kwargs)
-        if isinstance(result, dict) and "error" in result:
-            return result
-
-        response: dict[str, Any] = {"saved": True, "key": key}
-
-        if supersedes:
             response["superseded"] = supersedes
             return response
 
@@ -264,7 +273,12 @@ def brain_recall(
 
 
 def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
-    """Delete a memory entry by key.
+    """Archive-then-delete a memory entry by key.
+
+    Both public surfaces (the ``brain_forget`` MCP tool and ``POST /v1/forget``)
+    promise the entry is "not permanently deleted", so the row is written to
+    the ``gc_archive`` table (same recoverability model as GC eviction) before
+    it is removed from the active store.
 
     Returns ``{"forgotten": True, "key": key}`` on success or
     ``{"forgotten": False, "reason": "not_found"}`` when the key is unknown.
@@ -273,8 +287,22 @@ def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dic
         entry = store.get(key)
         if entry is None:
             return {"forgotten": False, "reason": "not_found"}
+        _archive_forgotten_entry(getattr(store, "_persistence", None), entry, key)
         store.delete(key)
         return {"forgotten": True, "key": key}
+
+
+def _archive_forgotten_entry(backend: Any, entry: Any, key: str) -> None:
+    """Best-effort ``gc_archive`` write backing brain_forget's recoverability.
+
+    Archive failure is logged but never blocks the forget — the caller
+    explicitly asked for removal.
+    """
+    archive = getattr(backend, "archive_entry", None)
+    if not callable(archive):
+        return
+    if not archive(entry):
+        logger.warning("brain_forget.archive_failed", key=key)
 
 
 def brain_learn_success(
@@ -290,7 +318,10 @@ def brain_learn_success(
         tags = ["success"]
         if task_id:
             tags.append(f"task:{task_id}")
-        store.save(key=key, value=task_description, tier="procedural", tags=tags)
+        out = store.save(key=key, value=task_description, tier="procedural", tags=tags)
+        rejected = _save_rejection(out)
+        if rejected is not None:
+            return {**rejected, "learned": False, "key": key}
         return {"learned": True, "key": key}
 
 
@@ -314,7 +345,10 @@ def brain_learn_failure(
         tags = ["failure"]
         if task_id:
             tags.append(f"task:{task_id}")
-        store.save(key=key, value=value, tier="procedural", tags=tags)
+        out = store.save(key=key, value=value, tier="procedural", tags=tags)
+        rejected = _save_rejection(out)
+        if rejected is not None:
+            return {**rejected, "learned": False, "key": key}
         return {"learned": True, "key": key}
 
 
@@ -860,11 +894,14 @@ def _validate_and_normalize_save(
     :meth:`MemoryStore.save_many`.  Centralising this keeps the single-save and
     batch-save validation byte-identical.
     """
+    # "detail" is the canonical envelope key (openapi_contract.py); "message"
+    # is kept as a legacy alias for older consumers.
     try:
         agent_scope = normalize_agent_scope(agent_scope)
     except ValueError as exc:
         return {
             "error": "invalid_agent_scope",
+            "detail": str(exc),
             "message": str(exc),
             "valid_values": agent_scope_valid_values_for_errors(),
         }
@@ -878,16 +915,20 @@ def _validate_and_normalize_save(
     )
     if tier not in _valid_tiers:
         _sorted_valid = sorted(_valid_tiers)
+        _tier_msg = f"Invalid tier {tier!r}. Valid values: {_sorted_valid}"
         return {
             "error": "invalid_tier",
-            "message": f"Invalid tier {tier!r}. Valid values: {_sorted_valid}",
+            "detail": _tier_msg,
+            "message": _tier_msg,
             "valid_values": _sorted_valid,
         }
     _valid_sources = ("human", "agent", "inferred", "system")
     if source not in _valid_sources:
+        _source_msg = f"Invalid source {source!r}. Valid values: {list(_valid_sources)}"
         return {
             "error": "invalid_source",
-            "message": f"Invalid source {source!r}. Valid values: {list(_valid_sources)}",
+            "detail": _source_msg,
+            "message": _source_msg,
             "valid_values": list(_valid_sources),
         }
     resolved_agent = source_agent or agent_id
@@ -928,7 +969,7 @@ def memory_save(
     Validates ``agent_scope`` / ``tier`` / ``source`` against the active
     profile and returns a structured error envelope on bad input. Returns
     ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
-    on success, or ``{"error": "bad_request", "message": ...}`` when the
+    on success, or ``{"error": "bad_request", "detail": ...}`` when the
     underlying pydantic model rejects the payload (TAP-747).
     """
     validated = _validate_and_normalize_save(
@@ -958,7 +999,7 @@ def memory_save(
         # surface a 400 to the caller without any code change in the handlers.
         errors = exc.errors()
         msg = errors[0].get("msg", str(exc)) if errors else str(exc)
-        return {"error": "bad_request", "message": msg}
+        return {"error": "bad_request", "detail": msg, "message": msg}
 
     return _save_result_envelope(result)
 
@@ -1027,15 +1068,22 @@ def memory_search(
     on a malformed timestamp.
     """
     if as_of is not None:
-        try:
-            from datetime import datetime
-
-            datetime.fromisoformat(as_of)
-        except ValueError:
+        # Blank as_of is invalid (unlike optional since/until): an empty
+        # string is not None, so Postgres would still cast as_of::timestamptz.
+        if not str(as_of).strip():
+            detail = f"as_of must be a valid ISO-8601 timestamp, got {as_of!r}"
+            return {"error": "invalid_as_of", "message": detail, "detail": detail}
+        bad_as_of = validate_iso_timestamp("as_of", as_of)
+        if bad_as_of is not None:
             return {
                 "error": "invalid_as_of",
-                "message": f"as_of must be a valid ISO-8601 timestamp, got {as_of!r}",
+                "message": bad_as_of["detail"],
+                "detail": bad_as_of["detail"],
             }
+    for field_name, raw_ts in (("since", since), ("until", until)):
+        bad = validate_iso_timestamp(field_name, raw_ts)
+        if bad is not None:
+            return bad
     results = store.search(
         query,
         tier=tier,
@@ -1920,6 +1968,10 @@ def memory_audit(
     """
     if limit < 1:
         return {"error": "invalid_limit", "message": "limit must be >= 1"}
+    for field_name, raw_ts in (("since", since), ("until", until)):
+        bad = validate_iso_timestamp(field_name, raw_ts)
+        if bad is not None:
+            return bad
     entries = store.audit(
         key=key or None,
         event_type=event_type or None,
@@ -2076,7 +2128,7 @@ async def async_memory_save(
     except _PydanticValidationError as exc:
         errors = exc.errors()
         msg = errors[0].get("msg", str(exc)) if errors else str(exc)
-        return {"error": "bad_request", "message": msg}
+        return {"error": "bad_request", "detail": msg, "message": msg}
 
     if isinstance(result, dict):
         return result
@@ -2094,12 +2146,28 @@ async def async_brain_forget(
 ) -> dict[str, Any]:
     """Async-native counterpart of :func:`brain_forget`.
 
-    Same return shape; the Postgres delete goes through the async backend
-    when one is wired.
+    Same return shape and same archive-then-delete semantics; the Postgres
+    writes go through the async backend when one is wired.
     """
+    import asyncio
+    import inspect
+
     entry = await async_store.get(key)
     if entry is None:
         return {"forgotten": False, "reason": "not_found"}
+    async_backend = getattr(async_store, "_async_backend", None)
+    archive = getattr(async_backend, "archive_entry", None)
+    if callable(archive):
+        archived = archive(entry)
+        if inspect.isawaitable(archived):
+            archived = await archived
+        if not archived:
+            logger.warning("brain_forget.archive_failed", key=key)
+    else:
+        sync_store = getattr(async_store, "_store", None)
+        backend = getattr(sync_store, "_persistence", None)
+        if backend is not None:
+            await asyncio.to_thread(_archive_forgotten_entry, backend, entry, key)
     await async_store.delete(key)
     return {"forgotten": True, "key": key}
 
@@ -2121,7 +2189,10 @@ async def async_brain_learn_success(
     tags = ["success"]
     if task_id:
         tags.append(f"task:{task_id}")
-    await async_store.save(key=key, value=task_description, tier="procedural", tags=tags)
+    out = await async_store.save(key=key, value=task_description, tier="procedural", tags=tags)
+    rejected = _save_rejection(out)
+    if rejected is not None:
+        return {**rejected, "learned": False, "key": key}
     return {"learned": True, "key": key}
 
 
@@ -2144,7 +2215,10 @@ async def async_brain_learn_failure(
     tags = ["failure"]
     if task_id:
         tags.append(f"task:{task_id}")
-    await async_store.save(key=key, value=value, tier="procedural", tags=tags)
+    out = await async_store.save(key=key, value=value, tier="procedural", tags=tags)
+    rejected = _save_rejection(out)
+    if rejected is not None:
+        return {**rejected, "learned": False, "key": key}
     return {"learned": True, "key": key}
 
 

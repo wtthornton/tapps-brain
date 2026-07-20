@@ -26,30 +26,31 @@ from tapps_brain.cli._common import (
 @hive_app.command("status")
 def hive_status(as_json: JsonFlag = False) -> None:
     """Show Hive status: namespaces, entry counts, registered agents."""
-    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.backends import resolve_agent_registry
 
     hive = _open_hive_backend_for_cli()
     try:
         ns_counts = hive.count_by_namespace()
         agent_counts = hive.count_by_agent()
         total = sum(ns_counts.values())
+        # Prefer Postgres agent_registry when the hive DSN is set — YAML-only
+        # AgentRegistry diverges from MCP/HTTP on Docker deploys.
+        registry = resolve_agent_registry(hive)
+        agents = [
+            {
+                "id": a.id,
+                "profile": a.profile,
+                "skills": a.skills,
+                # Count entries contributed by this agent (across all namespaces).
+                # Previously used ns_counts.get(a.profile, 0) which always returned 0
+                # because entries go to "universal" or a domain namespace, not a
+                # namespace named after the agent ID. Fix for issue #22.
+                "entries_contributed": agent_counts.get(a.id, 0),
+            }
+            for a in registry.list_agents()
+        ]
     finally:
         hive.close()
-
-    registry = AgentRegistry()
-    agents = [
-        {
-            "id": a.id,
-            "profile": a.profile,
-            "skills": a.skills,
-            # Count entries contributed by this agent (across all namespaces).
-            # Previously used ns_counts.get(a.profile, 0) which always returned 0
-            # because entries go to "universal" or a domain namespace, not a
-            # namespace named after the agent ID. Fix for issue #22.
-            "entries_contributed": agent_counts.get(a.id, 0),
-        }
-        for a in registry.list_agents()
-    ]
 
     data: dict[str, Any] = {
         "namespaces": ns_counts,
@@ -172,6 +173,32 @@ def hive_watch(
         hive.close()
 
 
+def _emit_hive_push_report(
+    report: dict[str, Any],
+    *,
+    dry_run: bool,
+    agent_scope: str,
+    as_json: bool,
+) -> None:
+    """Print or JSON-encode a hive-push report; exit 1 when any push failed."""
+    failed_n = int(report.get("count_failed") or 0)
+    if as_json:
+        _output(report, as_json=True)
+    else:
+        mode = "Dry-run" if dry_run else "Done"
+        typer.echo(
+            f"{mode}: selected {report['count_selected']}, "
+            f"pushed {report['count_pushed']}, "
+            f"skipped {report['count_skipped']}, "
+            f"failed {failed_n} "
+            f"(scope={agent_scope})"
+        )
+        for row in report.get("failed") or []:
+            typer.echo(f"  failed: {row['key']}: {row['error']}", err=True)
+    if failed_n > 0:
+        raise typer.Exit(code=1)
+
+
 def _run_hive_push_from_store(
     *,
     agent_scope: str,
@@ -251,20 +278,7 @@ def _run_hive_push_from_store(
             if _should_close:
                 hive.close()
 
-        if as_json:
-            _output(report, as_json=True)
-        else:
-            mode = "Dry-run" if dry_run else "Done"
-            typer.echo(
-                f"{mode}: selected {report['count_selected']}, "
-                f"pushed {report['count_pushed']}, "
-                f"skipped {report['count_skipped']}, "
-                f"failed {report['count_failed']} "
-                f"(scope={agent_scope})"
-            )
-            if report["failed"]:
-                for row in report["failed"]:
-                    typer.echo(f"  failed: {row['key']}: {row['error']}", err=True)
+        _emit_hive_push_report(report, dry_run=dry_run, agent_scope=agent_scope, as_json=as_json)
     finally:
         store.close()
 
@@ -356,7 +370,6 @@ def agent_create(
     as_json: JsonFlag = False,
 ) -> None:
     """Create an agent with profile validation and print namespace and profile summary."""
-    from tapps_brain.backends import AgentRegistry
     from tapps_brain.models import AgentRegistration
     from tapps_brain.profile import get_builtin_profile, list_builtin_profiles
 
@@ -379,11 +392,17 @@ def agent_create(
             typer.echo(f"Available profiles: {', '.join(available)}", err=True)
         raise typer.Exit(code=1) from None
 
-    # Register agent
+    # Register agent (Postgres when DSN available — same as MCP agent_register).
+    from tapps_brain.backends import resolve_agent_registry
+
     skill_list = [s.strip() for s in skills.split(",") if s.strip()]
     agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
-    registry = AgentRegistry()
-    registry.register(agent)
+    hive = _open_hive_backend_for_cli()
+    try:
+        registry = resolve_agent_registry(hive)
+        registry.register(agent)
+    finally:
+        hive.close()
 
     # Namespace = profile name (same as PropagationEngine)
     namespace = profile
@@ -425,23 +444,29 @@ def agent_register(
     skills: Annotated[str, typer.Option(help="Comma-separated skills.")] = "",
 ) -> None:
     """Register an agent in the Hive."""
-    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.backends import resolve_agent_registry
     from tapps_brain.models import AgentRegistration
 
-    registry = AgentRegistry()
     skill_list = [s.strip() for s in skills.split(",") if s.strip()]
     agent = AgentRegistration(id=agent_id, profile=profile, skills=skill_list)
-    registry.register(agent)
+    hive = _open_hive_backend_for_cli()
+    try:
+        resolve_agent_registry(hive).register(agent)
+    finally:
+        hive.close()
     typer.echo(f"Registered agent '{agent_id}' with profile '{profile}'.")
 
 
 @agent_app.command("list")
 def agent_list(as_json: JsonFlag = False) -> None:
     """List all registered agents in the Hive."""
-    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.backends import resolve_agent_registry
 
-    registry = AgentRegistry()
-    agents = registry.list_agents()
+    hive = _open_hive_backend_for_cli()
+    try:
+        agents = resolve_agent_registry(hive).list_agents()
+    finally:
+        hive.close()
 
     if as_json:
         _output(
@@ -463,10 +488,13 @@ def agent_delete(
     as_json: JsonFlag = False,
 ) -> None:
     """Delete a registered agent from the Hive."""
-    from tapps_brain.backends import AgentRegistry
+    from tapps_brain.backends import resolve_agent_registry
 
-    registry = AgentRegistry()
-    removed = registry.unregister(agent_id)
+    hive = _open_hive_backend_for_cli()
+    try:
+        removed = resolve_agent_registry(hive).unregister(agent_id)
+    finally:
+        hive.close()
 
     if as_json:
         _output({"deleted": removed, "agent_id": agent_id}, as_json=True)

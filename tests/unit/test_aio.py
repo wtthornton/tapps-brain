@@ -36,7 +36,7 @@ class TestCapturePersistenceBackendSaveMany:
         entries = [MemoryEntry(key=f"k{i}", value=f"v{i}") for i in range(3)]
         capture.save_many(entries)
 
-        saves, _deletes, _deleted_rels, _relations, _audit = capture.flush()
+        saves, _deletes, _deleted_rels, _relations, _audit, _archives = capture.flush()
         assert [e.key for e in saves] == ["k0", "k1", "k2"]
 
 
@@ -375,8 +375,8 @@ class TestAsyncNativeSecondaryWriteParity:
             backend.append_audit.assert_awaited_once_with("save", "k", {"reason": "test"})
 
             # Queues are drained after flush.
-            saves, deletes, _deleted_rels, rels, audit = capture.flush()
-            assert saves == [] and deletes == [] and rels == [] and audit == []
+            saves, deletes, _deleted_rels, rels, audit, archives = capture.flush()
+            assert saves == [] and deletes == [] and rels == [] and audit == [] and archives == []
         finally:
             await sync_store.close()
 
@@ -410,8 +410,76 @@ class TestAsyncNativeSecondaryWriteParity:
 
         capture = _CapturePersistenceBackend(MagicMock())
         assert capture.save_relations("k", []) == 0
-        _saves, _deletes, _deleted_rels, rels, _audit = capture.flush()
+        _saves, _deletes, _deleted_rels, rels, _audit, _archives = capture.flush()
         assert rels == []
+
+    def test_archive_entry_captures_without_hitting_sync_backend(self) -> None:
+        """GC archives must queue for async flush — not write through sync."""
+        from unittest.mock import MagicMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        real = MagicMock()
+        capture = _CapturePersistenceBackend(real)
+        entry = MemoryEntry(key="stale", value="old")
+        nbytes = capture.archive_entry(entry)
+        assert nbytes > 0
+        real.archive_entry.assert_not_called()
+        _s, _d, _dr, _r, _a, archives = capture.flush()
+        assert archives == [entry]
+
+    @pytest.mark.asyncio
+    async def test_flush_raises_and_skips_delete_when_archive_returns_zero(
+        self, tmp_path: Path
+    ) -> None:
+        """Durable archive nbytes==0 must not delete the live row (sync GC contract)."""
+        from unittest.mock import AsyncMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        sync_store = await AsyncMemoryStore.open(tmp_path)
+        try:
+            backend = self._make_async_backend()
+            backend.archive_entry = AsyncMock(return_value=0)
+            astore = AsyncMemoryStore(sync_store.sync_store, async_backend=backend)
+
+            capture = _CapturePersistenceBackend(astore.sync_store._persistence)
+            entry = MemoryEntry(key="stale", value="old")
+            assert capture.archive_entry(entry) > 0
+            capture.delete("stale")
+
+            with pytest.raises(RuntimeError, match="durable archive failed"):
+                await astore._flush_capture(capture)
+
+            backend.archive_entry.assert_awaited_once_with(entry)
+            backend.delete.assert_not_awaited()
+        finally:
+            await sync_store.close()
+
+    @pytest.mark.asyncio
+    async def test_flush_deletes_only_after_successful_archive(self, tmp_path: Path) -> None:
+        """Successful durable archive (nbytes>0) unblocks the queued GC delete."""
+        from unittest.mock import AsyncMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        sync_store = await AsyncMemoryStore.open(tmp_path)
+        try:
+            backend = self._make_async_backend()
+            backend.archive_entry = AsyncMock(return_value=128)
+            astore = AsyncMemoryStore(sync_store.sync_store, async_backend=backend)
+
+            capture = _CapturePersistenceBackend(astore.sync_store._persistence)
+            entry = MemoryEntry(key="stale", value="old")
+            capture.archive_entry(entry)
+            capture.delete("stale")
+
+            await astore._flush_capture(capture)
+
+            backend.archive_entry.assert_awaited_once_with(entry)
+            backend.delete.assert_awaited_once_with("stale")
+        finally:
+            await sync_store.close()
 
 
 class TestBoundedConcurrency:

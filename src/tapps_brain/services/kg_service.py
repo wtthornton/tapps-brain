@@ -16,6 +16,7 @@ import json
 import os
 import threading
 from collections import deque
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -291,6 +292,19 @@ def query_events(
     """
     if not (event_type or "").strip():
         return {"error": "bad_request", "detail": "event_type is required."}
+
+    # TAP-2140 class: malformed client timestamps bound raw to an
+    # ``event_time >= %s`` comparison raise InvalidDatetimeFormat in Postgres
+    # and surface as a 500. Validate here and report a 400 instead.
+    for field_name, raw_ts in (("since", since), ("until", until)):
+        if raw_ts and raw_ts.strip():
+            try:
+                datetime.fromisoformat(raw_ts.strip())
+            except ValueError:
+                return {
+                    "error": "bad_request",
+                    "detail": f"{field_name} must be a valid ISO-8601 timestamp, got {raw_ts!r}",
+                }
 
     eff_limit = max(1, min(int(limit), _QUERY_EVENTS_MAX_LIMIT))
 

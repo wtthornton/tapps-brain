@@ -65,4 +65,4 @@ consider designating one teammate as a **quality watchdog**. To enable Agent Tea
 
 ## CI Integration
 
-TappsMCP can run in CI. Use `TAPPS_MCP_PROJECT_ROOT` and `tapps-mcp validate-changed --preset staging`, or Claude Code headless mode with `tapps_validate_changed`.
+TappsMCP can run in CI. Use `TAPPS_MCP_PROJECT_ROOT` and `tapps-mcp validate-changed --quick`, or Claude Code headless mode with `tapps_validate_changed`.

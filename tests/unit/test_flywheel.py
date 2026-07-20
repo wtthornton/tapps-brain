@@ -74,7 +74,11 @@ class TestConfidencePipeline:
         finally:
             store.close()
 
-    def test_process_feedback_since_does_not_advance_cursor(self, tmp_path: Path) -> None:
+    def test_process_feedback_since_does_not_advance_when_nothing_applied(
+        self, tmp_path: Path
+    ) -> None:
+        """``since`` in the future applies nothing — cursor stays put so a bare
+        follow-up run can still process those events."""
         root = tmp_path / "since2"
         root.mkdir()
         store = MemoryStore(root)
@@ -89,6 +93,32 @@ class TestConfidencePipeline:
             e = store.get("sk")
             assert e is not None
             assert e.confidence != 0.5
+        finally:
+            store.close()
+
+    def test_process_feedback_since_advances_cursor_for_applied_events(
+        self, tmp_path: Path
+    ) -> None:
+        """Applied events under ``since`` must advance the cursor so a bare
+        follow-up does not double-apply non-idempotent confidence deltas."""
+        root = tmp_path / "since3"
+        root.mkdir()
+        store = MemoryStore(root)
+        try:
+            store.save("sk", "x", tier="context", source="agent", confidence=0.5)
+            store.rate_recall("sk", rating="helpful")
+            FeedbackProcessor(FlywheelConfig()).process_feedback(
+                store, since="2000-01-01T00:00:00+00:00"
+            )
+            e1 = store.get("sk")
+            assert e1 is not None
+            conf_after = e1.confidence
+            assert conf_after != 0.5
+            r2 = FeedbackProcessor(FlywheelConfig()).process_feedback(store)
+            assert r2["confidence_adjustments"] == 0
+            e2 = store.get("sk")
+            assert e2 is not None
+            assert e2.confidence == conf_after
         finally:
             store.close()
 

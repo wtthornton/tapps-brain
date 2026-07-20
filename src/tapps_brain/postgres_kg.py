@@ -511,40 +511,30 @@ class PostgresKnowledgeGraphStore:
             ``edge_confidence``, ``neighbor_id``, ``entity_type``,
             ``canonical_name``, ``entity_confidence``, ``direction``.
         """
-        results: list[dict[str, Any]] = []
-
         _valid_directions = {"out", "in", "both"}
         if direction not in _valid_directions:
             msg = f"direction must be one of {_valid_directions}, got {direction!r}"
             raise ValueError(msg)
 
+        pf = predicate
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            if direction in ("out", "both"):
+            if direction == "both":
+                arm = (self._brain_id, entity_id, pf, pf)
+                cur.execute(
+                    _sql.GET_BOTH_NEIGHBORS_SQL,
+                    (*arm, *arm, limit),
+                )
+            elif direction == "out":
                 cur.execute(
                     _sql.GET_OUTGOING_NEIGHBORS_SQL,
-                    (self._brain_id, entity_id),
+                    (self._brain_id, entity_id, pf, pf, limit),
                 )
-                for row in cur.fetchall():
-                    d = _row_to_dict(row, cur.description)
-                    d["direction"] = "out"
-                    if predicate is None or d.get("predicate") == predicate:
-                        results.append(d)
-                        if len(results) >= limit:
-                            break
-
-            if direction in ("in", "both") and len(results) < limit:
+            else:
                 cur.execute(
                     _sql.GET_INCOMING_NEIGHBORS_SQL,
-                    (self._brain_id, entity_id),
+                    (self._brain_id, entity_id, pf, pf, limit),
                 )
-                remaining = limit - len(results)
-                for row in cur.fetchmany(remaining):
-                    d = _row_to_dict(row, cur.description)
-                    d["direction"] = "in"
-                    if predicate is None or d.get("predicate") == predicate:
-                        results.append(d)
-
-        return results
+            return [_row_to_dict(row, cur.description) for row in cur.fetchall()]
 
     def get_neighbors_multi(
         self,
@@ -571,7 +561,8 @@ class PostgresKnowledgeGraphStore:
             ``edge_status``, ``contradicted``, ``reinforce_count``,
             ``useful_access_count``, ``access_count``, ``source``, ``evidence_count``,
             ``neighbor_id``, ``entity_type``, ``canonical_name``,
-            ``entity_confidence``, ``hop``.
+            ``entity_confidence``, ``hop``, and for 1-hop rows ``direction``
+            (``"out"`` / ``"in"``) so callers can orient edges correctly.
         """
         if not entity_ids:
             return []
@@ -582,28 +573,19 @@ class PostgresKnowledgeGraphStore:
 
         with self._scoped_conn() as conn, conn.cursor() as cur:
             if hops == 1:
+                # Params repeated once per UNION arm (out + in).
+                arm = (self._brain_id, entity_ids, ih, ih, pf, pf)
                 cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_1HOP_SQL,
-                    (self._brain_id, entity_ids, ih, ih, pf, pf, limit),
+                    (*arm, *arm, limit),
                 )
             else:
+                # Parenthesized base out+in, then one undirected recursive arm.
+                base_arm = (self._brain_id, entity_ids, ih, ih, pf, pf)
+                rec_arm = (self._brain_id, ih, ih, pf, pf, hops)
                 cur.execute(
                     _sql.GET_MULTI_NEIGHBORS_2HOP_SQL,
-                    (
-                        self._brain_id,
-                        entity_ids,
-                        ih,
-                        ih,
-                        pf,
-                        pf,
-                        self._brain_id,
-                        ih,
-                        ih,
-                        pf,
-                        pf,
-                        hops,
-                        limit,
-                    ),
+                    (*base_arm, *base_arm, *rec_arm, limit),
                 )
             rows = cur.fetchall()
             results: list[dict[str, Any]] = [_row_to_dict(row, cur.description) for row in rows]

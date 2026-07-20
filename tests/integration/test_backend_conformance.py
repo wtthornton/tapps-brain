@@ -226,6 +226,8 @@ class TestFederationBackendConformance:
         entry.created_at = "2025-01-01T00:00:00Z"
         entry.updated_at = "2025-01-01T00:00:00Z"
         entry.memory_group = None
+        # Federation publish gates on MemoryScope.shared (not MagicMock defaults).
+        entry.scope = "shared"
         return entry
 
     def test_publish_and_get_entries(self, federation_backend: Any) -> None:
