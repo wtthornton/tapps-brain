@@ -1291,7 +1291,7 @@ class TestSnapshotEndpointWithStore:
         assert resp.headers.get("access-control-allow-origin") == "*"
 
     def test_ttl_cache_prevents_double_call(self) -> None:
-        """Two requests within 15s must return the same body (cached)."""
+        """Two requests within the TTL window must return the same body (cached)."""
         mock_store = MagicMock()
         call_count = 0
 
@@ -1308,6 +1308,10 @@ class TestSnapshotEndpointWithStore:
         assert r1.status_code == 200
         assert r2.status_code == 200
         assert call_count == 1, f"Expected 1 snapshot build call; got {call_count}"
+
+    def test_snapshot_ttl_exceeds_cold_build_budget(self) -> None:
+        """TTL must stay above the cold-build SLO so pollers do not stampede."""
+        assert _mod._SNAPSHOT_TTL_SECONDS >= 60.0
 
     def test_cache_refresh_after_ttl(self) -> None:
         """After the TTL expires, the next request triggers a fresh snapshot build."""

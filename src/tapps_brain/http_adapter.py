@@ -170,7 +170,11 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _SERVICE_NAME = "tapps-brain"
-_SNAPSHOT_TTL_SECONDS: float = 15.0
+# Cold ``build_visual_snapshot`` on a live multi-tenant store is often 10–25s
+# (SLO ≤25s; nginx / smoke timeouts are 30s). A 15s TTL expired mid-build and
+# forced every poller to queue on ``_snapshot_build_lock``, producing 504s and
+# ``brain-smoke-live`` failures. Keep TTL above the cold-build budget.
+_SNAPSHOT_TTL_SECONDS: float = 90.0
 _PROCESS_START_TIME: float = time.time()
 _BEARER_PREFIX = "bearer "
 
