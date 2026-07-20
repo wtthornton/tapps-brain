@@ -187,8 +187,13 @@ def test_health_skip_consolidation_scan_reuses_cached_gauge(tmp_path: Path) -> N
         store.close()
 
 
-def test_build_snapshot_size_guards_consolidation_scan(tmp_path: Path) -> None:
-    """EPIC-078/TAP-4332: /snapshot must size-guard the O(n^2) consolidation scan."""
+def test_build_snapshot_skips_consolidation_scan(tmp_path: Path) -> None:
+    """EPIC-078/TAP-4332: /snapshot must never run the O(n²) consolidation scan.
+
+    Live evidence (2026-07-20): a 1433-entry store spent ~100s in
+    ``find_consolidation_groups`` when the inline scan cap was 2000, failing
+    brain-smoke-live and nginx ``proxy_read_timeout 30s``.
+    """
     store = MemoryStore(tmp_path)
     captured: dict[str, Any] = {}
     real_health = store.health
@@ -200,7 +205,7 @@ def test_build_snapshot_size_guards_consolidation_scan(tmp_path: Path) -> None:
     try:
         with patch.object(store, "health", _spy):
             build_visual_snapshot(store, skip_diagnostics=True, privacy="standard")
-        assert captured.get("consolidation_scan_max_entries") is not None
+        assert captured.get("skip_consolidation_scan") is True
     finally:
         store.close()
 
