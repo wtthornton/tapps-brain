@@ -262,6 +262,14 @@ def _get_store_for_project(
     if not project_id:
         project_id = default_pid or ""
 
+    # Reject invalid slugs before env handoff / MemoryStore construction so
+    # HTTP/MCP callers get a typed InvalidProjectIdError (→ 400) instead of an
+    # ASGI 500 from profile resolution.
+    if project_id:
+        from tapps_brain.project_resolver import validate_project_id
+
+        validate_project_id(project_id)
+
     # Compound key always includes agent_id so pooled MCP connections cannot
     # reuse another agent's store when only project_id matches.
     cache_key = f"{project_id}\x00{effective_agent_id}"

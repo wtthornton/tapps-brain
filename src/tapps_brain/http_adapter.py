@@ -1072,6 +1072,7 @@ def create_app(
         """
         from tapps_brain.mcp_server.context import _get_store_for_project
         from tapps_brain.project_registry import ProjectNotRegisteredError
+        from tapps_brain.project_resolver import InvalidProjectIdError
 
         base = _get_store_or_503()
         default_store = _resolve_wrapped_default_store(base)
@@ -1091,6 +1092,17 @@ def create_app(
                 agent_id=str(server_agent),
                 call_agent_id=call_agent,
             )
+        except InvalidProjectIdError as exc:
+            # Invalid slugs (e.g. leading underscore ``_system``) must be 400,
+            # not an unhandled ASGI 500 from MemoryStore profile resolution.
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_project_id",
+                    "detail": str(exc),
+                    "project_id": project_id,
+                },
+            ) from exc
         except ProjectNotRegisteredError as exc:
             raise HTTPException(
                 status_code=404,

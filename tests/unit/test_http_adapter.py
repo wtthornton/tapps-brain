@@ -2166,6 +2166,42 @@ class TestOriginAllowlistMiddlewareTAP627:
         assert resp.status_code != 403
 
 
+class TestInvalidProjectIdReturns400:
+    """Invalid ``X-Project-Id`` slugs must be 400, not an unhandled ASGI 500.
+
+    Live evidence (2026-07-20): AgentForge/clients sending ``_system`` crashed
+    ``MemoryStore`` profile resolution with ``InvalidProjectIdError`` and
+    surfaced as ``ERROR: Exception in ASGI application``.
+    """
+
+    def test_leading_underscore_project_id_returns_400(self) -> None:
+        from tapps_brain.project_resolver import InvalidProjectIdError
+
+        mock_store = MagicMock()
+        mock_store._project_id = "default"
+        mock_store._agent_id = "http-adapter"
+        settings = _make_settings(auth_token="tok", store=mock_store)
+        with (
+            patch(
+                "tapps_brain.mcp_server.context._get_store_for_project",
+                side_effect=InvalidProjectIdError(
+                    "Invalid project_id '_system': must match "
+                    "^[a-z0-9][a-z0-9_-]{0,63}$ (lowercase alnum, dash, underscore)."
+                ),
+            ),
+            _client(settings) as client,
+        ):
+            resp = client.post(
+                "/v1/remember",
+                json={"key": "k", "value": "v", "agent_id": "tester"},
+                headers={"Authorization": "Bearer tok", "X-Project-Id": "_system"},
+            )
+        assert resp.status_code == 400, resp.text
+        body = resp.json()
+        assert body["error"] == "invalid_project_id"
+        assert body["project_id"] == "_system"
+
+
 # ---------------------------------------------------------------------------
 # TAP-626: per-tenant auth — X-Project-Id required when flag is enabled
 # ---------------------------------------------------------------------------
