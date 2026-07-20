@@ -3864,6 +3864,24 @@ class TestPerCallProjectDispatch:
         assert err.message == "project_not_registered"
         assert err.data["project_id"] == "ghost"
 
+    def test_invalid_project_id_maps_to_mcp_error(self, monkeypatch) -> None:
+        """Leading-underscore slugs must be INVALID_REQUEST, not an unhandled 500."""
+        from mcp.shared.exceptions import McpError
+
+        from tapps_brain import mcp_server as ms
+
+        default = _FakeStore("default")
+        monkeypatch.setattr(ms, "_current_request_project_id", lambda: "_system")
+        ms._STORE_CACHE.clear()
+        proxy = ms._StoreProxy(default, enable_hive=False, agent_id="x")
+
+        with pytest.raises(McpError) as exc:
+            proxy._resolve()
+
+        err = exc.value.error
+        assert err.message == "invalid_project_id"
+        assert err.data["project_id"] == "_system"
+
 
 class TestMcpHttpHeaderTenantFallback:
     """Streamable HTTP session tasks read tenant headers from request_ctx.request."""

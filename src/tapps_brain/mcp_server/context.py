@@ -531,6 +531,23 @@ def _raise_project_not_registered(project_id: str | None) -> None:
     )
 
 
+def _raise_invalid_project_id(project_id: str | None, detail: str) -> None:
+    """Raise an MCP error for a malformed project_id slug (e.g. leading ``_``)."""
+    from mcp.shared.exceptions import McpError
+    from mcp.types import ErrorData
+
+    from tapps_brain.errors import ErrorCode, jsonrpc_code, mcp_error_data
+
+    err_code = ErrorCode.INVALID_REQUEST
+    raise McpError(
+        ErrorData(
+            code=jsonrpc_code(err_code),
+            message="invalid_project_id",
+            data=mcp_error_data(err_code, detail, project_id=project_id),
+        )
+    )
+
+
 class _StoreProxy:
     """Per-call dispatch shim that looks like a ``MemoryStore``."""
 
@@ -562,9 +579,12 @@ class _StoreProxy:
             )
         except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
+            from tapps_brain.project_resolver import InvalidProjectIdError
 
             if isinstance(exc, ProjectNotRegisteredError):
                 _raise_project_not_registered(exc.project_id)
+            if isinstance(exc, InvalidProjectIdError):
+                _raise_invalid_project_id(pid, str(exc))
             raise
 
     def __getattr__(self, name: str) -> Any:  # noqa: ANN401
