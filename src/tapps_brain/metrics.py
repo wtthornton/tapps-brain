@@ -194,6 +194,15 @@ class StoreHealthReport(BaseModel):
             "degraded to lexical BM25-only (TAP-2672)."
         ),
     )
+    # Document plane (TAP-4998 / TAP-5005)
+    document_count: int = Field(
+        default=0,
+        description="Documents stored for this project (documents table, TAP-4998).",
+    )
+    document_total_bytes: int = Field(
+        default=0,
+        description="Sum of original document sizes for this project (bytes).",
+    )
     # Hive Postgres health (EPIC-058 STORY-058.3)
     hive_connected: bool = False
     hive_schema_version: int = 0

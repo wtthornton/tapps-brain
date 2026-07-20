@@ -53,7 +53,7 @@ class TestBundledProfiles:
         # brain_record_feedback to full (+3 over TAP-2725 baseline).
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 69
+        assert len(tools) == 74
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -72,7 +72,7 @@ class TestBundledProfiles:
         # EPIC-075: +3 experience/feedback tools in operator superset.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 82
+        assert len(tools) == 87
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -217,11 +217,11 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
-    def test_get_agent_brain_returns_15_tools(self) -> None:
+    def test_get_agent_brain_returns_16_tools(self) -> None:
         """TAP-1579 + v3.24: agent_brain exposes brain_* facade + experience/profile KV."""
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        assert len(agent_brain) == 15
+        assert len(agent_brain) == 16
         assert "brain_record_events_batch" in agent_brain
         assert "brain_audit_consumers" in agent_brain
 
@@ -374,7 +374,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 82, f"Expected 82 tools, found {len(all_tools)}"
+        assert len(all_tools) == 87, f"Expected 87 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -448,7 +448,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 69
+        assert len(eager) == 74
 
     def test_bundled_full_eager_set_matches_callable_surface(self) -> None:
         """All callable tools in `full` appear in tools/list by default."""
@@ -462,7 +462,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 82
+        assert len(eager) == 87
 
     def test_bundled_operator_eager_matches_callable_surface(self) -> None:
         """All callable tools in `operator` appear in tools/list by default."""
