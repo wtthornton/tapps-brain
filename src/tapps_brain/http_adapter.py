@@ -1040,6 +1040,15 @@ def create_app(
                             snapshot = built
                             record_snapshot_build_duration(build_duration)
 
+        # Overlay live in-process retrieval counters. The TTL cache freezes the
+        # whole VisualSnapshot for up to _SNAPSHOT_TTL_SECONDS; without this,
+        # /snapshot.retrieval_metrics (and the visual dashboard) stay stuck
+        # while store.search/recall keep incrementing process counters.
+        from tapps_brain.visual_snapshot import _collect_retrieval_metrics
+
+        snapshot = snapshot.model_copy(
+            update={"retrieval_metrics": _collect_retrieval_metrics()}
+        )
         payload = snapshot.model_dump(mode="json")
         if project_filter is not None:
             payload = _filter_snapshot_by_project(payload, project_filter)
