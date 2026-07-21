@@ -289,8 +289,8 @@ brain-diagnostics-live:  ## Live-stack diagnostics (healthz, snapshot, stale, re
 brain-eval:  ## Operational eval over a window (WINDOW_HOURS=72 default): metrics, usage, logs, recommendations
 	@python3 scripts/brain_eval.py
 
-purge-test-tenants:  ## Remove leaked test/load tenant rows (reserved smoke-/test- prefixes). Dry-run unless APPLY=1
-	@TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+purge-test-tenants:  ## Remove leaked test/load tenant rows (reserved smoke-/test- prefixes). Dry-run unless APPLY=1. Override: PURGE_DSN=postgres://… make purge-test-tenants
+	@TAPPS_BRAIN_DATABASE_URL=$(or $(PURGE_DSN),$(TAPPS_DEV_DSN)) \
 	  TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 \
 	  uv run tapps-brain maintenance purge-test-tenants $(if $(filter 1,$(APPLY)),--apply,)
 
