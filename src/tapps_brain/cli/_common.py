@@ -171,8 +171,26 @@ def set_cli_agent_id(value: str | None) -> None:
 
 
 def _resolve_project_dir(project_dir: Path | None) -> Path:
-    """Resolve project directory, defaulting to cwd."""
-    return (project_dir or Path.cwd()).resolve()
+    """Resolve project directory, defaulting to cwd.
+
+    When ``project_dir`` is omitted, prefer ``TAPPS_BRAIN_SERVE_ROOT`` so
+    in-container CLI maintenance matches ``tapps-brain serve`` (default
+    ``/var/lib/tapps-brain``).  Bare ``docker exec … tapps-brain maintenance``
+    otherwise uses cwd ``/`` and silently operates on an empty tenant while
+    the live store (project hash of ``/var/lib/tapps-brain``) still shows
+    tampered rows.
+    """
+    if project_dir is not None:
+        return project_dir.resolve()
+    import os
+
+    serve_root = os.environ.get("TAPPS_BRAIN_SERVE_ROOT", "").strip()
+    if serve_root:
+        return Path(serve_root).resolve()
+    default_serve = Path("/var/lib/tapps-brain")
+    if Path.cwd().resolve() == Path("/") and default_serve.is_dir():
+        return default_serve.resolve()
+    return Path.cwd().resolve()
 
 
 def _parse_csv_env(var: str) -> list[str]:
