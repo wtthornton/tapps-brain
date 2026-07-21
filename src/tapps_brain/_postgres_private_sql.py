@@ -476,6 +476,12 @@ KEYS_MISSING_EMBEDDING_SQL = (
     "WHERE project_id = %s AND agent_id = %s AND embedding IS NULL"
 )
 
+#: Load durable vectors for lossless export sidecars (TAP-5030).
+LOAD_EMBEDDINGS_SQL = (
+    "SELECT key, embedding, embedding_model_id FROM private_memories "
+    "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL"
+)
+
 
 # ---------------------------------------------------------------------------
 # Index sanity check

@@ -34,7 +34,7 @@ def _fake_vector(text: str) -> list[float]:
     """Deterministic bag-of-words embedding (no model download)."""
     vec = [0.0] * _EMBED_DIM
     for token in text.lower().split():
-        idx = int(hashlib.sha1(token.encode()).hexdigest(), 16) % _EMBED_DIM  # noqa: S324
+        idx = int(hashlib.sha1(token.encode()).hexdigest(), 16) % _EMBED_DIM
         vec[idx] += 1.0
     norm = math.sqrt(sum(x * x for x in vec)) or 1.0
     return [x / norm for x in vec]
@@ -134,7 +134,7 @@ class TestDocumentCrud:
         assert meta["chunk_count"] >= 1
 
     def test_index_true_writes_chunks_with_embeddings(self, tenant: Any) -> None:
-        doc_store, store, cm, project_id = tenant
+        _doc_store, store, cm, project_id = tenant
         text = "\n\n".join(f"paragraph {i} about hybrid retrieval systems" for i in range(5))
         result = _put(store, content=text)
         assert result["index_status"] == "indexed"

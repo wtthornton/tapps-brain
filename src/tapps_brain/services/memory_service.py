@@ -1689,21 +1689,32 @@ def memory_export(
     tier: str | None = None,
     scope: str | None = None,
     min_confidence: float | None = None,
+    include_relations: bool = True,
+    include_embeddings: bool = False,
+    export_format: str = "json",
 ) -> dict[str, Any]:
-    """Export memory entries as a JSON-serialisable bundle.
+    """Export memory entries as a versioned JSON-serialisable bundle (TAP-5027).
 
     Applies optional tier / scope / minimum-confidence filters. The output is
     accepted by :func:`memory_import`. For Managed Agents-shaped exports use
     :func:`brain_export` instead.
+
+    Default format is the native ``tapps-memory`` 1.0 envelope (with optional
+    ``relations``). Pass ``export_format="mif"`` for MIF v2 interchange.
     """
-    entries = store.list_all(tier=tier, scope=scope)
-    if min_confidence is not None:
-        entries = [e for e in entries if e.confidence >= min_confidence]
-    return {
-        "memories": [e.model_dump(mode="json") for e in entries],
-        "entry_count": len(entries),
-        "project_root": project_root,
-    }
+    from tapps_brain.io import export_bundle_dict
+
+    _ = project_id, agent_id  # tenant identity is already bound on *store*
+    return export_bundle_dict(
+        store,
+        project_root=project_root,
+        tier=tier,
+        scope=scope,
+        min_confidence=min_confidence,
+        include_relations=include_relations,
+        include_embeddings=include_embeddings,
+        export_format=export_format,
+    )
 
 
 def memory_import(
@@ -1713,63 +1724,51 @@ def memory_import(
     *,
     memories_json: str,
     overwrite: bool = False,
+    max_entries: int | None = None,
 ) -> dict[str, Any]:
-    """Import a JSON bundle produced by :func:`memory_export`.
+    """Import a JSON bundle produced by :func:`memory_export` (TAP-5027).
 
-    ``overwrite=False`` skips entries whose key already exists. Returns counts
-    of ``imported`` / ``skipped`` / ``errors`` plus a status string. Each
-    failure is logged but never aborts the batch.
+    Accepts the native envelope, legacy ``{memories: [...]}``, bare arrays,
+    and MIF v2 documents. ``overwrite=False`` skips existing keys. Restores
+    ``relations`` / ``embeddings`` when present (embeddings only when the
+    sidecar model id matches the active provider).
     """
+    from tapps_brain.io import (
+        DEFAULT_MAX_IMPORT_ENTRIES,
+        import_memory_dicts,
+        parse_import_payload,
+    )
+
+    _ = project_id, agent_id
     try:
         data = json.loads(memories_json)
     except json.JSONDecodeError as exc:
         return {"error": "invalid_json", "message": str(exc)}
 
-    if not isinstance(data, dict) or "memories" not in data:
-        return {"error": "invalid_format", "message": "Expected {'memories': [...]}"}
+    try:
+        parsed = parse_import_payload(
+            data,
+            max_entries=max_entries if max_entries is not None else DEFAULT_MAX_IMPORT_ENTRIES,
+        )
+    except ValueError as exc:
+        return {"error": "invalid_format", "message": str(exc)}
 
-    memories = data["memories"]
-    if not isinstance(memories, list):
-        return {"error": "invalid_format", "message": "'memories' must be a list"}
-
-    imported = 0
-    skipped = 0
-    errors = 0
-
-    for mem in memories:
-        if not isinstance(mem, dict) or "key" not in mem or "value" not in mem:
-            errors += 1
-            continue
-
-        key = mem["key"]
-        existing = store.get(key)
-        if existing is not None and not overwrite:
-            skipped += 1
-            continue
-
-        try:
-            result = store.save(
-                key=key,
-                value=mem["value"],
-                tier=mem.get("tier", "pattern"),
-                source=mem.get("source", "system"),
-                tags=mem.get("tags"),
-                scope=mem.get("scope", "project"),
-            )
-        except ValueError as exc:
-            logger.warning("memory_import_save_error", key=key, error=str(exc))
-            errors += 1
-            continue
-        if isinstance(result, dict):
-            errors += 1
-        else:
-            imported += 1
-
+    result = import_memory_dicts(
+        store,
+        parsed["memories"],
+        overwrite=overwrite,
+        relations=parsed.get("relations"),
+        embeddings=parsed.get("embeddings"),
+    )
     return {
         "status": "imported",
-        "imported": imported,
-        "skipped": skipped,
-        "errors": errors,
+        "imported": result["imported_count"],
+        "skipped": result["skipped_count"],
+        "errors": result["error_count"],
+        "relations_restored": result.get("relations_restored", 0),
+        "embeddings_restored": result.get("embeddings_restored", 0),
+        "embeddings_skipped_mismatch": result.get("embeddings_skipped_mismatch", 0),
+        "detected_format": parsed.get("detected_format"),
     }
 
 

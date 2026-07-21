@@ -54,10 +54,9 @@ _SCORE_OK_MIN = 0.7
 _SCORE_WARN_MIN = 0.55
 _CAP_WARN_RATIO = 0.8
 _CAP_FAIL_RATIO = 0.95
-#: TAP-4332: run the live consolidation gauge scan inline only for stores at or
-#: below this size; larger stores reuse the cached gauge so /snapshot never
-#: stalls on the O(n^2) similarity scan (TAP-4330).
-_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES = 2000
+#: Legacy size-cap constant kept for import stability; snapshot path now always
+#: passes ``skip_consolidation_scan=True`` (see ``build_visual_snapshot``).
+_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES = 0
 #: TAP-4332: refresh the persisted diagnostics row at most once per this many
 #: seconds on the snapshot path, so the dashboard stays current without running
 #: diagnostics on every poll.
@@ -1108,11 +1107,11 @@ def build_visual_snapshot(
     privacy: PrivacyTier = "standard",
 ) -> VisualSnapshot:
     """Build a versioned visual snapshot from an open store."""
-    # EPIC-078 / TAP-4330+4332: the O(n^2) consolidation similarity scan in
-    # health() can take minutes on a full store (thousands of entries) and 504 the
-    # /snapshot endpoint.  Run the live gauge scan inline only for normal-sized
-    # stores; above the cap reuse the cached gauge so the request never stalls.
-    report = store.health(consolidation_scan_max_entries=_SNAPSHOT_INLINE_SCAN_MAX_ENTRIES)
+    # EPIC-078 / TAP-4330+4332: never run the O(n^2) consolidation similarity
+    # scan on the /snapshot path — even "small" stores (1-2k entries) can take
+    # ~100s and 504 the dashboard / fail brain-smoke-live. Always reuse the
+    # cached gauge; the periodic scanner + diagnostics refresh keep it current.
+    report = store.health(skip_consolidation_scan=True)
     hdump = _redact_health(report.model_dump(mode="json"), privacy)
     aggregates = _try_load_snapshot_aggregates(store)
     if aggregates is not None:

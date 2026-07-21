@@ -31,6 +31,7 @@ from tapps_brain.mcp_server.context import (
     _current_request_agent_id,
     _current_request_project_id,
     _get_store_for_project,
+    _raise_invalid_project_id,
     _raise_project_not_registered,
     _resolve_per_call_agent_id,
     _StoreProxy,
@@ -390,9 +391,12 @@ def create_server(  # noqa: PLR0915
             )
         except Exception as exc:
             from tapps_brain.project_registry import ProjectNotRegisteredError
+            from tapps_brain.project_resolver import InvalidProjectIdError
 
             if isinstance(exc, ProjectNotRegisteredError):
                 _raise_project_not_registered(exc.project_id)
+            if isinstance(exc, InvalidProjectIdError):
+                _raise_invalid_project_id(pid, str(exc))
             raise
 
     def _hive_for_tools() -> tuple[Any, bool]:

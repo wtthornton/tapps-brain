@@ -87,7 +87,7 @@ class TestParseRetention:
         ["", "forever", "days:0", "days:-1", "days:99999", "days:", "30", "ttl:30"],
     )
     def test_invalid_specs_raise(self, spec: str) -> None:
-        with pytest.raises(ValueError, match="invalid retention|expected"):
+        with pytest.raises(ValueError, match=r"invalid retention|expected"):
             parse_retention(spec)
 
 

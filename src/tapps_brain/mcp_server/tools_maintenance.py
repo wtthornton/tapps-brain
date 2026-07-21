@@ -139,8 +139,11 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
         tier: str | None = None,
         scope: str | None = None,
         min_confidence: float | None = None,
+        include_relations: bool = True,
+        include_embeddings: bool = False,
+        export_format: str = "json",
     ) -> str:
-        """Export memory entries as JSON."""
+        """Export memory entries as a versioned tapps-memory or MIF JSON bundle."""
         _require_operator_enabled()
         return json.dumps(
             memory_service.memory_export(
@@ -151,6 +154,9 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
                 tier=tier,
                 scope=scope,
                 min_confidence=min_confidence,
+                include_relations=include_relations,
+                include_embeddings=include_embeddings,
+                export_format=export_format,
             )
         )
 
@@ -158,8 +164,9 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
     def memory_import(
         memories_json: str,
         overwrite: bool = False,
+        max_entries: int | None = None,
     ) -> str:
-        """Import memory entries from a JSON string."""
+        """Import memory entries from a JSON string (envelope, bare array, or MIF)."""
         _require_operator_enabled()
         return json.dumps(
             memory_service.memory_import(
@@ -168,6 +175,7 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
                 agent_id,
                 memories_json=memories_json,
                 overwrite=overwrite,
+                max_entries=max_entries,
             )
         )
 

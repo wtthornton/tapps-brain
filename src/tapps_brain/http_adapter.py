@@ -170,7 +170,11 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _SERVICE_NAME = "tapps-brain"
-_SNAPSHOT_TTL_SECONDS: float = 15.0
+# Cold ``build_visual_snapshot`` on a live multi-tenant store is often 10–25s
+# (SLO ≤25s; nginx / smoke timeouts are 30s). A 15s TTL expired mid-build and
+# forced every poller to queue on ``_snapshot_build_lock``, producing 504s and
+# ``brain-smoke-live`` failures. Keep TTL above the cold-build budget.
+_SNAPSHOT_TTL_SECONDS: float = 90.0
 _PROCESS_START_TIME: float = time.time()
 _BEARER_PREFIX = "bearer "
 
@@ -1072,6 +1076,7 @@ def create_app(
         """
         from tapps_brain.mcp_server.context import _get_store_for_project
         from tapps_brain.project_registry import ProjectNotRegisteredError
+        from tapps_brain.project_resolver import InvalidProjectIdError
 
         base = _get_store_or_503()
         default_store = _resolve_wrapped_default_store(base)
@@ -1091,6 +1096,17 @@ def create_app(
                 agent_id=str(server_agent),
                 call_agent_id=call_agent,
             )
+        except InvalidProjectIdError as exc:
+            # Invalid slugs (e.g. leading underscore ``_system``) must be 400,
+            # not an unhandled ASGI 500 from MemoryStore profile resolution.
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_project_id",
+                    "detail": str(exc),
+                    "project_id": project_id,
+                },
+            ) from exc
         except ProjectNotRegisteredError as exc:
             raise HTTPException(
                 status_code=404,

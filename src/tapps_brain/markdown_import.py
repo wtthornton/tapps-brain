@@ -7,11 +7,15 @@ values. Heading level determines tier:
 Daily notes (``memory/YYYY-MM-DD.md``) are imported as context-tier entries
 with date extracted from the filename.
 
+Also supports round-tripping Obsidian frontmatter exports from
+``export_to_markdown`` (TAP-5032).
+
 Part of EPIC-012 (OpenClaw integration).
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +30,8 @@ if TYPE_CHECKING:
     from tapps_brain.store import MemoryStore
 
 logger = structlog.get_logger(__name__)
+
+_FRONTMATTER_BLOCK_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL | re.MULTILINE)
 
 # Matches markdown headings: group(1)=hashes, group(2)=text
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -65,6 +71,168 @@ def _tier_from_level(level: int) -> MemoryTier:
     if level == _H_PATTERN:
         return MemoryTier.pattern
     return MemoryTier.procedural
+
+
+def looks_like_frontmatter_export(text: str) -> bool:
+    """Return True when text looks like ``export_to_markdown`` output."""
+    if "key:" not in text:
+        return False
+    return bool(_FRONTMATTER_BLOCK_RE.search(text))
+
+
+def _parse_frontmatter_yamlish(block: str) -> dict[str, Any]:
+    """Parse a minimal YAML-ish frontmatter block (no PyYAML dependency)."""
+    meta: dict[str, Any] = {}
+    for line in block.splitlines():
+        if ":" not in line:
+            continue
+        key, _, raw_val = line.partition(":")
+        key = key.strip()
+        raw_val = raw_val.strip()
+        if not key:
+            continue
+        if raw_val.startswith("[") and raw_val.endswith("]"):
+            try:
+                meta[key] = json_loads_list(raw_val)
+            except Exception:
+                meta[key] = raw_val
+            continue
+        if (raw_val.startswith("'") and raw_val.endswith("'")) or (
+            raw_val.startswith('"') and raw_val.endswith('"')
+        ):
+            try:
+                meta[key] = ast.literal_eval(raw_val)
+            except (ValueError, SyntaxError):
+                meta[key] = raw_val[1:-1]
+            continue
+        try:
+            meta[key] = float(raw_val) if "." in raw_val else int(raw_val)
+        except ValueError:
+            meta[key] = raw_val
+    return meta
+
+
+def json_loads_list(raw: str) -> list[Any]:
+    """Parse a JSON list literal from frontmatter."""
+    import json
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        msg = "expected list"
+        raise TypeError(msg)
+    return parsed
+
+
+def parse_frontmatter_entries(text: str) -> list[dict[str, Any]]:
+    """Extract memory dicts from frontmatter + body blocks."""
+    entries: list[dict[str, Any]] = []
+    # Split on frontmatter boundaries while keeping structure
+    parts = re.split(r"(?m)^---\s*$", text)
+    # parts alternate: preamble, fm, body, fm, body, ...
+    idx = 1
+    while idx + 1 < len(parts):
+        fm_block = parts[idx].strip("\n")
+        body_block = parts[idx + 1]
+        meta = _parse_frontmatter_yamlish(fm_block)
+        key = meta.get("key")
+        if not isinstance(key, str) or not key.strip():
+            # Fallback: first ## heading in body
+            for line in body_block.splitlines():
+                m = _HEADING_RE.match(line)
+                if m and len(m.group(1)) >= _H_ARCHITECTURAL_MAX:
+                    key = m.group(2).strip()
+                    break
+        if not isinstance(key, str) or not key.strip():
+            idx += 2
+            continue
+        # Strip leading ## heading that duplicates the key
+        body_lines = body_block.splitlines()
+        while body_lines and not body_lines[0].strip():
+            body_lines.pop(0)
+        if body_lines and _HEADING_RE.match(body_lines[0]):
+            body_lines = body_lines[1:]
+            while body_lines and not body_lines[0].strip():
+                body_lines.pop(0)
+        value = "\n".join(body_lines).strip()
+        if not value:
+            idx += 2
+            continue
+        tier = meta.get("tier", "pattern")
+        source = meta.get("source", MemorySource.system.value)
+        confidence = meta.get("confidence", -1.0)
+        tags = meta.get("tags") if isinstance(meta.get("tags"), list) else []
+        entries.append(
+            {
+                "key": key.strip()[:MAX_KEY_LENGTH],
+                "value": value[:MAX_VALUE_LENGTH],
+                "tier": str(tier),
+                "source": str(source),
+                "confidence": float(confidence) if confidence is not None else -1.0,
+                "tags": [str(t) for t in tags],
+                "created_at": meta.get("created_at"),
+                "updated_at": meta.get("updated_at"),
+            }
+        )
+        idx += 2
+    return entries
+
+
+def import_frontmatter_markdown(
+    path: Path,
+    store: MemoryStore,
+    *,
+    overwrite: bool = False,
+) -> int:
+    """Import Markdown produced by ``export_to_markdown`` (TAP-5032).
+
+    Reads ``key``, ``tier``, ``confidence``, and ``source`` from YAML
+    frontmatter. Existing keys are skipped unless ``overwrite=True``.
+    """
+    if not path.is_file():
+        logger.warning("markdown_import.file_not_found", path=str(path))
+        return 0
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        logger.warning("markdown_import.encoding_error", path=str(path))
+        return 0
+    return import_frontmatter_markdown_text(text, store, overwrite=overwrite)
+
+
+def import_frontmatter_markdown_text(
+    text: str,
+    store: MemoryStore,
+    *,
+    overwrite: bool = False,
+) -> int:
+    """Import frontmatter Markdown from an in-memory string."""
+    entries = parse_frontmatter_entries(text)
+    imported = 0
+    for item in entries:
+        key = item["key"]
+        if store.get(key) is not None and not overwrite:
+            logger.debug("markdown_import.skip_duplicate", key=key)
+            continue
+        kwargs: dict[str, Any] = {
+            "key": key,
+            "value": item["value"],
+            "tier": item.get("tier", "pattern"),
+            "source": item.get("source", MemorySource.system.value),
+            "tags": item.get("tags"),
+            "confidence": item.get("confidence", -1.0),
+        }
+        with batch_exempt_scope("import_markdown"):
+            saved = store.save(**kwargs)
+        if isinstance(saved, dict) and saved.get("error"):
+            logger.warning(
+                "markdown_import.save_failed",
+                key=key,
+                error=saved.get("error"),
+                message=saved.get("message"),
+            )
+            continue
+        imported += 1
+    return imported
 
 
 def import_memory_md(path: Path, store: MemoryStore) -> int:
