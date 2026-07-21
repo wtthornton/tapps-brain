@@ -2995,6 +2995,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             promoted = updated.model_copy(
                 update={"tier": target_tier, "updated_at": _utc_now_iso()}
             )
+            # HMAC covers tier — re-stamp so verify_integrity stays clean.
+            promoted = self._stamp_integrity_hash(promoted)
             with self._serialized():
                 self._entries[key] = promoted
             try:
@@ -4154,6 +4156,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 demoted = current.model_copy(
                     update={"tier": target_tier, "updated_at": _utc_now_iso()}
                 )
+                # HMAC covers tier — re-stamp so verify_integrity stays clean.
+                demoted = self._stamp_integrity_hash(demoted)
                 self._entries[entry.key] = demoted
             try:
                 self._persistence.save(demoted)

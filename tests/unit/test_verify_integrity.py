@@ -298,3 +298,77 @@ class TestResignIntegrity:
         # Hash already matches the current key -> nothing rewritten.
         assert out["resigned"] == 0
         assert out["skipped_no_change"] == 1
+
+    def test_gc_demote_restamps_integrity_hash(self, store: MemoryStore) -> None:
+        """Tier is part of the HMAC; demotion must re-stamp or verify fails."""
+        store.save("promo-1", "demote integrity probe", tier="context", source="agent")
+        before = store.verify_integrity()
+        assert before["tampered"] == 0
+
+        entry = store._entries["promo-1"]
+        ok = store._gc_demote_entry(entry, "procedural")
+        assert ok is True
+        assert str(store._entries["promo-1"].tier) == "procedural"
+
+        after = store.verify_integrity()
+        assert after["tampered"] == 0
+        assert after["verified"] == 1
+        assert after["tampered_keys"] == []
+
+    def test_promote_after_reinforce_restamps_integrity_hash(self, store: MemoryStore) -> None:
+        """Promotion changes tier; integrity hash must be recomputed."""
+        from datetime import UTC, datetime, timedelta
+
+        from tapps_brain.decay import DecayConfig
+        from tapps_brain.profile import (
+            LayerDefinition,
+            MemoryProfile,
+            PromotionThreshold,
+            ScoringConfig,
+        )
+
+        now = datetime.now(tz=UTC)
+        created = (now - timedelta(days=10)).isoformat()
+        updated = (now - timedelta(days=1)).isoformat()
+        profile = MemoryProfile(
+            name="bug-hunt-promote",
+            layers=[
+                LayerDefinition(
+                    name="context",
+                    half_life_days=14,
+                    promotion_to="procedural",
+                    promotion_threshold=PromotionThreshold(
+                        min_access_count=1,
+                        min_age_days=1,
+                        min_confidence=0.0,
+                    ),
+                ),
+                LayerDefinition(name="procedural", half_life_days=30),
+            ],
+            scoring=ScoringConfig(
+                relevance=0.40,
+                confidence=0.30,
+                recency=0.15,
+                frequency=0.15,
+            ),
+        )
+        store._profile = profile
+        store.save("promo-2", "promote integrity probe", tier="context", source="agent")
+        entry = store._entries["promo-2"]
+        reinforced = entry.model_copy(
+            update={
+                "reinforce_count": 1,
+                "access_count": 5,
+                "created_at": created,
+                "updated_at": updated,
+                "last_accessed": updated,
+            }
+        )
+        store._entries["promo-2"] = reinforced
+
+        final = store._maybe_promote_after_reinforce("promo-2", reinforced, DecayConfig())
+        assert str(final.tier) == "procedural"
+
+        after = store.verify_integrity()
+        assert after["tampered"] == 0
+        assert after["verified"] == 1
