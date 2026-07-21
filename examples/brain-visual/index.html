@@ -2392,8 +2392,8 @@
         <div class="empty-state-icon" aria-hidden="true">📡</div>
         <h2 class="empty-state-title" id="empty-state-title">Live endpoint unreachable</h2>
         <p class="empty-state-body" id="empty-state-body">
-          The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter
-          to enable live polling.
+          The live <code>/snapshot</code> endpoint is not responding. Start the hive stack
+          (<code>tapps-brain-http</code> + <code>tapps-visual</code>) to enable live polling.
         </p>
         <code class="empty-state-code" id="empty-state-remediation">docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d
 curl -sS http://127.0.0.1:8080/healthz</code>
