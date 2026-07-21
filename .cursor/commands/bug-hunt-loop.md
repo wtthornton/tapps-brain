@@ -1,27 +1,35 @@
 ---
 description: >-
-  Multi-hour autonomous bug-hunt loop for tapps-brain. Each hour: find up to N
+  Multi-day autonomous bug-hunt loop for tapps-brain. Every 2 hours: find up to N
   real functional bugs across backend, visual, database, deployment, and the
   running local hive stack; fix them; independent sub-agent review per fix.
-  Low-CPU verification only — no full regression runs.
-argument-hint: "[hours: default 8] [bugs-per-hour: default 10]"
+  Low-CPU verification only — no full regression runs. Default: 5 days.
+argument-hint: "[days: default 5] [bugs-per-cycle: default 10]"
 ---
 
 # Bug Hunt Loop
 
-Run an hourly bug-hunt loop against **tapps-brain only** for **H hours**
-(default **8**). Each cycle finds and fixes up to **B real bugs** (default **10**).
+Run a bug-hunt loop against **tapps-brain only** for **D days** (default **5**),
+waking every **I = 2 hours**. Each cycle finds and fixes up to **B real bugs**
+(default **10**).
+
+Derived: total cycles `C = D * 24 / I` (default **60**). Interval sleep is
+`I * 3600` seconds (default **7200**).
 
 ## Parse arguments
 
 Read optional integers from the user message after the command (Cursor does
 **not** expand `$1` / `$2`):
 
-- First integer → `H` (hours). Default `8`. Clamp to `1..24`.
-- Second integer → `B` (bugs per hour). Default `10`. Clamp to `1..20`.
-- Examples: `/bug-hunt-loop` → `H=8 B=10`; `/bug-hunt-loop 4 5` → `H=4 B=5`.
+- First integer → `D` (days). Default `5`. Clamp to `1..14`.
+- Second integer → `B` (bugs per cycle). Default `10`. Clamp to `1..20`.
+- Interval `I` is fixed at **2** hours unless the user explicitly overrides it
+  in the prompt (e.g. “every 3 hours”).
+- Examples: `/bug-hunt-loop` → `D=5 I=2 B=10 C=60`;
+  `/bug-hunt-loop 3 5` → `D=3 I=2 B=5 C=36`.
 
-Record `H`, `B`, and wall-clock start (`date -u +%Y-%m-%dT%H:%M:%SZ`) in the log.
+Record `D`, `I`, `B`, `C`, and wall-clock start (`date -u +%Y-%m-%dT%H:%M:%SZ`)
+in the log. Also record planned end = start + `D` days.
 
 ## Hard rules (apply to every cycle)
 
@@ -56,12 +64,12 @@ Record `H`, `B`, and wall-clock start (`date -u +%Y-%m-%dT%H:%M:%SZ`) in the log
   `git checkout -b bug-hunt/YYYY-MM-DD` (UTC date). Never commit bug-hunt
   fixes onto an unrelated WIP feature branch.
 
-## Setup (once, before hour 1)
+## Setup (once, before cycle 1)
 
 1. `tapps_session_start()`.
 2. Create/overwrite `.tapps-mcp/bug-hunt-log.md` with:
-   - start time, `H`, `B`, branch name
-   - table: `hour | bug | component | root cause | fix commit | review verdict | verification`
+   - start time, planned end, `D`, `I`, `B`, `C`, branch name
+   - table: `cycle | bug | component | root cause | fix commit | review verdict | verification`
 3. Snapshot the **hive** stack (exact names — a broad `name=tapps-brain` filter
    also matches `tapps-brain-dev-db` / `tapps-brain-prod-*`; Docker `name=` is
    substring match, not regex):
@@ -77,24 +85,25 @@ Record `H`, `B`, and wall-clock start (`date -u +%Y-%m-%dT%H:%M:%SZ`) in the log
    stack health first; do not hunt on a broken baseline.
 5. Create the bug-hunt branch if not already on one.
 
-## Hourly cycle (hours 1..H)
+## Cycle (cycles 1..C)
 
-### On wake (hours 2..H)
+### On wake (cycles 2..C)
 
 When an `AGENT_LOOP_TICK_bug_hunt` notification arrives you **MUST** run the
-full hourly cycle below. Do **not** merely acknowledge the tick and idle.
+full cycle below. Do **not** merely acknowledge the tick and idle.
 If the chat was compacted, re-read `.tapps-mcp/bug-hunt-log.md` and continue
-from the next incomplete hour.
+from the next incomplete cycle. Stop when wall-clock ≥ planned end or
+cycle `C` is done — whichever comes first.
 
-### 1. Hunt (rotate focus — cover all components across H hours)
+### 1. Hunt (rotate focus — cover all components across C cycles)
 
-Confirm ≤ `B` leads per hour. Discard anything you cannot reproduce or
+Confirm ≤ `B` leads per cycle. Discard anything you cannot reproduce or
 evidence with a log/query/curl.
 
-**Suggested rotation** (wrap if `H < 8`; revisit high-signal areas if `H > 8`):
+**Suggested rotation** (wrap every 8 cycles; revisit high-signal areas as needed):
 
-| Hour mod 8 | Primary focus |
-|------------|---------------|
+| Cycle mod 8 | Primary focus |
+|-------------|---------------|
 | 1 | Live logs + smoke regressions |
 | 2 | HTTP adapter / REST (`/v1/*`, `/healthz`, `/snapshot`) |
 | 3 | MCP tool/resource surface |
@@ -106,12 +115,12 @@ evidence with a log/query/curl.
 
 **Evidence sources:**
 
-- **Logs (every hour):**
+- **Logs (every cycle — window = interval):**
   ```bash
-  docker logs tapps-brain-http --since 1h 2>&1 | grep -iE 'error|traceback|warn' | tail -50
-  docker logs tapps-visual --since 1h 2>&1 | tail -30
-  docker logs tapps-brain-db --since 1h 2>&1 | grep -iE 'error|fatal|deadlock' | tail -30
-  docker logs agentforge-api --since 1h 2>&1 | grep -iE 'brain|memory|mcp' | grep -iE 'error|fail' | tail -30
+  docker logs tapps-brain-http --since 2h 2>&1 | grep -iE 'error|traceback|warn' | tail -50
+  docker logs tapps-visual --since 2h 2>&1 | tail -30
+  docker logs tapps-brain-db --since 2h 2>&1 | grep -iE 'error|fatal|deadlock' | tail -30
+  docker logs agentforge-api --since 2h 2>&1 | grep -iE 'brain|memory|mcp' | grep -iE 'error|fail' | tail -30
   ```
 - **Database (hive only — never `make brain-psql`):**
   `make brain-psql` talks to compose project **`tapps-brain-dev`** /
@@ -171,25 +180,26 @@ rely on the agent’s default “score the file” persona alone:
 
 Reject → fix → re-review before counting. Record verdict in the log.
 
-### 5. Close the hour
+### 5. Close the cycle
 
 - `tapps_validate_changed(file_paths="<explicit changed .py files>")` (quick).
-- Append this hour’s rows to `.tapps-mcp/bug-hunt-log.md`. Note what was
+- Append this cycle’s rows to `.tapps-mcp/bug-hunt-log.md`. Note what was
   searched even if fewer than `B` bugs were confirmed — **do not invent bugs**.
-- **Arm the next hour wake** (unless this was hour `H`). End-of-turn idle is
-  not enough — previous loops lost hours 2–8 because ticks were never acted on.
-  Use a one-shot monitored sleeper (see Cursor `/loop` skill):
+- **Arm the next cycle wake** (unless this was cycle `C` or wall-clock ≥
+  planned end). End-of-turn idle is not enough — previous loops lost later
+  cycles because ticks were never acted on. Use a one-shot monitored sleeper
+  (see Cursor `/loop` skill):
 
   ```bash
   # block_until_ms: 0, notify_on_output pattern: ^AGENT_LOOP_TICK_bug_hunt
-  sleep 3600
-  echo 'AGENT_LOOP_TICK_bug_hunt {"hour":<N+1>,"of":<H>,"prompt":"Continue /bug-hunt-loop: run hour <N+1> fully"}'
+  sleep 7200
+  echo 'AGENT_LOOP_TICK_bug_hunt {"cycle":<N+1>,"of":<C>,"prompt":"Continue /bug-hunt-loop: run cycle <N+1> fully"}'
   ```
 
   Confirm the sleeper started, then end the turn. On the next tick, execute
-  hour `N+1` immediately.
+  cycle `N+1` immediately.
 
-## End of loop (after hour H)
+## End of loop (after cycle C or planned end)
 
 1. `tapps_checklist(task_type="bugfix")` — resolve gaps.
 2. Final `make brain-smoke-live`.
