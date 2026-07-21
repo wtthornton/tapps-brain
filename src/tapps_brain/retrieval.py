@@ -996,13 +996,16 @@ class MemoryRetriever:
     # TAP-733: Structured pre-filter
     # -----------------------------------------------------------------------
 
-    @staticmethod
-    def _apply_filters(entries: list[MemoryEntry], f: MemoryFilter) -> list[MemoryEntry]:
+    def _apply_filters(self, entries: list[MemoryEntry], f: MemoryFilter) -> list[MemoryEntry]:
         """Apply hard pre-filters to narrow the candidate pool (TAP-733).
 
         Each active filter condition is applied as a strict AND — multiple
         conditions narrow the pool further.  An all-None / empty filter is a
         no-op and returns the original list unchanged.
+
+        ``min_confidence`` is compared against *decayed* confidence so it
+        matches :meth:`search`'s post-score ``min_confidence`` gate (raw
+        stored confidence can disagree after floor clamping).
 
         Args:
             entries: Candidate memory entries to filter.
@@ -1024,7 +1027,12 @@ class MemoryRetriever:
         if f.memory_group is not None:
             result = [e for e in result if e.memory_group == f.memory_group]
         if f.min_confidence is not None:
-            result = [e for e in result if e.confidence >= f.min_confidence]
+            now = datetime.now(tz=UTC)
+            result = [
+                e
+                for e in result
+                if calculate_decayed_confidence(e, self._config, now=now) >= f.min_confidence
+            ]
         return result
 
     # -----------------------------------------------------------------------
