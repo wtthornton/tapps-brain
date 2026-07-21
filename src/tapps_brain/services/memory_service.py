@@ -1293,7 +1293,14 @@ def memory_save_many(
                 # documented partial-failure contract.
                 try:
                     key = str(raw_entry.get("key") or "").strip()
-                    value = raw_entry.get("value") or ""
+                    # Avoid ``value or ""`` — JSON ``0`` / ``false`` are falsy but
+                    # valid (see ``_ensure_str_value`` / TAP-2675).
+                    if "value" not in raw_entry or raw_entry.get("value") is None:
+                        value = ""
+                    else:
+                        from tapps_brain.store import _ensure_str_value
+
+                        value = _ensure_str_value(raw_entry.get("value"))
                     confidence = float(raw_entry.get("confidence", -1.0))
                 except (TypeError, ValueError):
                     results[i] = {
@@ -1303,7 +1310,7 @@ def memory_save_many(
                     }
                     errors += 1
                     continue
-                if not key or not value:
+                if not key or value == "":
                     results[i] = {
                         "error": "bad_entry",
                         "message": "key and value are required.",

@@ -377,6 +377,32 @@ class TestV1RememberRoute:
             resp = client.post("/v1/remember", headers={"x-project-id": "proj"}, json={"key": "k"})
         assert resp.status_code == 400
 
+    def test_falsy_json_values_are_accepted(self) -> None:
+        """JSON ``0`` / ``false`` must not be treated as missing values."""
+        client, _ = self._setup()
+        with (
+            patch(
+                "tapps_brain.services.memory_service.memory_save",
+                return_value={
+                    "status": "saved",
+                    "key": "v0",
+                    "tier": "context",
+                    "confidence": 0.6,
+                    "memory_group": None,
+                },
+            ) as save,
+            client,
+        ):
+            for payload_value, expected in ((0, "0"), (False, "False")):
+                save.reset_mock()
+                resp = client.post(
+                    "/v1/remember",
+                    headers={"x-project-id": "proj", "x-agent-id": "a"},
+                    json={"key": "v0", "value": payload_value, "tier": "context"},
+                )
+                assert resp.status_code == 200, resp.text
+                assert save.call_args.kwargs["value"] == expected
+
     def test_successful_save_returns_200(self) -> None:
         client, _ = self._setup()
         with (
