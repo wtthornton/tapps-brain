@@ -824,10 +824,23 @@ class PostgresHiveBackend:
                 d["tags"] = []
         elif tags is None:
             d["tags"] = []
-        for ts_key in ("created_at", "updated_at", "registered_at", "last_seen_at"):
+        for ts_key in (
+            "created_at",
+            "updated_at",
+            "valid_at",
+            "registered_at",
+            "last_seen_at",
+        ):
             val = d.get(ts_key)
             if hasattr(val, "isoformat"):
                 d[ts_key] = val.isoformat()
+        emb = d.get("embedding")
+        if emb is not None and not isinstance(emb, (list, tuple, str)):
+            # pgvector / memoryview / numpy — coerce to a plain list for JSON.
+            try:
+                d["embedding"] = [float(x) for x in emb]
+            except (TypeError, ValueError):
+                d.pop("embedding", None)
         # Remove internal PG columns from public API.
         d.pop("search_vector", None)
         d.pop("rank", None)
