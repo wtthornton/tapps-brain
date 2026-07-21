@@ -43,12 +43,14 @@ _STORE_SCOPED_SCORECARD_IDS = frozenset(
         "diagnostics_circuit",
         "diagnostics_composite",
         "retrieval_stack",
+        "rate_limits",
     }
 )
 
 # Health keys that reflect the default MemoryStore tenant, not the filter.
 _STORE_SCOPED_HEALTH_KEYS = frozenset(
     {
+        "store_path",
         "entry_count",
         "max_entries",
         "max_entries_per_group",
@@ -71,6 +73,15 @@ _STORE_SCOPED_HEALTH_KEYS = frozenset(
         "rag_safety_sanitized_count",
         "gc_runs_total",
         "gc_archived_rows_total",
+        "gc_archive_bytes_total",
+        "document_count",
+        "document_total_bytes",
+        "active_session_count",
+        "bloom_saturation",
+        "federation_enabled",
+        "federation_project_count",
+        "profile_name",
+        "profile_seed_version",
     }
 )
 
@@ -78,9 +89,10 @@ _STORE_SCOPED_HEALTH_KEYS = frozenset(
 def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:
     """STORY-069.7: filter diagnostics/feedback to a single project_id.
 
-    Also strips store-global ``health`` / ``scorecard`` fields that belong to
-    the process-default tenant.  Leaving them in place made ``?project=api``
-    show another project's ``integrity_tampered_keys`` / entry counts.
+    Also strips store-global ``health`` / ``scorecard`` / ``diagnostics`` fields
+    that belong to the process-default tenant.  Leaving them in place made
+    ``?project=api`` show another project's ``integrity_tampered_keys`` /
+    entry counts / circuit state.
     """
     filtered = dict(payload)
     for key in ("diagnostics_history", "feedback_events"):
@@ -103,6 +115,10 @@ def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dic
             for row in scorecard
             if isinstance(row, dict) and row.get("id") not in _STORE_SCOPED_SCORECARD_IDS
         ]
+
+    # Process-default store diagnostics (composite/circuit) — not project-scoped.
+    if "diagnostics" in filtered:
+        filtered["diagnostics"] = None
 
     return filtered
 

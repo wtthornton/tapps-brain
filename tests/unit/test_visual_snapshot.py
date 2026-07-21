@@ -1655,15 +1655,20 @@ def test_filter_snapshot_by_project_scrubs_store_global_health() -> None:
     payload = {
         "diagnostics_history": [{"id": "d1", "project_id": "api"}],
         "feedback_events": [],
+        "diagnostics": {"composite_score": 0.76, "circuit_state": "closed"},
         "health": {
             "schema_version": 28,
             "package_version": "3.26.2",
             "entry_count": 1433,
             "integrity_tampered": 1,
             "integrity_tampered_keys": ["contract-batch-1"],
+            "document_count": 9,
+            "gc_archive_bytes_total": 1000,
+            "store_path": "/var/lib/tapps-brain",
         },
         "scorecard": [
             {"id": "integrity_tampered", "status": "fail"},
+            {"id": "rate_limits", "status": "ok"},
             {"id": "hive_hub", "status": "warn"},
         ],
     }
@@ -1673,7 +1678,11 @@ def test_filter_snapshot_by_project_scrubs_store_global_health() -> None:
     assert health["project_filter"] == "api"
     assert "entry_count" not in health
     assert "integrity_tampered_keys" not in health
+    assert "document_count" not in health
+    assert "gc_archive_bytes_total" not in health
+    assert "store_path" not in health
     assert health["schema_version"] == 28
+    assert out["diagnostics"] is None
     assert [r["id"] for r in out["scorecard"]] == ["hive_hub"]
 
 
