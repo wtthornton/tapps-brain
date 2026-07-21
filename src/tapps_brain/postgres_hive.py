@@ -835,8 +835,9 @@ class PostgresHiveBackend:
             if hasattr(val, "isoformat"):
                 d[ts_key] = val.isoformat()
         emb = d.get("embedding")
-        if emb is not None and not isinstance(emb, (list, tuple, str)):
-            # pgvector / memoryview / numpy — coerce to a plain list for JSON.
+        if emb is not None and not isinstance(emb, str):
+            # tuple / pgvector / memoryview / numpy — coerce to a plain list for JSON.
+            # Lists are re-materialized so callers always see list[float], never tuple.
             try:
                 d["embedding"] = [float(x) for x in emb]
             except (TypeError, ValueError):
