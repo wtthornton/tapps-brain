@@ -195,3 +195,16 @@ class TestDocumentsReadRoutes:
         assert resp.status_code == 200
         assert doc_store.count() == 0
         assert missing.status_code == 404
+
+
+class TestDocumentsQueryValidationEnvelope:
+    def test_limit_zero_returns_flat_validation_error(self) -> None:
+        """Query constraints must use the flat {error, detail} envelope, not detail[]."""
+        with _client(_make_store(FakeDocumentStore())) as client:
+            resp = client.get("/v1/documents?limit=0", headers=_HEADERS)
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body.get("error") == "validation_error"
+        assert "detail" in body
+        assert isinstance(body["detail"], str)
+        assert "errors" in body

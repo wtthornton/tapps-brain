@@ -61,6 +61,7 @@ from pydantic import ValidationError
 
 try:
     from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+    from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse, PlainTextResponse
 except ImportError as exc:  # pragma: no cover — http extra not installed
     raise ImportError(
@@ -262,9 +263,7 @@ def _validate_uuid_field(value: Any, field_name: str) -> str:
         ) from None
 
 
-async def _parse_json_object_body(
-    request: Request, *, max_bytes: int = 65_536
-) -> dict[str, Any]:
+async def _parse_json_object_body(request: Request, *, max_bytes: int = 65_536) -> dict[str, Any]:
     """Parse a JSON object request body with standard size and shape guards."""
     try:
         raw = await request.body()
@@ -1358,8 +1357,15 @@ def create_app(
                 )
 
             mem_key = (body.get("key") or "").strip()
-            mem_value = body.get("value") or ""
-            if not mem_key or not mem_value:
+            # Do not use ``value or ""`` — JSON ``0`` / ``false`` are valid values
+            # (normalised by ``_ensure_str_value``) but are falsy in Python.
+            if "value" not in body or body.get("value") is None:
+                mem_value = ""
+            else:
+                from tapps_brain.store import _ensure_str_value
+
+                mem_value = _ensure_str_value(body.get("value"))
+            if not mem_key or mem_value == "":
                 raise HTTPException(
                     status_code=400,
                     detail={"error": "bad_request", "detail": "key and value are required."},
@@ -3984,6 +3990,37 @@ def create_app(
         payload or external pydantic doc URLs.
         """
         raw = exc.errors(include_url=False, include_input=False)
+        errors = [
+            {
+                "field": ".".join(str(part) for part in err.get("loc", ())),
+                "msg": err.get("msg", ""),
+                "type": err.get("type", ""),
+            }
+            for err in raw
+        ]
+        logger.warning("http_adapter.request_validation_error", errors=errors)
+        _record_http_error(_request.url.path, 422)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation_error",
+                "field": errors[0]["field"] if errors else None,
+                "detail": "Request payload failed validation.",
+                "errors": errors,
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _request_validation_exc_handler(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        """Flatten FastAPI query/path validation into the TAP-2865 envelope.
+
+        Without this, ``Query(...)`` constraints (e.g. ``GET /v1/documents?limit=0``)
+        return Starlette's nested ``{"detail":[{...}]}`` shape, which breaks the
+        flat ``{error, detail}`` contract documented for the HTTP adapter.
+        """
+        raw = exc.errors()
         errors = [
             {
                 "field": ".".join(str(part) for part in err.get("loc", ())),
