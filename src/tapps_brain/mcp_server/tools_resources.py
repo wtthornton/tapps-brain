@@ -58,13 +58,17 @@ def register_resources_and_prompts(mcp: Any, ctx: ToolContext) -> None:  # noqa:
         h = store.health()
         prof = store.profile
         layers = list(prof.layer_names) if prof is not None else []
+        # Prefer profile layers for the writable-tier list agents use when
+        # calling memory_save — the full MemoryTier enum includes ephemeral/
+        # session which repo-brain (and most profiles) reject as invalid_tier.
+        writable_tiers = layers if layers else [m.value for m in MemoryTier]
         return json.dumps(
             {
                 "package_version": h.package_version,
                 "schema_version": h.schema_version,
                 "profile_name": h.profile_name,
                 "profile_layer_names": layers,
-                "canonical_memory_tiers": [m.value for m in MemoryTier],
+                "canonical_memory_tiers": writable_tiers,
                 "recall_empty_reason_codes": sorted(
                     {
                         RECALL_EMPTY_ENGAGEMENT_LOW,
