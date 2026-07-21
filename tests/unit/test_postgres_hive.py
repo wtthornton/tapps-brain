@@ -462,6 +462,7 @@ class TestRowToDictTimestampSerialization:
             "created_at": datetime(2026, 7, 21, 12, 0, 0, tzinfo=UTC),
             "updated_at": datetime(2026, 7, 21, 13, 0, 0, tzinfo=UTC),
             "valid_at": datetime(2026, 7, 21, 14, 0, 0, tzinfo=UTC),
+            "invalid_at": datetime(2026, 7, 21, 15, 0, 0, tzinfo=UTC),
             "embedding": (0.1, 0.2, 0.3),
             "search_vector": "internal",
             "rank": 0.9,
@@ -471,6 +472,7 @@ class TestRowToDictTimestampSerialization:
         assert out["created_at"] == "2026-07-21T12:00:00+00:00"
         assert out["updated_at"] == "2026-07-21T13:00:00+00:00"
         assert out["valid_at"] == "2026-07-21T14:00:00+00:00"
+        assert out["invalid_at"] == "2026-07-21T15:00:00+00:00"
         assert out["embedding"] == [0.1, 0.2, 0.3]
         assert "search_vector" not in out
         assert "rank" not in out

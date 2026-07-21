@@ -828,6 +828,7 @@ class PostgresHiveBackend:
             "created_at",
             "updated_at",
             "valid_at",
+            "invalid_at",
             "registered_at",
             "last_seen_at",
         ):
