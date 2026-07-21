@@ -118,6 +118,41 @@ class TestMemorySaveMany:
         assert store.save_many.call_count == 1
         assert len(store.save_many.call_args.args[0]) == 2
 
+    def test_falsy_json_values_are_saved(self) -> None:
+        """JSON ``0`` / ``false`` must not be treated as missing batch values."""
+        from tapps_brain.services.memory_service import memory_save_many
+
+        store = _make_store()
+
+        def _save_many(items: list[Any]) -> list[Any]:
+            out = []
+            for item in items:
+                out.append(
+                    MagicMock(
+                        key=item["key"],
+                        tier=MagicMock(__str__=lambda s: "context"),
+                        confidence=0.6,
+                        memory_group=None,
+                        value=item["value"],
+                    )
+                )
+            return out
+
+        store.save_many.side_effect = _save_many
+        result = memory_save_many(
+            store,
+            "proj",
+            "agent",
+            entries=[
+                {"key": "n0", "value": 0, "tier": "context"},
+                {"key": "bf", "value": False, "tier": "context"},
+            ],
+        )
+        assert result["saved_count"] == 2
+        assert result["error_count"] == 0
+        saved_vals = [item["value"] for item in store.save_many.call_args.args[0]]
+        assert saved_vals == ["0", "False"]
+
     def test_ac2_max_100_default_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-2: max 100 entries by default."""
         from tapps_brain.services.memory_service import memory_save_many

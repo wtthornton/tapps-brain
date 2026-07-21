@@ -1217,7 +1217,7 @@ class TestMemoryFilter:
         from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
 
         entries = [_make_entry("a"), _make_entry("b"), _make_entry("c")]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter())
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter())
         assert result == entries
 
     # ------------------------------------------------------------------
@@ -1230,7 +1230,7 @@ class TestMemoryFilter:
         arch = _make_entry("arch-entry", tier=MemoryTier.architectural)
         pattern = _make_entry("pattern-entry", tier=MemoryTier.pattern)
         entries = [arch, pattern]
-        result = MemoryRetriever._apply_filters(
+        result = MemoryRetriever()._apply_filters(
             entries, MemoryFilter(tier=MemoryTier.architectural)
         )
         assert [e.key for e in result] == ["arch-entry"]
@@ -1241,14 +1241,14 @@ class TestMemoryFilter:
         arch = _make_entry("arch-entry", tier=MemoryTier.architectural)
         pattern = _make_entry("pattern-entry", tier=MemoryTier.pattern)
         entries = [arch, pattern]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier="architectural"))
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter(tier="architectural"))
         assert [e.key for e in result] == ["arch-entry"]
 
     def test_filter_by_tier_no_match_returns_empty(self) -> None:
         from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
 
         entries = [_make_entry("a", tier=MemoryTier.pattern)]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tier=MemoryTier.context))
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter(tier=MemoryTier.context))
         assert result == []
 
     # ------------------------------------------------------------------
@@ -1262,7 +1262,7 @@ class TestMemoryFilter:
         e2 = _make_entry("e2", tags=["pgvector"])  # missing hnsw
         e3 = _make_entry("e3", tags=["hnsw"])  # missing pgvector
         entries = [e1, e2, e3]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(tags=["pgvector", "hnsw"]))
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter(tags=["pgvector", "hnsw"]))
         assert [e.key for e in result] == ["e1"]
 
     def test_filter_by_tags_single(self) -> None:
@@ -1270,7 +1270,7 @@ class TestMemoryFilter:
 
         e1 = _make_entry("e1", tags=["pgvector"])
         e2 = _make_entry("e2", tags=["other"])
-        result = MemoryRetriever._apply_filters([e1, e2], MemoryFilter(tags=["pgvector"]))
+        result = MemoryRetriever()._apply_filters([e1, e2], MemoryFilter(tags=["pgvector"]))
         assert [e.key for e in result] == ["e1"]
 
     # ------------------------------------------------------------------
@@ -1283,7 +1283,7 @@ class TestMemoryFilter:
         e1 = _make_entry("e1", tags=["pgvector"])
         e2 = _make_entry("e2", tags=["hnsw"])
         e3 = _make_entry("e3", tags=["other"])
-        result = MemoryRetriever._apply_filters(
+        result = MemoryRetriever()._apply_filters(
             [e1, e2, e3], MemoryFilter(tags_any=["pgvector", "hnsw"])
         )
         assert {e.key for e in result} == {"e1", "e2"}
@@ -1295,7 +1295,7 @@ class TestMemoryFilter:
         e1 = _make_entry("e1", tags=["critical", "pgvector", "hnsw"])
         e2 = _make_entry("e2", tags=["critical", "pgvector"])  # missing hnsw, has pgvector
         e3 = _make_entry("e3", tags=["hnsw"])  # missing critical
-        result = MemoryRetriever._apply_filters(
+        result = MemoryRetriever()._apply_filters(
             [e1, e2, e3],
             MemoryFilter(tags=["critical"], tags_any=["hnsw"]),
         )
@@ -1313,7 +1313,7 @@ class TestMemoryFilter:
         guidance = self._make_entry_with_class("gui1", memory_class="guidance")
         unclassified = self._make_entry_with_class("unc1", memory_class=None)
         entries = [incident, guidance, unclassified]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(memory_class="incident"))
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter(memory_class="incident"))
         assert [e.key for e in result] == ["inc1"]
 
     def test_filter_by_memory_class_decision(self) -> None:
@@ -1321,7 +1321,7 @@ class TestMemoryFilter:
 
         decision = self._make_entry_with_class("dec1", memory_class="decision")
         guidance = self._make_entry_with_class("gui1", memory_class="guidance")
-        result = MemoryRetriever._apply_filters(
+        result = MemoryRetriever()._apply_filters(
             [decision, guidance], MemoryFilter(memory_class="decision")
         )
         assert [e.key for e in result] == ["dec1"]
@@ -1331,21 +1331,50 @@ class TestMemoryFilter:
     # ------------------------------------------------------------------
 
     def test_filter_by_min_confidence(self) -> None:
+        from datetime import UTC, datetime
+
         from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
 
-        high = _make_entry("high", confidence=0.9)
-        low = _make_entry("low", confidence=0.3)
+        now = datetime.now(tz=UTC).isoformat()
+        high = _make_entry("high", confidence=0.9, updated_at=now)
+        low = _make_entry("low", confidence=0.3, updated_at=now)
         entries = [high, low]
-        result = MemoryRetriever._apply_filters(entries, MemoryFilter(min_confidence=0.7))
+        result = MemoryRetriever()._apply_filters(entries, MemoryFilter(min_confidence=0.7))
         assert [e.key for e in result] == ["high"]
 
     def test_filter_min_confidence_boundary(self) -> None:
+        from datetime import UTC, datetime
+        from unittest.mock import patch
+
         from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
 
-        e = _make_entry("exact", confidence=0.7)
-        # At boundary — should be included (>=)
-        result = MemoryRetriever._apply_filters([e], MemoryFilter(min_confidence=0.7))
+        frozen = datetime(2026, 7, 21, 12, 0, 0, tzinfo=UTC)
+        e = _make_entry("exact", confidence=0.7, updated_at=frozen.isoformat())
+        # At boundary — should be included (>=); freeze clock so age is exactly 0.
+        with patch("tapps_brain.retrieval.datetime") as mock_dt:
+            mock_dt.now.return_value = frozen
+            result = MemoryRetriever()._apply_filters([e], MemoryFilter(min_confidence=0.7))
         assert [x.key for x in result] == ["exact"]
+
+    def test_filter_min_confidence_uses_decayed_not_raw(self) -> None:
+        """Floor-clamped decayed confidence must match search()'s min_confidence gate."""
+        from datetime import UTC, datetime
+
+        from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+        from tapps_brain.retrieval import MemoryFilter, MemoryRetriever
+
+        now = datetime.now(tz=UTC).isoformat()
+        # Raw 0.05 is below 0.08, but decay floor raises effective confidence to 0.1.
+        e = MemoryEntry(
+            key="low-raw",
+            value="x",
+            tier=MemoryTier.pattern,
+            confidence=0.05,
+            source=MemorySource.agent,
+            updated_at=now,
+        )
+        result = MemoryRetriever()._apply_filters([e], MemoryFilter(min_confidence=0.08))
+        assert [x.key for x in result] == ["low-raw"]
 
     # ------------------------------------------------------------------
     # _apply_filters: memory_group
@@ -1357,7 +1386,7 @@ class TestMemoryFilter:
         e1 = self._make_entry_with_class("e1", memory_group="team-a")
         e2 = self._make_entry_with_class("e2", memory_group="team-b")
         e3 = self._make_entry_with_class("e3", memory_group=None)
-        result = MemoryRetriever._apply_filters([e1, e2, e3], MemoryFilter(memory_group="team-a"))
+        result = MemoryRetriever()._apply_filters([e1, e2, e3], MemoryFilter(memory_group="team-a"))
         assert [e.key for e in result] == ["e1"]
 
     # ------------------------------------------------------------------

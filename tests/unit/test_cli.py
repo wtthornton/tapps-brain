@@ -1519,9 +1519,10 @@ class TestRecallCommand:
 
 
 class TestHelpers:
-    def test_resolve_project_dir_default(self):
+    def test_resolve_project_dir_default(self, monkeypatch):
         from tapps_brain.cli import _resolve_project_dir
 
+        monkeypatch.delenv("TAPPS_BRAIN_SERVE_ROOT", raising=False)
         result = _resolve_project_dir(None)
         assert result == Path.cwd().resolve()
 
@@ -1529,6 +1530,13 @@ class TestHelpers:
         from tapps_brain.cli import _resolve_project_dir
 
         result = _resolve_project_dir(tmp_path)
+        assert result == tmp_path.resolve()
+
+    def test_resolve_project_dir_prefers_serve_root(self, tmp_path: Path, monkeypatch):
+        from tapps_brain.cli import _resolve_project_dir
+
+        monkeypatch.setenv("TAPPS_BRAIN_SERVE_ROOT", str(tmp_path))
+        result = _resolve_project_dir(None)
         assert result == tmp_path.resolve()
 
 

@@ -506,6 +506,12 @@ class TestResources:
                 assert "canonical_memory_tiers" in body
                 assert "recall_empty_reason_codes" in body
                 assert "write_path_mcp" in body
+                # Writable tiers must match the active profile (not the full enum).
+                layers = body.get("profile_layer_names") or []
+                if layers:
+                    assert body["canonical_memory_tiers"] == layers
+                    assert "ephemeral" not in body["canonical_memory_tiers"]
+                    assert "session" not in body["canonical_memory_tiers"]
                 return
         raise AssertionError("memory://agent-contract not found")
 

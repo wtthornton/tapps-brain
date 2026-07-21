@@ -1231,10 +1231,29 @@ _FAKE_SNAPSHOT_DICT: dict[str, Any] = {
 }
 
 
-def _make_mock_snapshot() -> MagicMock:
-    """Return a mock VisualSnapshot whose model_dump returns the fake dict."""
+def _make_mock_snapshot(base: dict[str, Any] | None = None) -> MagicMock:
+    """Return a mock VisualSnapshot whose model_dump returns the fake dict.
+
+    Supports ``model_copy(update=...)`` used by ``/snapshot`` to overlay live
+    ``retrieval_metrics`` onto a TTL-cached snapshot.
+    """
+    payload = dict(base if base is not None else _FAKE_SNAPSHOT_DICT)
     snap = MagicMock()
-    snap.model_dump.return_value = dict(_FAKE_SNAPSHOT_DICT)
+
+    def _model_copy(*, update: dict[str, Any] | None = None, **_kwargs: Any) -> MagicMock:
+        merged = dict(payload)
+        if update:
+            for key, value in update.items():
+                if hasattr(value, "model_dump"):
+                    merged[key] = value.model_dump(mode="json")
+                else:
+                    merged[key] = value
+        copied = MagicMock()
+        copied.model_dump.return_value = merged
+        return copied
+
+    snap.model_dump.return_value = payload
+    snap.model_copy.side_effect = _model_copy
     return snap
 
 
@@ -1308,6 +1327,37 @@ class TestSnapshotEndpointWithStore:
         assert r1.status_code == 200
         assert r2.status_code == 200
         assert call_count == 1, f"Expected 1 snapshot build call; got {call_count}"
+
+    def test_cache_hit_overlays_live_retrieval_metrics(self) -> None:
+        """TTL-cached snapshot must still refresh in-process retrieval counters."""
+        from tapps_brain.visual_snapshot import RetrievalMetrics
+
+        mock_store = MagicMock()
+        call_count = 0
+
+        def _build(*args: Any, **kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            return _make_mock_snapshot()
+
+        live = RetrievalMetrics(total_queries=7, bm25_hits=0, vector_hits=0, rrf_fusions=0)
+        with (
+            patch("tapps_brain.visual_snapshot.build_visual_snapshot", side_effect=_build),
+            patch(
+                "tapps_brain.visual_snapshot._collect_retrieval_metrics",
+                return_value=live,
+            ),
+            _client(_make_settings(store=mock_store)) as c,
+        ):
+            r1 = c.get("/snapshot")
+            r2 = c.get("/snapshot")
+
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert call_count == 1
+        body = r2.json()
+        assert isinstance(body, dict)
+        assert body["retrieval_metrics"]["total_queries"] == 7
 
     def test_snapshot_ttl_exceeds_cold_build_budget(self) -> None:
         """TTL must stay above the cold-build SLO so pollers do not stampede."""
@@ -1679,9 +1729,7 @@ _SNAPSHOT_WITH_TENANT_ROWS: dict[str, Any] = {
 
 
 def _make_mock_snapshot_with_tenants() -> MagicMock:
-    snap = MagicMock()
-    snap.model_dump.return_value = dict(_SNAPSHOT_WITH_TENANT_ROWS)
-    return snap
+    return _make_mock_snapshot(dict(_SNAPSHOT_WITH_TENANT_ROWS))
 
 
 class TestSnapshotProjectFilter:

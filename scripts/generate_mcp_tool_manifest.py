@@ -59,9 +59,29 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "hive_search",
         "hive_status",
         "hive_propagate",
-        # Health
-        "tapps_brain_health",
+        # Health for agents is brain_status (already listed above); do not
+        # include operator-gated tapps_brain_health in the core set.
     ]
+)
+
+# Must stay in sync with ``_OPERATOR_TOOL_NAMES`` in
+# ``src/tapps_brain/mcp_server/server.py`` (default sessions strip these).
+OPERATOR_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "maintenance_consolidate",
+        "maintenance_gc",
+        "maintenance_stale",
+        "tapps_brain_health",
+        "memory_gc_config",
+        "memory_gc_config_set",
+        "memory_consolidation_config",
+        "memory_consolidation_config_set",
+        "memory_export",
+        "memory_import",
+        "tapps_brain_relay_export",
+        "flywheel_evaluate",
+        "flywheel_hive_feedback",
+    }
 )
 
 
@@ -133,7 +153,6 @@ def main() -> int:
         for uri, desc in resources:
             resource_map[uri] = desc
 
-    tools_out = [{"name": n, "description": tool_map[n]} for n in sorted(tool_map)]
     resources_out = [{"uri": u, "description": resource_map[u]} for u in sorted(resource_map)]
 
     all_tool_names = set(tool_map)
@@ -145,22 +164,31 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    core_tools = sorted(CORE_TOOL_NAMES & all_tool_names)
+    # Default /mcp/ sessions omit operator tools (STORY-062.4). Split the
+    # catalog so docs/tool_count match live tools/list, not the AST union.
+    default_names = sorted(all_tool_names - OPERATOR_TOOL_NAMES)
+    operator_names = sorted(all_tool_names & OPERATOR_TOOL_NAMES)
+    default_tools_out = [{"name": n, "description": tool_map[n]} for n in default_names]
+    operator_tools_out = [{"name": n, "description": tool_map[n]} for n in operator_names]
+    core_tools = sorted((CORE_TOOL_NAMES & all_tool_names) - OPERATOR_TOOL_NAMES)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "source": "src/tapps_brain/mcp_server/tools_*.py",
         "sources": sources,
-        "tool_count": len(tools_out),
+        "tool_count": len(default_tools_out),
+        "operator_tool_count": len(operator_tools_out),
         "resource_count": len(resources_out),
         "core_tool_count": len(core_tools),
         "core_tools": core_tools,
-        "tools": tools_out,
+        "tools": default_tools_out,
+        "operator_tools": operator_tools_out,
         "resources": resources_out,
     }
     OUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
-        f"Wrote {OUT_PATH} ({len(tools_out)} tools, {len(resources_out)} resources, "
+        f"Wrote {OUT_PATH} ({len(default_tools_out)} default tools, "
+        f"{len(operator_tools_out)} operator tools, {len(resources_out)} resources, "
         f"{len(core_tools)} core tools)"
     )
     return 0

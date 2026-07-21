@@ -218,17 +218,26 @@ def calculate_weighted_confidence(entries: list[MemoryEntry]) -> float:
     More recent entries get higher weights. Uses exponential decay
     based on position in the sorted list.
 
+    Weights ``calculate_decayed_confidence`` (not raw ``confidence``) so a
+    merge of floor-decayed entries cannot resurrect them to near-fresh
+    confidence after the consolidated row gets ``updated_at=now``.
+
     Args:
         entries: Entries with confidence scores.
 
     Returns:
         Weighted average confidence in range [0.0, 1.0].
     """
+    from tapps_brain.decay import DecayConfig, calculate_decayed_confidence
+
     if not entries:
         return 0.5
 
+    now = datetime.now(tz=UTC)
+    decay_cfg = DecayConfig()
+
     if len(entries) == 1:
-        return entries[0].confidence
+        return calculate_decayed_confidence(entries[0], decay_cfg, now=now)
 
     # Sort by updated_at (newest first, chronologically parsed)
     sorted_entries = sorted(
@@ -242,8 +251,11 @@ def calculate_weighted_confidence(entries: list[MemoryEntry]) -> float:
     weights = [0.5**i for i in range(len(sorted_entries))]
     total_weight = sum(weights)
 
-    # Weighted average
-    weighted_sum = sum(e.confidence * w for e, w in zip(sorted_entries, weights, strict=True))
+    # Weighted average of *effective* (decayed) confidence
+    weighted_sum = sum(
+        calculate_decayed_confidence(e, decay_cfg, now=now) * w
+        for e, w in zip(sorted_entries, weights, strict=True)
+    )
 
     return min(1.0, max(0.0, weighted_sum / total_weight))
 

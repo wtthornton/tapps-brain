@@ -264,9 +264,9 @@ def query_events(
     project_id: str,
     *,
     event_type: str,
-    since: str | None = None,
-    until: str | None = None,
-    entity_id: str | None = None,
+    since: object | None = None,
+    until: object | None = None,
+    entity_id: object | None = None,
     limit: int = _QUERY_EVENTS_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     """Query ``experience_events`` rows with optional time and entity filters.
@@ -293,10 +293,31 @@ def query_events(
     if not (event_type or "").strip():
         return {"error": "bad_request", "detail": "event_type is required."}
 
+    def _optional_str(field_name: str, raw: object | None) -> str | None | dict[str, str]:
+        if raw is None or raw == "":
+            return None
+        if not isinstance(raw, str):
+            # Non-string filters used to AttributeError on ``.strip()`` → HTTP 500.
+            return {
+                "error": "bad_request",
+                "detail": f"{field_name} must be a string, got {type(raw).__name__}",
+            }
+        return raw
+
+    since_s = _optional_str("since", since)
+    if isinstance(since_s, dict):
+        return since_s
+    until_s = _optional_str("until", until)
+    if isinstance(until_s, dict):
+        return until_s
+    entity_id_s = _optional_str("entity_id", entity_id)
+    if isinstance(entity_id_s, dict):
+        return entity_id_s
+
     # TAP-2140 class: malformed client timestamps bound raw to an
     # ``event_time >= %s`` comparison raise InvalidDatetimeFormat in Postgres
     # and surface as a 500. Validate here and report a 400 instead.
-    for field_name, raw_ts in (("since", since), ("until", until)):
+    for field_name, raw_ts in (("since", since_s), ("until", until_s)):
         if raw_ts and raw_ts.strip():
             try:
                 datetime.fromisoformat(raw_ts.strip())
@@ -311,14 +332,14 @@ def query_events(
     conditions: list[str] = ["event_type = %s"]
     params: list[Any] = [event_type.strip()]
 
-    if since and since.strip():
+    if since_s and since_s.strip():
         conditions.append("event_time >= %s")
-        params.append(since.strip())
-    if until and until.strip():
+        params.append(since_s.strip())
+    if until_s and until_s.strip():
         conditions.append("event_time <= %s")
-        params.append(until.strip())
-    if entity_id and entity_id.strip():
-        eid = entity_id.strip()
+        params.append(until_s.strip())
+    if entity_id_s and entity_id_s.strip():
+        eid = entity_id_s.strip()
         conditions.append("(payload->>'file_path' = %s OR subject_key = %s)")
         params.extend([eid, eid])
 

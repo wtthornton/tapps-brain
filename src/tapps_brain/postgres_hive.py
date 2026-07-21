@@ -374,9 +374,7 @@ class PostgresHiveBackend:
             if tomb is None:
                 return None
             tomb_cols = [desc[0] for desc in cur.description]
-            tip = self._follow_live_tip(
-                cur, namespace, dict(zip(tomb_cols, tomb, strict=False))
-            )
+            tip = self._follow_live_tip(cur, namespace, dict(zip(tomb_cols, tomb, strict=False)))
             if tip.get("invalid_at") is not None:
                 return None
             return self._row_to_dict(tip)
@@ -811,7 +809,13 @@ class PostgresHiveBackend:
 
     @staticmethod
     def _row_to_dict(d: dict[str, Any]) -> dict[str, Any]:
-        """Normalise a row dict — ensure tags is a Python list."""
+        """Normalise a row dict — ensure tags is a Python list; timestamps are ISO strings.
+
+        psycopg returns ``datetime`` for ``timestamptz`` columns.  MCP tools
+        (e.g. ``hive_search``) ``json.dumps`` the result without a default
+        encoder, so leaving datetimes in place raises
+        ``TypeError: Object of type datetime is not JSON serializable``.
+        """
         tags = d.get("tags")
         if isinstance(tags, str):
             try:
@@ -820,6 +824,25 @@ class PostgresHiveBackend:
                 d["tags"] = []
         elif tags is None:
             d["tags"] = []
+        for ts_key in (
+            "created_at",
+            "updated_at",
+            "valid_at",
+            "invalid_at",
+            "registered_at",
+            "last_seen_at",
+        ):
+            val = d.get(ts_key)
+            if hasattr(val, "isoformat"):
+                d[ts_key] = val.isoformat()
+        emb = d.get("embedding")
+        if emb is not None and not isinstance(emb, str):
+            # tuple / pgvector / memoryview / numpy — coerce to a plain list for JSON.
+            # Lists are re-materialized so callers always see list[float], never tuple.
+            try:
+                d["embedding"] = [float(x) for x in emb]
+            except (TypeError, ValueError):
+                d.pop("embedding", None)
         # Remove internal PG columns from public API.
         d.pop("search_vector", None)
         d.pop("rank", None)

@@ -81,3 +81,23 @@ def test_nginx_visual_healthz_location() -> None:
     assert '"service":"tapps-visual"' in block
     assert "return 200" in block
     assert "proxy_pass" not in block
+
+
+def test_nginx_visual_upstream_error_codes_distinguish_timeout() -> None:
+    """502/503 = unavailable; only 504 is a timeout (dashboard classifies by body)."""
+    conf = _NGINX_VISUAL.read_text(encoding="utf-8")
+    assert 'return 502 \'{"error":"upstream_unavailable"' in conf
+    assert 'return 503 \'{"error":"upstream_unavailable"' in conf
+    assert 'return 504 \'{"error":"upstream_timeout"' in conf
+    assert 'return 502 \'{"error":"upstream_timeout"' not in conf
+    assert 'return 503 \'{"error":"upstream_timeout"' not in conf
+
+
+def test_brain_visual_empty_state_remediation_targets_hive_stack() -> None:
+    """Empty-state copy must not point operators at retired tapps-brain-mcp."""
+    html = _INDEX.read_text(encoding="utf-8")
+    assert "tapps-brain-mcp" not in html
+    assert "tapps-brain mcp start --http" not in html
+    assert "docker-compose.hive.yaml" in html
+    assert "classifySnapshotFailure" in html
+    assert "upstream_unavailable" in html
