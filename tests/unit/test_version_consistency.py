@@ -48,6 +48,18 @@ def _read_skill_version() -> str:
     return match.group(1)
 
 
+def _read_bundled_skill_asset_version() -> str:
+    """Read version from the HTTP-served bundled skill asset (``GET /v1/skill``)."""
+    skill = PROJECT_ROOT / "src/tapps_brain/_assets/tapps-brain-skill.md"
+    match = re.search(
+        r'^version:\s*"?([^"\n]+?)"?\s*$',
+        skill.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, "_assets/tapps-brain-skill.md frontmatter is missing a 'version:' field"
+    return match.group(1)
+
+
 def _read_docker_env_example_brain_version() -> str:
     """Read BRAIN_VERSION from docker/.env.example (compose image pin template)."""
     path = PROJECT_ROOT / "docker" / ".env.example"
@@ -65,12 +77,14 @@ def test_all_versions_match() -> None:
     pyproject_ver = _read_pyproject_version()
     server_json_ver = _read_server_json_version()
     skill_ver = _read_skill_version()
+    bundled_skill_ver = _read_bundled_skill_asset_version()
     docker_env_ver = _read_docker_env_example_brain_version()
 
     versions = {
         "pyproject.toml": pyproject_ver,
         "server.json": server_json_ver,
         ".claude/skills/tapps-brain/SKILL.md": skill_ver,
+        "src/tapps_brain/_assets/tapps-brain-skill.md": bundled_skill_ver,
         "docker/.env.example BRAIN_VERSION": docker_env_ver,
     }
 
