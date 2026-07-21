@@ -166,10 +166,10 @@ class TestCalculateWeightedConfidence:
     """Tests for calculate_weighted_confidence function."""
 
     def test_single_entry(self) -> None:
-        """Single entry returns its confidence."""
+        """Single entry returns its (decayed) confidence."""
         entry = _make_entry("test", "value", confidence=0.8)
         result = calculate_weighted_confidence([entry])
-        assert result == 0.8
+        assert result == pytest.approx(0.8, abs=1e-6)
 
     def test_empty_entries(self) -> None:
         """Empty list returns default 0.5."""
@@ -177,9 +177,20 @@ class TestCalculateWeightedConfidence:
         assert result == 0.5
 
     def test_newer_entries_weighted_higher(self) -> None:
-        """Newer entries have higher weight."""
-        old = _make_entry("old", "value", confidence=0.5, updated_at="2024-01-01T00:00:00+00:00")
-        new = _make_entry("new", "value", confidence=0.9, updated_at="2024-01-02T00:00:00+00:00")
+        """Newer entries have higher weight when both are still fresh."""
+        now = datetime.now(tz=UTC)
+        old = _make_entry(
+            "old",
+            "value",
+            confidence=0.5,
+            updated_at=(now - timedelta(hours=2)).isoformat(),
+        )
+        new = _make_entry(
+            "new",
+            "value",
+            confidence=0.9,
+            updated_at=now.isoformat(),
+        )
         result = calculate_weighted_confidence([old, new])
         # Result should be closer to 0.9 than 0.5
         assert result > 0.7
@@ -188,6 +199,34 @@ class TestCalculateWeightedConfidence:
         """Result is always in [0.0, 1.0]."""
         result = calculate_weighted_confidence(jwt_entries)
         assert 0.0 <= result <= 1.0
+
+    def test_does_not_resurrect_floor_decayed_confidence(self) -> None:
+        """Merging long-stale pattern entries must not mint near-fresh confidence."""
+        from tapps_brain.decay import DecayConfig, calculate_decayed_confidence
+
+        now = datetime.now(tz=UTC)
+        old = (now - timedelta(days=200)).isoformat()
+        a = _make_entry(
+            "a",
+            "JWT RS256 signing asymmetric keys API auth",
+            confidence=0.9,
+            tier=MemoryTier.pattern,
+            updated_at=old,
+        )
+        b = _make_entry(
+            "b",
+            "JWT RS256 signing asymmetric keys service auth",
+            confidence=0.85,
+            tier=MemoryTier.pattern,
+            updated_at=old,
+        )
+        cfg = DecayConfig()
+        assert calculate_decayed_confidence(a, cfg, now=now) == pytest.approx(0.1)
+        assert calculate_decayed_confidence(b, cfg, now=now) == pytest.approx(0.1)
+        merged = calculate_weighted_confidence([a, b])
+        assert merged == pytest.approx(0.1)
+        consolidated = consolidate([a, b])
+        assert calculate_decayed_confidence(consolidated, cfg, now=now) == pytest.approx(0.1)
 
 
 # ---------------------------------------------------------------------------
