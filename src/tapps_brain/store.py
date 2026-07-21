@@ -2166,6 +2166,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     ) -> MemoryEntry:
         """Allocate a new :class:`MemoryEntry`, preserving reserved fields on update."""
         preserved = _preserved_fields_for_update(existing, now)
+        # Content rewrite resets the spaced-repetition clock. Preserving
+        # ``last_reinforced`` after a value change left decay measuring from
+        # the old reinforce time while ``updated_at`` (and retrieval recency)
+        # looked fresh — composite scoring mixed contradictory clocks.
+        if existing is not None and existing.value != value:
+            preserved["last_reinforced"] = None
         # Preserve learned confidence on routine updates: -1.0 means "caller
         # did not specify".  Falling through to the static source default
         # would discard what record_access / reinforce / the feedback

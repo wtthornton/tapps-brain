@@ -64,6 +64,25 @@ class TestMemoryStoreCRUD:
         assert isinstance(entry2, MemoryEntry)
         assert entry2.created_at == created
 
+    def test_save_value_change_clears_last_reinforced(self, store: MemoryStore) -> None:
+        """Rewriting value must reset the decay clock (last_reinforced)."""
+        store.save(key="k1", value="original fact")
+        store.reinforce("k1")
+        reinforced = store.get("k1")
+        assert reinforced is not None
+        assert reinforced.last_reinforced is not None
+
+        updated = store.save(key="k1", value="rewritten fact")
+        assert isinstance(updated, MemoryEntry)
+        assert updated.value == "rewritten fact"
+        assert updated.last_reinforced is None
+
+        # Same-value re-save after reinforce should still preserve the clock.
+        store.reinforce("k1")
+        again = store.save(key="k1", value="rewritten fact")
+        assert isinstance(again, MemoryEntry)
+        assert again.last_reinforced is not None
+
     def test_delete(self, store: MemoryStore) -> None:
         store.save(key="k1", value="v1")
         assert store.delete("k1") is True
