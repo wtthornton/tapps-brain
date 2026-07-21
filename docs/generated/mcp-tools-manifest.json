@@ -13,9 +13,10 @@
     "src/tapps_brain/mcp_server/tools_profile.py",
     "src/tapps_brain/mcp_server/tools_resources.py"
   ],
-  "tool_count": 87,
+  "tool_count": 74,
+  "operator_tool_count": 13,
   "resource_count": 8,
-  "core_tool_count": 19,
+  "core_tool_count": 18,
   "core_tools": [
     "brain_forget",
     "brain_learn_failure",
@@ -34,8 +35,7 @@
     "memory_recall",
     "memory_reinforce",
     "memory_save",
-    "memory_search",
-    "tapps_brain_health"
+    "memory_search"
   ],
   "tools": [
     {
@@ -179,16 +179,8 @@
       "description": "Record a generic feedback event (built-in or custom type)."
     },
     {
-      "name": "flywheel_evaluate",
-      "description": "Run BEIR-format directory or YAML suite evaluation."
-    },
-    {
       "name": "flywheel_gaps",
       "description": "Return top knowledge gaps as JSON."
-    },
-    {
-      "name": "flywheel_hive_feedback",
-      "description": "Aggregate / apply Hive cross-project feedback penalties."
     },
     {
       "name": "flywheel_process",
@@ -223,32 +215,12 @@
       "description": "Return the Hive write notification revision (GitHub #12)."
     },
     {
-      "name": "maintenance_consolidate",
-      "description": "Trigger memory consolidation to merge similar entries."
-    },
-    {
-      "name": "maintenance_gc",
-      "description": "Run garbage collection to archive stale memories."
-    },
-    {
-      "name": "maintenance_stale",
-      "description": "List GC stale memory candidates with reasons (read-only; GitHub #21)."
-    },
-    {
       "name": "memory_audit",
       "description": "Query the audit trail for memory events."
     },
     {
       "name": "memory_capture",
       "description": "Extract and persist new facts from an agent response."
-    },
-    {
-      "name": "memory_consolidation_config",
-      "description": "Return the current auto-consolidation configuration."
-    },
-    {
-      "name": "memory_consolidation_config_set",
-      "description": "Update auto-consolidation configuration."
     },
     {
       "name": "memory_delete",
@@ -259,20 +231,8 @@
       "description": "Return all memory entries that carry a specific tag."
     },
     {
-      "name": "memory_export",
-      "description": "Export memory entries as JSON."
-    },
-    {
       "name": "memory_find_related",
       "description": "Find entries related to a key via BFS traversal of the relation graph."
-    },
-    {
-      "name": "memory_gc_config",
-      "description": "Return the current garbage collection configuration."
-    },
-    {
-      "name": "memory_gc_config_set",
-      "description": "Update garbage collection configuration thresholds."
     },
     {
       "name": "memory_get",
@@ -281,10 +241,6 @@
     {
       "name": "memory_history",
       "description": "Show the full version chain for a memory key."
-    },
-    {
-      "name": "memory_import",
-      "description": "Import memory entries from a JSON string."
     },
     {
       "name": "memory_index_session",
@@ -375,16 +331,62 @@
       "description": "Aggregate recall-quality samples over the last *window_seconds* (TAP-2094)."
     },
     {
+      "name": "tapps_brain_session_end",
+      "description": "Record an end-of-session episodic memory entry."
+    }
+  ],
+  "operator_tools": [
+    {
+      "name": "flywheel_evaluate",
+      "description": "Run BEIR-format directory or YAML suite evaluation."
+    },
+    {
+      "name": "flywheel_hive_feedback",
+      "description": "Aggregate / apply Hive cross-project feedback penalties."
+    },
+    {
+      "name": "maintenance_consolidate",
+      "description": "Trigger memory consolidation to merge similar entries."
+    },
+    {
+      "name": "maintenance_gc",
+      "description": "Run garbage collection to archive stale memories."
+    },
+    {
+      "name": "maintenance_stale",
+      "description": "List GC stale memory candidates with reasons (read-only; GitHub #21)."
+    },
+    {
+      "name": "memory_consolidation_config",
+      "description": "Return the current auto-consolidation configuration."
+    },
+    {
+      "name": "memory_consolidation_config_set",
+      "description": "Update auto-consolidation configuration."
+    },
+    {
+      "name": "memory_export",
+      "description": "Export memory entries as a versioned tapps-memory or MIF JSON bundle."
+    },
+    {
+      "name": "memory_gc_config",
+      "description": "Return the current garbage collection configuration."
+    },
+    {
+      "name": "memory_gc_config_set",
+      "description": "Update garbage collection configuration thresholds."
+    },
+    {
+      "name": "memory_import",
+      "description": "Import memory entries from a JSON string (envelope, bare array, or MIF)."
+    },
+    {
       "name": "tapps_brain_health",
       "description": "Return a structured health report for tapps-brain (issue #15)."
     },
     {
       "name": "tapps_brain_relay_export",
       "description": "Build a memory relay JSON payload for cross-node handoff (GitHub #19)."
-    },
-    {
-      "name": "tapps_brain_session_end",
-      "description": "Record an end-of-session episodic memory entry."
     }
   ],
   "resources": [
