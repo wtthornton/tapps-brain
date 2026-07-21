@@ -36,8 +36,11 @@ BRAIN_VERSION ?= $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *
 export BRAIN_VERSION
 BRAIN_IMAGE   ?= docker-tapps-brain-http
 
-# DSN used by brain-test and brain-psql (dev-only Postgres from docker-compose.yml)
-TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:5432/tapps_brain_dev
+# DSN used by brain-test, brain-migrate, purge-test-tenants (dev Postgres).
+# Port must track docker-compose.yml ``${TAPPS_DEV_PORT:-5432}:5432`` — a hard-coded
+# 5432 silently targets the wrong container when TAPPS_DEV_PORT is remapped.
+TAPPS_DEV_PORT ?= 5432
+TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:$(TAPPS_DEV_PORT)/tapps_brain_dev
 
 .PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
@@ -287,7 +290,9 @@ brain-eval:  ## Operational eval over a window (WINDOW_HOURS=72 default): metric
 	@python3 scripts/brain_eval.py
 
 purge-test-tenants:  ## Remove leaked test/load tenant rows (reserved smoke-/test- prefixes). Dry-run unless APPLY=1
-	@uv run tapps-brain maintenance purge-test-tenants $(if $(filter 1,$(APPLY)),--apply,)
+	@TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+	  TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 \
+	  uv run tapps-brain maintenance purge-test-tenants $(if $(filter 1,$(APPLY)),--apply,)
 
 brain-visual-smoke-live:  ## Visual dashboard smoke (:8088 HTML + /snapshot proxy + direct :8080/snapshot)
 	@bash scripts/brain_visual_smoke_live.sh
