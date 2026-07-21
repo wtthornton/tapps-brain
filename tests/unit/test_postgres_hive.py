@@ -447,3 +447,30 @@ class TestPostgresAgentRegistry:
         assert result[0].id == "a1"
         assert result[0].name == "Agent 1"
         assert result[0].skills == []
+
+
+class TestRowToDictTimestampSerialization:
+    def test_datetime_fields_become_isoformat_strings(self) -> None:
+        from datetime import UTC, datetime
+
+        from tapps_brain.postgres_hive import PostgresHiveBackend
+
+        raw = {
+            "key": "k",
+            "value": "v",
+            "tags": '["a"]',
+            "created_at": datetime(2026, 7, 21, 12, 0, 0, tzinfo=UTC),
+            "updated_at": datetime(2026, 7, 21, 13, 0, 0, tzinfo=UTC),
+            "search_vector": "internal",
+            "rank": 0.9,
+        }
+        out = PostgresHiveBackend._row_to_dict(dict(raw))
+        assert out["tags"] == ["a"]
+        assert out["created_at"] == "2026-07-21T12:00:00+00:00"
+        assert out["updated_at"] == "2026-07-21T13:00:00+00:00"
+        assert "search_vector" not in out
+        assert "rank" not in out
+        # Must be JSON-serializable for MCP hive_search.
+        import json
+
+        json.dumps(out)
