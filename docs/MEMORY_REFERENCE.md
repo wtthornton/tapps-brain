@@ -126,6 +126,7 @@ CLI probe: `tapps-mcp doctor` (consumer repo) or `make brain-healthcheck` (this 
 
 ## Related docs
 
+- [Memory import/export format matrix](guides/memory-import-export.md) — native JSON, MIF, relay, MEMORY.md, pg_dump
 - [MCP client setup](guides/mcp-client-repo-setup.md) — direct brain HTTP MCP wiring
 - [Hive guide](guides/hive.md) — cross-agent shared memory
 - [Data stores and schema](engineering/data-stores-and-schema.md) — Postgres tables and migrations

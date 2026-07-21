@@ -80,6 +80,8 @@ class TestExport:
         data = json.loads(output.read_text())
         assert "memories" in data
         assert len(data["memories"]) == 2
+        assert data["format"] == "tapps-memory"
+        assert data["format_version"] == "1.0"
         assert "exported_at" in data
         assert "source_project" in data
         assert "tapps_version" in data
@@ -202,6 +204,7 @@ class TestExportMarkdown:
 
         text = output.read_text()
         assert "---" in text
+        assert "key:" in text
         assert "tags:" in text
         assert "created_at:" in text
         assert "confidence:" in text

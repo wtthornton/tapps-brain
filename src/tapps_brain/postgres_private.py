@@ -56,6 +56,31 @@ _MISSING_INDEX_COUNTS: dict[str, int] = {}
 _MISSING_INDEX_COUNTS_LOCK = threading.Lock()
 
 
+def _coerce_pgvector(raw: Any) -> list[float] | None:
+    """Normalize a pgvector / list / string value into ``list[float]``."""
+    if raw is None:
+        return None
+    seq: Any
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("[") and text.endswith("]"):
+            text = text[1:-1]
+        if not text:
+            return []
+        seq = text.split(",")
+    elif isinstance(raw, (list, tuple)):
+        seq = raw
+    else:
+        try:
+            seq = list(raw)
+        except TypeError:
+            return None
+    try:
+        return [float(x) for x in seq]
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_jsonb_list(raw: Any) -> list[str]:
     """Parse a JSONB column value into a ``list[str]``.
 
@@ -476,6 +501,29 @@ class PostgresPrivateBackend:
             cur.execute(_sql.KEYS_MISSING_EMBEDDING_SQL, (self._project_id, self._agent_id))
             rows = cur.fetchall()
         return [str(r[0]) for r in rows]
+
+    def load_embeddings(self) -> dict[str, dict[str, Any]]:
+        """Return ``{key: {vector, embedding_model_id}}`` for non-NULL vectors.
+
+        Used by lossless export sidecars (TAP-5030).  Normal entry loads still
+        omit the dense column for size; this is the deliberate opt-in path.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.LOAD_EMBEDDINGS_SQL, (self._project_id, self._agent_id))
+            rows = cur.fetchall()
+        out: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = str(row[0])
+            raw_vec = row[1]
+            model_id = row[2]
+            vector = _coerce_pgvector(raw_vec)
+            if vector is None:
+                continue
+            out[key] = {
+                "vector": vector,
+                "embedding_model_id": str(model_id) if model_id is not None else None,
+            }
+        return out
 
     def snapshot_aggregates(self, project_id: str) -> SnapshotAggregates:
         """Return visual-snapshot rollups without hydrating full memory rows."""

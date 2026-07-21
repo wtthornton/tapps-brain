@@ -2382,6 +2382,67 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         )
         return {"backfilled": backfilled, "skipped_existing": skipped_existing, "failed": failed}
 
+    def load_embeddings(self) -> dict[str, dict[str, Any]]:
+        """Load durable embedding vectors for lossless export (TAP-5030).
+
+        Returns ``{key: {"vector": [...], "embedding_model_id": str|None}}``.
+        Empty when the backend does not support ``load_embeddings``.
+        """
+        loader = getattr(self._persistence, "load_embeddings", None)
+        if not callable(loader):
+            return {}
+        try:
+            loaded = loader()
+        except Exception:
+            logger.warning("store.load_embeddings_failed", exc_info=True)
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def set_embeddings(
+        self,
+        vectors: dict[str, list[float]],
+        *,
+        model_id: str,
+    ) -> dict[str, int]:
+        """Write precomputed embeddings without re-running the embedder (TAP-5030).
+
+        Only updates ``embedding`` / ``embedding_model_id`` on existing keys.
+        Returns counts: ``restored``, ``missing_keys``, ``failed``.
+        """
+        restored = 0
+        missing_keys = 0
+        failed = 0
+        for key, vector in vectors.items():
+            with self._serialized():
+                current = self._entries.get(key)
+            if current is None:
+                # Try durable peek
+                peek = self._ensure_entry_cached(key)
+                if peek is None:
+                    missing_keys += 1
+                    continue
+                current = peek
+            update: dict[str, object] = {
+                "embedding": list(vector),
+                "embedding_model_id": model_id,
+            }
+            with self._serialized():
+                latest = self._entries.get(key) or current
+                previous = latest
+                updated = latest.model_copy(update=update)
+                self._entries[key] = updated
+            try:
+                self._persistence.save(updated)
+            except Exception:
+                failed += 1
+                with self._serialized():
+                    if self._entries.get(key) is updated:
+                        self._entries[key] = previous
+                logger.warning("store.set_embeddings_failed", key=key, exc_info=True)
+                continue
+            restored += 1
+        return {"restored": restored, "missing_keys": missing_keys, "failed": failed}
+
     def _persist_entry_or_rollback(
         self,
         key: str,

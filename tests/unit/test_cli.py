@@ -556,7 +556,9 @@ class TestImportExport:
         result = runner.invoke(app, ["export", "--project-dir", project_dir, "--format", "json"])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert len(data) == 3
+        assert data["format"] == "tapps-memory"
+        assert data["format_version"] == "1.0"
+        assert len(data["memories"]) == 3
 
     def test_export_json_file(self, project_dir, tmp_path: Path):
         out = tmp_path / "export.json"
@@ -567,7 +569,9 @@ class TestImportExport:
         assert result.exit_code == 0
         assert out.exists()
         data = json.loads(out.read_text())
-        assert len(data) == 3
+        assert data["format"] == "tapps-memory"
+        assert data["format_version"] == "1.0"
+        assert len(data["memories"]) == 3
 
     def test_export_markdown(self, project_dir):
         result = runner.invoke(
@@ -583,8 +587,9 @@ class TestImportExport:
         )
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert len(data) == 1
-        assert data[0]["key"] == "tech-stack"
+        assert data["format"] == "tapps-memory"
+        assert len(data["memories"]) == 1
+        assert data["memories"][0]["key"] == "tech-stack"
 
     def test_import_json(self, tmp_path: Path):
         # Create source store and export

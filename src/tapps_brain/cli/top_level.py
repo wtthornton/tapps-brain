@@ -234,23 +234,64 @@ def export_cmd(
         Path | None,
         typer.Option("--output", "-o", help="Output file path (default: stdout)."),
     ] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="Export format.")] = "json",
+    fmt: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Export format: json | markdown | mif | jsonl.",
+        ),
+    ] = "json",
     tier: Annotated[str | None, typer.Option(help="Filter by tier.")] = None,
+    include_relations: Annotated[
+        bool,
+        typer.Option("--relations/--no-relations", help="Include SPO relations."),
+    ] = True,
+    include_embeddings: Annotated[
+        bool,
+        typer.Option("--embeddings/--no-embeddings", help="Include embeddings sidecar."),
+    ] = False,
     project_dir: ProjectDir = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Export memory entries to JSON or Markdown."""
+    """Export memory entries (native tapps-memory envelope by default)."""
+    from tapps_brain.io import (
+        build_jsonl_export,
+        build_mif_document,
+        build_native_envelope,
+        collect_embeddings,
+        collect_relations,
+        export_to_markdown,
+    )
+
     store = _get_store(project_dir)
     try:
         entries = store.list_all(tier=tier)
+        project_root = str(getattr(store, "project_root", "") or "")
+        relations = collect_relations(store) if include_relations and fmt == "json" else None
+        embeddings = (
+            collect_embeddings(store) if include_embeddings and fmt in ("json", "mif") else None
+        )
 
         if fmt == "markdown":
-            from tapps_brain.io import export_to_markdown
-
             content = export_to_markdown(entries)
+        elif fmt == "mif":
+            payload = build_mif_document(entries, source_project=project_root)
+            if relations is not None:
+                payload["relations"] = relations
+            if embeddings is not None:
+                payload["embeddings"] = embeddings
+            content = json.dumps(payload, indent=2, default=str)
+        elif fmt == "jsonl":
+            content = build_jsonl_export(entries, source_project=project_root)
         else:
-            data = [e.model_dump(mode="json") for e in entries]
-            content = json.dumps(data, indent=2, default=str)
+            payload = build_native_envelope(
+                [e.model_dump(mode="json") for e in entries],
+                source_project=project_root,
+                relations=relations,
+                embeddings=embeddings,
+            )
+            content = json.dumps(payload, indent=2, default=str)
 
         if output:
             output.write_text(content, encoding="utf-8")
@@ -266,62 +307,78 @@ def export_cmd(
 
 @app.command("import")
 def import_cmd(
-    input_file: Annotated[Path, typer.Argument(help="File to import (JSON or Markdown).")],
+    input_file: Annotated[Path, typer.Argument(help="File to import (JSON, JSONL, or Markdown).")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without writing.")] = False,
+    mode: Annotated[
+        str | None,
+        typer.Option(
+            "--mode",
+            help="Markdown mode: frontmatter | memory-md (auto-detect when omitted).",
+        ),
+    ] = None,
+    fmt: Annotated[
+        str | None,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Force format: json | jsonl | mif | mem0 | letta-af | markdown.",
+        ),
+    ] = None,
+    max_entries: Annotated[
+        int | None,
+        typer.Option("--max-entries", help="Import size limit (default: CLI 50000 / env)."),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite/--no-overwrite", help="Overwrite existing keys."),
+    ] = False,
     project_dir: ProjectDir = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Import memory entries from a JSON file."""
-    if not input_file.exists():
-        typer.echo(f"File not found: {input_file}", err=True)
-        raise typer.Exit(code=1)
+    """Import memory entries (preserve mode; accepts envelope or bare array)."""
+    from tapps_brain.cli._import_export import import_file_to_store
 
     store = _get_store(project_dir)
     try:
-        raw = input_file.read_text(encoding="utf-8")
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            typer.echo(f"Invalid JSON in {input_file}: {exc}", err=True)
+            result = import_file_to_store(
+                store,
+                input_file,
+                dry_run=dry_run,
+                mode=mode,
+                fmt=fmt,
+                max_entries=max_entries,
+                overwrite=overwrite,
+            )
+        except FileNotFoundError as exc:
+            typer.echo(str(exc), err=True)
             raise typer.Exit(code=1) from None
-        if not isinstance(data, list):
-            typer.echo("Expected a JSON array of entries.", err=True)
-            raise typer.Exit(code=1)
-
-        if dry_run:
-            result = {"would_import": len(data), "file": str(input_file)}
-            if as_json:
-                _output(result, as_json=True)
+        except (ValueError, json.JSONDecodeError) as exc:
+            if isinstance(exc, json.JSONDecodeError):
+                msg = f"Invalid JSON in {input_file}: {exc}"
             else:
-                typer.echo(f"Would import {len(data)} entries from {input_file}")
+                msg = str(exc)
+            typer.echo(msg, err=True)
+            raise typer.Exit(code=1) from None
+
+        for warning in result.get("warnings") or []:
+            typer.echo(f"warning: {warning}", err=True)
+
+        if as_json:
+            _output({k: v for k, v in result.items() if k != "warnings"}, as_json=True)
             return
 
-        imported = 0
-        skipped = 0
-        for item in data:
-            key = item.get("key", "")
-            if not key:
-                skipped += 1
-                continue
-            existing = store.get(key)
-            if existing is not None:
-                skipped += 1
-                continue
-            store.save(
-                key=key,
-                value=item.get("value", ""),
-                tier=item.get("tier", "pattern"),
-                source=item.get("source", "system"),
-                tags=item.get("tags"),
-                confidence=item.get("confidence", -1.0),
-            )
-            imported += 1
+        if "would_import" in result:
+            if result.get("mode"):
+                typer.echo(f"Would import Markdown ({result['mode']}) from {input_file}")
+            else:
+                typer.echo(f"Would import {result['would_import']} entries from {input_file}")
+            return
 
-        result = {"imported": imported, "skipped": skipped, "file": str(input_file)}
-        if as_json:
-            _output(result, as_json=True)
+        if result.get("mode"):
+            typer.echo(f"Imported {result['imported']} entries from Markdown")
         else:
-            typer.echo(f"Imported {imported} entries, skipped {skipped}")
+            typer.echo(f"Imported {result['imported']} entries, skipped {result['skipped']}")
     finally:
         store.close()
 

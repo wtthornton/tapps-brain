@@ -1,7 +1,11 @@
 """Import and export for shared memory entries.
 
-Enables teams to share and back up project memories via JSON or Markdown files.
-All file paths are validated through ``security/path_validator.py``.
+Enables teams to share and back up project memories via JSON, JSONL, Markdown,
+or MIF v2. All file paths are validated through ``security/path_validator.py``.
+
+Native envelope (TAP-5027 / TAP-5028)::
+
+    {"format": "tapps-memory", "format_version": "1.0", "memories": [...], ...}
 """
 
 from __future__ import annotations
@@ -13,6 +17,30 @@ from typing import TYPE_CHECKING, Any, Literal
 import structlog
 
 from tapps_brain import __version__
+from tapps_brain.io_bundle import (
+    build_embeddings_sidecar,
+    collect_embeddings,
+    collect_relations,
+    restore_embeddings,
+    restore_relations,
+)
+from tapps_brain.io_jsonl import build_jsonl_export, parse_jsonl_payload
+from tapps_brain.io_limits import (
+    CLI_DEFAULT_MAX_IMPORT_ENTRIES,
+    DEFAULT_MAX_IMPORT_ENTRIES,
+    NATIVE_FORMAT,
+    NATIVE_FORMAT_VERSION,
+    enforce_import_limit,
+    resolve_max_import_entries,
+)
+from tapps_brain.io_mif import (
+    MIF_FORMAT,
+    build_mif_document,
+    entry_to_mif_unit,
+    is_mif_document,
+    looks_like_mif_list,
+    mif_unit_to_memory_dict,
+)
 from tapps_brain.models import MemoryEntry
 
 if TYPE_CHECKING:
@@ -23,18 +51,161 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-_MAX_IMPORT_ENTRIES = 500
-
-ExportFormat = Literal["json", "markdown"]
+ExportFormat = Literal["json", "markdown", "mif", "jsonl"]
 GroupByOption = Literal["tier", "tag", "none"]
 
+# Re-exports for public API stability
+__all__ = [
+    "CLI_DEFAULT_MAX_IMPORT_ENTRIES",
+    "DEFAULT_MAX_IMPORT_ENTRIES",
+    "MIF_FORMAT",
+    "NATIVE_FORMAT",
+    "NATIVE_FORMAT_VERSION",
+    "build_embeddings_sidecar",
+    "build_jsonl_export",
+    "build_mif_document",
+    "build_native_envelope",
+    "collect_embeddings",
+    "collect_relations",
+    "entry_to_mif_unit",
+    "export_bundle_dict",
+    "export_memories",
+    "export_to_markdown",
+    "import_memories",
+    "import_memory_dicts",
+    "parse_import_payload",
+    "parse_jsonl_payload",
+    "resolve_max_import_entries",
+    "restore_embeddings",
+    "restore_relations",
+]
+
+
+def build_native_envelope(
+    memories: list[dict[str, Any]],
+    *,
+    source_project: str = "",
+    relations: list[dict[str, Any]] | None = None,
+    embeddings: dict[str, Any] | None = None,
+    exported_at: str | None = None,
+) -> dict[str, Any]:
+    """Build the versioned ``tapps-memory`` 1.0 export envelope."""
+    at = exported_at or datetime.now(tz=UTC).isoformat()
+    payload: dict[str, Any] = {
+        "format": NATIVE_FORMAT,
+        "format_version": NATIVE_FORMAT_VERSION,
+        "memories": memories,
+        "exported_at": at,
+        "source_project": source_project,
+        "entry_count": len(memories),
+        "tapps_version": __version__,
+    }
+    if relations is not None:
+        payload["relations"] = relations
+        payload["relation_count"] = len(relations)
+    if embeddings is not None:
+        payload["embeddings"] = embeddings
+    return payload
+
+
+def parse_import_payload(
+    data: object,
+    *,
+    max_entries: int | None = None,
+) -> dict[str, Any]:
+    """Normalize import JSON into memories (+ optional relations/embeddings)."""
+    limit = resolve_max_import_entries(max_entries)
+
+    if isinstance(data, list):
+        return _parse_list_payload(data, limit=limit)
+
+    if not isinstance(data, dict):
+        msg = "Import payload must be a JSON object or array."
+        raise ValueError(msg)
+
+    if is_mif_document(data):
+        return _parse_mif_payload(data, limit=limit)
+
+    return _parse_envelope_payload(data, limit=limit)
+
+
+def _parse_list_payload(data: list[Any], *, limit: int) -> dict[str, Any]:
+    if looks_like_mif_list(data):
+        memories = [mif_unit_to_memory_dict(u) for u in data if isinstance(u, dict)]
+        enforce_import_limit(len(memories), limit)
+        return {
+            "memories": [m for m in memories if m],
+            "relations": None,
+            "embeddings": None,
+            "detected_format": MIF_FORMAT,
+        }
+    memories = [m for m in data if isinstance(m, dict)]
+    dropped = len(data) - len(memories)
+    if dropped:
+        logger.warning("memory_import_non_dict_entries_dropped", count=dropped)
+    enforce_import_limit(len(memories), limit)
+    return {
+        "memories": memories,
+        "relations": None,
+        "embeddings": None,
+        "detected_format": "bare-array",
+    }
+
+
+def _parse_mif_payload(data: dict[str, Any], *, limit: int) -> dict[str, Any]:
+    units = data.get("memories")
+    if units is None and "content" in data:
+        units = [data]
+    if not isinstance(units, list):
+        msg = "MIF document must contain a 'memories' list or a single unit."
+        raise ValueError(msg)
+    memories = [mif_unit_to_memory_dict(u) for u in units if isinstance(u, dict)]
+    enforce_import_limit(len(memories), limit)
+    return {
+        "memories": [m for m in memories if m],
+        "relations": None,
+        "embeddings": data.get("embeddings"),
+        "detected_format": MIF_FORMAT,
+    }
+
+
+def _parse_envelope_payload(data: dict[str, Any], *, limit: int) -> dict[str, Any]:
+    memories_raw = data.get("memories")
+    if memories_raw is None:
+        msg = "Import payload must contain a 'memories' list (or be a bare array)."
+        raise ValueError(msg)
+    if not isinstance(memories_raw, list):
+        msg = "Import file must contain a 'memories' list."
+        raise ValueError(msg)
+
+    enforce_import_limit(len(memories_raw), limit)
+    memories = [m for m in memories_raw if isinstance(m, dict)]
+    dropped = len(memories_raw) - len(memories)
+    if dropped:
+        logger.warning("memory_import_non_dict_entries_dropped", count=dropped)
+
+    relations = data.get("relations")
+    if relations is not None and not isinstance(relations, list):
+        msg = "'relations' must be a list when present."
+        raise ValueError(msg)
+
+    embeddings = data.get("embeddings")
+    if embeddings is not None and not isinstance(embeddings, dict):
+        msg = "'embeddings' must be an object when present."
+        raise ValueError(msg)
+
+    fmt = data.get("format")
+    detected = NATIVE_FORMAT if fmt == NATIVE_FORMAT else "legacy-envelope"
+    return {
+        "memories": memories,
+        "relations": relations,
+        "embeddings": embeddings,
+        "detected_format": detected,
+    }
+
 
 # ---------------------------------------------------------------------------
-# Markdown export (Epic 65.2)
+# Markdown export (Epic 65.2) + frontmatter key (TAP-5032)
 # ---------------------------------------------------------------------------
 
 
@@ -45,6 +216,7 @@ def _entry_to_frontmatter(entry: MemoryEntry) -> str:
         tags.append(str(entry.tier))
     lines = [
         "---",
+        f"key: {entry.key!r}",
         f"tags: {json.dumps(tags)}",
         f"created_at: {entry.created_at!r}",
         f"updated_at: {entry.updated_at!r}",
@@ -67,15 +239,6 @@ def export_to_markdown(
 
     Outputs Obsidian-friendly Markdown with optional frontmatter, grouped by
     tier or tag, sorted by ``(updated_at, key)`` within groups.
-
-    Args:
-        entries: Memory entries to export.
-        include_frontmatter: Include YAML frontmatter per entry (default True).
-        group_by: "tier" (group by tier), "tag" (group by first tag), or "none".
-        include_metadata: Include created_at/confidence in body (default False).
-
-    Returns:
-        Markdown string.
     """
     if not entries:
         return "# TappsMCP Memory Export\n\n*No memories.*\n"
@@ -116,8 +279,6 @@ def export_to_markdown(
             lines.append("")
             for entry in sort_entries(tier_entries):
                 lines.extend(render_entry(entry))
-        # Emit remaining tiers (ephemeral, session, profile layers) so they are
-        # not silently dropped after being collected into by_tier.
         for tier_name in sorted(by_tier.keys()):
             tier_entries = by_tier[tier_name]
             if not tier_entries:
@@ -149,8 +310,25 @@ def export_to_markdown(
 
 
 # ---------------------------------------------------------------------------
+
 # Export
 # ---------------------------------------------------------------------------
+
+
+def _filter_entries(
+    entries: list[MemoryEntry],
+    *,
+    tier: str | None,
+    scope: str | None,
+    min_confidence: float | None,
+) -> list[MemoryEntry]:
+    if tier is not None:
+        entries = [e for e in entries if str(e.tier) == tier]
+    if scope is not None:
+        entries = [e for e in entries if e.scope.value == scope]
+    if min_confidence is not None:
+        entries = [e for e in entries if e.confidence >= min_confidence]
+    return entries
 
 
 def export_memories(
@@ -165,42 +343,33 @@ def export_memories(
     include_frontmatter: bool = True,
     group_by: GroupByOption = "tier",
     include_metadata: bool = False,
+    include_relations: bool = False,
+    include_embeddings: bool = False,
 ) -> dict[str, Any]:
-    """Export memories to a JSON or Markdown file (Epic 65.2).
-
-    Args:
-        store: The memory store to export from.
-        output_path: Destination file path.
-        validator: Path validator for sandbox enforcement.
-        tier: Optional tier filter.
-        scope: Optional scope filter.
-        min_confidence: Optional minimum confidence filter.
-        export_format: "json" (default) or "markdown".
-        include_frontmatter: For markdown, include Obsidian frontmatter (default True).
-        group_by: For markdown, "tier", "tag", or "none" (default "tier").
-        include_metadata: For markdown, include created_at/confidence in body (default False).
-
-    Returns:
-        Summary dict with ``exported_count``, ``file_path``, ``exported_at``.
-    """
+    """Export memories to JSON, JSONL, Markdown, or MIF (TAP-5027)."""
     validated_path = validator.validate_path(output_path, must_exist=False, max_file_size=None)
 
     snapshot = store.snapshot()
-    entries = snapshot.entries
-
-    # Apply filters
-    if tier is not None:
-        entries = [e for e in entries if str(e.tier) == tier]
-    if scope is not None:
-        entries = [e for e in entries if e.scope.value == scope]
-    if min_confidence is not None:
-        entries = [e for e in entries if e.confidence >= min_confidence]
+    entries = _filter_entries(
+        list(snapshot.entries),
+        tier=tier,
+        scope=scope,
+        min_confidence=min_confidence,
+    )
 
     exported_at = datetime.now(tz=UTC).isoformat()
-
     validated_path.parent.mkdir(parents=True, exist_ok=True)
 
-    eff_format = export_format if export_format in ("json", "markdown") else "json"
+    allowed: set[str] = {"json", "markdown", "mif", "jsonl"}
+    eff_format: str = export_format if export_format in allowed else "json"
+
+    relations: list[dict[str, Any]] | None = None
+    if include_relations:
+        relations = collect_relations(store)
+
+    embeddings: dict[str, Any] | None = None
+    if include_embeddings:
+        embeddings = collect_embeddings(store)
 
     if eff_format == "markdown":
         content = export_to_markdown(
@@ -210,14 +379,32 @@ def export_memories(
             include_metadata=include_metadata,
         )
         validated_path.write_text(content, encoding="utf-8")
-    else:  # "json" (default)
-        payload: dict[str, Any] = {
-            "memories": [e.model_dump(mode="json") for e in entries],
-            "exported_at": exported_at,
-            "source_project": snapshot.project_root,
-            "entry_count": len(entries),
-            "tapps_version": __version__,
-        }
+    elif eff_format == "mif":
+        payload = build_mif_document(
+            entries,
+            source_project=snapshot.project_root,
+            exported_at=exported_at,
+        )
+        if relations is not None:
+            payload["relations"] = relations
+        if embeddings is not None:
+            payload["embeddings"] = embeddings
+        validated_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    elif eff_format == "jsonl":
+        content = build_jsonl_export(
+            entries,
+            source_project=snapshot.project_root,
+            exported_at=exported_at,
+        )
+        validated_path.write_text(content, encoding="utf-8")
+    else:
+        payload = build_native_envelope(
+            [e.model_dump(mode="json") for e in entries],
+            source_project=snapshot.project_root,
+            relations=relations,
+            embeddings=embeddings,
+            exported_at=exported_at,
+        )
         validated_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     logger.info(
@@ -232,7 +419,56 @@ def export_memories(
         "file_path": str(validated_path),
         "exported_at": exported_at,
         "format": eff_format,
+        "relation_count": len(relations) if relations is not None else 0,
+        "embedding_count": (
+            int(embeddings.get("entry_count", 0)) if isinstance(embeddings, dict) else 0
+        ),
     }
+
+
+def export_bundle_dict(
+    store: MemoryStore,
+    *,
+    project_root: str = "",
+    tier: str | None = None,
+    scope: str | None = None,
+    min_confidence: float | None = None,
+    include_relations: bool = True,
+    include_embeddings: bool = False,
+    export_format: str = "json",
+) -> dict[str, Any]:
+    """Build an in-memory export bundle (used by MCP ``memory_export``)."""
+    if hasattr(store, "list_all"):
+        entries = list(store.list_all(tier=tier, scope=scope))
+    else:
+        entries = list(store.snapshot().entries)
+        entries = _filter_entries(entries, tier=tier, scope=scope, min_confidence=min_confidence)
+    if min_confidence is not None:
+        entries = [e for e in entries if e.confidence >= min_confidence]
+
+    exported_at = datetime.now(tz=UTC).isoformat()
+    root = project_root or getattr(getattr(store, "snapshot", lambda: None)(), "project_root", "")
+    if not root:
+        root = str(getattr(store, "project_root", "") or "")
+
+    relations = collect_relations(store) if include_relations else None
+    embeddings = collect_embeddings(store) if include_embeddings else None
+
+    if export_format == "mif":
+        payload = build_mif_document(entries, source_project=root, exported_at=exported_at)
+        if relations is not None:
+            payload["relations"] = relations
+        if embeddings is not None:
+            payload["embeddings"] = embeddings
+        return payload
+
+    return build_native_envelope(
+        [e.model_dump(mode="json") for e in entries],
+        source_project=root,
+        relations=relations,
+        embeddings=embeddings,
+        exported_at=exported_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,62 +476,61 @@ def export_memories(
 # ---------------------------------------------------------------------------
 
 
-def _validate_import_payload(data: object) -> list[dict[str, Any]]:
-    """Validate the top-level structure of an import JSON payload.
-
-    Returns the list of raw memory dicts.
-
-    Raises:
-        ValueError: If the payload is malformed.
-    """
-    if not isinstance(data, dict):
-        msg = "Import file must contain a JSON object."
-        raise ValueError(msg)
-
-    memories = data.get("memories")
-    if not isinstance(memories, list):
-        msg = "Import file must contain a 'memories' list."
-        raise ValueError(msg)
-
-    if len(memories) > _MAX_IMPORT_ENTRIES:
-        msg = f"Import exceeds max entries ({len(memories)} > {_MAX_IMPORT_ENTRIES})."
-        raise ValueError(msg)
-
-    valid = [m for m in memories if isinstance(m, dict)]
-    dropped = len(memories) - len(valid)
-    if dropped:
-        logger.warning("memory_import_non_dict_entries_dropped", count=dropped)
-    return valid
+def _validate_import_payload(
+    data: object,
+    *,
+    max_entries: int | None = None,
+) -> list[dict[str, Any]]:
+    """Backward-compatible wrapper returning just the memories list."""
+    parsed = parse_import_payload(data, max_entries=max_entries)
+    return list(parsed["memories"])
 
 
-def import_memories(
+def _save_imported_entry(
     store: MemoryStore,
-    input_path: Path,
-    validator: PathValidatorLike,
+    entry: MemoryEntry,
+    *,
+    overwrite: bool,
+) -> str:
+    """Save one entry; returns ``imported`` / ``skipped`` / ``error``."""
+    peek = getattr(store, "_ensure_entry_cached", None)
+    existing = peek(entry.key) if callable(peek) else store.get(entry.key)
+    if existing is not None and not overwrite:
+        return "skipped"
+
+    agent_suffix = "(imported)"
+    source_agent = entry.source_agent
+    if not source_agent.endswith(agent_suffix):
+        source_agent = f"{source_agent} {agent_suffix}"
+
+    result = store.save(
+        key=entry.key,
+        value=entry.value,
+        tier=str(entry.tier),
+        source=entry.source.value,
+        source_agent=source_agent,
+        scope=entry.scope.value,
+        tags=entry.tags,
+        branch=entry.branch,
+        confidence=entry.confidence,
+        memory_group=entry.memory_group,
+        temporal_sensitivity=getattr(entry, "temporal_sensitivity", None),
+        agent_scope=entry.agent_scope,
+    )
+    if isinstance(result, dict) and result.get("error"):
+        return "error"
+    return "imported"
+
+
+def import_memory_dicts(
+    store: MemoryStore,
+    memory_dicts: list[dict[str, Any]],
     *,
     overwrite: bool = False,
+    relations: list[dict[str, Any]] | None = None,
+    embeddings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Import memories from a JSON file.
-
-    Args:
-        store: The memory store to import into.
-        input_path: Source JSON file path.
-        validator: Path validator for sandbox enforcement.
-        overwrite: If True, overwrite existing keys. Default: skip.
-
-    Returns:
-        Summary dict with ``imported_count``, ``skipped_count``, ``error_count``.
-    """
-    validated_path = validator.validate_path(input_path, must_exist=True)
-
-    raw = validated_path.read_text(encoding="utf-8")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        msg = f"Import file is not valid JSON: {exc}"
-        raise ValueError(msg) from exc
-    memory_dicts = _validate_import_payload(data)
-
+    """Import pre-parsed memory dicts (and optional relations/embeddings)."""
     imported = 0
     skipped = 0
     errors = 0
@@ -307,46 +542,90 @@ def import_memories(
             errors += 1
             logger.warning("memory_import_entry_invalid", entry=raw_entry, error=str(exc))
             continue
-
-        # Check for existing key — peek without bumping access_count /
-        # last_accessed (an import existence probe is not a retrieval).
-        existing = store._ensure_entry_cached(entry.key)
-        if existing is not None and not overwrite:
+        status = _save_imported_entry(store, entry, overwrite=overwrite)
+        if status == "imported":
+            imported += 1
+        elif status == "skipped":
             skipped += 1
-            continue
+        else:
+            errors += 1
 
-        # Mark as imported
-        agent_suffix = "(imported)"
-        source_agent = entry.source_agent
-        if not source_agent.endswith(agent_suffix):
-            source_agent = f"{source_agent} {agent_suffix}"
+    relations_restored = 0
+    if relations:
+        relations_restored = restore_relations(store, relations)
 
-        store.save(
-            key=entry.key,
-            value=entry.value,
-            tier=str(entry.tier),
-            source=entry.source.value,
-            source_agent=source_agent,
-            scope=entry.scope.value,
-            tags=entry.tags,
-            branch=entry.branch,
-            confidence=entry.confidence,
-            memory_group=entry.memory_group,
-            temporal_sensitivity=entry.temporal_sensitivity,
-        )
-        imported += 1
-
-    logger.info(
-        "memories_imported",
-        imported=imported,
-        skipped=skipped,
-        errors=errors,
-        path=str(validated_path),
-    )
+    embedding_stats = {"restored": 0, "skipped_mismatch": 0, "skipped_no_api": 0}
+    if embeddings:
+        embedding_stats = restore_embeddings(store, embeddings)
 
     return {
         "imported_count": imported,
         "skipped_count": skipped,
         "error_count": errors,
-        "file_path": str(validated_path),
+        "relations_restored": relations_restored,
+        "embeddings_restored": embedding_stats["restored"],
+        "embeddings_skipped_mismatch": embedding_stats["skipped_mismatch"],
     }
+
+
+def import_memories(
+    store: MemoryStore,
+    input_path: Path,
+    validator: PathValidatorLike,
+    *,
+    overwrite: bool = False,
+    max_entries: int | None = None,
+) -> dict[str, Any]:
+    """Import memories from a JSON / JSONL file (native, bare array, or MIF)."""
+    validated_path = validator.validate_path(input_path, must_exist=True)
+    raw = validated_path.read_text(encoding="utf-8")
+
+    # JSONL heuristic: multiple non-empty lines that each parse as JSON
+    stripped_lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if len(stripped_lines) > 1:
+        try:
+            first = json.loads(stripped_lines[0])
+            if isinstance(first, dict) and (
+                first.get("encoding") == "jsonl"
+                or (first.get("format") == NATIVE_FORMAT and "memories" not in first)
+            ):
+                parsed = parse_jsonl_payload(raw, max_entries=max_entries)
+                result = import_memory_dicts(
+                    store,
+                    parsed["memories"],
+                    overwrite=overwrite,
+                    relations=parsed.get("relations"),
+                    embeddings=parsed.get("embeddings"),
+                )
+                result["file_path"] = str(validated_path)
+                result["detected_format"] = "jsonl"
+                return result
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        msg = f"Import file is not valid JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    parsed = parse_import_payload(data, max_entries=max_entries)
+    result = import_memory_dicts(
+        store,
+        parsed["memories"],
+        overwrite=overwrite,
+        relations=parsed.get("relations"),
+        embeddings=parsed.get("embeddings"),
+    )
+    result["file_path"] = str(validated_path)
+    result["detected_format"] = parsed["detected_format"]
+
+    logger.info(
+        "memories_imported",
+        imported=result["imported_count"],
+        skipped=result["skipped_count"],
+        errors=result["error_count"],
+        path=str(validated_path),
+        detected_format=result["detected_format"],
+    )
+    return result

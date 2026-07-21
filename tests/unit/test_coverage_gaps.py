@@ -755,13 +755,14 @@ class TestIOImportEdges:
     def test_import_non_dict_payload(self, tmp_path):
         from tapps_brain.io import import_memories
 
+        # Top-level must be object or array (TAP-5028 bare-array compat).
         input_file = tmp_path / "bad.json"
-        input_file.write_text(json.dumps([1, 2, 3]))
+        input_file.write_text(json.dumps(42))
 
         store = _mock_store()
         validator = _make_validator(tmp_path)
 
-        with pytest.raises(ValueError, match="JSON object"):
+        with pytest.raises(ValueError, match="JSON object or array"):
             import_memories(store, input_file, validator)
 
     def test_import_exceeds_max_entries(self, tmp_path):

@@ -8,7 +8,9 @@
 
 Use it when an agent runtime cannot reach the tapps-brain HTTP / MCP endpoint at recall time. The canonical case is an Anthropic Managed Agents session: the container has no outbound network whitelisted to your self-hosted brain, but it CAN attach a memory store at `/mnt/memory/<store-name>/` at session creation. The export feeds that pipeline.
 
-Do **not** use it as a backup (use `pg_dump`), as a search index (use `brain_recall`), or as a live mirror (the [TAP-2095 spike](../research/file-backed-memory-mirror.md) rejected that path).
+Do **not** use it as a backup (use `pg_dump` for ops, or the [native tapps-memory export](memory-import-export.md) for portable project dumps), as a search index (use `brain_recall`), or as a live mirror (the [TAP-2095 spike](../research/file-backed-memory-mirror.md) rejected that path).
+
+For the full format matrix (native JSON, MIF, relay, MEMORY.md, adapters), see [`memory-import-export.md`](memory-import-export.md).
 
 ## Running it
 
