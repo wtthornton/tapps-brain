@@ -30,14 +30,80 @@ def _service_version() -> str:
         return "unknown"
 
 
+# Scorecard rows derived from the process-default store's health — not safe to
+# show under ``?project=`` (they describe a different tenant).
+_STORE_SCOPED_SCORECARD_IDS = frozenset(
+    {
+        "store_entries",
+        "store_capacity",
+        "integrity_tampered",
+        "integrity_no_hash",
+        "maintenance_backlog",
+        "diagnostics_data",
+        "diagnostics_circuit",
+        "diagnostics_composite",
+        "retrieval_stack",
+    }
+)
+
+# Health keys that reflect the default MemoryStore tenant, not the filter.
+_STORE_SCOPED_HEALTH_KEYS = frozenset(
+    {
+        "entry_count",
+        "max_entries",
+        "max_entries_per_group",
+        "tier_distribution",
+        "oldest_entry_age_days",
+        "consolidation_candidates",
+        "gc_candidates",
+        "integrity_verified",
+        "integrity_tampered",
+        "integrity_no_hash",
+        "integrity_tampered_keys",
+        "integrity_likely_key_mismatch",
+        "relation_count",
+        "rate_limit_minute_anomalies",
+        "rate_limit_lifetime_anomalies",
+        "rate_limit_total_writes",
+        "rate_limit_exempt_writes",
+        "save_phase_summary",
+        "rag_safety_blocked_count",
+        "rag_safety_sanitized_count",
+        "gc_runs_total",
+        "gc_archived_rows_total",
+    }
+)
+
+
 def _filter_snapshot_by_project(payload: dict[str, Any], project_id: str) -> dict[str, Any]:
-    """STORY-069.7: filter diagnostics/feedback to a single project_id."""
+    """STORY-069.7: filter diagnostics/feedback to a single project_id.
+
+    Also strips store-global ``health`` / ``scorecard`` fields that belong to
+    the process-default tenant.  Leaving them in place made ``?project=api``
+    show another project's ``integrity_tampered_keys`` / entry counts.
+    """
     filtered = dict(payload)
     for key in ("diagnostics_history", "feedback_events"):
         rows = filtered.get(key) or []
         filtered[key] = [
             row for row in rows if isinstance(row, dict) and row.get("project_id") == project_id
         ]
+
+    health = filtered.get("health")
+    if isinstance(health, dict):
+        scrubbed = {k: v for k, v in health.items() if k not in _STORE_SCOPED_HEALTH_KEYS}
+        scrubbed["project_filter"] = project_id
+        scrubbed["store_scoped_omitted"] = True
+        filtered["health"] = scrubbed
+
+    scorecard = filtered.get("scorecard")
+    if isinstance(scorecard, list):
+        filtered["scorecard"] = [
+            row
+            for row in scorecard
+            if isinstance(row, dict) and row.get("id") not in _STORE_SCOPED_SCORECARD_IDS
+        ]
+
     return filtered
 
 
