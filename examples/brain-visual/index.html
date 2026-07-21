@@ -2395,8 +2395,8 @@
           The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter
           to enable live polling.
         </p>
-        <code class="empty-state-code" id="empty-state-remediation">tapps-brain mcp start --http
-# or: docker compose up tapps-brain-mcp</code>
+        <code class="empty-state-code" id="empty-state-remediation">docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d
+curl -sS http://127.0.0.1:8080/healthz</code>
         <details class="dev-details empty-state-details" id="empty-state-details" hidden>
           <summary>Last error details</summary>
           <div class="dev-body">
@@ -5226,6 +5226,38 @@
         }
       }
 
+      if (status === 502 || status === 503 || status === 504) {
+        const upstreamErr =
+          responseBody && typeof responseBody === "object" ? responseBody.error : null;
+        const hasUpstream =
+          responseBody && typeof responseBody === "object" && responseBody.upstream;
+        if (
+          hasUpstream ||
+          upstreamErr === "upstream_timeout" ||
+          upstreamErr === "upstream_unavailable"
+        ) {
+          const isTimeout = status === 504 || upstreamErr === "upstream_timeout";
+          return {
+            kind: isTimeout ? "timeout" : "upstream",
+            title: isTimeout
+              ? "Brain snapshot timed out"
+              : "Brain upstream unavailable",
+            body: isTimeout
+              ? "The nginx proxy gave up waiting for tapps-brain-http. Check brain-http health and snapshot build latency."
+              : "tapps-visual could not reach tapps-brain-http. Confirm the hive stack is up and brain-http is healthy.",
+            badgeLabel: isTimeout ? "ERROR · timeout" : "ERROR · upstream",
+            badgeAria: isTimeout
+              ? "Snapshot endpoint error: gateway timeout"
+              : "Snapshot endpoint error: brain upstream unavailable",
+            statusLine: isTimeout
+              ? "Brain snapshot timed out — check tapps-brain-http logs"
+              : "Brain upstream unavailable — check tapps-brain-http",
+            remediation:
+              "docker ps --filter name=tapps-brain-http\ndocker logs tapps-brain-http --tail 50\ncurl -sS http://127.0.0.1:8080/healthz",
+            detailLines,
+          };
+        }
+      }
       if (status === 504) {
         return {
           kind: "timeout",
@@ -5236,7 +5268,7 @@
           badgeAria: "Snapshot endpoint error: gateway timeout after 504",
           statusLine: "Brain snapshot timed out — check tapps-brain-http logs",
           remediation:
-            "docker logs tapps-brain-http --tail 50\ncurl -sS http://localhost:8080/healthz",
+            "docker logs tapps-brain-http --tail 50\ncurl -sS http://127.0.0.1:8080/healthz",
           detailLines,
         };
       }
@@ -5264,7 +5296,7 @@
           badgeAria: "Snapshot endpoint error: no MemoryStore configured (HTTP 503)",
           statusLine: "No MemoryStore configured",
           remediation:
-            "docker logs tapps-brain-http --tail 50\ncurl -sS http://localhost:8080/healthz",
+            "docker logs tapps-brain-http --tail 50\ncurl -sS http://127.0.0.1:8080/healthz",
           detailLines,
         };
       }
@@ -5278,7 +5310,7 @@
           badgeAria: "Snapshot endpoint error: network offline or unreachable",
           statusLine: "Live endpoint unreachable: network error",
           remediation:
-            "docker ps --filter name=tapps-visual\ncurl -sS -o /dev/null -w '%{http_code}' http://localhost:8088/snapshot",
+            "docker ps --filter name=tapps-visual\ncurl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/snapshot",
           detailLines,
         };
       }
@@ -5287,11 +5319,12 @@
         kind: "generic",
         title: "Live endpoint unreachable",
         body:
-          "The live <code>/snapshot</code> endpoint is not responding. Start the tapps-brain HTTP adapter to enable live polling.",
+          "The live <code>/snapshot</code> endpoint is not responding. Start the hive stack (tapps-brain-http + tapps-visual) to enable live polling.",
         badgeLabel: "ERROR · " + genericStatus,
         badgeAria: "Snapshot endpoint error: " + genericStatus,
         statusLine: "Live endpoint unreachable: " + genericStatus,
-        remediation: "tapps-brain mcp start --http\n# or: docker compose up tapps-brain-mcp",
+        remediation:
+          "docker compose -p tapps-brain -f docker/docker-compose.hive.yaml up -d\ncurl -sS http://127.0.0.1:8080/healthz",
         detailLines,
       };
     }
