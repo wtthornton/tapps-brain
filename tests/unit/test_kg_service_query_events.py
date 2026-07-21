@@ -66,6 +66,25 @@ def test_query_events_rejects_malformed_timestamp(field: str) -> None:
     assert cm.last_sql == ""  # never reached the cursor
 
 
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("since", 123),
+        ("until", ["2020-01-01"]),
+        ("entity_id", {"x": 1}),
+        ("entity_id", 99),
+    ],
+)
+def test_query_events_rejects_non_string_filters(field: str, bad: object) -> None:
+    """Non-string since/until/entity_id must 400, not AttributeError→500."""
+    cm = _FakeCM([])
+    out = kg_service.query_events(cm, "proj", event_type="quality_metric", **{field: bad})
+    assert out["error"] == "bad_request"
+    assert field in out["detail"]
+    assert "string" in out["detail"]
+    assert cm.last_sql == ""
+
+
 def test_query_events_accepts_valid_iso_timestamps() -> None:
     cm = _FakeCM([])
     out = kg_service.query_events(
