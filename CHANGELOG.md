@@ -12,6 +12,19 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.27.0] — 2026-07-28
+
+Minor release: document plane beside vector RAG, portable memory import/export, and the Jul 21 bug-hunt functional fixes. Includes private migration **028** (`documents`).
+
+### Added
+
+- **Document plane** ([TAP-4998](https://linear.app/tappscodingagents/issue/TAP-4998)) — durable documents stored beside vector RAG (migration 028), with service/HTTP/MCP surfaces and Postgres integration tests.
+- **Portable memory import/export** ([TAP-5027](https://linear.app/tappscodingagents/issue/TAP-5027)) — native versioned JSON envelope + MIF interchange with CLI/MCP parity and round-trip coverage.
+
+### Fixed
+
+- **Bug-hunt (2026-07-21)** — hive MCP JSON serialization (`valid_at` / `invalid_at` / embeddings), remember/batch falsy JSON coercion + validation envelopes, snapshot project-scope scrubbing, integrity HMAC re-stamp on promote/demote, decayed-confidence filters in MemoryFilter/consolidation, visual nginx 502/503 empty-state labeling, purge-test-tenants DSN wiring, and related deploy/CLI alignment.
+
 ## [3.26.2] — 2026-07-20
 
 Patch release: eight-hour functional bug-hunt across store, retrieval, experience/KG, HTTP/MCP, visual, and deploy tooling. No new features.
