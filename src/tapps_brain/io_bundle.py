@@ -168,12 +168,17 @@ def restore_embeddings(
         logger.warning("memory_import_set_embeddings_failed", exc_info=True)
         return {"restored": 0, "skipped_mismatch": 0, "skipped_no_api": len(clean)}
 
-    restored = (
-        int(result.get("restored", result.get("set", 0)))
-        if isinstance(result, dict)
-        else (int(result) if isinstance(result, int) else len(clean))
-    )
-    skipped_mismatch = int(result.get("skipped_mismatch", 0)) if isinstance(result, dict) else 0
+    if isinstance(result, dict):
+        restored_raw = result.get("restored", result.get("set", 0))
+        restored = int(restored_raw if restored_raw is not None else 0)
+        skipped_raw = result.get("skipped_mismatch", 0)
+        skipped_mismatch = int(skipped_raw if skipped_raw is not None else 0)
+    elif isinstance(result, int):
+        restored = result
+        skipped_mismatch = 0
+    else:
+        restored = len(clean)
+        skipped_mismatch = 0
     return {"restored": restored, "skipped_mismatch": skipped_mismatch, "skipped_no_api": 0}
 
 

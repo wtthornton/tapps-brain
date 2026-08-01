@@ -119,12 +119,12 @@ class TestGoldenFileContracts:
         )
 
     def test_full_golden_has_74_tools(self) -> None:
-        """Golden file for 'full' must list exactly 74 tools."""
-        assert len(_load_golden("full")) == 74
+        """Golden file for 'full' must list exactly 76 tools."""
+        assert len(_load_golden("full")) == 76
 
     def test_operator_golden_has_87_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 87 tools."""
-        assert len(_load_golden("operator")) == 87
+        """Golden file for 'operator' must list exactly 89 tools."""
+        assert len(_load_golden("operator")) == 89
 
     def test_coder_golden_has_21_tools(self) -> None:
         """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
@@ -220,15 +220,15 @@ class TestDriftDetection:
         )
 
     def test_registered_tool_count_is_87(self) -> None:
-        """The MCP server must have exactly 87 registered tools (74 standard + 13 operator)."""
+        """The MCP server must have exactly 89 registered tools (76 standard + 13 operator)."""
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 87, (
-            f"Expected 87 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 89, (
+            f"Expected 89 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
     def test_profile_validate_against_passes_for_all_registered_tools(self) -> None:
-        """ProfileRegistry.validate_against() must pass when given all 87 registered tools.
+        """ProfileRegistry.validate_against() must pass when given all 89 registered tools.
 
         This is the same check create_server() performs at startup — if it
         raises here, the server would refuse to start.
@@ -305,7 +305,7 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 74
+        assert len(result) == 76
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -504,7 +504,7 @@ class TestBackwardsCompat:
         """No profile header → list_tools returns the full callable surface."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 74
+        assert len(full_tools) == 76
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -513,7 +513,7 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 74
+        assert len(result) == 76
         assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
@@ -617,7 +617,7 @@ class TestEndToEndProfileFiltering:
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 74
+            assert len(tools) == 76
         finally:
             REQUEST_PROFILE.reset(token)
 

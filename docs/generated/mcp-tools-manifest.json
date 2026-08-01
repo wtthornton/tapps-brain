@@ -11,9 +11,10 @@
     "src/tapps_brain/mcp_server/tools_maintenance.py",
     "src/tapps_brain/mcp_server/tools_memory.py",
     "src/tapps_brain/mcp_server/tools_profile.py",
+    "src/tapps_brain/mcp_server/tools_research.py",
     "src/tapps_brain/mcp_server/tools_resources.py"
   ],
-  "tool_count": 74,
+  "tool_count": 76,
   "operator_tool_count": 13,
   "resource_count": 8,
   "core_tool_count": 18,
@@ -331,8 +332,16 @@
       "description": "Aggregate recall-quality samples over the last *window_seconds* (TAP-2094)."
     },
     {
+      "name": "research_fetch",
+      "description": "Fetch a single URL via Firecrawl with write-through cache."
+    },
+    {
       "name": "tapps_brain_session_end",
       "description": "Record an end-of-session episodic memory entry."
+    },
+    {
+      "name": "web_research",
+      "description": "Search the web via brain-held providers with write-through cache."
     }
   ],
   "operator_tools": [

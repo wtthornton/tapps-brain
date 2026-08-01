@@ -187,7 +187,10 @@ class PostgresHiveBackend:
             nxt_row = cur.fetchone()
             if nxt_row is None:
                 break
-            col_names = [desc[0] for desc in cur.description]
+            description = cur.description
+            if description is None:
+                break
+            col_names = [desc[0] for desc in description]
             current = dict(zip(col_names, nxt_row, strict=False))
         return current
 
@@ -833,8 +836,9 @@ class PostgresHiveBackend:
             "last_seen_at",
         ):
             val = d.get(ts_key)
-            if hasattr(val, "isoformat"):
-                d[ts_key] = val.isoformat()
+            iso = getattr(val, "isoformat", None)
+            if callable(iso):
+                d[ts_key] = iso()
         emb = d.get("embedding")
         if emb is not None and not isinstance(emb, str):
             # tuple / pgvector / memoryview / numpy — coerce to a plain list for JSON.

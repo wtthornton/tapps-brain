@@ -293,17 +293,13 @@ class TestDocumentPut:
     def test_embedder_unavailable_leaves_error_status(
         self, doc_store: FakeDocumentStore, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(
-            "tapps_brain.embeddings.get_embedding_provider", lambda *a, **k: None
-        )
+        monkeypatch.setattr("tapps_brain.embeddings.get_embedding_provider", lambda *a, **k: None)
         store = StubStore(doc_store, embedder=None)
         result = _put(store)
         assert result["index_status"] == "error"
         assert "embedding provider unavailable" in result["index_error"]
 
-    def test_embedding_failure_leaves_error_diagnostic(
-        self, doc_store: FakeDocumentStore
-    ) -> None:
+    def test_embedding_failure_leaves_error_diagnostic(self, doc_store: FakeDocumentStore) -> None:
         store = StubStore(doc_store, embedder=ExplodingEmbedder())
         result = _put(store)
         assert result["index_status"] == "error"
@@ -352,9 +348,7 @@ class TestDocumentPut:
         assert result["index_status"] == "error"
         assert "no indexable text" in result["index_error"]
 
-    def test_metrics_counters_on_put_index_and_safety(
-        self, doc_store: FakeDocumentStore
-    ) -> None:
+    def test_metrics_counters_on_put_index_and_safety(self, doc_store: FakeDocumentStore) -> None:
         class Counters:
             def __init__(self) -> None:
                 self.counts: dict[str, int] = {}
@@ -394,7 +388,9 @@ class TestDocumentGetListDelete:
 
     def test_get_meta_only_omits_content(self, store: StubStore) -> None:
         doc_id = _put(store)["doc_id"]
-        result = document_service.document_get(store, "proj", "agent", doc_id=doc_id, meta_only=True)
+        result = document_service.document_get(
+            store, "proj", "agent", doc_id=doc_id, meta_only=True
+        )
         assert "content" not in result
         assert "content_base64" not in result
 
@@ -485,13 +481,9 @@ class TestDocumentSearch:
     ) -> None:
         indexed = StubStore(doc_store, embedder=FakeEmbedder())
         _put(indexed, content="searchable lexical fallback content")
-        monkeypatch.setattr(
-            "tapps_brain.embeddings.get_embedding_provider", lambda *a, **k: None
-        )
+        monkeypatch.setattr("tapps_brain.embeddings.get_embedding_provider", lambda *a, **k: None)
         store = StubStore(doc_store, embedder=None)
-        result = document_service.document_search(
-            store, "proj", "agent", query="lexical fallback"
-        )
+        result = document_service.document_search(store, "proj", "agent", query="lexical fallback")
         assert result["count"] >= 1
         assert result["channels"]["semantic"] == 0
 
@@ -511,9 +503,7 @@ class TestDocumentSearch:
         result = document_service.document_search(StubStore(None), "proj", "agent", query="q")
         assert result["error"] == "documents_unavailable"
 
-    def test_query_embed_failure_falls_back_to_lexical(
-        self, doc_store: FakeDocumentStore
-    ) -> None:
+    def test_query_embed_failure_falls_back_to_lexical(self, doc_store: FakeDocumentStore) -> None:
         indexed = StubStore(doc_store, embedder=FakeEmbedder())
         _put(indexed, content="lexical only after query embed boom")
 
@@ -532,9 +522,7 @@ class TestDocumentSearch:
 
         metrics = Counters()
         store._metrics = metrics
-        result = document_service.document_search(
-            store, "proj", "agent", query="lexical only"
-        )
+        result = document_service.document_search(store, "proj", "agent", query="lexical only")
         assert result["count"] >= 1
         assert result["channels"]["semantic"] == 0
         assert metrics.counts["documents.search"] == 1

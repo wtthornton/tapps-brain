@@ -460,6 +460,7 @@ def create_server(  # noqa: PLR0915
         register_memory_tools,
     )
     from tapps_brain.mcp_server.tools_profile import register_profile_tools
+    from tapps_brain.mcp_server.tools_research import register_research_tools
     from tapps_brain.mcp_server.tools_resources import register_resources_and_prompts
 
     register_brain_tools(mcp, ctx)
@@ -473,6 +474,7 @@ def create_server(  # noqa: PLR0915
     register_kg_tools(mcp, ctx)
     register_profile_tools(mcp, ctx)
     register_docs_tools(mcp, ctx)
+    register_research_tools(mcp, ctx)
     register_document_tools(mcp, ctx)
 
     # ------------------------------------------------------------------

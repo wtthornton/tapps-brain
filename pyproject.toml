@@ -214,8 +214,12 @@ ignore = [
 # Service layer uses Any extensively for generic JSON/dict dispatch — intentional
 "src/tapps_brain/services/*.py" = ["ANN401"]
 "src/tapps_brain/docs_lookup.py" = ["ANN401", "PLR0911"]
+"src/tapps_brain/web_research.py" = ["ANN401", "PLR0911", "PLR2004"]
 "src/tapps_brain/context7_sync.py" = ["ANN401"]
 "src/tapps_brain/docs_import.py" = ["ANN401", "TC003"]
+"src/tapps_brain/exa_sync.py" = ["ANN401"]
+"src/tapps_brain/tavily_sync.py" = ["ANN401"]
+"src/tapps_brain/firecrawl_sync.py" = ["ANN401"]
 "src/tapps_brain/cli/docs.py" = ["TC003"]
 "src/tapps_brain/mcp_server/__init__.py" = [
     "ANN401", "PLR0911", "N806",
