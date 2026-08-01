@@ -406,7 +406,7 @@ class MemoryRetriever:
         # ungrouped queries alternate (they index different corpora).
         self._bm25_cache: dict[str | None, tuple[BM25Scorer, list[MemoryEntry], int]] = {}
         # Fallback corpus-embedding cache: (group_key, fingerprint) -> embeddings.
-        self._emb_cache_key: tuple[str | None, int] | None = None
+        self._emb_cache_key: tuple[str | None, bool, int] | None = None
         self._emb_cache: list[list[float]] = []
         self._semantic_enabled = semantic_enabled
         self._hybrid_config = hybrid_config

@@ -160,7 +160,8 @@ def parse_frontmatter_entries(text: str) -> list[dict[str, Any]]:
         tier = meta.get("tier", "pattern")
         source = meta.get("source", MemorySource.system.value)
         confidence = meta.get("confidence", -1.0)
-        tags = meta.get("tags") if isinstance(meta.get("tags"), list) else []
+        raw_tags = meta.get("tags")
+        tag_list = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else []
         entries.append(
             {
                 "key": key.strip()[:MAX_KEY_LENGTH],
@@ -168,7 +169,7 @@ def parse_frontmatter_entries(text: str) -> list[dict[str, Any]]:
                 "tier": str(tier),
                 "source": str(source),
                 "confidence": float(confidence) if confidence is not None else -1.0,
-                "tags": [str(t) for t in tags],
+                "tags": tag_list,
                 "created_at": meta.get("created_at"),
                 "updated_at": meta.get("updated_at"),
             }
