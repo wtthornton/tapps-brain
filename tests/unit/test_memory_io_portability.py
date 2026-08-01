@@ -119,9 +119,7 @@ class TestRelationsBundle:
         }
         store._persistence.list_relations.return_value = [rel]
         out = tmp_path / "bundle.json"
-        export_memories(
-            store, out, _make_validator(tmp_path), include_relations=True
-        )
+        export_memories(store, out, _make_validator(tmp_path), include_relations=True)
         data = json.loads(out.read_text())
         assert data["relations"] == [rel]
         assert data["relation_count"] == 1
@@ -225,7 +223,11 @@ class TestJsonlAndLimits:
     def test_import_limit_error_message(self) -> None:
         with pytest.raises(ValueError, match=r"3 > 2"):
             parse_import_payload(
-                [{"key": "a", "value": "1"}, {"key": "b", "value": "2"}, {"key": "c", "value": "3"}],
+                [
+                    {"key": "a", "value": "1"},
+                    {"key": "b", "value": "2"},
+                    {"key": "c", "value": "3"},
+                ],
                 max_entries=2,
             )
 

@@ -196,7 +196,7 @@ class TestListToolsFilter:
         """Docker reference stack: `full` profile lists every callable tool."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 74
+        assert len(all_tool_names) == 76
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -206,7 +206,7 @@ class TestListToolsFilter:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 74
+        assert len(result) == 76
         assert {t.name for t in result} == real_registry.get("full")
 
     def test_bundled_full_profile_includes_previously_deferred_tools(self) -> None:
@@ -442,7 +442,7 @@ class TestDeferredToolBehavior:
         """Operator profile lists the full callable surface."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 87
+        assert len(all_tool_names) == 89
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -453,7 +453,7 @@ class TestDeferredToolBehavior:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 87
+        assert len(result) == 89
 
     def test_small_profiles_all_eager(self) -> None:
         """coder/reviewer/seeder/agent_brain remain all-eager small profiles."""

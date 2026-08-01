@@ -4,9 +4,9 @@
 # Tool names must exactly match the @mcp.tool()-decorated function names in
 # src/tapps_brain/mcp_server/__init__.py.
 #
-# Profile summary (Docker full-promotion stack, 2026-06):
-#   full        (74 tools, all eager) — default fallback; full tools/list surface
-#   operator    (87 tools, all eager) — full + operator-only maintenance tools
+# Profile summary (Docker full-promotion stack, 2026-08):
+#   full        (76 tools, all eager) — default fallback; full tools/list surface
+#   operator    (89 tools, all eager) — full + operator-only maintenance tools
 #   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
@@ -96,7 +96,9 @@ profiles:
       - profile_info
       - profile_switch
       - recall_quality_metrics
+      - research_fetch
       - tapps_brain_session_end
+      - web_research
 
   operator:
     description: >
@@ -187,9 +189,11 @@ profiles:
       - profile_info
       - profile_switch
       - recall_quality_metrics
+      - research_fetch
       - tapps_brain_health
       - tapps_brain_relay_export
       - tapps_brain_session_end
+      - web_research
 
   coder:
     description: >

@@ -53,7 +53,7 @@ class TestBundledProfiles:
         # brain_record_feedback to full (+3 over TAP-2725 baseline).
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 74
+        assert len(tools) == 76
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -72,7 +72,7 @@ class TestBundledProfiles:
         # EPIC-075: +3 experience/feedback tools in operator superset.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 87
+        assert len(tools) == 89
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -374,7 +374,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 87, f"Expected 87 tools, found {len(all_tools)}"
+        assert len(all_tools) == 89, f"Expected 89 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -448,7 +448,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 74
+        assert len(eager) == 76
 
     def test_bundled_full_eager_set_matches_callable_surface(self) -> None:
         """All callable tools in `full` appear in tools/list by default."""
@@ -462,7 +462,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 87
+        assert len(eager) == 89
 
     def test_bundled_operator_eager_matches_callable_surface(self) -> None:
         """All callable tools in `operator` appear in tools/list by default."""

@@ -135,6 +135,9 @@ class TestToolsDiscovery:
             # Library docs (ADR-0014)
             "docs_lookup",
             "docs_warm",
+            # Web research (TAP-5364 / ADR-0030)
+            "web_research",
+            "research_fetch",
         }
         assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
@@ -158,6 +161,8 @@ class TestToolsDiscovery:
             "flywheel_hive_feedback",
             "docs_lookup",
             "docs_warm",
+            "web_research",
+            "research_fetch",
         }
         assert operator_expected.issubset(tool_names), (
             f"Missing operator tools: {operator_expected - tool_names}"

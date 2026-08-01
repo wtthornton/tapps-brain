@@ -1046,9 +1046,7 @@ def create_app(
         # while store.search/recall keep incrementing process counters.
         from tapps_brain.visual_snapshot import _collect_retrieval_metrics
 
-        snapshot = snapshot.model_copy(
-            update={"retrieval_metrics": _collect_retrieval_metrics()}
-        )
+        snapshot = snapshot.model_copy(update={"retrieval_metrics": _collect_retrieval_metrics()})
         payload = snapshot.model_dump(mode="json")
         if project_filter is not None:
             payload = _filter_snapshot_by_project(payload, project_filter)
@@ -2571,10 +2569,12 @@ def create_app(
             else:
                 payload_raw = body.get("payload")
                 if not isinstance(payload_raw, dict):
+                    # TAP-2865: malformed *core* fields stay typed 422 (not 400/500).
                     raise HTTPException(
-                        status_code=400,
+                        status_code=422,
                         detail={
-                            "error": "bad_request",
+                            "error": "validation_error",
+                            "field": "payload",
                             "detail": "payload must be a JSON object.",
                         },
                     )

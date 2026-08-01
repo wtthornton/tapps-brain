@@ -323,7 +323,10 @@ class TestBrainRememberFailedApproaches:
         from tapps_brain.services.memory_service import brain_remember
 
         store = self._make_store()
-        with patch("tapps_brain.agent_brain._content_key", return_value="k"):
+        with patch(
+            "tapps_brain.services.memory_service._content_key",
+            return_value="k",
+        ):
             brain_remember(
                 store,
                 "proj",
@@ -338,7 +341,10 @@ class TestBrainRememberFailedApproaches:
         from tapps_brain.services.memory_service import brain_remember
 
         store = self._make_store()
-        with patch("tapps_brain.agent_brain._content_key", return_value="k"):
+        with patch(
+            "tapps_brain.services.memory_service._content_key",
+            return_value="k",
+        ):
             brain_remember(store, "proj", "agent", fact="some fact")
         call_kwargs = store.save.call_args[1]
         assert call_kwargs.get("failed_approaches") is None
@@ -347,7 +353,11 @@ class TestBrainRememberFailedApproaches:
         from tapps_brain.services.memory_service import brain_remember
 
         store = self._make_store("computed-key")
-        with patch("tapps_brain.agent_brain._content_key", return_value="computed-key"):
+        # Patch the import site used by memory_service (not agent_brain).
+        with patch(
+            "tapps_brain.services.memory_service._content_key",
+            return_value="computed-key",
+        ):
             result = brain_remember(
                 store,
                 "proj",
