@@ -347,7 +347,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
         back to *default_profile*.
     """
     if profile_contextvar is None:
-        from tapps_brain.mcp_server import REQUEST_PROFILE
+        from tapps_brain.mcp_server.context import REQUEST_PROFILE
 
         profile_contextvar = REQUEST_PROFILE
 
@@ -484,7 +484,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                     # Read agent_id / project_id from contextvars (best-effort;
                     # None when not running under the HTTP adapter).
                     try:
-                        from tapps_brain.mcp_server import (
+                        from tapps_brain.mcp_server.context import (
                             REQUEST_AGENT_ID,
                             REQUEST_PROJECT_ID,
                         )
@@ -649,7 +649,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 # so HTTP-denied requests are observable on the same counters
                 # as in-process-denied requests.
                 try:
-                    from tapps_brain.mcp_server import (
+                    from tapps_brain.mcp_server.context import (
                         REQUEST_AGENT_ID,
                         REQUEST_PROJECT_ID,
                     )

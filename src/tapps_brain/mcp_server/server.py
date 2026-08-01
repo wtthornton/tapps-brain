@@ -36,6 +36,7 @@ from tapps_brain.mcp_server.context import (
     _resolve_per_call_agent_id,
     _StoreProxy,
 )
+from tapps_brain.mcp_server.store_factory import _get_store
 
 
 def _configure_structlog() -> None:
@@ -178,45 +179,6 @@ def _default_allowed_hosts() -> list[str]:
     return [f"{name}:{port}" for name in names for port in ports]
 
 
-def _get_store(
-    project_dir: Path,
-    *,
-    enable_hive: bool = True,
-    agent_id: str = "unknown",
-) -> Any:  # noqa: ANN401
-    """Open a MemoryStore for the given project directory.
-
-    When *enable_hive* is ``True``, a Postgres :class:`HiveBackend` is
-    wired in when ``TAPPS_BRAIN_HIVE_DSN`` is set (ADR-007 — no SQLite
-    Hive).
-
-    **Strict mode** (``TAPPS_BRAIN_STRICT=1``): When this env var is set,
-    startup **fails immediately** if ``TAPPS_BRAIN_HIVE_DSN`` is not
-    configured.  This prevents silent degradation in production where a
-    missing DSN would quietly disable Hive tools.
-    """
-    from tapps_brain.backends import resolve_hive_backend_from_env
-    from tapps_brain.store import MemoryStore
-
-    strict = os.environ.get("TAPPS_BRAIN_STRICT", "") == "1"
-
-    hive_store = None
-    if enable_hive:
-        hive_store = resolve_hive_backend_from_env()
-        if strict and hive_store is None:
-            raise RuntimeError(
-                "TAPPS_BRAIN_STRICT=1 requires TAPPS_BRAIN_HIVE_DSN to be set (postgresql://...)"
-            )
-
-    agent_id_for_store = agent_id if agent_id != "unknown" else None
-    return MemoryStore(
-        project_dir,
-        agent_id=agent_id_for_store,
-        hive_store=hive_store,
-        hive_agent_id=agent_id,
-    )
-
-
 _MCP_INSTRUCTIONS = (
     "tapps-brain is a persistent cross-session memory system. "
     "Use memory tools to save, retrieve, search, and manage "
@@ -281,9 +243,12 @@ def create_server(  # noqa: PLR0915
 
     resolved_dir = _resolve_project_dir(str(project_dir) if project_dir else None)
     try:
-        import tapps_brain.mcp_server as _ms_pkg
+        # Prefer package-level ``_get_store`` for monkeypatch without
+        # re-importing the package (static cycle with ``__init__`` → server).
+        from tapps_brain.mcp_server._pkg_attr import pkg_attr
 
-        default_store = _ms_pkg._get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)  # type: ignore[attr-defined]
+        get_store = pkg_attr("_get_store", _get_store)
+        default_store = get_store(resolved_dir, enable_hive=enable_hive, agent_id=agent_id)
     except Exception as exc:
         from tapps_brain.project_registry import ProjectNotRegisteredError
 
@@ -646,10 +611,12 @@ def main() -> None:
     try:
         # STORY-070.9: standard server — operator tools are NEVER enabled.
         # TAPPS_BRAIN_OPERATOR_TOOLS is intentionally not read here.
-        # Use package-level create_server so tests can monkeypatch ms.create_server.
-        import tapps_brain.mcp_server as _ms_pkg
+        # Prefer package-level create_server so tests can monkeypatch
+        # ms.create_server without a package re-import cycle.
+        from tapps_brain.mcp_server._pkg_attr import pkg_attr
 
-        server = _ms_pkg.create_server(
+        create = pkg_attr("create_server", create_server)
+        server = create(
             project_dir,
             enable_hive=args.enable_hive,
             agent_id=effective_agent_id,
