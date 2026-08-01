@@ -46,6 +46,12 @@ jobs:
         working-directory: .
         run: npm install
 
+      # langgraph imports @tapps-brain/sdk from dist/; build the sibling first.
+      - name: Build workspace dependency (@tapps-brain/sdk)
+        if: matrix.package == 'langgraph'
+        working-directory: packages/sdk
+        run: npm run build
+
       - name: Type-check
         run: npm run lint
 
