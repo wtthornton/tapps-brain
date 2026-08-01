@@ -33,14 +33,24 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
+          # Workspaces share the root lockfile; per-package locks are incomplete
+          # (langgraph has none). setup-node@v7 fails if the path is missing.
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        # Install from repo root so workspace links resolve (@tapps-brain/sdk).
+        working-directory: .
         run: npm install
+
+      # langgraph imports @tapps-brain/sdk from dist/; build the sibling first.
+      - name: Build workspace dependency (@tapps-brain/sdk)
+        if: matrix.package == 'langgraph'
+        working-directory: packages/sdk
+        run: npm run build
 
       - name: Type-check
         run: npm run lint
@@ -84,7 +94,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -94,7 +104,7 @@ jobs:
         run: npm install
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -153,7 +163,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Node.js with npm registry
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
