@@ -37,9 +37,13 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
+          # Workspaces share the root lockfile; per-package locks are incomplete
+          # (langgraph has none). setup-node@v7 fails if the path is missing.
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        # Install from repo root so workspace links resolve (@tapps-brain/sdk).
+        working-directory: .
         run: npm install
 
       - name: Type-check
