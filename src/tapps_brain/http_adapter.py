@@ -2569,10 +2569,12 @@ def create_app(
             else:
                 payload_raw = body.get("payload")
                 if not isinstance(payload_raw, dict):
+                    # TAP-2865: malformed *core* fields stay typed 422 (not 400/500).
                     raise HTTPException(
-                        status_code=400,
+                        status_code=422,
                         detail={
-                            "error": "bad_request",
+                            "error": "validation_error",
+                            "field": "payload",
                             "detail": "payload must be a JSON object.",
                         },
                     )
