@@ -1312,9 +1312,7 @@ class MemoryRetriever:
         # Do not gate on list_all() — cold/empty cache can still have vectors in DB.
         if len(q) == _PGVECTOR_DIM:
             try:
-                knn = store.knn_search(
-                    q, limit, include_expired=include_expired, as_of=as_of
-                )
+                knn = store.knn_search(q, limit, include_expired=include_expired, as_of=as_of)
             except Exception as e:
                 logger.warning("vector_search_knn_failed", error=str(e), exc_info=True)
                 # Surface degradation so health/injection do not treat this as

@@ -472,8 +472,7 @@ VECTOR_ROW_COUNT_SQL = (
 )
 
 KEYS_MISSING_EMBEDDING_SQL = (
-    "SELECT key FROM private_memories "
-    "WHERE project_id = %s AND agent_id = %s AND embedding IS NULL"
+    "SELECT key FROM private_memories WHERE project_id = %s AND agent_id = %s AND embedding IS NULL"
 )
 
 #: Load durable vectors for lossless export sidecars (TAP-5030).

@@ -1046,9 +1046,7 @@ def create_app(
         # while store.search/recall keep incrementing process counters.
         from tapps_brain.visual_snapshot import _collect_retrieval_metrics
 
-        snapshot = snapshot.model_copy(
-            update={"retrieval_metrics": _collect_retrieval_metrics()}
-        )
+        snapshot = snapshot.model_copy(update={"retrieval_metrics": _collect_retrieval_metrics()})
         payload = snapshot.model_dump(mode="json")
         if project_filter is not None:
             payload = _filter_snapshot_by_project(payload, project_filter)
