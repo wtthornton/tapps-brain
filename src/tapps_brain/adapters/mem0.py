@@ -73,7 +73,7 @@ def mem0_to_memory_dicts(data: object) -> list[dict[str, Any]]:
                 "source_agent": "mem0-import",
                 "scope": "project",
                 "tags": tags,
-                "confidence": float(item.get("score", item.get("confidence", 0.8))),
+                "confidence": float(item.get("score") or item.get("confidence") or 0.8),
                 "created_at": str(created),
                 "updated_at": str(item.get("updated_at") or created),
             }

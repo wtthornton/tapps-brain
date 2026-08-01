@@ -803,7 +803,9 @@ def test_collect_hive_health_uses_namespace_detail_list(tmp_path: Path) -> None:
 
         with (
             patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch(
+                "tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive
+            ),
         ):
             result = _collect_hive_health(store)
 
@@ -833,7 +835,9 @@ def test_collect_hive_health_falls_back_when_no_namespace_detail_list(tmp_path: 
 
         with (
             patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch(
+                "tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive
+            ),
         ):
             result = _collect_hive_health(store)
 
@@ -860,7 +864,9 @@ def test_collect_hive_health_empty_namespaces(tmp_path: Path) -> None:
 
         with (
             patch("tapps_brain.visual_snapshot.resolve_agent_registry", return_value=mock_registry),
-            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch(
+                "tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive
+            ),
         ):
             result = _collect_hive_health(store)
 
@@ -1036,7 +1042,9 @@ def test_visual_snapshot_agent_registry_populated_from_hive(tmp_path: Path) -> N
     store = MemoryStore(tmp_path)
     try:
         with (
-            patch("tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive),
+            patch(
+                "tapps_brain.visual_snapshot.resolve_hive_backend_from_env", return_value=mock_hive
+            ),
             patch(
                 "tapps_brain.visual_snapshot._collect_hive_health",
                 return_value=HiveHealthSummary(connected=False, status="skipped"),

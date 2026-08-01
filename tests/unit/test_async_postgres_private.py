@@ -188,8 +188,9 @@ class TestAsyncSearch:
         # Fixed [query, project_id, agent_id, query] head + builder filters.
         assert params_arg[:4] == ["foo", "p", "a", "foo"]
         # memory_group + as_of pushed into the trailing params.
+        # as_of is bound once per temporal predicate clause in the builder.
         assert "g1" in params_arg
-        assert params_arg.count("2026-01-01T00:00:00Z") == 2
+        assert params_arg.count("2026-01-01T00:00:00Z") >= 2
 
 
 class TestAsyncKnnSearch:

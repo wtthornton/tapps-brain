@@ -148,15 +148,11 @@ class TestPostgresDocumentStoreValidation:
     ) -> None:
         assert store.list_documents(limit=0) == []
 
-    def test_lexical_search_blank_query_returns_empty(
-        self, store: PostgresDocumentStore
-    ) -> None:
+    def test_lexical_search_blank_query_returns_empty(self, store: PostgresDocumentStore) -> None:
         assert store.lexical_search("") == []
         assert store.lexical_search("   ") == []
         assert store.lexical_search("q", limit=0) == []
 
-    def test_semantic_search_empty_vector_returns_empty(
-        self, store: PostgresDocumentStore
-    ) -> None:
+    def test_semantic_search_empty_vector_returns_empty(self, store: PostgresDocumentStore) -> None:
         assert store.semantic_search([]) == []
         assert store.semantic_search([0.1], limit=0) == []
