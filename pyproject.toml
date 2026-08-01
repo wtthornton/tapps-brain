@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tapps-brain"
-version = "3.27.0"
+version = "3.28.0"
 description = "Persistent cross-session memory system for AI coding assistants"
 license = "MIT"
 requires-python = ">=3.12"
@@ -54,10 +54,10 @@ cli = [
     "typer>=0.15.0,<1",
 ]
 mcp = [
-    "mcp>=1.25.0,<3",
+    "mcp>=1.25.0,<2",
 ]
 http = [
-    "mcp>=1.25.0,<3",
+    "mcp>=1.25.0,<2",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
     "starlette>=0.40,<2",
@@ -90,7 +90,7 @@ dev = [
     "pytest-benchmark>=5.0,<6",
     "mypy>=1.14,<3",
     "ruff>=0.9,<1",
-    "mcp>=1.25.0,<3",
+    "mcp>=1.25.0,<2",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
     "starlette>=0.40,<2",

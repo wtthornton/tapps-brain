@@ -12,6 +12,21 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.28.0] — 2026-08-01
+
+Minor release: brain-owned web research tools with write-through cache (TAP-5364), so tapps-mcp can restore `tapps_research` without holding provider credentials.
+
+### Added
+
+- **`web_research` / `research_fetch` MCP tools** ([TAP-5364](https://linear.app/tappscodingagents/issue/TAP-5364)) — Exa / Tavily / Firecrawl behind brain-side keys, SSRF + RAG safety, volatile/evergreen TTLs, write-through cache under project `web-research`. BrainBridge contract: `docs/engineering/web-research-contract.md` (consumer story TAP-5365).
+- CI: `setup-node@v7` / `setup-python@v7` Actions bumps with workspace lockfile + langgraph build-order fixes.
+
+### Fixed
+
+- Restore TAP-2865 typed **422** for non-dict `/v1/experience` `payload` (had drifted to 400).
+- Pre-existing CI blockers: ruff format drift, mypy `--strict` in several modules, stale async/`content_key` unit assertions.
+- Keep **`mcp>=1.25.0,<2`** — `mcp` 2.0.0 drops `mcp.server.fastmcp`, which breaks the HTTP/MCP Docker image (reverts the accidental `<3` widen from dependabot).
+
 ## [3.27.0] — 2026-07-28
 
 Minor release: document plane beside vector RAG, portable memory import/export, and the Jul 21 bug-hunt functional fixes. Includes private migration **028** (`documents`).

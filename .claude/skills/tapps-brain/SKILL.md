@@ -1,7 +1,7 @@
 ---
 name: tapps-brain
 description: Persistent cross-session memory + knowledge graph for AI coding agents. Use when you need to recall prior decisions before making a non-trivial choice, save the rationale behind a decision so it survives the session, share findings across agents in a project (Hive), or record an experience event / KG triple. Talk to the deployed brain at http://127.0.0.1:8080/mcp/ via MCP tools — never via raw psycopg.
-version: "3.27.0"
+version: "3.28.0"
 origin: tapps-brain
 ---
 
