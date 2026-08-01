@@ -273,6 +273,9 @@ class TestCoreTools:
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",
+            # Web research (TAP-5364 / ADR-0030)
+            "web_research",
+            "research_fetch",
             # Document plane (TAP-4998 / TAP-5003)
             "document_put",
             "document_get",
