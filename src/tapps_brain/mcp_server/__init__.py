@@ -54,7 +54,6 @@ from tapps_brain.mcp_server.context import (
 )
 from tapps_brain.mcp_server.server import (
     _build_transport_security,  # noqa: F401
-    _get_store,  # noqa: F401
     _lazy_import_mcp,  # noqa: F401
     _resolve_project_dir,  # noqa: F401
     create_operator_server,
@@ -62,6 +61,7 @@ from tapps_brain.mcp_server.server import (
     main,
     main_operator,
 )
+from tapps_brain.mcp_server.store_factory import _get_store  # noqa: F401
 from tapps_brain.services._common import parse_details_json as _mcp_parse_details_json  # noqa: F401
 
 __all__ = [

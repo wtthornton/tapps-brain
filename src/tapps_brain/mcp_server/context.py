@@ -243,9 +243,13 @@ def _get_store_for_project(
     pooled MCP connections can multiplex many agents without bleeding
     Hive / propagation identity across tool calls.
     """
-    # Import via package level so monkeypatch on tapps_brain.mcp_server._get_store works.
-    # (Lazy import avoids circular: server.py imports from context.py.)
-    import tapps_brain.mcp_server as _ms_pkg
+    # Prefer package-level ``_get_store`` so monkeypatch on
+    # ``tapps_brain.mcp_server._get_store`` works, without re-importing the
+    # package (that edge is a static cycle with ``__init__`` → context).
+    from tapps_brain.mcp_server._pkg_attr import pkg_attr
+    from tapps_brain.mcp_server.store_factory import _get_store as _default_get_store
+
+    get_store = pkg_attr("_get_store", _default_get_store)
 
     effective_agent_id = call_agent_id or agent_id
     per_call_differs = bool(call_agent_id and call_agent_id != agent_id)
@@ -297,7 +301,7 @@ def _get_store_for_project(
             if project_id:
                 os.environ["TAPPS_BRAIN_PROJECT"] = project_id
             try:
-                return _ms_pkg._get_store(  # type: ignore[attr-defined]
+                return get_store(
                     Path.cwd(),
                     enable_hive=enable_hive,
                     agent_id=effective_agent_id,
@@ -565,9 +569,13 @@ class _StoreProxy:
         object.__setattr__(self, "_agent_id", agent_id)
 
     def _resolve(self) -> Any:  # noqa: ANN401
-        import tapps_brain.mcp_server as _ms_pkg
+        # Prefer package-level helpers so tests can monkeypatch
+        # ``tapps_brain.mcp_server._current_request_project_id`` without a
+        # package re-import cycle.
+        from tapps_brain.mcp_server._pkg_attr import pkg_attr
 
-        pid = _ms_pkg._current_request_project_id()  # type: ignore[attr-defined]
+        get_pid = pkg_attr("_current_request_project_id", _current_request_project_id)
+        pid = get_pid()
         call_aid = _current_request_agent_id()
         try:
             return _get_store_for_project(
