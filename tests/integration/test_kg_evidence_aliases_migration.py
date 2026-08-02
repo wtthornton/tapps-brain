@@ -78,7 +78,9 @@ def _uid() -> str:
 
 def _set_project_id(conn: Any, project_id: str) -> None:
     with conn.cursor() as cur:
-        cur.execute("SET LOCAL app.project_id = %s", (project_id,))
+        # SET LOCAL cannot take a bound parameter; set_config(..., true) is the
+        # parameterizable equivalent.
+        cur.execute("SELECT set_config('app.project_id', %s, true)", (project_id,))
 
 
 # ---------------------------------------------------------------------------

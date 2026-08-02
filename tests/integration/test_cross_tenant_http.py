@@ -517,7 +517,12 @@ class TestCrossTenantHttp:
 
                     # Scope the connection to proj-b — FORCE RLS must hide proj-a rows.
                     with conn.cursor() as cur:
-                        cur.execute("SET LOCAL app.project_id = %s", (proj_b,))
+                        # SET LOCAL cannot take a bound parameter;
+                        # set_config(..., true) is the parameterizable equivalent.
+                        cur.execute(
+                            "SELECT set_config('app.project_id', %s, true)",
+                            (proj_b,),
+                        )
                         cur.execute(
                             "SELECT count(*) FROM private_memories WHERE key = %s",
                             (unique_key,),

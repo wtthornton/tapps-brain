@@ -141,7 +141,9 @@ def _insert_edge(
 def _set_project_id(conn: object, project_id: str) -> None:
     """Set the app.project_id session variable for RLS."""
     with conn.cursor() as cur:  # type: ignore[union-attr]
-        cur.execute("SET LOCAL app.project_id = %s", (project_id,))
+        # SET LOCAL cannot take a bound parameter; set_config(..., true) is the
+        # parameterizable equivalent.
+        cur.execute("SELECT set_config('app.project_id', %s, true)", (project_id,))
 
 
 def _count_edges(conn: object, brain_id: str) -> int:
