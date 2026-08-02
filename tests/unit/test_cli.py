@@ -1780,6 +1780,35 @@ class TestHiveCommands:
 # ===================================================================
 
 
+@pytest.fixture()
+def file_agent_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Back the ``agent`` CLI commands with a temp-file registry.
+
+    These commands call ``_open_hive_backend_for_cli()``, which exits 1 unless
+    ``TAPPS_BRAIN_HIVE_DSN`` / ``TAPPS_BRAIN_DATABASE_URL`` points at a live
+    Postgres (ADR-007).  Without this fixture the tests pass only where such a
+    DSN happens to be exported — green in CI (which runs a Postgres service),
+    red on any dev machine without one.
+
+    Patching both seams keeps them real unit tests: a stub Hive with no ``_cm``
+    makes ``resolve_agent_registry`` fall through to the YAML registry, pointed
+    at ``tmp_path`` so nothing touches ``~/.tapps-brain/hive/agents.yaml``.
+    """
+    from tapps_brain import backends as _backends
+
+    class _StubHive:
+        """Minimal HiveBackend stand-in: openable, closeable, no Postgres."""
+
+        def close(self) -> None:
+            return None
+
+    registry = _backends.FileAgentRegistryBackend(registry_path=tmp_path / "agents.yaml")
+    monkeypatch.setattr(_backends, "resolve_hive_backend_from_env", lambda: _StubHive())
+    monkeypatch.setattr(_backends, "resolve_agent_registry", lambda _hive=None: registry)
+    return registry
+
+
+@pytest.mark.usefixtures("file_agent_registry")
 class TestAgentCommands:
     """Tests for agent register and list CLI commands."""
 
@@ -1804,6 +1833,7 @@ class TestAgentCommands:
         assert "count" in data
 
 
+@pytest.mark.usefixtures("file_agent_registry")
 class TestAgentCreateCommand:
     """Tests for agent create CLI command (014-B)."""
 
