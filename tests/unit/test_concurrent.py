@@ -57,7 +57,12 @@ class TestConcurrentSave:
                 errors.append(exc)
 
         threads = [threading.Thread(target=saver, args=(t,)) for t in range(num_threads)]
-        _join_timeout = 60.0
+        # Deadlock guard, not a performance budget: a live thread after the join
+        # is the only signal that means the lock is stuck.  Comparing elapsed
+        # wall-clock against the same bound made this fail whenever the run was
+        # merely slow — coverage tracing pushes these 500 saves past 60s on the
+        # release gate while every entry still persists.
+        _join_timeout = 180.0
         start = time.monotonic()
         for t in threads:
             t.start()
@@ -65,8 +70,9 @@ class TestConcurrentSave:
             t.join(timeout=_join_timeout)
 
         elapsed = time.monotonic() - start
-        assert elapsed < _join_timeout, (
-            f"Concurrent save test timed out after {elapsed:.1f}s (limit {_join_timeout}s)"
+        stuck = [t.name for t in threads if t.is_alive()]
+        assert not stuck, (
+            f"Threads still running after {elapsed:.1f}s (join limit {_join_timeout}s): {stuck}"
         )
         assert not errors, f"Threads raised exceptions: {errors}"
 
