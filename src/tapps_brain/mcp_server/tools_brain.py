@@ -70,7 +70,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         for duplicate-safe writes.
         """
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "brain_remember")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -89,7 +89,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             failed_approaches=failed_approaches,
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "brain_remember")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -116,14 +116,14 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
     def brain_forget(key: str, agent_id: str = "") -> str:
         """Archive a memory by key (to gc_archive); not permanently deleted."""
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "brain_forget")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         result = memory_service.brain_forget(s, project_id, eff_aid, key=key)
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "brain_forget")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -141,7 +141,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             return json.dumps({"error": "bad_request", "detail": "'description' is required."})
 
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "brain_learn_success")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -154,7 +154,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             task_id=task_id,
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "brain_learn_success")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -173,7 +173,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             return json.dumps({"error": "bad_request", "detail": "'description' is required."})
 
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "brain_learn_failure")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -187,7 +187,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             error=error,
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "brain_learn_failure")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]

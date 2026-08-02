@@ -1201,12 +1201,17 @@ def create_app(
             _idem_guards.pop(gk, None)
 
     def _idempotency_check(
-        istore: Any, project_id: str, ikey: str
+        istore: Any, project_id: str, ikey: str, operation: str
     ) -> tuple[int, dict[str, Any]] | None:
-        """Run idempotency check (raises IdempotencyUnavailableError on failure)."""
+        """Run idempotency check (raises IdempotencyUnavailableError on failure).
+
+        *operation* is the route path the key was stored under; a key reused
+        across two routes replays neither one's body for the other (migration
+        029).
+        """
         return cast(
             "tuple[int, dict[str, Any]] | None",
-            istore.check(project_id, ikey),
+            istore.check(project_id, ikey, operation),
         )
 
     def _get_ikey_and_istore(request: Request) -> tuple[str | None, Any]:
@@ -1246,8 +1251,10 @@ def create_app(
             )
         return ikey, istore
 
-    def _idempotency_save(project_id: str, ikey: str, status: int, body: dict[str, Any]) -> None:
-        """Persist idempotency key → response when enabled.
+    def _idempotency_save(
+        project_id: str, ikey: str, status: int, body: dict[str, Any], operation: str
+    ) -> None:
+        """Persist ``(idempotency key, operation)`` → response when enabled.
 
         TAP-548: writes through the process-wide ``cfg.idempotency_store``
         singleton.  Failures raise :class:`IdempotencyUnavailableError` so
@@ -1265,7 +1272,7 @@ def create_app(
             raise IdempotencyUnavailableError(
                 "Idempotency is enabled but the idempotency store is unavailable"
             )
-        istore.save(project_id, ikey, status, body)
+        istore.save(project_id, ikey, status, body, operation)
 
     @app.post("/v1/remember", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_remember(request: Request) -> JSONResponse:
@@ -1311,7 +1318,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/remember"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1428,7 +1437,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/remember"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1483,7 +1494,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/reinforce"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1575,7 +1588,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/reinforce"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1630,7 +1645,9 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/remember:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1698,7 +1715,9 @@ def create_app(
             status_code = 400 if "error" in result else 200
             if ikey and istore is not None:
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/remember:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1817,7 +1836,9 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/reinforce:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -1893,7 +1914,9 @@ def create_app(
             status_code = 400 if "error" in result else 200
             if ikey and istore is not None:
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/reinforce:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2052,7 +2075,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/forget"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2129,7 +2154,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/forget"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2182,7 +2209,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/learn_success"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2274,7 +2303,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/learn_success"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2328,7 +2359,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/learn_failure"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2416,7 +2449,9 @@ def create_app(
                 from tapps_brain.idempotency import IdempotencyUnavailableError
 
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, status_code, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, status_code, result, "/v1/learn_failure"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2500,7 +2535,9 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/experience"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2627,7 +2664,9 @@ def create_app(
                     )
             if ikey and istore is not None:
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, 200, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, 200, result, "/v1/experience"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2686,7 +2725,9 @@ def create_app(
         try:
             if ikey and istore is not None:
                 try:
-                    _cached = await asyncio.to_thread(_idempotency_check, istore, project_id, ikey)
+                    _cached = await asyncio.to_thread(
+                        _idempotency_check, istore, project_id, ikey, "/v1/experience:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,
@@ -2782,7 +2823,9 @@ def create_app(
                     )
             if ikey and istore is not None:
                 try:
-                    await asyncio.to_thread(istore.save, project_id, ikey, 200, result)
+                    await asyncio.to_thread(
+                        istore.save, project_id, ikey, 200, result, "/v1/experience:batch"
+                    )
                 except IdempotencyUnavailableError as exc:
                     raise HTTPException(
                         status_code=503,

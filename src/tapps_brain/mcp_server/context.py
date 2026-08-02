@@ -470,11 +470,15 @@ def _current_request_idempotency_key() -> str | None:
     return str(ikey).strip() or None if ikey else None
 
 
-def _mcp_idempotency_check(project_id: str) -> tuple[str | None, str | None, Any | None]:
+def _mcp_idempotency_check(
+    project_id: str, tool_name: str
+) -> tuple[str | None, str | None, Any | None]:
     """Return ``(ikey, dsn, cached_body)`` for the current MCP write tool call.
 
-    ``cached_body`` is non-``None`` when a prior successful call with the same
-    key should be replayed (caller must return it without re-executing).
+    ``cached_body`` is non-``None`` when a prior successful call to *tool_name*
+    with the same key should be replayed (caller must return it without
+    re-executing).  Keys are scoped by tool so one key reused across two write
+    tools never replays the other tool's body in place of a real write.
     """
     import os
 
@@ -484,7 +488,7 @@ def _mcp_idempotency_check(project_id: str) -> tuple[str | None, str | None, Any
     dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL", "").strip()
     if not (ikey and is_idempotency_enabled() and dsn and project_id):
         return None, None, None
-    cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+    cached = get_shared_idempotency_store(dsn).check(project_id, ikey, tool_name)
     if cached is not None:
         _status, body = cached
         return ikey, dsn, body
@@ -496,8 +500,9 @@ def _mcp_idempotency_record(
     project_id: str,
     ikey: str,
     result: Any,  # noqa: ANN401
+    tool_name: str,
 ) -> None:
-    """Record *result* under *ikey*; never raise after a committed write."""
+    """Record *result* under ``(ikey, tool_name)``; never raise after a committed write."""
     from tapps_brain.idempotency import (
         IdempotencyUnavailableError,
         get_shared_idempotency_store,
@@ -505,7 +510,7 @@ def _mcp_idempotency_record(
 
     status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
     try:
-        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result)
+        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result, tool_name)
     except IdempotencyUnavailableError:
         _get_logger().warning(
             "mcp.idempotency_record_failed",

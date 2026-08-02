@@ -12,13 +12,18 @@ semantics.
 Usage::
 
     store = IdempotencyStore(dsn)
-    cached = store.check(project_id, ikey)
+    cached = store.check(project_id, ikey, "/v1/remember")
     if cached is not None:
         status, body = cached
         return replay_response(status, body)
     result = do_write_operation(...)
-    store.save(project_id, ikey, 200, result)
+    store.save(project_id, ikey, 200, result, "/v1/remember")
     return result
+
+Keys are scoped to the *operation* that stored them — the HTTP route path or
+the MCP tool name.  A client that reuses one key across two different write
+operations gets each one executed and replayed independently, instead of the
+second call silently replaying the first one's response without writing.
 
 The underlying Postgres table ``idempotency_keys`` is created by migration
 ``010_idempotency_keys.sql``.  When Postgres is unreachable or the check
@@ -86,12 +91,16 @@ class IdempotencyStore:
     # Public API
     # ------------------------------------------------------------------
 
-    def check(self, project_id: str, key: str) -> tuple[int, dict[str, Any]] | None:
+    def check(self, project_id: str, key: str, operation: str) -> tuple[int, dict[str, Any]] | None:
         """Return ``(status_code, response_body)`` for an existing key, or ``None``.
 
-        The key must have been stored within :attr:`ttl_hours`.  Raises
-        :class:`IdempotencyUnavailableError` on Postgres / decode failure so
-        callers do not fall through to a duplicate write.
+        The key must have been stored within :attr:`ttl_hours` *under the same
+        operation*.  A key stored by a different operation does not match, so
+        reusing one key across two write paths executes both rather than
+        replaying the first one's body for the second (migration 029).
+
+        Raises :class:`IdempotencyUnavailableError` on Postgres / decode failure
+        so callers do not fall through to a duplicate write.
         """
         try:
             with self._cm.get_connection() as conn, conn.cursor() as cur:
@@ -101,10 +110,11 @@ class IdempotencyStore:
                           FROM idempotency_keys
                          WHERE key = %s
                            AND project_id = %s
+                           AND operation = %s
                            AND created_at > now() - make_interval(hours => %s)
                          LIMIT 1
                         """,
-                    (key, project_id, self.ttl_hours),
+                    (key, project_id, operation, self.ttl_hours),
                 )
                 row = cur.fetchone()
         except Exception as exc:
@@ -140,12 +150,16 @@ class IdempotencyStore:
         key: str,
         status: int,
         body: dict[str, Any],
+        operation: str,
     ) -> None:
-        """Persist an idempotency key → response mapping.
+        """Persist an ``(idempotency key, operation)`` → response mapping.
+
+        *operation* is the HTTP route path or MCP tool name that produced
+        *body*; :meth:`check` only replays a response to the same operation.
 
         Uses ``ON CONFLICT DO NOTHING`` so concurrent requests with the same
-        key only store the first response.  Silently skips responses larger
-        than :data:`_MAX_RESPONSE_BYTES`.
+        key and operation only store the first response.  Silently skips
+        responses larger than :data:`_MAX_RESPONSE_BYTES`.
         """
         body_json = json.dumps(body, ensure_ascii=False)
         if len(body_json.encode()) > _MAX_RESPONSE_BYTES:
@@ -162,11 +176,11 @@ class IdempotencyStore:
                     cur.execute(
                         """
                         INSERT INTO idempotency_keys
-                               (key, project_id, response_status, response_json)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (key, project_id) DO NOTHING
+                               (key, project_id, response_status, response_json, operation)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (key, project_id, operation) DO NOTHING
                         """,
-                        (key, project_id, status, body_json),
+                        (key, project_id, status, body_json, operation),
                     )
                 conn.commit()
         except Exception as exc:

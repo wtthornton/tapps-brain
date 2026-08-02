@@ -25,8 +25,14 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-def _idempotency_record(dsn: str, project_id: str, ikey: str, result: Any) -> None:  # noqa: ANN401
-    """Record *result* under *ikey*, never discarding a committed write.
+def _idempotency_record(
+    dsn: str,
+    project_id: str,
+    ikey: str,
+    result: Any,  # noqa: ANN401
+    tool_name: str,
+) -> None:
+    """Record *result* under ``(ikey, tool_name)``, never discarding a committed write.
 
     The underlying save already succeeded when this runs — raising here
     would surface a tool error for a write that committed, and the client
@@ -40,7 +46,7 @@ def _idempotency_record(dsn: str, project_id: str, ikey: str, result: Any) -> No
 
     status_code = 400 if (isinstance(result, dict) and "error" in result) else 200
     try:
-        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result)
+        get_shared_idempotency_store(dsn).save(project_id, ikey, status_code, result, tool_name)
     except IdempotencyUnavailableError:
         logger.warning(
             "mcp.idempotency_record_failed",
@@ -89,7 +95,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
 
         idem_active = bool(ikey and is_idempotency_enabled() and dsn and project_id)
         if idem_active and ikey:
-            cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+            cached = get_shared_idempotency_store(dsn).check(project_id, ikey, "memory_save")
             if cached is not None:
                 _status, body = cached
                 return json.dumps(body)
@@ -111,7 +117,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         )
 
         if idem_active and ikey:
-            _idempotency_record(dsn, project_id, ikey, result)
+            _idempotency_record(dsn, project_id, ikey, result, "memory_save")
 
         return json.dumps(result)
 
@@ -126,14 +132,14 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
     def memory_delete(key: str, agent_id: str = "") -> str:
         """Delete a memory entry by key."""
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "memory_delete")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
         result = memory_service.memory_delete(s, project_id, eff_aid, key=key)
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "memory_delete")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -241,7 +247,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
 
         idem_active = bool(ikey and is_idempotency_enabled() and dsn and project_id)
         if idem_active and ikey:
-            cached = get_shared_idempotency_store(dsn).check(project_id, ikey)
+            cached = get_shared_idempotency_store(dsn).check(project_id, ikey, "memory_reinforce")
             if cached is not None:
                 _status, body = cached
                 return json.dumps(body)
@@ -255,7 +261,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         )
 
         if idem_active and ikey:
-            _idempotency_record(dsn, project_id, ikey, result)
+            _idempotency_record(dsn, project_id, ikey, result, "memory_reinforce")
 
         return json.dumps(result)
 
@@ -291,7 +297,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
     ) -> str:
         """Create a new version of a memory, superseding the old one."""
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "memory_supersede")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -307,7 +313,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             tags=tags,
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "memory_supersede")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -343,7 +349,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             }
         """
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "memory_save_many")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -355,7 +361,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             entries=list(entries),
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "memory_save_many")
         return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
@@ -405,7 +411,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             }
         """
         project_id = _pid()
-        ikey, dsn, cached = _mcp_idempotency_check(project_id)
+        ikey, dsn, cached = _mcp_idempotency_check(project_id, "memory_reinforce_many")
         if cached is not None:
             return json.dumps(cached)
         eff_aid = _rpc(agent_id, default=_server_aid)
@@ -417,7 +423,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             entries=list(entries),
         )
         if ikey and dsn:
-            _mcp_idempotency_record(dsn, project_id, ikey, result)
+            _mcp_idempotency_record(dsn, project_id, ikey, result, "memory_reinforce_many")
         return json.dumps(result, default=str)
 
     @mcp.tool()  # type: ignore[untyped-decorator]

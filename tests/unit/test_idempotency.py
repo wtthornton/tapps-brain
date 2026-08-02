@@ -172,12 +172,12 @@ class TestIdempotencyStoreCheck:
 
     def test_miss_returns_none(self) -> None:
         istore, _ = self._store_with_row(None)
-        assert istore.check("proj", "key-123") is None
+        assert istore.check("proj", "key-123", "/v1/remember") is None
 
     def test_hit_returns_status_and_body(self) -> None:
         body = {"status": "saved", "key": "foo"}
         istore, _ = self._store_with_row((200, json.dumps(body)))
-        result = istore.check("proj", "key-123")
+        result = istore.check("proj", "key-123", "/v1/remember")
         assert result is not None
         status, returned_body = result
         assert status == 200
@@ -186,7 +186,7 @@ class TestIdempotencyStoreCheck:
     def test_hit_returns_predecoded_jsonb_body(self) -> None:
         body = {"status": "saved", "key": "foo"}
         istore, _ = self._store_with_row((200, body))
-        result = istore.check("proj", "key-123")
+        result = istore.check("proj", "key-123", "/v1/remember")
         assert result is not None
         status, returned_body = result
         assert status == 200
@@ -197,7 +197,7 @@ class TestIdempotencyStoreCheck:
 
         istore, _ = self._store_with_row((200, "NOT_VALID_JSON"))
         with pytest.raises(IdempotencyUnavailableError):
-            istore.check("proj", "key-123")
+            istore.check("proj", "key-123", "/v1/remember")
 
     def test_exception_raises_unavailable(self) -> None:
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -208,7 +208,7 @@ class TestIdempotencyStoreCheck:
         store._cm = cm
         store.ttl_hours = 24
         with pytest.raises(IdempotencyUnavailableError):
-            store.check("proj", "key")
+            store.check("proj", "key", "/v1/remember")
 
 
 class TestIdempotencyStoreSave:
@@ -230,7 +230,7 @@ class TestIdempotencyStoreSave:
 
     def test_save_calls_insert(self) -> None:
         istore, cur = self._make_istore()
-        istore.save("proj", "ikey", 200, {"saved": True})
+        istore.save("proj", "ikey", 200, {"saved": True}, "/v1/remember")
         assert cur.execute.called
         sql_arg = cur.execute.call_args[0][0]
         assert "INSERT INTO idempotency_keys" in sql_arg
@@ -238,9 +238,49 @@ class TestIdempotencyStoreSave:
     def test_oversized_response_skipped(self) -> None:
         istore, cur = self._make_istore()
         big_body = {"data": "x" * 70_000}
-        istore.save("proj", "ikey", 200, big_body)
+        istore.save("proj", "ikey", 200, big_body, "/v1/remember")
         # execute should NOT have been called for the INSERT
         assert not cur.execute.called
+
+
+class TestIdempotencyOperationScope:
+    """Migration 029: a key only replays a response for the same operation.
+
+    Before this, ``(project_id, key)`` alone identified a stored response, so a
+    client reusing one key across two write operations got the first
+    operation's body replayed for the second — and the second write never ran.
+    """
+
+    def _store_with_row(self, row: Any) -> tuple[IdempotencyStore, MagicMock]:
+        cur = _make_cursor_with_row(row)
+        conn = _make_conn(cur)
+        store = IdempotencyStore.__new__(IdempotencyStore)
+        store._cm = _make_cm(conn)
+        store.ttl_hours = IDEMPOTENCY_TTL_HOURS
+        return store, cur
+
+    def test_check_filters_on_operation(self) -> None:
+        istore, cur = self._store_with_row(None)
+        istore.check("proj", "shared-key", "memory_save")
+        sql, params = cur.execute.call_args[0]
+        assert "operation = %s" in sql
+        assert params == ("shared-key", "proj", "memory_save", IDEMPOTENCY_TTL_HOURS)
+
+    def test_save_persists_operation(self) -> None:
+        istore, cur = self._store_with_row(None)
+        istore.save("proj", "shared-key", 200, {"status": "saved"}, "memory_save")
+        sql, params = cur.execute.call_args[0]
+        assert "ON CONFLICT (key, project_id, operation) DO NOTHING" in sql
+        assert params[1] == "proj"
+        assert params[0] == "shared-key"
+        assert params[4] == "memory_save"
+
+    def test_second_operation_does_not_replay_first(self) -> None:
+        """The lost-write scenario: same key, different tool, no cached row."""
+        istore, cur = self._store_with_row(None)
+        assert istore.check("proj", "shared-key", "brain_record_event") is None
+        # The operation reached SQL, so Postgres — not Python — enforces the scope.
+        assert cur.execute.call_args[0][1][2] == "brain_record_event"
 
     def test_exception_raises_unavailable(self) -> None:
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -251,7 +291,7 @@ class TestIdempotencyStoreSave:
         store._cm = cm
         store.ttl_hours = 24
         with pytest.raises(IdempotencyUnavailableError):
-            store.save("proj", "ikey", 200, {"ok": True})
+            store.save("proj", "ikey", 200, {"ok": True}, "/v1/remember")
 
 
 class TestIdempotencyStoreSweep:
@@ -529,7 +569,7 @@ class TestV1RememberRoute:
         # Singleton: constructed once for the whole lifespan.
         assert mock_cls.call_count == 1
         # ``save`` was routed through the same instance as ``check``.
-        inst.save.assert_called_once_with("proj", ikey, 200, saved_result)
+        inst.save.assert_called_once_with("proj", ikey, 200, saved_result, "/v1/remember")
 
     def test_empty_body_returns_400(self) -> None:
         client, _ = self._setup()
@@ -948,11 +988,15 @@ class TestIdempotencyRaceFixed:
             time.sleep(0.02)  # Widen race window to stress the guard
             return saved_result
 
-        def check_side_effect(project_id: str, key: str) -> tuple[int, dict[str, Any]] | None:
-            return cache.get((project_id, key))
+        def check_side_effect(
+            project_id: str, key: str, operation: str
+        ) -> tuple[int, dict[str, Any]] | None:
+            return cache.get((project_id, key, operation))
 
-        def save_side_effect(project_id: str, key: str, status: int, body: dict[str, Any]) -> None:
-            cache[(project_id, key)] = (status, body)
+        def save_side_effect(
+            project_id: str, key: str, status: int, body: dict[str, Any], operation: str
+        ) -> None:
+            cache[(project_id, key, operation)] = (status, body)
 
         N = 8
         ikey = "race-uuid-tap-629"
