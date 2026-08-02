@@ -12,6 +12,18 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.28.1] — 2026-08-02
+
+Patch release: idempotency keys are scoped to the operation that stored them.
+
+### Fixed
+
+- **Idempotency keys no longer replay across operations** ([TAP-5444](https://linear.app/tappscodingagents/issue/TAP-5444)) — `idempotency_keys` was keyed on `(project_id, key)` alone, so one key reused across two different write operations replayed the first operation's response body for the second call and skipped the second write entirely: a lost write that reported success. Migration **029** adds an `operation` column and widens the primary key to `(key, project_id, operation)`; `IdempotencyStore.check()` / `save()` now require the operation, supplied as the route path by the nine HTTP write routes and as the tool name by the MCP write tools. Surfaced while reviewing [TAP-5442](https://linear.app/tappscodingagents/issue/TAP-5442).
+
+### Changed
+
+- `IdempotencyStore.check(project_id, key, operation)` and `save(project_id, key, status, body, operation)` take a required trailing `operation` argument. In-tree callers are updated; external callers of the module must pass it.
+
 ## [3.28.0] — 2026-08-01
 
 Minor release: brain-owned web research tools with write-through cache (TAP-5364), so tapps-mcp can restore `tapps_research` without holding provider credentials.
