@@ -204,7 +204,7 @@ class TestCrossTenantHttp:
                     "key": f"smoke-key-{smoke_ctx['proj_a']}",
                     "value": f"tapps-smoke-sentinel-{smoke_ctx['proj_a']}",
                     "tier": "context",
-                    "source": "smoke-test",
+                    "source": "system",
                 },
             )
         assert r.status_code == 200, (
@@ -239,7 +239,7 @@ class TestCrossTenantHttp:
                     "key": f"smoke-key-{proj_a}",
                     "value": sentinel_value,
                     "tier": "context",
-                    "source": "smoke-test",
+                    "source": "system",
                 },
             )
 
@@ -332,7 +332,7 @@ class TestCrossTenantHttp:
                     "key": f"smoke-key-{proj_b}",
                     "value": proj_b_sentinel,
                     "tier": "context",
-                    "source": "smoke-test",
+                    "source": "system",
                 },
             )
             assert r.status_code == 200, f"Case 4 — proj-b write failed: {r.status_code} {r.text}"
@@ -345,7 +345,7 @@ class TestCrossTenantHttp:
                     "key": f"smoke-key-{proj_a}",
                     "value": proj_a_sentinel,
                     "tier": "context",
-                    "source": "smoke-test",
+                    "source": "system",
                 },
             )
 
