@@ -54,6 +54,25 @@ def _owner_override() -> Iterator[None]:
             os.environ["TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE"] = prev
 
 
+@contextlib.contextmanager
+def _without_override() -> Iterator[None]:
+    """Clear the privileged-role override for the assertion under test.
+
+    The override downgrades the guard from *raising* to merely logging an audit
+    line, so any test asserting the guard's raise/no-raise behaviour is
+    meaningless while it is set.  CI and ``make brain-test`` set it globally for
+    the whole suite (the dev/CI DSN is the owner role), so these tests cannot
+    inherit the ambient value — they must clear it around the call being
+    measured and restore it afterwards for the rest of the session.
+    """
+    prev = os.environ.pop("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE", None)
+    try:
+        yield
+    finally:
+        if prev is not None:
+            os.environ["TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE"] = prev
+
+
 def _exec_as_owner(statements: list[str]) -> None:
     from tapps_brain.postgres_connection import PostgresConnectionManager
 
@@ -107,8 +126,11 @@ def test_force_rls_owner_passes_guard(_migrator_owns_tenant_tables: Any) -> None
     cm = PostgresConnectionManager(_migrator_dsn())
     try:
         # _ensure_pool() runs the guard; FORCE is on (migration 012) so the
-        # ownership is not a violation and this must not raise.
-        cm._ensure_pool()
+        # ownership is not a violation and this must not raise.  Cleared
+        # override: with it set the guard never raises for any role, so this
+        # assertion would hold vacuously.
+        with _without_override():
+            cm._ensure_pool()
     finally:
         cm.close()
 
@@ -120,7 +142,12 @@ def test_non_force_owner_still_raises(_migrator_owns_tenant_tables: Any) -> None
     _exec_as_owner(["ALTER TABLE private_memories NO FORCE ROW LEVEL SECURITY"])
     try:
         cm = PostgresConnectionManager(_migrator_dsn())
-        with pytest.raises(RuntimeError, match="without FORCE ROW LEVEL SECURITY"):
+        # The override downgrades this violation to an audit log line, so it
+        # must be cleared for the raise to happen at all.
+        with (
+            _without_override(),
+            pytest.raises(RuntimeError, match="without FORCE ROW LEVEL SECURITY"),
+        ):
             cm._ensure_pool()
         cm.close()
     finally:
@@ -219,12 +246,14 @@ def test_deprivileged_migrate_path_passes_guard(_deprivileged_migrator: Any) -> 
     """The migrate path applies migrations as tapps_migrator with NO override."""
     from tapps_brain.postgres_migrations import apply_private_migrations
 
-    # Sanity: the override must NOT be set for this assertion to be meaningful.
-    assert os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE") in (None, "", "0")
-
     # Connecting as the de-privileged migrator runs the guard; FORCE-RLS
-    # ownership is not a violation, so this must not raise.
-    applied = apply_private_migrations(_real_migrator_dsn())
+    # ownership is not a violation, so this must not raise.  The override is
+    # cleared rather than asserted-absent: CI and `make brain-test` set it for
+    # the whole suite, and asserting on the ambient value made this test pass
+    # only when run in a shell that happened not to export it.
+    with _without_override():
+        assert os.environ.get("TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE") in (None, "", "0")
+        applied = apply_private_migrations(_real_migrator_dsn())
     # Already at head from the fixture, so re-applying is a no-op.
     assert applied == []
 

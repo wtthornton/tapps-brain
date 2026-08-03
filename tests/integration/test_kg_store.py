@@ -18,8 +18,10 @@ Tests are skipped when the variable is not set.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
+from typing import Any
 
 import pytest
 
@@ -521,6 +523,35 @@ class TestRLSIsolation:
 # ---------------------------------------------------------------------------
 
 
+def _run_on_fresh_loop(coro: Any) -> Any:
+    """Drive *coro* from a sync test on a loop this call owns.
+
+    Two constraints force this shape (TAP-5464):
+
+    ``asyncio.get_event_loop()`` cannot be used — under ``asyncio_mode=auto``
+    pytest-asyncio closes the loop it created for each async test, and a later
+    sync test then gets handed that dead loop.  These tests passed standalone
+    and failed in a full run for exactly that reason.
+
+    ``asyncio.run()`` cannot be used either — on exit it cancels all pending
+    tasks and *waits* for them, which deadlocks on the psycopg_pool worker
+    tasks.  The pool belongs to the async connection manager, and the KG
+    backend's ``close()`` is a no-op, so nothing reachable from the test can
+    shut those workers down first.
+
+    So: create a loop, run on it, and leave it unclosed. That leaks a loop per
+    test and still emits "Task was destroyed but it is pending", which is the
+    pre-existing behaviour — but the loop is guaranteed fresh. Closing the pool
+    properly needs the connection manager's lifecycle wired in; until then this
+    trades a known warning for a hang.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        asyncio.set_event_loop(None)
+
+
 class TestSyncAsyncParity:
     """Parity: sync and async backends return identical results."""
 
@@ -530,8 +561,6 @@ class TestSyncAsyncParity:
         self._bid = "brain_" + _uid()
 
     def test_upsert_entity_parity(self) -> None:
-        import asyncio
-
         from tapps_brain.backends import create_async_kg_backend, create_kg_backend
 
         sync_store = create_kg_backend(
@@ -553,7 +582,7 @@ class TestSyncAsyncParity:
         async def _run_async() -> str:
             return await async_store.upsert_entity(entity_type="concept", canonical_name=name)
 
-        async_id = asyncio.get_event_loop().run_until_complete(_run_async())
+        async_id = _run_on_fresh_loop(_run_async())
 
         # Both return a valid UUID; they differ because they are in different
         # (pid) tenants, but both follow the same format.
@@ -561,8 +590,6 @@ class TestSyncAsyncParity:
         uuid.UUID(async_id)
 
     def test_resolve_entity_parity(self) -> None:
-        import asyncio
-
         from tapps_brain.backends import create_async_kg_backend, create_kg_backend
 
         pid_sync = "par_s_" + _uid()
@@ -591,7 +618,7 @@ class TestSyncAsyncParity:
             await async_store.upsert_entity(entity_type="concept", canonical_name=name)
             return await async_store.resolve_entity("concept", name)
 
-        _, _, async_reason = asyncio.get_event_loop().run_until_complete(_run_async())
+        _, _, async_reason = _run_on_fresh_loop(_run_async())
 
         assert sync_reason == async_reason == "exact_match"
 

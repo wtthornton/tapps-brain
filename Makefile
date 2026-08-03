@@ -105,9 +105,21 @@ brain-migrate:  ## Apply all pending schema migrations (private, hive, federatio
 # tests/conftest.py keys off TAPPS_BRAIN_DATABASE_URL, while some
 # integration fixtures read TAPPS_TEST_POSTGRES_DSN. Setting only the
 # latter silently skipped every requires_postgres test.
+#
+# TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 mirrors .github/workflows/ci.yml: the dev
+# DSN connects as the `tapps` owner (SUPERUSER + BYPASSRLS) because the suite
+# applies schema migrations, and the startup guard refuses that role without
+# the override.  Omitting it here made `make brain-test` fail ~200 tests with
+# "refuses to start as a privileged Postgres role" that CI never sees — local
+# and CI must run the same way or local runs are unusable for triage.
+# Tests that assert the guard's *raising* behaviour unset it themselves (see
+# tests/integration/test_rls_force_owner_guard.py).
+TEST_ENV = TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
+           TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+           TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1
+
 brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate, or external DSN)
-	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
-	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+	$(TEST_ENV) \
 	  $(PYTEST) tests/ -v --tb=short \
 	    -m "not benchmark" \
 	    --cov=tapps_brain \
@@ -115,8 +127,7 @@ brain-test:  ## Full test suite with coverage (requires brain-up + brain-migrate
 	    --cov-fail-under=95
 
 brain-test-fast:  ## Tests excluding slow/benchmark, no coverage, parallel (rapid iteration)
-	TAPPS_TEST_POSTGRES_DSN=$(TAPPS_DEV_DSN) \
-	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
+	$(TEST_ENV) \
 	  $(PYTEST) tests/ --tb=short -q -m "not benchmark and not slow" -x $(PYTEST_XDIST_FLAG)
 
 # ---------------------------------------------------------------------------
