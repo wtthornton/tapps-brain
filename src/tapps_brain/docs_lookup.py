@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -30,6 +31,9 @@ from tapps_brain.store import MemoryStore
 logger = structlog.get_logger(__name__)
 
 DEFAULT_DOCS_CACHE_TTL_SECONDS = 86_400.0
+# Characters not permitted in a MemoryEntry key slug (models.py
+# ``_KEY_SLUG_PATTERN``); collapsed to "_" by :func:`_doc_key_segment`.
+_DOC_KEY_UNSAFE_RE = re.compile(r"[^a-z0-9_-]+")
 DOCS_MEMORY_GROUP = "library-docs"
 DOCS_AGENT_ID = "docs-cache"
 DOCS_PROJECT_ENV = "TAPPS_BRAIN_DOCS_PROJECT_ID"
@@ -129,15 +133,28 @@ def get_docs_store(cfg: DocsConfig | None = None) -> MemoryStore:
         return store
 
 
+def _doc_key_segment(raw: str) -> str:
+    """Reduce *raw* to the character set ``MemoryEntry.key`` accepts.
+
+    Whitelist rather than blacklist: anything outside ``[a-z0-9_-]`` collapses
+    to ``_``.  This includes ``.``, which is the segment separator — so a
+    library like ``socket.io`` becomes ``socket_io`` and the assembled key
+    stays unambiguously three segments.
+    """
+    return _DOC_KEY_UNSAFE_RE.sub("_", raw.strip().lower())
+
+
 def doc_memory_key(library: str, topic: str) -> str:
-    """Stable memory key for a library/topic pair."""
-    lib = library.strip().lower().replace("/", "_").replace("\\", "_").replace(":", "_")
-    # Sanitize topic the same way as library so colons cannot create ambiguous
-    # ``docs:lib:a:b`` keys that look like a four-segment path.
-    top = (
-        (topic.strip().lower() or "overview").replace("/", "_").replace("\\", "_").replace(":", "_")
-    )
-    return f"docs:{lib}:{top}"
+    """Stable memory key for a library/topic pair.
+
+    Segments are joined with ``.`` — NOT ``:``.  ``MemoryEntry`` validates keys
+    against ``^[a-z0-9][a-z0-9._-]{0,127}$`` (models.py), which rejects colons,
+    so a ``docs:lib:topic`` key could never be persisted: every cache write
+    failed validation and the docs cache never produced a hit (TAP-5463).
+    """
+    lib = _doc_key_segment(library)
+    top = _doc_key_segment(topic) or "overview"
+    return f"docs.{lib}.{top}"
 
 
 def _encode_doc_value(
@@ -233,7 +250,7 @@ def _persist_doc_entry(
     tags = [f"source:{provider_source}", "library-docs"]
     if context7_id:
         tags.append(f"context7_id:{context7_id}")
-    memory_service.memory_save(
+    result = memory_service.memory_save(
         store,
         cfg.project_id,
         cfg.agent_id,
@@ -247,6 +264,19 @@ def _persist_doc_entry(
         agent_scope="hive",
         group=normalize_memory_group(DOCS_MEMORY_GROUP),
     )
+    # Discarding this result is what kept TAP-5463 invisible: every write was
+    # rejected for an invalid key, yet each lookup still reported success and
+    # silently re-fetched from Context7.  A failed persist is a cache outage,
+    # not a no-op — surface it.
+    if isinstance(result, dict) and result.get("error"):
+        logger.warning(
+            "docs.cache.persist_failed",
+            key=key,
+            library=library,
+            topic=topic,
+            error=result.get("error"),
+            detail=result.get("detail"),
+        )
 
 
 def _lookup_response(

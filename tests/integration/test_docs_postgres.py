@@ -166,7 +166,7 @@ class TestDocsStoreIsolation:
         client.fetch_docs.return_value = "# ruff lint rules"
         try:
             docs_lookup(docs_store, library="ruff", topic="overview", config=cfg)
-            assert caller_store.get("docs:ruff:overview") is None
+            assert caller_store.get("docs.ruff.overview") is None
             second = docs_lookup(docs_store, library="ruff", topic="overview", config=cfg)
             assert second["cache_hit"] is True
         finally:

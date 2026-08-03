@@ -149,7 +149,7 @@ def test_open_docs_store_requires_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_doc_memory_key_normalizes() -> None:
-    assert doc_memory_key("FastAPI", "Routing") == "docs:fastapi:routing"
+    assert doc_memory_key("FastAPI", "Routing") == "docs.fastapi.routing"
 
 
 def test_decode_doc_value_legacy_markdown() -> None:
@@ -438,4 +438,4 @@ def test_docs_config_negative_ttl_falls_back(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_doc_memory_key_sanitizes_topic_colons() -> None:
-    assert doc_memory_key("lib", "a:b") == "docs:lib:a_b"
+    assert doc_memory_key("lib", "a:b") == "docs.lib.a_b"
