@@ -251,13 +251,29 @@
       "mcp__nlt-memory",
       "mcp__nlt-memory__*",
       "mcp__nlt-setup",
-      "mcp__nlt-setup__*"
+      "mcp__nlt-setup__*",
+      "Read(.env.example)",
+      "Read(.env.template)",
+      "Read(.env.sample)",
+      "Read(.env.schema)",
+      "Read(.env.dist)"
     ],
     "deny": [
       "Bash(rm -rf *)",
       "Bash(git push --force *)",
       "Bash(git reset --hard *)",
       "Read(.env)",
+      "Read(.env.local)",
+      "Read(.env.*.local)",
+      "Read(.env.development)",
+      "Read(.env.staging)",
+      "Read(.env.production)",
+      "Read(.env.test)",
+      "Read(.env.smoke-backup.*)",
+      "Read(.env.*backup*)",
+      "Read(.env.bak*)"
+    ],
+    "ask": [
       "Read(.env.*)"
     ]
   }
