@@ -12,6 +12,16 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.28.2] — 2026-08-03
+
+Patch release: the library-docs cache never persisted a single entry, plus two DB-dependent integration tests that could not pass as written.
+
+### Fixed
+
+- **Library-docs cache never stored anything** ([TAP-5463](https://linear.app/tappscodingagents/issue/TAP-5463)) — `doc_memory_key()` emitted `docs:<lib>:<topic>`, but `MemoryEntry` validates keys against `^[a-z0-9][a-z0-9._-]{0,127}$`, which rejects colons. Every `docs_lookup` write was refused with `bad_request` and `_persist_doc_entry` discarded the result, so each lookup reported success, stored nothing, and silently re-fetched from Context7 — the cache has never produced a hit. Keys now join on `.` with whitelist-sanitized segments (`socket.io` → `socket_io`), and a rejected write logs `docs.cache.persist_failed` instead of vanishing. No data migration: no write in the old format ever succeeded.
+- **experience_events RLS tests asserted isolation on a BYPASSRLS role** ([TAP-5462](https://linear.app/tappscodingagents/issue/TAP-5462)) — `TestRLSIsolation` connected as the owner (`SUPERUSER` + `BYPASSRLS`), for which RLS is not enforced by definition, so the four assertions could never pass regardless of policy correctness. The migration-020 policy is correct. The fixture now provisions its own `NOSUPERUSER/NOBYPASSRLS` probe role rather than assuming `tapps_runtime` exists, since CI applies only the schema migrations and never `migrations/roles/001_db_roles.sql`. Also fixes a teardown that used `with conn:` in a loop — that closes the connection in psycopg3.
+- **Stale `full` profile tool count** ([TAP-5461](https://linear.app/tappscodingagents/issue/TAP-5461)) — `test_list_tools_count_per_profile[full-74]` predated EPIC-075's three added tools; `mcp_profiles.yaml`, the golden fixture, and `ProfileRegistry` all agree on 76. Four test functions whose names encoded superseded counts were renamed to match their assertions.
+
 ## [3.28.1] — 2026-08-02
 
 Patch release: idempotency keys are scoped to the operation that stored them.
