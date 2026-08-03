@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlparse, urlunparse
 
 import pytest
 
@@ -61,6 +62,81 @@ def _set_tenant(conn: object, project_id: str) -> None:
     conn.execute(  # type: ignore[attr-defined]
         "SELECT set_config('app.project_id', %s, FALSE)",
         (project_id,),
+    )
+
+
+# ---------------------------------------------------------------------------
+# De-privileged probe role for RLS-enforcement assertions
+#
+# ``_PG_DSN`` connects as the owner (``tapps``), which in CI and the dev stack
+# is SUPERUSER + BYPASSRLS — RLS is not enforced for it *by definition*, so
+# asserting isolation on that connection can never pass.  RLS-enforcement
+# tests must run as a NOSUPERUSER/NOBYPASSRLS role.
+#
+# The role is created by the fixture rather than assumed to exist: CI applies
+# only the schema migrations (scripts/apply_all_migrations.py), never
+# migrations/roles/001_db_roles.sql, so ``tapps_runtime`` is absent there.
+# Mirrors the probe-role pattern in test_rls_force_owner_guard.py.
+# ---------------------------------------------------------------------------
+
+_RLS_PROBE_ROLE = "tb_exp_rls_probe"
+_RLS_PROBE_PW = "probe-pw"  # nosec B105 - throwaway test-only credential
+
+# Granted privileges make a role undroppable, so they must be revoked first —
+# but a bare REVOKE errors when the role is absent (first run / after teardown).
+_REVOKE_IF_ROLE_EXISTS_SQL = f"""
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{_RLS_PROBE_ROLE}') THEN
+    REVOKE ALL ON experience_events FROM {_RLS_PROBE_ROLE};
+  END IF;
+END;
+$$;
+"""
+
+
+def _probe_dsn() -> str:
+    """Return ``_PG_DSN`` rewritten to authenticate as the probe role."""
+    parts = urlparse(_PG_DSN)
+    netloc = f"{_RLS_PROBE_ROLE}:{_RLS_PROBE_PW}@{parts.hostname}:{parts.port}"
+    return urlunparse(parts._replace(netloc=netloc))
+
+
+def _exec_as_owner(statements: list[str]) -> None:
+    """Run *statements* on a single owner connection, then commit and close."""
+    conn = _conn(_PG_DSN)
+    try:
+        for stmt in statements:
+            conn.execute(stmt)  # type: ignore[attr-defined]
+        conn.commit()  # type: ignore[attr-defined]
+    finally:
+        conn.close()  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="class")
+def rls_probe_role() -> object:
+    """Provision a NOSUPERUSER/NOBYPASSRLS login role with DML on the table.
+
+    Privileges are granted on the partitioned parent only — PostgreSQL checks
+    the ACL of the relation named in the query, and every test here queries
+    ``experience_events`` directly.
+    """
+    _apply_migrations(_PG_DSN)
+    _exec_as_owner(
+        [
+            _REVOKE_IF_ROLE_EXISTS_SQL,
+            f"DROP ROLE IF EXISTS {_RLS_PROBE_ROLE}",
+            f"CREATE ROLE {_RLS_PROBE_ROLE} LOGIN PASSWORD '{_RLS_PROBE_PW}' "
+            "NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE",
+            f"GRANT SELECT, INSERT, UPDATE, DELETE ON experience_events TO {_RLS_PROBE_ROLE}",
+        ]
+    )
+    yield
+    _exec_as_owner(
+        [
+            _REVOKE_IF_ROLE_EXISTS_SQL,
+            f"DROP ROLE IF EXISTS {_RLS_PROBE_ROLE}",
+        ]
     )
 
 
@@ -210,14 +286,18 @@ class TestPartitionRouting:
             conn.close()  # type: ignore[attr-defined]
 
 
+@pytest.mark.usefixtures("rls_probe_role")
 class TestRLSIsolation:
-    """Tenant A cannot read or modify Tenant B's experience_events rows."""
+    """Tenant A cannot read or modify Tenant B's experience_events rows.
+
+    Runs as the de-privileged probe role — see ``rls_probe_role``.  The owner
+    DSN is SUPERUSER/BYPASSRLS and would satisfy none of these assertions.
+    """
 
     def test_tenant_a_cannot_read_tenant_b_events(self) -> None:
-        _apply_migrations(_PG_DSN)
         project_a = f"rls-a-{uuid.uuid4().hex[:8]}"
         project_b = f"rls-b-{uuid.uuid4().hex[:8]}"
-        conn = _conn(_PG_DSN)
+        conn = _conn(_probe_dsn())
         try:
             # Insert as tenant B
             _set_tenant(conn, project_b)
@@ -235,17 +315,17 @@ class TestRLSIsolation:
         finally:
             # Cleanup: reset to B to delete its own row
             _set_tenant(conn, project_b)
-            with conn:  # type: ignore[attr-defined]
-                conn.execute(  # type: ignore[attr-defined]
-                    "DELETE FROM experience_events WHERE project_id = %s", (project_b,)
-                )
+            conn.execute(  # type: ignore[attr-defined]
+                "DELETE FROM experience_events WHERE project_id = %s", (project_b,)
+            )
+            conn.commit()  # type: ignore[attr-defined]
             conn.close()  # type: ignore[attr-defined]
 
     def test_tenant_sees_only_own_events(self) -> None:
         """Each tenant sees exactly its own row count."""
         project_a = f"rls-own-a-{uuid.uuid4().hex[:8]}"
         project_b = f"rls-own-b-{uuid.uuid4().hex[:8]}"
-        conn = _conn(_PG_DSN)
+        conn = _conn(_probe_dsn())
         try:
             event_time_a = datetime(2026, 7, 4, 12, 0, 0, tzinfo=UTC)
             event_time_b = datetime(2026, 8, 4, 12, 0, 0, tzinfo=UTC)
@@ -276,18 +356,21 @@ class TestRLSIsolation:
             count_b = cur.fetchone()[0]
             assert count_b == 1, f"Tenant B should see 1 event, got {count_b}"
         finally:
+            # NB: `with conn:` closes the connection in psycopg3, so it cannot
+            # be used inside this loop — the second pass would fail with
+            # "the connection is closed".
             for project in (project_a, project_b):
                 _set_tenant(conn, project)
-                with conn:  # type: ignore[attr-defined]
-                    conn.execute(  # type: ignore[attr-defined]
-                        "DELETE FROM experience_events WHERE project_id = %s", (project,)
-                    )
+                conn.execute(  # type: ignore[attr-defined]
+                    "DELETE FROM experience_events WHERE project_id = %s", (project,)
+                )
+                conn.commit()  # type: ignore[attr-defined]
             conn.close()  # type: ignore[attr-defined]
 
     def test_rls_enforced_without_project_id(self) -> None:
         """Querying without app.project_id set returns no rows (fail-closed)."""
         project = f"rls-closed-{uuid.uuid4().hex[:8]}"
-        conn = _conn(_PG_DSN)
+        conn = _conn(_probe_dsn())
         try:
             _set_tenant(conn, project)
             event_time = datetime(2026, 9, 1, 0, 0, 0, tzinfo=UTC)
@@ -307,10 +390,10 @@ class TestRLSIsolation:
             )
         finally:
             _set_tenant(conn, project)
-            with conn:  # type: ignore[attr-defined]
-                conn.execute(  # type: ignore[attr-defined]
-                    "DELETE FROM experience_events WHERE project_id = %s", (project,)
-                )
+            conn.execute(  # type: ignore[attr-defined]
+                "DELETE FROM experience_events WHERE project_id = %s", (project,)
+            )
+            conn.commit()  # type: ignore[attr-defined]
             conn.close()  # type: ignore[attr-defined]
 
     def test_rls_blocks_insert_without_project_id(self) -> None:
@@ -321,7 +404,7 @@ class TestRLSIsolation:
         """
         psycopg = pytest.importorskip("psycopg")
         project = f"rls-write-{uuid.uuid4().hex[:8]}"
-        conn = _conn(_PG_DSN)
+        conn = _conn(_probe_dsn())
         try:
             # Clear app.project_id before inserting.
             conn.execute(  # type: ignore[attr-defined]
