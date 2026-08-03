@@ -48,7 +48,7 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_69_tools(self) -> None:
+    def test_get_full_returns_76_tools(self) -> None:
         # EPIC-075 added brain_query_events, brain_record_events_batch,
         # brain_record_feedback to full (+3 over TAP-2725 baseline).
         reg = ProfileRegistry()

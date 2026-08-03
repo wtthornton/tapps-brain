@@ -118,11 +118,11 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_74_tools(self) -> None:
+    def test_full_golden_has_76_tools(self) -> None:
         """Golden file for 'full' must list exactly 76 tools."""
         assert len(_load_golden("full")) == 76
 
-    def test_operator_golden_has_87_tools(self) -> None:
+    def test_operator_golden_has_89_tools(self) -> None:
         """Golden file for 'operator' must list exactly 89 tools."""
         assert len(_load_golden("operator")) == 89
 
@@ -130,7 +130,7 @@ class TestGoldenFileContracts:
         """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
         assert len(_load_golden("coder")) == 21
 
-    def test_reviewer_golden_has_9_tools(self) -> None:
+    def test_reviewer_golden_has_10_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 10 tools."""
         assert len(_load_golden("reviewer")) == 10
 
@@ -585,7 +585,7 @@ class TestEndToEndProfileFiltering:
     @pytest.mark.parametrize(
         "profile,expected_count",
         [
-            ("full", 74),
+            ("full", 76),
             ("coder", 21),
             ("reviewer", 10),
             ("seeder", 6),
