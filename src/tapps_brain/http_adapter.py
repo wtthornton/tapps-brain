@@ -1414,6 +1414,7 @@ def create_app(
                     confidence=_coerce_float(body, "confidence", -1.0),
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
+                    supersede=body.get("supersede", "global"),
                 )
             else:
                 # TAP-1099: offload sync DB call to a worker thread so the
@@ -1433,6 +1434,7 @@ def create_app(
                     confidence=_coerce_float(body, "confidence", -1.0),
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
+                    supersede=body.get("supersede", "global"),
                 )
             if isinstance(result, dict) and "error" in result:
                 status_code = 400
@@ -1718,7 +1720,12 @@ def create_app(
 
             # TAP-1099: offload batch DB work to a worker thread.
             result = await asyncio.to_thread(
-                _ms.memory_save_many, store, project_id, agent_id, entries=entries
+                _ms.memory_save_many,
+                store,
+                project_id,
+                agent_id,
+                entries=entries,
+                supersede=body.get("supersede", "global"),
             )
             status_code = 400 if "error" in result else 200
             if ikey and istore is not None:
