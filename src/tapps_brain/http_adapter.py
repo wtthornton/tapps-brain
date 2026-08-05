@@ -1298,6 +1298,19 @@ def create_app(
             the requested key does not exist (TAP-5617).
           - optional ``"invalidated": [<key>, ...]`` — entries whose validity
             interval this save closed, removing them from recall.
+          - optional ``"invalidated_detail": [{"key", "similarity", "tier",
+            "threshold"}, ...]`` — the similarity that triggered each
+            invalidation and the threshold it cleared, so the line can be tuned
+            from real traffic rather than guessed at.
+
+        Invalidations you did not want are usually a threshold question rather
+        than a defect.  Supersede fires within a tier above the
+        ``conflict_check`` similarity threshold, which is tunable **per
+        project** via ``conflict_check.per_tier`` — one project's tuning does
+        not affect any other (see
+        ``docs/guides/per-project-profile-overrides.md``).  For a key-space of
+        independent facts, where no neighbour should win, pass
+        ``"supersede": "key-scoped"`` on the save instead.
         """
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:

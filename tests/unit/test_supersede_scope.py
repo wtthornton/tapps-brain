@@ -170,3 +170,48 @@ class TestBatchSupersede:
             assert res["error"] == "bad_request"
         finally:
             store.close()
+
+
+class TestInvalidatedDetail:
+    """`invalidated` names the evicted keys; `invalidated_detail` says why.
+
+    The similarity score is computed for the conflict audit and previously
+    reached only a log line, so a consumer seeing evictions could tell that
+    something was dropped but not whether the threshold sits above or below
+    where they want it.
+    """
+
+    def test_detail_reports_similarity_and_threshold(self, tmp_path: Path) -> None:
+        store = MemoryStore(tmp_path)
+        _pin_context_threshold(store)
+        try:
+            _save(store, "cand-a", _SIBLING_A)
+            res = _save(store, "cand-b", _SIBLING_B)
+
+            assert res["invalidated"] == ["cand-a"]
+            detail = res["invalidated_detail"]
+            assert [row["key"] for row in detail] == ["cand-a"]
+
+            row = detail[0]
+            assert row["tier"] == "context"
+            assert row["threshold"] == 0.6
+            # The score must be a real measurement above the threshold that
+            # triggered it, not a placeholder.
+            assert 0.6 < row["similarity"] <= 1.0
+        finally:
+            store.close()
+
+    def test_absent_when_nothing_was_invalidated(self, tmp_path: Path) -> None:
+        """key-scoped evicts nothing, so neither field may appear — an empty
+        detail list would read as 'evaluated and found nothing' on a path that
+        never ran."""
+        store = MemoryStore(tmp_path)
+        _pin_context_threshold(store)
+        try:
+            _save(store, "cand-a", _SIBLING_A, supersede="key-scoped")
+            res = _save(store, "cand-b", _SIBLING_B, supersede="key-scoped")
+
+            assert "invalidated" not in res
+            assert "invalidated_detail" not in res
+        finally:
+            store.close()
