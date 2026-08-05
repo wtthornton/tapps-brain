@@ -77,7 +77,6 @@ _STORE_SCOPED_HEALTH_KEYS = frozenset(
         "document_count",
         "document_total_bytes",
         "active_session_count",
-        "bloom_saturation",
         "federation_enabled",
         "federation_project_count",
         "profile_name",

@@ -59,8 +59,8 @@ from tapps_brain._store_feedback import FeedbackMixin
 from tapps_brain._store_integrity import IntegrityMixin
 from tapps_brain._store_query import QueryMixin
 from tapps_brain._store_relations import RelationsMixin
-from tapps_brain.bloom import BloomFilter, normalize_for_dedup
 from tapps_brain.bm25 import preprocess as _bm25_preprocess
+from tapps_brain.dedup import normalize_for_dedup
 from tapps_brain.metrics import (
     MetricsCollector,
     MetricsSnapshot,
@@ -634,7 +634,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             )
 
     def _load_cold_start_state(self) -> int:
-        """Cold-start: load entries + relations, rebuild bloom + entity indexes.
+        """Cold-start: load entries + relations, rebuild entity indexes.
 
         Returns the number of relations loaded (for the init log line).  Passes
         the effective max-entries cap so backends that support early-cutoff
@@ -654,11 +654,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         _verify = getattr(self._persistence, "verify_expected_indexes", None)
         if callable(_verify):
             _verify()
-
-        # Bloom filter for write-path deduplication (GitHub #31).
-        self._bloom = BloomFilter()
-        for _entry in self._entries.values():
-            self._bloom.add(normalize_for_dedup(_entry.value))
 
         # Entity index for graph centrality scoring (TAP-734).  Maps BM25 token
         # → set of entry keys; derived state only, rebuilt from _entries here.
@@ -906,11 +901,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._removed_at.get(entry.key, 0) > snapshot_epoch:
                     continue
                 self._entries[entry.key] = entry
-                # Keep derived indexes consistent with the cache: without the
-                # bloom add, a later save() of an identical value skips dedup
-                # ("bloom says absent") and creates a duplicate; without the
-                # entity index, graph-centrality scoring never sees the entry.
-                self._bloom.add(normalize_for_dedup(entry.value))
+                # Keep the entity index consistent with the cache, or
+                # graph-centrality scoring never sees the entry.
                 self._index_entry_entities(entry.key, entry.value)
 
     def _note_removed_locked(self, key: str) -> None:
@@ -1649,9 +1641,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                                 self._entries[entry.key] = existing
                             else:
                                 self._entries.pop(entry.key, None)
-                        self._bloom = BloomFilter()
-                        for _e in self._entries.values():
-                            self._bloom.add(normalize_for_dedup(_e.value))
                 raise
 
             # Single batched persist for all valid rows (TAP-2800).
@@ -1810,11 +1799,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                         self._entries[entry.key] = existing
                     else:
                         self._entries.pop(entry.key, None)
-                # A row may have used dedup → rebuild the bloom filter from the
-                # restored cache; the filter has no item-remove (TAP-644).
-                self._bloom = BloomFilter()
-                for _e in self._entries.values():
-                    self._bloom.add(normalize_for_dedup(_e.value))
             raise
 
     # ------------------------------------------------------------------
@@ -1956,8 +1940,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Same-key no-op fast path (GitHub #31, TAP-5615).
 
         Returns the reinforced existing entry when *key* already holds this
-        exact value; ``None`` otherwise.  The bloom filter is always updated so
-        ``gc()`` can rebuild from it.
+        exact value; ``None`` otherwise.
 
         Scoped to *key* deliberately.  The original implementation matched on
         the normalized value across **every** entry, so a save under a new key
@@ -1975,11 +1958,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._ensure_entry_cached(key)
         with self._serialized():
             existing = self._entries.get(key)
-            # Under the lock: gc() holds the lock for its whole bloom rebuild and
-            # BloomFilter.add can auto-resize (reallocate _bits, reset _count) —
-            # an unlocked add racing that rebuild loses this entry's bits or
-            # interleaves the clear/resize non-atomically.
-            self._bloom.add(normalized)
         if existing is None or normalize_for_dedup(existing.value) != normalized:
             return None
         logger.debug("memory_dedup_same_key_hit", key=key)
@@ -2505,9 +2483,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         """Persist the entry and roll the cache back on failure.
 
         Maintains write-through consistency: if the Postgres write raises,
-        the in-memory ``_entries`` is restored and (when dedup was used) the
-        bloom filter is rebuilt from the current cache — the filter has no
-        item-remove operation (TAP-644).
+        the in-memory ``_entries`` is restored.
         """
         try:
             with MetricsTimer(self._metrics, "store.save.phase.persist_ms"):
@@ -2518,10 +2494,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     self._entries[key] = existing
                 else:
                     self._entries.pop(key, None)
-                if dedup:
-                    self._bloom = BloomFilter()
-                    for _e in self._entries.values():
-                        self._bloom.add(normalize_for_dedup(_e.value))
             raise
         self._drop_if_concurrently_removed(key)
 
@@ -3958,7 +3930,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             gc_archive_bytes_total=self._persistence.total_archive_bytes(),
             # TAP-549: session-state cardinality for /metrics alerting.
             active_session_count=self.active_session_count(),
-            bloom_saturation=self._bloom.approximate_false_positive_rate(),
             embeddings_enabled=self._embedding_provider is not None,
             document_count=document_count,
             document_total_bytes=document_total_bytes,
@@ -4162,17 +4133,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # returned earlier) because it only drops process-local state —
         # there's nothing to preview.
         self._sweep_stale_sessions()
-
-        # TAP-726: rebuild the Bloom filter from the surviving entries so
-        # stale bits from archived items are removed.  Without this, the
-        # filter accumulates bits for every entry that ever existed and
-        # eventually saturates (FP rate → 1.0), making the dedup fast-path
-        # useless.  O(k*n) where k = hash_count and n = surviving entries.
-        # The lock is held for the entire rebuild so concurrent save() threads
-        # cannot race on _bloom._bits / _count during the clear+re-add cycle.
-        with self._serialized():
-            surviving_values = [normalize_for_dedup(e.value) for e in self._entries.values()]
-            self._bloom.rebuild(surviving_values)
 
         return GCResult(
             archived_count=len(archived_keys),
@@ -4864,10 +4824,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 if self._removed_at.get(entry.key, 0) > snapshot_epoch:
                     continue
                 self._entries[entry.key] = entry
-                # Keep derived indexes consistent (same contract as
-                # _merge_durable_entries): dedup and graph centrality must see
-                # merged rows.
-                self._bloom.add(normalize_for_dedup(entry.value))
+                # Keep the entity index consistent (same contract as
+                # _merge_durable_entries): graph centrality must see merged rows.
                 self._index_entry_entities(entry.key, entry.value)
         return sum(1 for e in self._entries.values() if e.memory_group == memory_group)
 
