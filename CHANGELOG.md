@@ -12,6 +12,15 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Removed
+
+- **Write-only Bloom filter and its `bloom_saturation` gauge** ([TAP-5629](https://linear.app/tappscodingagents/issue/TAP-5629)) — the filter was a fast-path for the value-scan dedup that TAP-5615 replaced with an O(1) same-key lookup. Nothing has queried `might_contain` since; the filter was still added to on every save and fully rebuilt on cold start, GC, consolidation and undo, and its saturation gauge measured the health of a read path that no longer exists — a number that would climb toward 1.0 forever while nothing consulted it. `src/tapps_brain/bloom.py` is now `src/tapps_brain/dedup.py` and holds only `normalize_for_dedup`, which the same-key comparison still uses. **`bloom_saturation` is gone from `get_metrics()`, `/metrics` and the `/snapshot` store-global set** — remove any alert or dashboard panel bound to it. Not present in the OpenAPI snapshot, so the REST contract is unchanged.
+
+### Fixed
+
+- **`release-ready.sh` could pass on code that was not in the commit** — every stage ran against the working tree while a release ships the tag, so the gate returned green for a tree whose source changes were unstaged. The 3.28.3 release commit was assembled this way: version bump, CHANGELOG and regenerated OpenAPI snapshot for three fixes whose implementation was still uncommitted, with a green gate. Only CI caught it, via a snapshot-drift failure whose message named no field. A new stage 0 fails when release-critical paths (`src/`, `tests/`, `pyproject.toml`, `server.json`, `docker/.env.example`, `llms*.txt`, `docs/contracts/`, the brain SKILL.md) differ from HEAD; unrelated churn elsewhere in a shared working tree is ignored. `ALLOW_DIRTY_TREE=1` skips it for local iteration.
+- **OpenAPI drift assertions now report which key drifted** — `test_runtime_spec_matches_checked_in_snapshot` asserted bare equality, so a spec that differed between a dev machine and CI failed with no indication of the culprit.
+
 ## [3.28.3] — 2026-08-04
 
 Patch release: `/v1/remember` acknowledged writes it did not persist.

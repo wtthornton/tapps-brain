@@ -43,6 +43,45 @@ need_uv() {
   command -v uv >/dev/null 2>&1 || fail "uv not found (install: https://github.com/astral-sh/uv)"
 }
 
+# Paths whose working-tree state determines either the built artifact or this
+# gate's verdict.  Deliberately NOT the whole tree: this repo is often shared
+# with a second session editing .claude/ , .cursor/ and docs/ , and blocking on
+# that churn would make the gate unusable.
+RELEASE_CRITICAL_PATHS=(
+  src
+  tests
+  pyproject.toml
+  server.json
+  docker/.env.example
+  llms.txt
+  llms-full.txt
+  docs/contracts
+  .claude/skills/tapps-brain/SKILL.md
+)
+
+echo "==> [0/6] Working tree matches HEAD for release-critical paths"
+if [ "${ALLOW_DIRTY_TREE:-0}" = "1" ]; then
+  echo "    SKIPPED: ALLOW_DIRTY_TREE=1 — this gate's verdict does NOT describe HEAD."
+elif ! command -v git >/dev/null 2>&1 || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "    SKIPPED: not a git checkout."
+else
+  dirty="$(git status --porcelain -- "${RELEASE_CRITICAL_PATHS[@]}" 2>/dev/null || true)"
+  if [ -n "$dirty" ]; then
+    echo "$dirty" >&2
+    echo >&2
+    echo "Every stage below runs against the WORKING TREE, but a release ships the" >&2
+    echo "COMMIT.  With the paths above uncommitted, a green result here says nothing" >&2
+    echo "about the artifact you are about to tag — the 3.28.3 release commit shipped" >&2
+    echo "a CHANGELOG and an OpenAPI snapshot for three fixes whose source changes" >&2
+    echo "were still sitting unstaged, and this gate passed anyway." >&2
+    echo >&2
+    echo "Commit (or stash) the paths above, then re-run.  ALLOW_DIRTY_TREE=1 skips" >&2
+    echo "this check for local iteration; never use it to produce a release verdict." >&2
+    fail "uncommitted changes in release-critical paths"
+  fi
+  echo "    clean at $(git rev-parse --short HEAD)"
+fi
+
 echo "==> [1/6] uv sync --group dev"
 need_uv
 uv sync --group dev

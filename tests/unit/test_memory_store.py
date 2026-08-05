@@ -1719,13 +1719,11 @@ class TestSaveFailureRollback:
     """TAP-644: save() failure path — bloom filter, _entries, and relations must
     all be consistent after a backend persist error."""
 
-    def test_persist_failure_rolls_back_bloom_for_new_key(self, tmp_path: Path) -> None:
-        """Bloom filter must NOT contain a new key after backend.save raises."""
-        from tapps_brain.bloom import normalize_for_dedup
-
+    def test_persist_failure_leaves_no_dedup_state_for_new_key(self, tmp_path: Path) -> None:
+        """A failed persist must not leave dedup state that swallows the retry."""
         s = MemoryStore(tmp_path)
+        original_save = s._persistence.save
         try:
-            original_save = s._persistence.save
 
             def _fail(entry: MemoryEntry) -> None:
                 raise OSError("simulated persist failure")
@@ -1734,20 +1732,24 @@ class TestSaveFailureRollback:
             with pytest.raises(OSError):
                 s.save(key="never-persisted", value="unique content abc123", dedup=True)
 
-            assert not s._bloom.might_contain(normalize_for_dedup("unique content abc123"))
             assert s.get("never-persisted") is None
+
+            # The retry must actually land.  Previously this was asserted
+            # indirectly via the bloom filter; what matters to a caller is that
+            # a re-save after a failed attempt is not discarded as a no-op.
+            s._persistence.save = original_save  # type: ignore[method-assign]
+            s.save(key="never-persisted", value="unique content abc123", dedup=True)
+            entry = s.get("never-persisted")
+            assert entry is not None
+            assert entry.value == "unique content abc123"
         finally:
             s._persistence.save = original_save  # type: ignore[method-assign]
             s.close()
 
-    def test_persist_failure_preserves_existing_entry_and_bloom(self, tmp_path: Path) -> None:
-        """When an update fails, _entries reverts and bloom reflects only the
-        original value (not the failed update)."""
-        from tapps_brain.bloom import normalize_for_dedup
-
+    def test_persist_failure_preserves_existing_entry(self, tmp_path: Path) -> None:
+        """When an update fails, _entries reverts to the original value."""
         s = MemoryStore(tmp_path)
         try:
-            # Seed an entry successfully so bloom contains "original value xyz"
             s.save(key="existing-key", value="original value xyz", dedup=True)
             assert s.get("existing-key") is not None
 
@@ -1769,10 +1771,12 @@ class TestSaveFailureRollback:
             assert entry is not None
             assert entry.value == "original value xyz"
 
-            # Bloom must NOT contain the failed update value
-            assert not s._bloom.might_contain(normalize_for_dedup("updated value xyz"))
-            # Bloom MUST still contain the original (it was seeded before the failure)
-            assert s._bloom.might_contain(normalize_for_dedup("original value xyz"))
+            # The failed update must not linger as dedup state: re-applying it
+            # now that persistence works must actually take effect.
+            s.save(key="existing-key", value="updated value xyz", dedup=True)
+            updated = s.get("existing-key")
+            assert updated is not None
+            assert updated.value == "updated value xyz"
         finally:
             s.close()
 
@@ -1802,8 +1806,6 @@ class TestSaveFailureRollback:
     def test_hive_propagation_failure_leaves_private_entry_intact(self, tmp_path: Path) -> None:
         """Hive propagation failure must NOT roll back the private save.
         Private memory is already persisted before hive propagation is attempted."""
-        from tapps_brain.bloom import normalize_for_dedup
-
         hive_mock = MagicMock()
         hive_mock.save.side_effect = RuntimeError("hive down")
 
@@ -1818,8 +1820,16 @@ class TestSaveFailureRollback:
             # Private save must succeed despite hive failure
             assert isinstance(result, MemoryEntry)
             assert s.get("hive-fail-key") is not None
-            # Bloom filter must contain the value (private save committed)
-            assert s._bloom.might_contain(normalize_for_dedup("stored locally even if hive fails"))
+            # The committed private value is visible to same-key dedup: an
+            # identical re-save reinforces rather than adding a second row.
+            before = s.count()
+            s.save(
+                key="hive-fail-key",
+                value="stored locally even if hive fails",
+                dedup=True,
+                agent_scope="hive",
+            )
+            assert s.count() == before
         finally:
             s.close()
 
