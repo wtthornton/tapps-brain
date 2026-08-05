@@ -24,12 +24,32 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 | You want to | Tool | Notes |
 |---|---|---|
 | Recall prior context | `brain_recall(query=...)` | BM25 + pgvector hybrid. Returns ranked memories with `quality_warning` when the diagnostics circuit is non-CLOSED. |
-| Save a decision + rationale | `brain_remember(fact=..., tier=...)` | The rationale is the memory-worthy part, not the decision itself. Pick a tier (see below). |
+| Save a decision + rationale | `brain_remember(fact=..., tier=...)` | The rationale is the memory-worthy part, not the decision itself. Pick a tier (see below). **Read `status` — a 200 does not mean persisted** (see below). |
+| Protect neighbours from supersede | `brain_remember(..., supersede="key-scoped")` | v3.29.0+. Default `"global"` lets a save close the validity interval of a textually similar entry in the same tier under *any* key. Use `"key-scoped"` for key-spaces of independent facts (one row per distinct thing), where topical similarity between neighbours is expected and is not a contradiction. |
 | Share across agents | `brain_remember(..., agent_scope="hive")` | Modern primary param. `agent_scope` accepts `private` (default) / `domain` / `hive` / `group:<name>`. The legacy `share=True` / `share_with="hive"` flags still work but `agent_scope` supersedes them. Hive is a feature of the brain, not a separate service. |
 | Teach from an outcome | `brain_learn_success(...)` / `brain_learn_failure(...)` | AgentBrain facade — records what worked / what to avoid so future recalls surface it. Pass `failed_approaches=[...]` on `brain_remember` for inline anti-patterns. |
 | Query stored metrics / events | `brain_query_events(event_type=..., entity_id=...)` | v3.24.0+ — read back `experience_events.payload` (e.g. `quality_metric` scores by `file_path`). Not `brain_get_neighbors` (KG structure only). REST: `POST /v1/experience:query`. |
 
-The eager `tools/list` catalog on the Docker reference stack returns **all** profile tools (defer_loading disabled). Daily-driver tools include `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`, plus v3.24 helpers `brain_query_events`, `brain_profile_get`, `brain_profile_set` when using the `full` or `coder` profile.
+The eager `tools/list` catalog on the Docker reference stack returns **all** profile tools (defer_loading disabled) — 76 on the `full` profile. Daily-driver tools include `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`, plus v3.24 helpers `brain_query_events`, `brain_profile_get`, `brain_profile_set` when using the `full` or `coder` profile.
+
+### The save response contract (v3.28.3+)
+
+`brain_remember` / `POST /v1/remember` returns a status you must read. A `200`
+is not proof the write landed:
+
+| `status` | Meaning |
+|---|---|
+| `saved` | Durable under the key you asked for. |
+| `coalesced` | Folded onto another row. Carries `persisted: false` and `coalesced_into: <other key>` — **your key does not exist**. |
+
+A save that closes a neighbouring entry's validity interval (removing it from
+recall) lists those keys in `invalidated`. If you see keys there you did not
+expect, the entries were superseded on similarity — pass
+`supersede="key-scoped"` to stop that, or raise the tier's
+`conflict_check.per_tier` threshold in the profile.
+
+Before v3.28.3 a coalesced write reported `"saved"` while echoing a foreign key,
+so acknowledged writes could silently not persist (TAP-5614).
 
 ## Pick a tier
 
@@ -104,4 +124,4 @@ make brain-healthcheck    # live MCP round-trip (server-mode OK if IDE is bridge
 - **Experience events + query API**: [`docs/engineering/experience-events.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
 - **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
 - **Deploy + upgrade**: [`docs/guides/dev-docker-loop.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/dev-docker-loop.md) — `make dev-deploy` (fast), `MIGRATE=1`, `ALLOWED_ORIGINS` requirement. Production: [`hive-deployment.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/hive-deployment.md).
-- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3240--2026-06-09) — current at v3.24.0.
+- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3290--2026-08-05) — current at v3.29.0.
