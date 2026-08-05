@@ -948,6 +948,25 @@ def _validate_and_normalize_save(
     }
 
 
+SUPERSEDE_GLOBAL = "global"
+SUPERSEDE_KEY_SCOPED = "key-scoped"
+_SUPERSEDE_MODES = frozenset({SUPERSEDE_GLOBAL, SUPERSEDE_KEY_SCOPED})
+
+
+def _validate_supersede(supersede: str) -> dict[str, Any] | None:
+    """Return a ``bad_request`` envelope when *supersede* is not a known mode.
+
+    Fails closed rather than falling back to the default: silently treating a
+    typo'd ``"key_scoped"`` as ``"global"`` would keep superseding a caller's
+    neighbours after they explicitly asked it to stop.
+    """
+    if supersede in _SUPERSEDE_MODES:
+        return None
+    allowed = ", ".join(sorted(_SUPERSEDE_MODES))
+    msg = f"supersede must be one of: {allowed} (got {supersede!r})"
+    return {"error": "bad_request", "detail": msg, "message": msg}
+
+
 def memory_save(
     store: Any,
     project_id: str,
@@ -963,6 +982,7 @@ def memory_save(
     agent_scope: str = "private",
     source_agent: str = "",
     group: str | None = None,
+    supersede: str = SUPERSEDE_GLOBAL,
 ) -> dict[str, Any]:
     """Save a memory entry with full structured validation.
 
@@ -971,7 +991,23 @@ def memory_save(
     ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
     on success, or ``{"error": "bad_request", "detail": ...}`` when the
     underlying pydantic model rejects the payload (TAP-747).
+
+    *supersede* selects how far a save may invalidate its neighbours:
+
+    ``"global"`` (default)
+        Current behaviour.  A textually similar entry in the same tier has its
+        validity interval closed, whatever key it lives under, and its key is
+        reported in ``invalidated``.
+    ``"key-scoped"``
+        Only this key's own history is touched; entries under other keys are
+        left alone.  For key-spaces holding *independent facts* — one row per
+        distinct thing — where topical similarity between neighbours is
+        expected and is not a contradiction.
     """
+    supersede_error = _validate_supersede(supersede)
+    if supersede_error is not None:
+        return supersede_error
+
     validated = _validate_and_normalize_save(
         store,
         agent_id,
@@ -991,7 +1027,11 @@ def memory_save(
 
     report: dict[str, Any] = {}
     try:
-        result = store.save(**validated, report=report)
+        result = store.save(
+            **validated,
+            report=report,
+            conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
+        )
     except _PydanticValidationError as exc:
         # TAP-747: pydantic slug-key validation raised from MemoryEntry.__init__
         # inside store.save() was escaping to the handler and producing HTTP 500.
@@ -1268,6 +1308,7 @@ def memory_save_many(
     agent_id: str,
     *,
     entries: list[dict[str, Any]],
+    supersede: str = SUPERSEDE_GLOBAL,
 ) -> dict[str, Any]:
     """Save multiple memory entries.
 
@@ -1282,7 +1323,15 @@ def memory_save_many(
     Per-item results follow the same shape as :func:`memory_save`.
     Partial failures are surfaced in the per-item result and do **not** abort
     the remaining items.
+
+    *supersede* applies to the whole batch; see :func:`memory_save` for the
+    modes.  It is batch-wide rather than per-entry because supersede scope is a
+    property of the key-space being written, not of an individual row.
     """
+    supersede_error = _validate_supersede(supersede)
+    if supersede_error is not None:
+        return supersede_error
+
     limit = _batch_limit(_DEFAULT_MAX_BATCH_WRITE)
     if len(entries) > limit:
         return {
@@ -1363,6 +1412,8 @@ def memory_save_many(
                     results[i] = validated
                     errors += 1
                     continue
+                # Batch-wide supersede scope; save_many items mirror save kwargs.
+                validated["conflict_check"] = supersede != SUPERSEDE_KEY_SCOPED
                 to_persist.append((i, validated))
 
         # TAP-2800: persist every valid row in ONE batched DB round-trip rather
@@ -2109,6 +2160,7 @@ async def async_memory_save(
     agent_scope: str = "private",
     source_agent: str = "",
     group: str | None = None,
+    supersede: str = SUPERSEDE_GLOBAL,
 ) -> dict[str, Any]:
     """Async-native counterpart of :func:`memory_save`.
 
@@ -2117,6 +2169,10 @@ async def async_memory_save(
     wired sends the Postgres I/O to ``AsyncPostgresPrivateBackend`` instead
     of the default thread pool.
     """
+    supersede_error = _validate_supersede(supersede)
+    if supersede_error is not None:
+        return supersede_error
+
     try:
         agent_scope = normalize_agent_scope(agent_scope)
     except ValueError as exc:
@@ -2164,6 +2220,7 @@ async def async_memory_save(
             source_agent=resolved_agent,
             memory_group=memory_group_arg,
             report=report,
+            conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
         )
     except _PydanticValidationError as exc:
         errors = exc.errors()

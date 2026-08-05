@@ -75,6 +75,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
         source_agent: str = "",
         group: str | None = None,
         agent_id: str = "",
+        supersede: str = "global",
     ) -> str:
         """Save or update a memory entry.
 
@@ -114,6 +115,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             agent_scope=agent_scope,
             source_agent=source_agent,
             group=group,
+            supersede=supersede,
         )
 
         if idem_active and ikey:
@@ -331,6 +333,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
     def memory_save_many(
         entries: list[dict[str, str | float | list[str] | None]],
         agent_id: str = "",
+        supersede: str = "global",
     ) -> str:
         """Save multiple memory entries in a single call.
 
@@ -359,6 +362,7 @@ def register_memory_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: PLR0915,
             project_id,
             eff_aid,
             entries=list(entries),
+            supersede=supersede,
         )
         if ikey and dsn:
             _mcp_idempotency_record(dsn, project_id, ikey, result, "memory_save_many")

@@ -308,6 +308,7 @@ class AgentBrain:
         tier: str = "procedural",
         share: bool = False,
         share_with: str | list[str] | None = None,
+        supersede: str = "global",
     ) -> str:
         """Save a memory.  Returns the generated key.
 
@@ -319,6 +320,11 @@ class AgentBrain:
                 ``share_with``.
             share_with: ``"hive"``, a single group name, or a list of group
                 names to share with.
+            supersede: ``"global"`` (default) lets this save close the validity
+                interval of a textually similar entry under any key in the same
+                tier.  ``"key-scoped"`` touches only this key's own history —
+                for key-spaces of independent facts where topical similarity
+                between neighbours is expected and is not a contradiction.
         """
         try:
             MemoryTier(tier)
@@ -332,6 +338,12 @@ class AgentBrain:
             )
         if isinstance(share_with, str) and not share_with.strip():
             raise BrainValidationError("share_with must be a non-empty group name or 'hive'")
+
+        if supersede not in ("global", "key-scoped"):
+            raise BrainValidationError(
+                f"Invalid supersede {supersede!r}: must be 'global' or 'key-scoped'"
+            )
+        conflict_check = supersede != "key-scoped"
 
         key = _content_key(fact)
 
@@ -352,7 +364,11 @@ class AgentBrain:
             # would overwrite agent_scope and leave only the last group.
             groups = [g.strip() for g in share_with]
             entry = self._checked_save(
-                key=key, value=fact, tier=tier, agent_scope=f"group:{groups[0]}"
+                key=key,
+                value=fact,
+                tier=tier,
+                agent_scope=f"group:{groups[0]}",
+                conflict_check=conflict_check,
             )
             # Fan out using the entry save() returned — a store.get() here
             # bumped access_count/last_accessed on the just-saved entry,
@@ -366,7 +382,13 @@ class AgentBrain:
                 )
             return key
 
-        self._checked_save(key=key, value=fact, tier=tier, agent_scope=agent_scope)
+        self._checked_save(
+            key=key,
+            value=fact,
+            tier=tier,
+            agent_scope=agent_scope,
+            conflict_check=conflict_check,
+        )
         return key
 
     def recall(

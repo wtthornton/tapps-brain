@@ -26,7 +26,14 @@ workflow then:
 4. Creates the GitHub Release at `vX.Y.Z`, attaches both artifacts, pulls
    release notes from the matching `## X.Y.Z` block in `CHANGELOG.md`.
 
-Consumers (AgentForge, TappsMCP, NLTlabsPE) install via:
+**Not every consumer installs the package.** AgentForge has been HTTP-only since
+TAP-995 — no dependency, no import, no wheel. It adopts whatever version the
+sidecar reports on next boot, so redeploying the brain *is* the handover; there
+is no artifact to ship it and no step to perform. Check a consumer's
+`pyproject.toml` before assuming it needs one.
+
+Consumers that do install the package (as of 2026-08-05: TappsMCP, which pins a
+git tag and does **not** auto-follow a release) use:
 
 ```toml
 # pyproject.toml of a consumer — replace the vendored wheel with one of:

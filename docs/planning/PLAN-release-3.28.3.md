@@ -268,10 +268,20 @@ Also confirm `/info` (or `brain_bridge_health`) reports `brain_version: 3.28.3`.
    their 7-of-24 400s never persisted at all and are re-writable on the next
    poll tick; no consumer-side change wanted. This is a cross-project write —
    confirm before sending.
-4. **AgentForge consumes tapps-brain via a vendored wheel under `vendor/`**, not
-   from PyPI. It does not pick this up automatically. Either hand over the
-   3.28.3 wheel or point them at the GitHub Release URL form documented in
-   `scripts/publish-checklist.md`.
+4. **AgentForge needs nothing.** It dropped the vendored wheel at TAP-995 and has
+   been HTTP-only since: no `tapps-brain` dependency, no `import tapps_brain`, no
+   wheel on disk. It holds only `TAPPS_BRAIN_HTTP_URL` + `TAPPS_BRAIN_AUTH_TOKEN`
+   and adopts whatever version the sidecar reports (`/v1/tools/list`
+   `X-Brain-Version` → `/healthz brain_version` → `/health.version`) on next boot.
+   Redeploying the brain compose *is* the handover.
+
+   An earlier revision of this plan said to hand AgentForge a `.whl`. That step
+   was dead as of TAP-995 and generated a false ask to the consumer, who had to
+   correct it. Do not reinstate it.
+
+   The consumer that *does* still install the package is **tapps-mcp**, which pins
+   `tapps-brain = { git = ..., tag = "vX.Y.Z" }` in its `pyproject.toml`. That pin
+   does not follow a new release — check it if tapps-mcp needs the new version.
 
 ---
 
