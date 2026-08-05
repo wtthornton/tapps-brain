@@ -6,3 +6,4 @@ dead_code_whitelist_patterns:
 - _protocols.py
 narrative_path_globs:
 - scripts/**
+mcp_bundle: full

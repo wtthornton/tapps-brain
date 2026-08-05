@@ -101,6 +101,42 @@
             "command": ".claude/hooks/tapps-pre-session-start-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "mcp__claude_ai_Linear__save_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-linear-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "save_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-linear-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__claude_ai_Linear__list_issues",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-linear-list.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "list_issues",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-pre-linear-list.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -167,6 +203,24 @@
           {
             "type": "command",
             "command": ".claude/hooks/tapps-post-session-start.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__claude_ai_Linear__list_issues",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-linear-list.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "list_issues",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/tapps-post-linear-list.sh"
           }
         ]
       }
@@ -271,7 +325,8 @@
       "Read(.env.test)",
       "Read(.env.smoke-backup.*)",
       "Read(.env.*backup*)",
-      "Read(.env.bak*)"
+      "Read(.env.bak*)",
+      "Read(.env.*)"
     ],
     "ask": [
       "Read(.env.*)"
