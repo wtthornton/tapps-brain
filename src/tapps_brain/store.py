@@ -879,7 +879,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             agent_id=agent_id,
         )
 
-    def _merge_durable_entries(self, *, limit: int | None = None) -> None:
+    def _merge_durable_entries(
+        self, *, limit: int | None = None, allow_over_cap: bool = False
+    ) -> None:
         """Fill cache misses from ``load_all`` (durable overflow beyond cold-start).
 
         Never overwrites keys already present in ``_entries`` so in-memory
@@ -890,20 +892,73 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         is in flight — naively merging would resurrect it in the cache and
         push the store past ``max_entries``.  The removal-epoch check below
         skips any key removed after the snapshot began.
+
+        The merge is **bounded by the remaining room under ``max_entries``**
+        (TAP-5633).  Without that bound the cap is not enforceable at all:
+        ``_handle_conflicts`` runs this merge on the *save* path, before
+        :meth:`_enforce_entry_caps_before_assign`.  A save's write-through
+        persists outside the store lock, so a concurrent eviction can delete a
+        durable row that has not landed yet, leaving an orphan row with no
+        cache slot until :meth:`_drop_if_concurrently_removed` reaps it a
+        round-trip later.  Merging that orphan took the cache from ``cap`` to
+        ``cap + 1``; the assign that followed then evicted one and added one,
+        so the overshoot never drained — measured as a permanent 101/102
+        against a 100-entry cap under five concurrent writers.
+
+        Rows are merged newest-first (``load_all`` orders ``updated_at DESC``),
+        so the bound keeps the same rows an unbounded merge followed by
+        confidence eviction would have kept.
+
+        ``allow_over_cap=True`` restores the unbounded merge for the maintenance
+        surfaces whose contract *is* the durable set rather than the cache view —
+        :meth:`gc` cannot archive a row it has not hydrated (its archive loop
+        skips keys absent from ``_entries``), and the integrity / reconciliation
+        counters would under-report.  Never pass it from a save or read path.
         """
+        cap = self._max_entries
         with self._serialized():
             snapshot_epoch = self._removal_epoch
-        durable = self._persistence.load_all(limit=limit)
+            room = cap - len(self._entries)
+        if not allow_over_cap and room <= 0:
+            # Cache is already at the invariant; there is nothing a merge may
+            # legitimately add.
+            return
+        if allow_over_cap or limit is None:
+            effective_limit = limit if allow_over_cap else cap
+        else:
+            effective_limit = min(limit, cap)
+        durable = self._persistence.load_all(limit=effective_limit)
+        merged = 0
+        skipped_for_cap = 0
         with self._serialized():
+            # Re-read under the lock: concurrent saves may have consumed the
+            # room measured before the (unlocked) load_all round-trip.
+            room = cap - len(self._entries)
             for entry in durable:
                 if entry.key in self._entries:
                     continue
                 if self._removed_at.get(entry.key, 0) > snapshot_epoch:
                     continue
+                if room <= 0 and not allow_over_cap:
+                    skipped_for_cap += 1
+                    continue
                 self._entries[entry.key] = entry
                 # Keep the entity index consistent with the cache, or
                 # graph-centrality scoring never sees the entry.
                 self._index_entry_entities(entry.key, entry.value)
+                room -= 1
+                merged += 1
+        if skipped_for_cap:
+            # Surface the overshoot rather than silently truncating it: durable
+            # holding more rows than the cap means eviction is lagging, and a
+            # bounded read view must not make that invisible.
+            self._metrics.increment("store.merge.durable_overshoot")
+            logger.debug(
+                "merge_durable_over_cap",
+                cap=cap,
+                merged=merged,
+                skipped_for_cap=skipped_for_cap,
+            )
 
     def _note_removed_locked(self, key: str) -> None:
         """Record a cache+durable removal for merge-resurrection protection.
@@ -4011,8 +4066,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             config=self._get_decay_config(),
             gc_config=self._gc_config,
         )
-        # Include durable overflow beyond the cold-start cache cap.
-        self._merge_durable_entries()
+        # Include durable overflow beyond the cold-start cache cap.  GC's
+        # archive loop skips keys absent from ``_entries``, so an over-cap row
+        # it cannot hydrate is a row it can never archive (TAP-5633).
+        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
         now = datetime.now(tz=UTC)
@@ -4200,8 +4257,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         from tapps_brain.gc import MemoryGarbageCollector
 
         # Same durable merge as gc() so overflow rows beyond the cold-start
-        # cache limit appear in operator previews (CLI/HTTP stale).
-        self._merge_durable_entries()
+        # cache limit appear in operator previews (CLI/HTTP stale).  Must stay
+        # over-cap in lockstep with gc(), or the preview under-reports what a
+        # real run would archive.
+        self._merge_durable_entries(allow_over_cap=True)
         gc_collector = MemoryGarbageCollector(
             config=self._get_decay_config(),
             gc_config=self._gc_config,

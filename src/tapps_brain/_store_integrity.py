@@ -60,8 +60,9 @@ class IntegrityMixin(_MemoryStoreBase):
         """
         self._metrics.increment("store.verify_integrity")
 
-        # Include durable overflow beyond the cold-start cache cap.
-        self._merge_durable_entries()
+        # Include durable overflow beyond the cold-start cache cap.  Integrity
+        # covers the durable set, not the capped cache view (TAP-5633).
+        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -257,7 +258,9 @@ class IntegrityMixin(_MemoryStoreBase):
         Returns:
             Dict with ``resigned`` and ``skipped_no_change`` counts.
         """
-        self._merge_durable_entries()
+        # Re-signing must reach every durable row, not just the capped cache
+        # view, or over-cap rows keep a stale hash forever (TAP-5633).
+        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             keys = list(self._entries.keys())
 

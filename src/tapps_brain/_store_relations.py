@@ -135,7 +135,9 @@ class RelationsMixin(_MemoryStoreBase):
         relation that names two missing keys contributes 2 (documented
         per-reference semantics).
         """
-        self._merge_durable_entries()
+        # Reconciliation counter: must see the durable set, not the capped
+        # cache view, or over-cap rows are miscounted as missing (TAP-5633).
+        self._merge_durable_entries(allow_over_cap=True)
         self._rebuild_relations_cache_from_durable()
 
         with self._serialized():
@@ -162,7 +164,8 @@ class RelationsMixin(_MemoryStoreBase):
         """
         _now = now if now is not None else datetime.now(tz=UTC)
 
-        self._merge_durable_entries()
+        # Reconciliation counter over the durable set (TAP-5633).
+        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
 
