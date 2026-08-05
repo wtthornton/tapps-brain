@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.29.0] — 2026-08-05
+
+Minor release: removes the write-only Bloom filter and its `bloom_saturation` gauge, and closes a release-gate hole that let a release ship without its own code. Minor rather than patch because a field is removed from the metrics/health payload.
+
 ### Removed
 
 - **Write-only Bloom filter and its `bloom_saturation` gauge** ([TAP-5629](https://linear.app/tappscodingagents/issue/TAP-5629)) — the filter was a fast-path for the value-scan dedup that TAP-5615 replaced with an O(1) same-key lookup. Nothing has queried `might_contain` since; the filter was still added to on every save and fully rebuilt on cold start, GC, consolidation and undo, and its saturation gauge measured the health of a read path that no longer exists — a number that would climb toward 1.0 forever while nothing consulted it. `src/tapps_brain/bloom.py` is now `src/tapps_brain/dedup.py` and holds only `normalize_for_dedup`, which the same-key comparison still uses. **`bloom_saturation` is gone from `get_metrics()`, `/metrics` and the `/snapshot` store-global set** — remove any alert or dashboard panel bound to it. Not present in the OpenAPI snapshot, so the REST contract is unchanged.
