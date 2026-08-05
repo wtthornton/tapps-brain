@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-08-01 — **v3.28.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
+**Last updated:** 2026-08-05 — **v3.29.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
 
-**Package version (`pyproject.toml`):** **3.28.0**
+**Package version (`pyproject.toml`):** **3.29.0**
 
 Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic acceptance criteria: [`epics/`](./epics/).
 
@@ -34,7 +34,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
-- **Migrations 007–028:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`). Current max private migration: **029**.
+- **Migrations 007–029:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`). Current max private migration: **029**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
@@ -143,16 +143,17 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped in v3.24.0 (2026-06-09):**
-- **EPIC-074** — `brain_query_events` MCP + `POST /v1/experience:query`; migration 023 index; `EntitySpec` type/id shorthand; experience-events docs.
-- **EPIC-075** — `brain_profile_set/get` MCP + REST profile data endpoints; migration 024 `profile_scoped_data` with RLS.
-- **TAP-2981** — `GET /v1/skill` returns version-matched SKILL.md for HTTP-only consumers.
+**Shipped in v3.29.0 (2026-08-05):**
+- **Per-save supersede scoping** — `supersede: "global" | "key-scoped"` on `/v1/remember`, `/v1/remember:batch` and MCP `brain_remember`. Default stays `"global"`; `"key-scoped"` declares a key-space of independent facts so one save cannot evict topically adjacent siblings.
+- **Write-only Bloom filter removed** ([TAP-5629](https://linear.app/tappscodingagents/issue/TAP-5629)) — `bloom.py` → `dedup.py`; **`bloom_saturation` is gone from `get_metrics()`, `/metrics` and `/snapshot`** — drop any alert or dashboard panel bound to it.
+- **Bounded durable merge** ([TAP-5633](https://linear.app/tappscodingagents/issue/TAP-5633)) — concurrent saves could push `count()` permanently past `max_entries`; reproduces only against live Postgres.
+- **Release gate now runs against HEAD, not the working tree** — a new stage 0 fails when release-critical paths differ from HEAD. `ALLOW_DIRTY_TREE=1` skips it for local iteration.
 
-**Recently shipped (v3.17–v3.23):** EPIC-072 async-native Postgres (writes + HTTP recall), EPIC-071 SDK hardening, EPIC-073 MCP profile filtering, OpenClaw removal (3.23.0), June quality audit ([TAP-2755](https://linear.app/tappscodingagents/issue/TAP-2755)).
+**Recently shipped (v3.25–v3.28):** `web_research` / `research_fetch` MCP tools (3.28.0, [TAP-5364](https://linear.app/tappscodingagents/issue/TAP-5364)); per-operation idempotency keys + migration 029 (3.28.1, [TAP-5444](https://linear.app/tappscodingagents/issue/TAP-5444)); save-path dedup and revive fixes plus the `coalesced` / `invalidated` response contract (3.28.3, [TAP-5615](https://linear.app/tappscodingagents/issue/TAP-5615) / [TAP-5616](https://linear.app/tappscodingagents/issue/TAP-5616) / [TAP-5617](https://linear.app/tappscodingagents/issue/TAP-5617)).
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 
-**Queue (2026-06-09):** EPIC-077 cleanup landed; file new work via `linear-issue` per [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
+**Queue (2026-08-05):** [EPIC TAP-5459](https://linear.app/tappscodingagents/issue/TAP-5459) — DB-dependent integration tests that CI skips rather than runs — is the open critical path; file new work via `linear-issue` per [`FEATURE_FEASIBILITY_CRITERIA.md`](./FEATURE_FEASIBILITY_CRITERIA.md).
 
 **Operational (see [`EPIC-073.md`](epics/EPIC-073.md) rollout plan):**
 1. ~~Opt-in `X-Brain-Profile: coder` in this repo's MCP client config.~~ **Done (2026-06-09)** — `.mcp.json` + `.cursor/mcp.json`.
