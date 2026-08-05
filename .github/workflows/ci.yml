@@ -15,13 +15,13 @@ on:
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
+  # No paths-ignore on pull_request, deliberately.  `lint` and `test` are
+  # required status checks on `main`, and a required check that never reports
+  # blocks a PR forever — so a docs-only PR under a paths filter could not be
+  # merged at all.  The cost is one lint+test run on doc-only PRs; a gate that
+  # can be silently skipped is not a gate.  `push` keeps its filter.
   pull_request:
     branches: [main, master]
-    paths-ignore:
-      - "*.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
-      - "LICENSE"
   workflow_dispatch:
 
 concurrency:
