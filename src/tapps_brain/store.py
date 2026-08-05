@@ -367,6 +367,8 @@ class _SavePrep:
     """When write-policy UPDATE remaps onto an existing candidate key."""
     invalidated_keys: list[str] = field(default_factory=list)
     """Keys this save closed the validity interval on (TAP-5617)."""
+    invalidated_detail: list[dict[str, object]] = field(default_factory=list)
+    """Per-key ``{key, similarity, tier, threshold}`` for each invalidation."""
 
 
 _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
@@ -1396,6 +1398,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         if report is not None and prep.invalidated_keys:
             report["invalidated"] = list(prep.invalidated_keys)
+            # Additive: `invalidated` keeps its bare-key shape because callers
+            # gate on it today (TAP-5617); the scores ride alongside.
+            report["invalidated_detail"] = list(prep.invalidated_detail)
 
         # Phase 6 — build, persist, propagate under span + timer.
         self._metrics.increment("store.save")
@@ -1563,6 +1568,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         conflict_valid_at: str | None = None
         invalidated_keys: list[str] = []
+        invalidated_detail: list[dict[str, object]] = []
         if not will_fail_validation:
             # Phase 4 — dedup fast-path.
             dedup_short = self._handle_dedup(persist_key, value, dedup)
@@ -1570,7 +1576,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 return dedup_short
 
             # Phase 5 — conflict detection (opt-in) marks superseded entries.
-            conflict_valid_at, invalidated_keys = self._handle_conflicts(
+            conflict_valid_at, invalidated_keys, invalidated_detail = self._handle_conflicts(
                 persist_key, value, tier, conflict_check
             )
 
@@ -1583,6 +1589,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             conflict_valid_at=conflict_valid_at,
             effective_key=update_key,
             invalidated_keys=invalidated_keys,
+            invalidated_detail=invalidated_detail,
         )
 
     def _postprocess_saved_entry(
@@ -2029,18 +2036,27 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         value: str,
         tier: str,
         conflict_check: bool,
-    ) -> tuple[str | None, list[str]]:
+    ) -> tuple[str | None, list[str], list[dict[str, object]]]:
         """Detect and invalidate conflicting entries.
 
         Wraps :func:`tapps_brain._save_conflict.plan_conflicts`.  Returns
-        ``(shared_valid_at, invalidated_keys)``.  The timestamp should be used
-        as ``valid_at`` on the new entry to keep the temporal chain (EPIC-004)
-        coherent; the key list is reported back to the caller (TAP-5617) so a
-        write that removed neighbouring entries from recall does not do so
-        silently.
+        ``(shared_valid_at, invalidated_keys, invalidated_detail)``.  The
+        timestamp should be used as ``valid_at`` on the new entry to keep the
+        temporal chain (EPIC-004) coherent; the key list is reported back to the
+        caller (TAP-5617) so a write that removed neighbouring entries from
+        recall does not do so silently.
+
+        ``invalidated_detail`` carries the ``similarity`` that triggered each
+        invalidation alongside the ``threshold`` it cleared.  The scores are
+        already computed for the audit payload and previously reached only a log
+        line, which left a consumer seeing evictions with no way to tell whether
+        the line sits above or below where they want it — the difference between
+        "something was evicted" and "evicted at 0.71 against a threshold of
+        0.6".  Only entries whose invalidation actually persisted are listed, so
+        the detail never over-reports.
         """
         if not conflict_check:
-            return None, []
+            return None, [], []
 
         # Conflict detection must see durable rows, not only the cold-start cap.
         self._merge_durable_entries()
@@ -2056,7 +2072,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             now=_utc_now_iso(),
         )
         if plan is None:
-            return None, []
+            return None, [], []
 
         logger.warning(
             "memory_save_conflicts_detected",
@@ -2099,9 +2115,22 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     )
                     # Do not advertise a shared conflict timestamp when any
                     # invalidation failed to persist — abort the conflict plan.
-                    return None, []
+                    return None, [], []
 
-        return plan.now, invalidated_keys
+        # Score per invalidated key, from the audit payload the plan already
+        # computed.  Restricted to keys whose invalidation persisted above.
+        persisted = set(invalidated_keys)
+        invalidated_detail: list[dict[str, object]] = [
+            {
+                "key": row["key"],
+                "similarity": row["similarity"],
+                "tier": row["tier"],
+                "threshold": plan.similarity_threshold,
+            }
+            for row in plan.audit
+            if row.get("key") in persisted
+        ]
+        return plan.now, invalidated_keys, invalidated_detail
 
     def _build_and_assign_entry(
         self,

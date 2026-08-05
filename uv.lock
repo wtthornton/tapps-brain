@@ -2191,7 +2191,7 @@ wheels = [
 
 [[package]]
 name = "tapps-brain"
-version = "3.28.3"
+version = "3.29.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },

@@ -1068,7 +1068,15 @@ def _save_result_envelope(
 
     *report* is the caller-owned dict passed to :meth:`MemoryStore.save`; its
     ``invalidated`` list (entries whose validity interval this save closed) is
-    merged into the envelope when non-empty.
+    merged into the envelope when non-empty, together with
+    ``invalidated_detail`` — one ``{key, similarity, tier, threshold}`` row per
+    invalidation, so a consumer can tune from real traffic instead of guessing.
+
+    Seeing invalidations you did not want is usually a threshold question, not a
+    bug: supersede fires within a tier above ``conflict_check`` similarity, and
+    that threshold is tunable **per project** via ``conflict_check.per_tier``
+    (see ``docs/guides/per-project-profile-overrides.md``).  For a key-space of
+    independent facts, pass ``supersede="key-scoped"`` on the save instead.
     """
     if isinstance(result, dict):
         return result
@@ -1087,6 +1095,9 @@ def _save_result_envelope(
     invalidated = (report or {}).get("invalidated")
     if invalidated:
         envelope["invalidated"] = list(invalidated)
+        detail = (report or {}).get("invalidated_detail")
+        if detail:
+            envelope["invalidated_detail"] = list(detail)
     return envelope
 
 
