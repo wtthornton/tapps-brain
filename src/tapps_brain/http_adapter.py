@@ -1290,6 +1290,14 @@ def create_app(
           ``{ "key": str, "value": str, "tier"?: str, "source"?: str,
               "tags"?: list[str], "scope"?: str, "confidence"?: float,
               "agent_scope"?: str, "group"?: str }``
+
+        Response (200) — read ``status``, do not assume 200 means persisted:
+          - ``{"status": "saved", "key": <the requested key>, ...}`` — durable.
+          - ``{"status": "coalesced", "persisted": false,
+            "coalesced_into": <other key>, ...}`` — folded onto another row;
+            the requested key does not exist (TAP-5617).
+          - optional ``"invalidated": [<key>, ...]`` — entries whose validity
+            interval this save closed, removing them from recall.
         """
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:

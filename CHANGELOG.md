@@ -12,6 +12,19 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.28.3] — 2026-08-04
+
+Patch release: `/v1/remember` acknowledged writes it did not persist.
+
+### Fixed
+
+- **Save-path dedup discarded writes under distinct keys** ([TAP-5615](https://linear.app/tappscodingagents/issue/TAP-5615)) — the key normalization applied before dedup comparison was only used for the lookup, not for the stored row identity; distinct callers of the same logical key (e.g. `user-profile` vs `user_profile`) would each write a row and later see dedup failure when a coalescing save arrived. All three saves went to the DB, but only the last was returned to the caller, so the first two reported `"saved"` while persisting nothing — the acknowledged write loss. Dedup now keys on the pre-normalization user key; only the first write wins its row, and subsequent same-key writes become coalesces. Pre-existing writes under variant keys are not migrated.
+- **Reviving a superseded key returned a spurious 400** ([TAP-5616](https://linear.app/tappscodingagents/issue/TAP-5616)) — the revive path (clearing `valid_at` on a stale validity interval) did not check whether the key itself had been superseded, so a save to an old key would write to the stale row then reject the assignment because the key was not current — blocking saves that should have succeeded and not reclassifying the data. Check the key's current valid interval before accepting revive.
+
+### Changed
+
+- **`/v1/remember` response contract** ([TAP-5617](https://linear.app/tappscodingagents/issue/TAP-5617)) — a write folded onto another row now returns `status: "coalesced"` with `persisted: false` and `coalesced_into` (the id of the row the write merged into), never `"saved"` with a misattributed id. Saves that close a neighbour's validity interval (causing it to supersede) list those keys in `invalidated`. The `"invalidated"` and `"coalesced_into"` fields are new; `status: "coalesced"` replaces an unreachable path that reported `"saved": false` after TAP-5615 changed dedup semantics.
+
 ## [3.28.2] — 2026-08-03
 
 Patch release: the library-docs cache never persisted a single entry, plus two DB-dependent integration tests that could not pass as written.

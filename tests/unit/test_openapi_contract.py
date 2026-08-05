@@ -162,6 +162,49 @@ def test_schema_version_extension_present(spec: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _describe_drift(runtime: object, on_disk: object, path: str = "", depth: int = 0) -> str:
+    """Return a compact, human-readable description of where two specs differ.
+
+    The bare ``assert spec == on_disk`` message says only *that* the spec
+    drifted, which is useless when the runtime spec differs between a dev
+    machine and CI (different optional deps → different routes).  This walks
+    both structures and reports the differing paths so the CI log names the
+    culprit directly.
+    """
+    if runtime == on_disk:
+        return ""
+    loc = path or "<root>"
+    if depth >= 6:
+        return f"  {loc}: differs (max depth reached)\n"
+
+    if isinstance(runtime, dict) and isinstance(on_disk, dict):
+        lines = []
+        only_runtime = sorted(set(runtime) - set(on_disk))
+        only_disk = sorted(set(on_disk) - set(runtime))
+        for k in only_runtime:
+            lines.append(f"  {loc}: only in RUNTIME spec: {k!r}\n")
+        for k in only_disk:
+            lines.append(f"  {loc}: only in SNAPSHOT: {k!r}\n")
+        for k in sorted(set(runtime) & set(on_disk)):
+            lines.append(_describe_drift(runtime[k], on_disk[k], f"{loc}.{k}", depth + 1))
+        return "".join(lines)
+
+    if isinstance(runtime, list) and isinstance(on_disk, list):
+        if len(runtime) != len(on_disk):
+            return f"  {loc}: list length {len(runtime)} (runtime) != {len(on_disk)} (snapshot)\n"
+        return "".join(
+            _describe_drift(a, b, f"{loc}[{i}]", depth + 1)
+            for i, (a, b) in enumerate(zip(runtime, on_disk, strict=True))
+        )
+
+    return f"  {loc}:\n    runtime  = {_clip(runtime)}\n    snapshot = {_clip(on_disk)}\n"
+
+
+def _clip(value: object, limit: int = 200) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[:limit] + f"… ({len(text)} chars)"
+
+
 def test_runtime_spec_matches_checked_in_snapshot(spec: dict) -> None:
     """Belt-and-suspenders for the CI drift gate.
 
@@ -175,5 +218,5 @@ def test_runtime_spec_matches_checked_in_snapshot(spec: dict) -> None:
     on_disk = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert spec == on_disk, (
         "OpenAPI spec drift — run scripts/snapshot_openapi.py and commit "
-        "docs/contracts/openapi.json"
+        "docs/contracts/openapi.json\n" + _describe_drift(spec, on_disk)
     )

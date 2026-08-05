@@ -38,6 +38,26 @@ your client: store fetch results in a **`context`-tier** memory entry with
 `/v1/remember`, not as a brain tier label. Posting `tier: "cache"` returns a
 validation error (`invalid_tier`).
 
+### `/v1/remember` — response statuses (3.28.3+)
+
+A `200` response carries a `status` field. Read it; do not assume `200` means
+`saved`:
+
+- **`"saved"`** — the entry is durably stored under the `key` you sent. `key` in
+  the response always echoes the key you requested.
+- **`"coalesced"`** — the write was folded onto a different row. Carries
+  `persisted: false` and `coalesced_into: "<the key that holds it>"`. The key you
+  asked for does **not** exist; treat it as a write that did not land.
+
+Before 3.28.3 the coalescing path returned `status: "saved"` with the *other*
+row's key, so an acknowledged write could silently fail to persist (TAP-5614).
+Value-based deduplication is now scoped to the key: identical content under two
+different keys yields two rows.
+
+A save may also close the validity interval on entries it conflicts with, which
+removes them from recall. Those keys are listed in **`invalidated: [...]`** when
+present. There is no `invalidated` field on the batch route.
+
 ### `/v1/experience` — v3.22+ wire format
 
 Since **v3.22.4** (TAP-2865/2866/2868):

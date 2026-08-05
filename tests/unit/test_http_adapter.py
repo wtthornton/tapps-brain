@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 import time
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,6 +31,9 @@ from tapps_brain.http_adapter import (
     _Settings,
     create_app,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -2681,3 +2684,67 @@ class TestRestTenantStoreResolution:
             )
         assert resp.status_code == 200
         assert captured == [tenant]
+
+
+class TestRememberPersistsEveryAcknowledgedWrite:
+    """TAP-5614: a 200 ``{"status": "saved"}`` must mean the key is readable.
+
+    The reporter's probe at the API boundary — five distinct keys carrying one
+    value. Before TAP-5615 four of the five responses echoed ``diag-echo-0``
+    and only that key existed.
+    """
+
+    _HEADERS = {
+        "Authorization": "Bearer tok",
+        "X-Project-Id": "proj-write-loss",
+        "X-Agent-Id": "agent-1",
+    }
+
+    def test_v1_remember_distinct_keys_same_value(self, tmp_path: Path) -> None:
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        settings = _make_settings(auth_token="tok", store=store)
+        keys = [f"diag-echo-{i}" for i in range(5)]
+
+        with _client(settings) as client:
+            for key in keys:
+                resp = client.post(
+                    "/v1/remember",
+                    json={"key": key, "value": "echo-probe", "tier": "context"},
+                    headers=self._HEADERS,
+                )
+                assert resp.status_code == 200, resp.text
+                body = resp.json()
+                assert body["status"] == "saved"
+                assert body["key"] == key, f"stale key echo: asked {key}, got {body['key']}"
+
+            for key in keys:
+                resp = client.post("/v1/forget", json={"key": key}, headers=self._HEADERS)
+                assert resp.json().get("forgotten") is True, f"{key} was acknowledged but lost"
+
+    def test_v1_remember_batch_distinct_keys_same_value(self, tmp_path: Path) -> None:
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        settings = _make_settings(auth_token="tok", store=store)
+        keys = [f"batch-echo-{i}" for i in range(3)]
+
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember:batch",
+                json={
+                    "entries": [
+                        {"key": key, "value": "batch-probe", "tier": "context"} for key in keys
+                    ]
+                },
+                headers=self._HEADERS,
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["saved_count"] == len(keys)
+            assert [r["key"] for r in body["results"]] == keys
+
+            for key in keys:
+                resp = client.post("/v1/forget", json={"key": key}, headers=self._HEADERS)
+                assert resp.json().get("forgotten") is True, f"{key} was acknowledged but lost"
