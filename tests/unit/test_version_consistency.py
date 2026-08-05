@@ -31,32 +31,30 @@ def _read_server_json_version() -> str:
     return version
 
 
-def _read_skill_version() -> str:
-    """Read the ``version:`` field from the tapps-brain SKILL.md frontmatter.
+# Every copy of the agent-facing skill.  ``.cursor`` was NOT pinned here until
+# 2026-08-05 and had silently drifted three releases behind (3.26.0 while the
+# package shipped 3.29.0) — an unpinned copy is an unmaintained copy.
+SKILL_COPIES = (
+    ".claude/skills/tapps-brain/SKILL.md",
+    ".cursor/skills/tapps-brain/SKILL.md",
+    "src/tapps_brain/_assets/tapps-brain-skill.md",
+)
 
-    Pinning the skill's version to the package version forces the SKILL.md
-    content to be reviewed and re-pinned on every release, so the agent-facing
-    skill never drifts behind the deployed brain (the doc surface it describes).
+
+def _read_skill_frontmatter_version(rel_path: str) -> str:
+    """Read the ``version:`` field from a skill copy's frontmatter.
+
+    Pinning each copy to the package version forces its content to be reviewed
+    and re-pinned on every release, so the agent-facing skill never drifts
+    behind the deployed brain (the doc surface it describes).
     """
-    skill = PROJECT_ROOT / ".claude/skills/tapps-brain/SKILL.md"
+    skill = PROJECT_ROOT / rel_path
     match = re.search(
         r'^version:\s*"?([^"\n]+?)"?\s*$',
         skill.read_text(encoding="utf-8"),
         re.MULTILINE,
     )
-    assert match, "SKILL.md frontmatter is missing a 'version:' field"
-    return match.group(1)
-
-
-def _read_bundled_skill_asset_version() -> str:
-    """Read version from the HTTP-served bundled skill asset (``GET /v1/skill``)."""
-    skill = PROJECT_ROOT / "src/tapps_brain/_assets/tapps-brain-skill.md"
-    match = re.search(
-        r'^version:\s*"?([^"\n]+?)"?\s*$',
-        skill.read_text(encoding="utf-8"),
-        re.MULTILINE,
-    )
-    assert match, "_assets/tapps-brain-skill.md frontmatter is missing a 'version:' field"
+    assert match, f"{rel_path} frontmatter is missing a 'version:' field"
     return match.group(1)
 
 
@@ -75,18 +73,14 @@ def _read_docker_env_example_brain_version() -> str:
 def test_all_versions_match() -> None:
     """All distribution files must declare the same version string."""
     pyproject_ver = _read_pyproject_version()
-    server_json_ver = _read_server_json_version()
-    skill_ver = _read_skill_version()
-    bundled_skill_ver = _read_bundled_skill_asset_version()
-    docker_env_ver = _read_docker_env_example_brain_version()
 
     versions = {
         "pyproject.toml": pyproject_ver,
-        "server.json": server_json_ver,
-        ".claude/skills/tapps-brain/SKILL.md": skill_ver,
-        "src/tapps_brain/_assets/tapps-brain-skill.md": bundled_skill_ver,
-        "docker/.env.example BRAIN_VERSION": docker_env_ver,
+        "server.json": _read_server_json_version(),
+        "docker/.env.example BRAIN_VERSION": _read_docker_env_example_brain_version(),
     }
+    for rel_path in SKILL_COPIES:
+        versions[rel_path] = _read_skill_frontmatter_version(rel_path)
 
     # All must be non-empty
     for name, ver in versions.items():
@@ -104,4 +98,30 @@ def test_version_is_valid_semver() -> None:
     version = _read_pyproject_version()
     assert re.match(r"^\d+\.\d+\.\d+([a-zA-Z0-9.+-]*)?$", version), (
         f"Version '{version}' is not valid semver"
+    )
+
+
+def test_skill_bodies_do_not_claim_a_stale_release() -> None:
+    """A skill body must not name a release older than the one being shipped.
+
+    The frontmatter pin above is satisfied by bumping a single number, which is
+    exactly what happened in 3.28.3 and again in 3.29.0: all three copies
+    declared the new version while their bodies still read "current at v3.24.0"
+    and "current at v3.26.0", and none documented the save-response contract
+    those releases changed.
+
+    This asserts the weaker but mechanically checkable half — that no body
+    advertises a stale version. It cannot verify that prose describes current
+    behaviour; that still needs a human reading the body against the CHANGELOG.
+    """
+    pyproject_ver = _read_pyproject_version()
+    stale: list[str] = []
+    for rel_path in SKILL_COPIES:
+        text = (PROJECT_ROOT / rel_path).read_text(encoding="utf-8")
+        for claimed in re.findall(r"current at v(\d+\.\d+\.\d+)", text):
+            if claimed != pyproject_ver:
+                stale.append(f"{rel_path}: body says 'current at v{claimed}'")
+    assert not stale, (
+        "Skill body advertises a stale release while pyproject.toml is at "
+        f"{pyproject_ver}:\n  " + "\n  ".join(stale)
     )
