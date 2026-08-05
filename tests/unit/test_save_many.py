@@ -110,17 +110,35 @@ class TestSaveManyPartialFailure:
 
 
 class TestSaveManyShortCircuits:
-    def test_dedup_hit_returns_entry_without_rebatching(self, tmp_path: Path) -> None:
+    def test_dedup_hit_same_key_returns_entry_without_rebatching(self, tmp_path: Path) -> None:
         store = MemoryStore(tmp_path)
         store.save(key="orig", value="duplicated content here")
 
-        # Same value under a new key -> dedup fast-path returns the existing
-        # entry rather than persisting a new row.
+        # Unchanged value under the SAME key -> dedup fast-path reinforces the
+        # existing entry rather than persisting a second row.
+        results = store.save_many([{"key": "orig", "value": "duplicated content here"}])
+        assert len(results) == 1
+        assert isinstance(results[0], MemoryEntry)
+        assert results[0].key == "orig"
+        assert results[0].reinforce_count == 1
+
+    def test_same_value_under_distinct_key_persists(self, tmp_path: Path) -> None:
+        """TAP-5615: a matching value under a different key is a distinct memory.
+
+        The dedup fast path used to scan every entry by value and swallow this
+        row, returning the unrelated ``orig`` entry to the caller.
+        """
+        store = MemoryStore(tmp_path)
+        store.save(key="orig", value="duplicated content here")
+
         results = store.save_many([{"key": "dup", "value": "duplicated content here"}])
         assert len(results) == 1
         assert isinstance(results[0], MemoryEntry)
-        # No new key was created by the dedup hit.
-        assert store.get("dup") is None
+        assert results[0].key == "dup"
+        persisted = store.get("dup")
+        assert persisted is not None
+        assert persisted.value == "duplicated content here"
+        assert store.get("orig") is not None
 
 
 class TestSaveManyParityWithSave:

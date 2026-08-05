@@ -989,8 +989,9 @@ def memory_save(
     if "error" in validated:
         return validated
 
+    report: dict[str, Any] = {}
     try:
-        result = store.save(**validated)
+        result = store.save(**validated, report=report)
     except _PydanticValidationError as exc:
         # TAP-747: pydantic slug-key validation raised from MemoryEntry.__init__
         # inside store.save() was escaping to the handler and producing HTTP 500.
@@ -1001,26 +1002,52 @@ def memory_save(
         msg = errors[0].get("msg", str(exc)) if errors else str(exc)
         return {"error": "bad_request", "detail": msg, "message": msg}
 
-    return _save_result_envelope(result)
+    return _save_result_envelope(result, requested_key=key, report=report)
 
 
-def _save_result_envelope(result: Any) -> dict[str, Any]:
+def _save_result_envelope(
+    result: Any,
+    *,
+    requested_key: str | None = None,
+    report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Convert a :meth:`MemoryStore.save` result into the MCP response envelope.
 
     A ``dict`` result (write-policy decision, dedup short-circuit error, …) is
     returned unchanged; a saved :class:`MemoryEntry` becomes the
     ``{"status": "saved", ...}`` envelope.  Shared by :func:`memory_save` and
     :func:`memory_save_many` (TAP-2800).
+
+    When *requested_key* is supplied and the saved entry carries a different
+    key, the write was coalesced onto some other row rather than persisted
+    under the key the caller asked for.  That is reported as
+    ``{"status": "coalesced", "persisted": False, "coalesced_into": <key>}``
+    instead of ``"saved"`` — the envelope must never claim a write landed under
+    a key that does not exist (TAP-5617).  After TAP-5615 no save path should
+    reach this branch; it stays as a structural guarantee against future ones.
+
+    *report* is the caller-owned dict passed to :meth:`MemoryStore.save`; its
+    ``invalidated`` list (entries whose validity interval this save closed) is
+    merged into the envelope when non-empty.
     """
     if isinstance(result, dict):
         return result
-    return {
+    envelope: dict[str, Any] = {
         "status": "saved",
         "key": result.key,
         "tier": str(result.tier),
         "confidence": result.confidence,
         "memory_group": result.memory_group,
     }
+    if requested_key is not None and result.key != requested_key:
+        envelope["status"] = "coalesced"
+        envelope["key"] = requested_key
+        envelope["coalesced_into"] = result.key
+        envelope["persisted"] = False
+    invalidated = (report or {}).get("invalidated")
+    if invalidated:
+        envelope["invalidated"] = list(invalidated)
+    return envelope
 
 
 def memory_get(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
@@ -1343,10 +1370,15 @@ def memory_save_many(
         store_results = store.save_many([kwargs for _, kwargs in to_persist])
 
         for (i, _kwargs), res in zip(to_persist, store_results, strict=True):
-            envelope = _save_result_envelope(res)
+            envelope = _save_result_envelope(res, requested_key=_kwargs["key"])
             results[i] = envelope
             if "error" in envelope:
                 errors += 1
+            elif envelope.get("persisted") is False:
+                # Coalesced onto another row: it neither landed under the
+                # requested key nor failed, so it counts as neither (TAP-5617).
+                # The per-row envelope carries the detail.
+                pass
             else:
                 saved += 1
 
@@ -2118,6 +2150,7 @@ async def async_memory_save(
     resolved_agent = source_agent or agent_id
     memory_group_arg: object = MEMORY_GROUP_UNSET if group is None else group
 
+    report: dict[str, Any] = {}
     try:
         result = await async_store.save(
             key=key,
@@ -2130,21 +2163,14 @@ async def async_memory_save(
             agent_scope=agent_scope,
             source_agent=resolved_agent,
             memory_group=memory_group_arg,
+            report=report,
         )
     except _PydanticValidationError as exc:
         errors = exc.errors()
         msg = errors[0].get("msg", str(exc)) if errors else str(exc)
         return {"error": "bad_request", "detail": msg, "message": msg}
 
-    if isinstance(result, dict):
-        return result
-    return {
-        "status": "saved",
-        "key": result.key,
-        "tier": str(result.tier),
-        "confidence": result.confidence,
-        "memory_group": result.memory_group,
-    }
+    return _save_result_envelope(result, requested_key=key, report=report)
 
 
 async def async_brain_forget(

@@ -95,14 +95,20 @@ class TestMemorySaveMany:
         from tapps_brain.services.memory_service import memory_save_many
 
         store = _make_store()
-        mock_entry = MagicMock(
-            key="k1",
-            tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8,
-            memory_group=None,
-        )
+
+        def _entry_for(key: str) -> MagicMock:
+            # Each row must come back under its OWN key — a stand-in that
+            # returned one shared entry for every row is exactly the
+            # acknowledged-but-lost write the TAP-5617 identity check flags.
+            return MagicMock(
+                key=key,
+                tier=MagicMock(__str__=lambda s: "pattern"),
+                confidence=0.8,
+                memory_group=None,
+            )
+
         # TAP-2800: the batch is persisted via a single store.save_many call.
-        store.save_many.side_effect = lambda items: [mock_entry for _ in items]
+        store.save_many.side_effect = lambda items: [_entry_for(i["key"]) for i in items]
 
         entries = [
             {"key": "k1", "value": "v1"},
@@ -182,14 +188,19 @@ class TestMemorySaveMany:
         from tapps_brain.services.memory_service import memory_save_many
 
         store = _make_store()
-        good_entry = MagicMock(
-            key="k1",
-            tier=MagicMock(__str__=lambda s: "pattern"),
-            confidence=0.8,
-            memory_group=None,
-        )
+
+        def _entry_for(key: str) -> MagicMock:
+            # Per-key entries: a shared stand-in would trip the TAP-5617
+            # requested-key identity check on every row but the first.
+            return MagicMock(
+                key=key,
+                tier=MagicMock(__str__=lambda s: "pattern"),
+                confidence=0.8,
+                memory_group=None,
+            )
+
         # TAP-2800: only the valid rows reach the single batched save_many.
-        store.save_many.side_effect = lambda items: [good_entry for _ in items]
+        store.save_many.side_effect = lambda items: [_entry_for(i["key"]) for i in items]
 
         entries = [
             {"key": "k1", "value": "v1"},

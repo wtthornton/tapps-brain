@@ -14,7 +14,7 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
@@ -27,6 +27,7 @@ from tapps_brain.models import (
     MemorySource,
     MemoryStatus,
     MemoryTier,
+    _parse_iso,
     _utc_now_iso,
 )
 
@@ -364,6 +365,8 @@ class _SavePrep:
     conflict_valid_at: str | None
     effective_key: str | None = None
     """When write-policy UPDATE remaps onto an existing candidate key."""
+    invalidated_keys: list[str] = field(default_factory=list)
+    """Keys this save closed the validity interval on (TAP-5617)."""
 
 
 _UNSET_EMBEDDING: Any = object()  # sentinel — distinguishes "not passed" from explicit None
@@ -1256,6 +1259,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         dedup: bool = True,
         conflict_check: bool = True,
         auto_publish: bool = True,
+        report: dict[str, Any] | None = None,
     ) -> MemoryEntry | dict[str, Any]:
         """Save or update a memory entry.
 
@@ -1300,6 +1304,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 their ``invalid_at`` field is set to now (GitHub #44, task 040.16).
                 Similarity cutoff comes from ``profile.conflict_check`` when a
                 profile is loaded. Defaults to True for safer writes.
+            report: Optional caller-owned dict.  When supplied, side effects the
+                return value cannot express are written into it — currently
+                ``{"invalidated": [<key>, ...]}`` listing entries whose validity
+                interval this save closed (TAP-5617).  Caller-owned rather than
+                stored on ``self`` so concurrent saves cannot read each other's
+                report.
         """
         log = logger.bind(project_id=self._project_id, op="save", key=key)
         log.debug("store.save.begin")
@@ -1336,6 +1346,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # Short-circuit: an error dict, or a MemoryEntry from a dedup hit /
             # write-policy decision — return it unchanged.
             return prep
+
+        if report is not None and prep.invalidated_keys:
+            report["invalidated"] = list(prep.invalidated_keys)
 
         # Phase 6 — build, persist, propagate under span + timer.
         self._metrics.increment("store.save")
@@ -1502,6 +1515,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         )
 
         conflict_valid_at: str | None = None
+        invalidated_keys: list[str] = []
         if not will_fail_validation:
             # Phase 4 — dedup fast-path.
             dedup_short = self._handle_dedup(persist_key, value, dedup)
@@ -1509,7 +1523,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 return dedup_short
 
             # Phase 5 — conflict detection (opt-in) marks superseded entries.
-            conflict_valid_at = self._handle_conflicts(persist_key, value, tier, conflict_check)
+            conflict_valid_at, invalidated_keys = self._handle_conflicts(
+                persist_key, value, tier, conflict_check
+            )
 
         return _SavePrep(
             value=value,
@@ -1519,6 +1535,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             mg_explicit=mg_explicit,
             conflict_valid_at=conflict_valid_at,
             effective_key=update_key,
+            invalidated_keys=invalidated_keys,
         )
 
     def _postprocess_saved_entry(
@@ -1936,38 +1953,42 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         value: str,
         dedup: bool,
     ) -> MemoryEntry | None:
-        """Bloom-filter dedup fast-path (GitHub #31).
+        """Same-key no-op fast path (GitHub #31, TAP-5615).
 
-        Returns the reinforced existing entry when a duplicate is found;
-        ``None`` otherwise.  The bloom filter is always updated so later
-        saves see this value.
+        Returns the reinforced existing entry when *key* already holds this
+        exact value; ``None`` otherwise.  The bloom filter is always updated so
+        ``gc()`` can rebuild from it.
+
+        Scoped to *key* deliberately.  The original implementation matched on
+        the normalized value across **every** entry, so a save under a new key
+        was discarded and the unrelated entry that happened to hold the same
+        text was returned instead — the caller got ``200 {"status": "saved"}``
+        for a key that does not exist.  A distinct key is a distinct memory
+        identity; only a re-save of an unchanged value under the *same* key is
+        a genuine no-op.
         """
         if not dedup:
             return None
         normalized = normalize_for_dedup(value)
-        if self._bloom.might_contain(normalized):
-            # Bloom positives are confirmed against durable rows when possible.
-            self._merge_durable_entries()
-            dup_key: str | None = None
-            with self._serialized():
-                for existing in self._entries.values():
-                    if normalize_for_dedup(existing.value) == normalized:
-                        dup_key = existing.key
-                        break
-            if dup_key is not None:
-                logger.debug("memory_dedup_bloom_hit", key=key, existing_key=dup_key)
-                self._metrics.increment("store.save.dedup_skip")
-                try:
-                    return self.reinforce(dup_key)
-                except KeyError:
-                    pass  # Entry was deleted between check and reinforce; proceed with save.
-        # Under the lock: gc() holds the lock for its whole bloom rebuild and
-        # BloomFilter.add can auto-resize (reallocate _bits, reset _count) —
-        # an unlocked add racing that rebuild loses this entry's bits or
-        # interleaves the clear/resize non-atomically.
+        # Durable-only rows must be hydrated before this is treated as a fresh
+        # insert, or a cold store re-persists (and re-embeds) an unchanged value.
+        self._ensure_entry_cached(key)
         with self._serialized():
+            existing = self._entries.get(key)
+            # Under the lock: gc() holds the lock for its whole bloom rebuild and
+            # BloomFilter.add can auto-resize (reallocate _bits, reset _count) —
+            # an unlocked add racing that rebuild loses this entry's bits or
+            # interleaves the clear/resize non-atomically.
             self._bloom.add(normalized)
-        return None
+        if existing is None or normalize_for_dedup(existing.value) != normalized:
+            return None
+        logger.debug("memory_dedup_same_key_hit", key=key)
+        self._metrics.increment("store.save.dedup_skip")
+        try:
+            return self.reinforce(key)
+        except KeyError:
+            # Entry was deleted between check and reinforce; proceed with save.
+            return None
 
     def _handle_conflicts(
         self,
@@ -1975,15 +1996,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         value: str,
         tier: str,
         conflict_check: bool,
-    ) -> str | None:
-        """Detect and invalidate conflicting entries; return shared valid_at.
+    ) -> tuple[str | None, list[str]]:
+        """Detect and invalidate conflicting entries.
 
-        Wraps :func:`tapps_brain._save_conflict.plan_conflicts`.  The returned
-        timestamp should be used as ``valid_at`` on the new entry to keep the
-        temporal chain (EPIC-004) coherent.
+        Wraps :func:`tapps_brain._save_conflict.plan_conflicts`.  Returns
+        ``(shared_valid_at, invalidated_keys)``.  The timestamp should be used
+        as ``valid_at`` on the new entry to keep the temporal chain (EPIC-004)
+        coherent; the key list is reported back to the caller (TAP-5617) so a
+        write that removed neighbouring entries from recall does not do so
+        silently.
         """
         if not conflict_check:
-            return None
+            return None, []
 
         # Conflict detection must see durable rows, not only the cold-start cap.
         self._merge_durable_entries()
@@ -1999,7 +2023,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             now=_utc_now_iso(),
         )
         if plan is None:
-            return None
+            return None, []
 
         logger.warning(
             "memory_save_conflicts_detected",
@@ -2009,6 +2033,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             conflicts=plan.audit,
         )
 
+        invalidated_keys: list[str] = []
         for conflict_key, reason in plan.invalidations:
             invalidated: MemoryEntry | None = None
             previous: MemoryEntry | None = None
@@ -2029,6 +2054,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 try:
                     self._persistence.save(invalidated)
                     self._drop_if_concurrently_removed(conflict_key)
+                    invalidated_keys.append(conflict_key)
                 except Exception:
                     with self._serialized():
                         if self._entries.get(conflict_key) is invalidated:
@@ -2040,9 +2066,9 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     )
                     # Do not advertise a shared conflict timestamp when any
                     # invalidation failed to persist — abort the conflict plan.
-                    return None
+                    return None, []
 
-        return plan.now
+        return plan.now, invalidated_keys
 
     def _build_and_assign_entry(
         self,
@@ -2187,6 +2213,25 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             if prof_default is not None:
                 confidence = float(prof_default)
         effective_valid_at = conflict_valid_at or preserved["valid_at"]
+        effective_invalid_at = preserved["invalid_at"]
+        # TAP-5616: a row whose validity interval was closed at T1 and is now
+        # being rewritten with a new opening bound T2 >= T1 is being *revived* —
+        # the old closing bound belongs to the previous version of the row, not
+        # to this one.  Carrying it forward violates the model's
+        # ``valid_at < invalid_at`` invariant and surfaced as a caller-facing
+        # 400 on requests that carried no temporal fields at all.  Reset the
+        # contradiction flags with it: leaving them set keeps the revived row
+        # eligible for gc archival under ``contradicted_threshold``, which
+        # re-creates the write-loss symptom through a different door.
+        if (
+            effective_invalid_at is not None
+            and effective_valid_at is not None
+            and _parse_iso(effective_invalid_at) <= _parse_iso(effective_valid_at)
+        ):
+            effective_invalid_at = None
+            preserved["superseded_by"] = None
+            preserved["contradicted"] = False
+            preserved["contradiction_reason"] = None
         effective_temporal = (
             temporal_sensitivity
             if temporal_sensitivity is not None
@@ -2224,7 +2269,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             contradiction_reason=preserved["contradiction_reason"],
             seeded_from=preserved["seeded_from"],
             valid_at=effective_valid_at,
-            invalid_at=preserved["invalid_at"],
+            invalid_at=effective_invalid_at,
             superseded_by=superseded_by
             if superseded_by is not None
             else preserved["superseded_by"],
