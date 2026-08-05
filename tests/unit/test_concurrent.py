@@ -26,6 +26,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+from tapps_brain.models import MemoryEntry
 from tapps_brain.store import MemoryStore, MemoryStoreLockTimeout
 
 
@@ -201,6 +202,108 @@ class TestConcurrentSaveAtCapacity:
             count = s.count()
             assert count <= limit, f"Store exceeded max capacity: {count}"
             assert count > 0, "Store must not be empty after concurrent saves"
+        finally:
+            s.close()
+
+    def test_durable_merge_never_exceeds_cap(self, tmp_path: Path) -> None:
+        """A durable-only row must not push the cache past ``max_entries`` (TAP-5633).
+
+        The deterministic core of the concurrency bug.  ``save()`` writes through
+        *outside* the store lock, so a concurrent eviction can delete a durable
+        row that has not landed yet — leaving an orphan row that exists durably
+        with no cache slot until ``_drop_if_concurrently_removed`` reaps it.
+        ``_handle_conflicts`` merges durable rows on the *save* path, before cap
+        enforcement runs, so merging that orphan took the cache to ``cap + 1``;
+        the assign that followed evicted one and added one, and the overshoot
+        never drained.
+
+        This reproduces the orphan directly instead of racing for it, so it holds
+        against any backend and does not depend on timing.
+        """
+        limit = 10
+        s = MemoryStore(tmp_path)
+        if s._profile is not None:
+            s._profile.limits.max_entries = limit
+        try:
+            for i in range(limit):
+                s.save(key=f"k-{i}", value=f"value {i}", tier="context")
+            assert s.count() == limit
+
+            # An orphan: durable-only, no cache slot — exactly what an in-flight
+            # persist leaves behind when its key is evicted mid-write.
+            orphan = MemoryEntry(key="orphan", value="orphan value", tier="context")
+            s._persistence.save(orphan)
+
+            assert s.count() <= limit, f"count() merged past the cap: {s.count()}"
+            assert len(s.list_all()) <= limit, "list_all() merged past the cap"
+            assert s.snapshot().total_count <= limit, "snapshot() merged past the cap"
+            assert len(s._entries) <= limit, "cache merged past the cap"
+        finally:
+            s.close()
+
+    @pytest.mark.requires_postgres
+    def test_distinct_key_overflow_respects_cap_and_converges(self, tmp_path: Path) -> None:
+        """Distinct-key concurrent overflow must not push ``count()`` past the cap (TAP-5633).
+
+        The TAP-5615 shape: every thread writes **distinct keys carrying distinct
+        values**, so key-scoped dedup collapses nothing and the burst applies the
+        full eviction pressure.  Under the old value-scan dedup this wrote ~20
+        rows; now it writes 100.
+
+        Requires a live Postgres.  The autouse ``InMemoryPrivateBackend`` fixture
+        used when no DSN is set persists in microseconds, which closes the window
+        this test exists to cover: ``save()`` writes through *outside* the store
+        lock, so a concurrent eviction can delete a durable row that has not
+        landed yet, leaving an orphan row with no cache slot until
+        ``_drop_if_concurrently_removed`` reaps it a round-trip later.  An
+        unbounded ``_merge_durable_entries`` pulls that orphan into the cache and
+        reports it.
+        """
+        limit = self._TEST_LIMIT
+        s = MemoryStore(tmp_path)
+        if s._profile is not None:
+            s._profile.limits.max_entries = limit
+        try:
+            prefill = limit - 10
+            for i in range(prefill):
+                s.save(key=f"pre-{i}", value=f"pre-value {i}", tier="context")
+
+            errors: list[Exception] = []
+
+            def saver(thread_id: int) -> None:
+                try:
+                    for i in range(20):
+                        s.save(
+                            key=f"distinct-{thread_id}-{i}",
+                            value=f"distinct value t{thread_id} n{i}",
+                            tier="context",
+                        )
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=saver, args=(t,)) for t in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=30)
+
+            assert not errors, f"Threads raised exceptions: {errors}"
+
+            # The cap is an invariant of every read surface, not just count().
+            assert s.count() <= limit, f"count() exceeded max capacity: {s.count()}"
+            assert len(s.list_all()) <= limit, "list_all() exceeded max capacity"
+            assert s.snapshot().total_count <= limit, "snapshot() exceeded max capacity"
+            assert s.count() > 0, "Store must not be empty after concurrent saves"
+
+            # Convergence: the durable set settles to the cap once the in-flight
+            # orphan reaps land.  Bounding the merge must not paper over a durable
+            # set that stays permanently oversized.
+            deadline = time.monotonic() + 15.0
+            durable = len(s._persistence.load_all())
+            while durable > limit and time.monotonic() < deadline:
+                time.sleep(0.25)
+                durable = len(s._persistence.load_all())
+            assert durable <= limit, f"Durable set did not converge to the cap: {durable}"
         finally:
             s.close()
 

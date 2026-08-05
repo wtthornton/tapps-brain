@@ -162,6 +162,29 @@ uv run pytest tests/integration/ -v -m requires_postgres
 uv run pytest tests/unit/ -v
 ```
 
+### The unit suite runs against a *different backend* than CI (TAP-5633)
+
+`tests/conftest.py` injects an in-process `InMemoryPrivateBackend` whenever a
+`MemoryStore` is built with no explicit backend **and no DSN is set**. That keeps
+the suite runnable without Postgres, but it means a bare `uv run pytest
+tests/unit/` never exercises anything whose window is the unlocked write-through
+persist — that persist returns in microseconds in-memory and takes a round-trip
+against Postgres.
+
+CI sets a DSN for the unit job, so **CI can be red on a test that is green
+locally 12 runs in a row.** TAP-5633 was exactly this. To reproduce a CI-only
+concurrency failure locally, match the CI environment:
+
+```bash
+TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 \
+TAPPS_BRAIN_DATABASE_URL="postgresql://tapps:tapps@localhost:55432/tapps_brain_dev" \
+uv run pytest tests/unit/test_concurrent.py -q
+```
+
+Both variables are required. Without `TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1` the
+run dies in `postgres_connection.py` on the privileged-role guard, which looks
+like a test failure but is not one.
+
 ### Integration test files (STORY-066.13)
 
 | File | Coverage |

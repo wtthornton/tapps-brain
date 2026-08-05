@@ -110,6 +110,12 @@ if [[ "$SKIP_FULL_PYTEST" == "1" ]]; then
   echo "==> [5/6] Full pytest suite (skipped: SKIP_FULL_PYTEST=1)"
 else
   echo "==> [5/6] Full pytest suite (no benchmarks, coverage gate)"
+  if [[ -z "${TAPPS_BRAIN_DATABASE_URL:-}" ]]; then
+    echo "    NOTE: TAPPS_BRAIN_DATABASE_URL is unset — the unit suite will run"
+    echo "    against the in-memory backend, which cannot reproduce concurrency"
+    echo "    races that CI hits against Postgres (TAP-5633).  Set the DSN plus"
+    echo "    TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1 to match CI.  See AGENTS.md."
+  fi
   # Coverage threshold: 80 (v3.15.0).  EPIC-076 added ~2k LOC of Postgres-backed
   # code (postgres_kg, kg_service, experience) whose full coverage requires a
   # live pgvector sidecar that this gate does not start.  See TAP follow-up:
