@@ -469,6 +469,48 @@ Three properties worth relying on:
    returns `invalid_request` telling you to pass `subject_type` — guessing would
    hand you a verdict about the wrong entity.
 
+### 7.3 Enforcement on write (TAP-5510)
+
+The check above is advisory on its own: an agent that skips it can still write
+the edge, so the ledger would guarantee nothing. `upsert_edge` therefore applies
+the same rule on the write path.
+
+**Declaring a `max_count` is the request to enforce it.** There is no separate
+enforcement switch — if you registered `refunded` with `max_count=1`, a second
+distinct object for the same subject is rejected with a `conflict` (409):
+
+```json
+{"error": "conflict",
+ "message": "predicate 'refunded' declares max_count=1; subject already holds 1 object(s), so this edge would exceed it"}
+```
+
+The error names the predicate, the limit, and the current count, because a
+rollback the caller cannot explain is a rollback they will simply retry.
+
+**Reinforcement is never blocked.** `upsert_edge` reinforces an existing
+`(subject, predicate, object)` triple and returns *before* the gate, so
+re-asserting an edge you already wrote always succeeds — even at the limit. It
+adds no object.
+
+**A violation rolls back the whole event.** The check runs on the same cursor as
+the insert, inside the caller's transaction. `brain_record_event` is already
+all-or-nothing, so a rejected edge leaves no partial event and no orphan
+entities — and no window where a concurrent writer could slip past a check that
+had already passed.
+
+| Mode | Unregistered predicate | Registered, no `max_count` | Registered with `max_count` |
+|---|---|---|---|
+| **open** (default) | allowed | allowed | enforced |
+| **strict** (`kg.strict_predicates: true`) | rejected | allowed | enforced |
+
+Strict mode is resolved from the project profile once per process and **fails
+open**: if the profile cannot be read, the project is treated as never having
+asked for strict mode. A config error should not start rejecting writes for a
+reason unrelated to what was written.
+
+No OWL or SHACL is involved — this is a counted ledger invariant, not a
+reasoner.
+
 ---
 
 ## 8. Failure modes
