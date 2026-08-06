@@ -98,7 +98,7 @@ to `candidate` and clears the promotion provenance; a metadata-only save (same
 value) keeps the approval. Without this, anyone who can save could launder new
 content through an old approval.
 
-### `POST /v1/recall:tool_paths` — TAP-5545
+### `POST /v1/recall:tool_paths` — TAP-5545 (**live**)
 
 The call AF's `learning_injection` makes. Returns tool paths that previously
 succeeded for a task type.
@@ -106,12 +106,48 @@ succeeded for a task type.
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `task_type` | string | required | Task classifier the path succeeded on |
-| `limit` | int | `5` | 1–50 |
-| `learning_status` | string | `"approved"` | Defaults to approved-only. Pass `"any"` to include candidates. |
-| `min_confidence` | float | profile default | Standard recall filter |
+| `limit` | int | `5` | 1–50; outside that range is a `400` |
+| `learning_status` | string | `"approved"` | Defaults to approved-only. Pass `"any"` to include candidates. Any other value is a `400`. |
+| `min_confidence` | float | unset | Optional floor; omitted means no confidence filter |
 
 **The default is `approved`.** A consumer that wants candidates must ask for
 them explicitly, so the safe path is the default path.
+
+**`demoted` is never returned**, not even under `learning_status: "any"`.
+Demotion is a withdrawal; no opt-in brings a withdrawn learning back.
+
+**Approval alone is not enough.** An entry also has to carry the tool-path tag
+convention — a `fleet:learning` tag or any `tool:*` tag — mirroring the gate in
+AF's `candidates_from_tool_path_learnings`. An approved architectural decision
+is a valid learning but not a tool path, and injecting it into a routing
+decision would be noise.
+
+**Fail-closed, not fail-as-error.** When nothing approved matches, the response
+is `200` with `count: 0` and an empty `tool_paths` — never a `404`, and never a
+silent downgrade to candidates. A caller that asked for validated learnings and
+got unvetted ones cannot tell the difference, which is worse than getting
+nothing.
+
+Success body:
+
+```json
+{"count": 1, "learning_status": "approved",
+ "tool_paths": [{"key": "...", "value": "...", "tags": ["tool:ruff"],
+                 "confidence": 0.8, "project_id": "...",
+                 "learning_status": "approved", "promoted_by": "eval-run-1",
+                 "promoted_at": "...", "promotion_signal": "eval"}]}
+```
+
+Item fields are shaped for AF's `candidates_from_tool_path_learnings`
+(`value` / `tags` / `confidence` / `project_id`), so the consumer needs no
+translation layer. `promoted_by` and `promotion_signal` ride along so an audit
+of a bad injection can see what approved it.
+
+MCP equivalent: `brain_recall_tool_paths`. Exposed in `full`, `operator`,
+`coder`, and `agent_brain`. Unlike promote/demote it **is** in `coder` —
+reading approved tool paths is the consumption side of the gate, not the
+approval side. It is absent from `reviewer`, which reviews diffs and has no
+routing decision to make.
 
 ### `POST /v1/mission/state:set` and `:get` — TAP-5544
 

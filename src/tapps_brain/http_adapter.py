@@ -3266,6 +3266,50 @@ def create_app(
         )
         return _learning_response(result)
 
+    @app.post("/v1/recall:tool_paths", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_recall_tool_paths(request: Request) -> JSONResponse:
+        """Recall approved tool paths for a task type (TAP-5545).
+
+        Request body (JSON):
+          ``{ "task_type": str, "limit"?: int (1-50, default 5),
+              "learning_status"?: "approved" | "any", "min_confidence"?: float }``
+
+        Fail-closed: when nothing approved matches, this returns 200 with an
+        empty ``tool_paths`` list rather than a 404 or a downgrade to
+        candidates.  ``demoted`` entries are never returned.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        raw_min_confidence = body.get("min_confidence")
+        try:
+            limit = int(body.get("limit", 5))
+            min_confidence = float(raw_min_confidence) if raw_min_confidence is not None else None
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_request",
+                    "message": "limit must be an integer and min_confidence a number",
+                },
+            )
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_recall_tool_paths,
+            store,
+            project_id,
+            agent_id,
+            task_type=str(body.get("task_type") or ""),
+            limit=limit,
+            learning_status=str(body.get("learning_status") or "approved"),
+            min_confidence=min_confidence,
+        )
+        return _learning_response(result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.
