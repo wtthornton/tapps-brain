@@ -130,8 +130,12 @@ class TestBundledProfiles:
         assert "brain_get_neighbors" in coder
         assert "brain_explain_connection" in coder
 
-    def test_get_coder_tool_count_is_21(self) -> None:
-        """Pin the coder profile size at 21 tools (v3.24 +3 experience/profile KV)."""
+    def test_get_coder_tool_count_is_22(self) -> None:
+        """Pin the coder profile size at 22 tools.
+
+        v3.24 added 3 experience/profile KV tools; TAP-5545 added
+        ``brain_recall_tool_paths`` (+1).
+        """
         reg = ProfileRegistry()
         coder = reg.get("coder")
         assert len(coder) == 22, sorted(coder)
