@@ -149,6 +149,33 @@ reading approved tool paths is the consumption side of the gate, not the
 approval side. It is absent from `reviewer`, which reviews diffs and has no
 routing decision to make.
 
+### Learnings can be demoted after approval — TAP-5547 (**live**)
+
+Consumers must not treat `approved` as permanent. `maintenance_decay_learnings`
+(MCP, operator-only — there is no REST route, matching the other maintenance
+tools) demotes learnings whose promotion state no longer holds:
+
+| Rule | Reason code | Default |
+|------|-------------|---------|
+| An `approved` entry has been marked contradicted | `contradicted` | on |
+| A `candidate`'s decayed confidence fell below the floor | `decayed` | `0.25` |
+| A `candidate` went unvalidated too long | `unvalidated` | `90` days |
+
+Tuned under `profile.learning_decay`. **Demotion is not deletion and not GC** —
+`gc` decides what to archive, this decides what is still injectable, and a
+learning can stop being trustworthy long before it is stale enough to remove.
+The confidence floor sits just below `gc.stale_threshold` on purpose, so nothing
+is archived while still advertised as injectable.
+
+**Approvals do not age out.** Staleness demotes candidates only; an approval is
+a decision someone made, and time alone does not unmake it — it takes a
+contradiction. Promotion provenance survives demotion so an audit can see which
+approval was withdrawn.
+
+What this means for AF: an entry `POST /v1/recall:tool_paths` returned last week
+may be absent this week. That is the gate working, not an error — re-read rather
+than caching approvals indefinitely.
+
 ### `POST /v1/mission/state:set` and `:get` — TAP-5544 (**live**)
 
 Mission/run-scoped shared state, so a fresh worker can pick up a mission without

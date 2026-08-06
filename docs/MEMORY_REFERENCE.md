@@ -47,6 +47,22 @@ Promote/demote are absent from the `coder` MCP profile by design — a coding ag
 
 It is **fail-closed**: when nothing approved matches, the answer is `200` with `count: 0` and an empty list, never a `404` and never a downgrade to candidates, because a caller that asked for validated learnings and silently received unvetted ones cannot tell the difference. `learning_status: "any"` opts into candidates for diagnostics; `demoted` entries are never returned under any setting. Unlike promote/demote, this tool **is** in the `coder` profile — reading approved paths is consumption, not approval.
 
+### Learnings decay out of approval
+
+Promotion is not permanent. `maintenance_decay_learnings` (MCP, operator-only) demotes learnings whose promotion state no longer holds, on three rules tuned by `profile.learning_decay`:
+
+| Rule | Reason code | Default threshold |
+|------|-------------|-------------------|
+| An `approved` entry has been marked contradicted | `contradicted` | `demote_contradicted_approved: true` |
+| A `candidate`'s decayed confidence fell below the floor | `decayed` | `candidate_confidence_floor: 0.25` |
+| A `candidate` went unvalidated too long | `unvalidated` | `candidate_stale_days: 90` |
+
+**Demotion is not deletion, and not GC.** `gc` decides what to *archive*; this decides what is still *injectable*. A learning can stop being trustworthy long before it is stale enough to remove, so the two are tuned separately — the confidence floor (0.25) deliberately sits just below `gc.stale_threshold` (0.3), so a learning loses its claim to be injected slightly before GC considers removing it. Promotion provenance is kept on demotion, so an audit of a bad injection can still see which approval was withdrawn.
+
+Approvals are not aged out. Staleness demotes candidates only — an approval is a decision someone made, and time alone does not unmake it. It takes a contradiction.
+
+The sweep is idempotent (already-`demoted` entries are skipped, so a re-run cannot overwrite the original, more specific reason) and supports `dry_run` to list what it would demote.
+
 ## Mission scope
 
 `MemoryScope.mission` (migration 031) scopes an entry to one mission, following the same shape as `scope=branch`: a scope value plus a companion field (`mission_id`) that is required when that scope is set. `run_id` optionally narrows to one run within the mission.

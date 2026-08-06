@@ -278,6 +278,8 @@ class TestCoreTools:
             # Mission-scoped shared state (TAP-5544)
             "brain_mission_state_set",
             "brain_mission_state_get",
+            # Learning decay / demotion sweep (TAP-5547, operator-only)
+            "maintenance_decay_learnings",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",

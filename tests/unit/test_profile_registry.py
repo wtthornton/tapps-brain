@@ -69,12 +69,12 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_94_tools(self) -> None:
+    def test_get_operator_returns_95_tools(self) -> None:
         # EPIC-075: +3 experience/feedback tools in operator superset.
         # TAP-5542: +2 gated-learning tools.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 94
+        assert len(tools) == 95
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -376,7 +376,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 94, f"Expected 94 tools, found {len(all_tools)}"
+        assert len(all_tools) == 95, f"Expected 95 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -464,7 +464,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 94
+        assert len(eager) == 95
 
     def test_bundled_operator_eager_matches_callable_surface(self) -> None:
         """All callable tools in `operator` appear in tools/list by default."""

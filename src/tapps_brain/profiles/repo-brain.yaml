@@ -116,6 +116,20 @@ profile:
     contradicted_threshold: 0.2
     stale_threshold: 0.3
 
+  # Decay/demotion of unvalidated and contradicted learnings (TAP-5547). This is
+  # the trust axis, not the retention axis: `gc` above decides what to archive,
+  # this decides what is still injectable. A learning can stop being trustworthy
+  # long before it is stale enough to remove, so the two are tuned separately.
+  #
+  # The 0.25 floor sits just below `gc.stale_threshold` (0.3) on purpose: a
+  # learning should lose its claim to be injected slightly before GC considers
+  # removing it, so nothing is archived while still advertised as injectable.
+  learning_decay:
+    enabled: true
+    candidate_stale_days: 90
+    candidate_confidence_floor: 0.25
+    demote_contradicted_approved: true
+
   recall:
     default_token_budget: 3000
     default_engagement: "high"

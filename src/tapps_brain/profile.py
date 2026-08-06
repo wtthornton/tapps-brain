@@ -604,6 +604,54 @@ class ConsolidationProfileConfig(BaseModel):
     min_entries: int = Field(default=3, ge=1, description="Minimum entries before consolidation.")
 
 
+class LearningDecayConfig(BaseModel):
+    """Decay and demotion of unvalidated / contradicted learnings (TAP-5547).
+
+    Tune under ``profile.learning_decay`` in YAML. Without this a corpus only
+    ever grows: a candidate nobody validated stays a candidate forever and keeps
+    surfacing to ``learning_status="any"`` callers, and an approved learning that
+    later turns out to be wrong keeps its approval. That is the Semantic Web
+    maintenance failure in miniature — the graph gets larger rather than smarter.
+
+    Demotion is deliberately not deletion. A demoted entry keeps its promotion
+    provenance, so an audit of a bad injection can still see which approval was
+    withdrawn and why. GC (``gc.py``) remains the only thing that archives rows.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Run learning demotion during maintenance sweeps.",
+    )
+    candidate_stale_days: int = Field(
+        default=90,
+        ge=1,
+        description=(
+            "A candidate nobody promoted within this many days of its last update "
+            "is demoted. Age alone is the signal: a learning that has sat "
+            "unvalidated for a quarter is not pending, it is abandoned."
+        ),
+    )
+    candidate_confidence_floor: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "A candidate whose decayed confidence falls below this is demoted, "
+            "even when it is younger than candidate_stale_days."
+        ),
+    )
+    demote_contradicted_approved: bool = Field(
+        default=True,
+        description=(
+            "Demote an approved learning once it is marked contradicted. An "
+            "approval that survives its own contradiction is worse than no gate, "
+            "because consumers trust it."
+        ),
+    )
+
+
 _DEFAULT_SOURCE_CONFIDENCE: dict[str, float] = {
     "human": 0.95,
     "agent": 0.60,
@@ -680,6 +728,10 @@ class MemoryProfile(BaseModel):
     consolidation: ConsolidationProfileConfig = Field(
         default_factory=ConsolidationProfileConfig,
         description="Auto-consolidation defaults (Issue #71).",
+    )
+    learning_decay: LearningDecayConfig = Field(
+        default_factory=LearningDecayConfig,
+        description="Demotion thresholds for unvalidated / contradicted learnings (TAP-5547).",
     )
     write_policy: WritePolicyConfig = Field(
         default_factory=WritePolicyConfig,
