@@ -12,6 +12,12 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.30.0] — 2026-08-06
+
+Minor release: gated learning (candidate/approved/demoted with provenance), mission-scoped shared state, approved-only tool-path recall, decay of unvalidated learnings, and the KG ledger chain — a predicate registry with cardinality, a check-before-write API, and write-time enforcement. Minor rather than patch because it adds nine MCP tools, eight REST endpoints, and three schema migrations (030–032); nothing is removed and every change is additive, so no consumer action is required to upgrade.
+
+The through-line across both epics is **fail-shut**: frequency never promotes a learning (a DB CHECK makes an unsigned approval unrepresentable), recall excludes entries whose promotion state is unreadable rather than assuming approved, mission state re-checks its `mission_id` after the read so a forged key misses, and KG cardinality is enforced on the write path rather than only in an advisory check an agent could skip.
+
 ### Added
 
 - **The AF ledger contract and the `semantic_validation_*` event vocabulary are documented** ([TAP-5511](https://linear.app/tappscodingagents/issue/TAP-5511)) — TAP-5508–5510 shipped a registry, a check and write enforcement, but nothing told a producer how to use them together, and each firewall would have invented its own `event_type` spelling. `docs/guides/knowledge-graph.md` §7.4 now gives the three-step contract (check → act → record) and `docs/engineering/experience-events.md` adds `semantic_validation_allowed` / `semantic_validation_blocked` with a recommended payload that mirrors the `/v1/kg/check` response field-for-field.
@@ -56,6 +62,12 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
   Demotion (`POST /v1/learning:demote`, `reason` required) keeps the promotion provenance so an audit of a bad injection can see which approval was withdrawn. Both tools ship in the `full`, `operator` and `agent_brain` MCP profiles and are deliberately **absent from `coder`** — a coding agent approving its own learnings is the gate approving itself. Adds a `conflict` error code (409) to the taxonomy, distinct from `idempotency_conflict`, for promoting an already-approved entry. Contract for consumers: `docs/engineering/gated-learning-contract.md`.
 - **`invalidated_detail` on the save response** — `invalidated` names the entries a save evicted from recall; it does not say why. The similarity score behind each eviction is already computed for the conflict audit and previously reached only a log line, so a consumer watching evictions could tell that *something* was dropped but not whether the threshold sits above or below where they want it. Each save that invalidates neighbours now also returns `invalidated_detail`: one `{key, similarity, tier, threshold}` row per invalidation, listing only entries whose invalidation actually persisted. That turns "something was evicted" into "evicted at 0.71 against a threshold of 0.6", which is tunable from real traffic instead of guesswork. Additive — `invalidated` keeps its bare-key shape, because consumers gate on it today. Requested by nlt-ideas-scout, who rated it above the threshold change itself.
 - **Supersede tuning is now documented at the point of pain** — a consumer only learned that `conflict_check.per_tier` existed, or that profiles are per-project at all, by reading `profile.py`. The `/v1/remember` and save-envelope docs now say so where invalidations are described, and point at the per-project profile overrides guide. Not knowing the knob existed was half the problem; assuming any tuning would be server-wide, and therefore not asking, was the other half.
+
+### Fixed
+
+- **`brain_recall` returned nothing for natural-language queries** ([TAP-5677](https://linear.app/tappscodingagents/issue/TAP-5677)) — the FTS pass ANDed every token via `plainto_tsquery` and never consulted vectors, so a query phrased as a sentence matched only if *every* word appeared in the entry. Recall now degrades in stages, each firing only when the previous found nothing: the unchanged `plainto_tsquery` AND pass, then a `to_tsquery` OR retry over sanitized tokens, then a pgvector KNN pass via the store's embedding provider. Queries that already matched are unaffected, since stage 1 is untouched. The KNN stage stands down for `since` / `until` / `memory_class` queries, whose filters live only in the FTS SQL and would otherwise be silently dropped.
+
+  Also documents the per-agent recall boundary measured on WebStoreDNA (29 entries sharded across 17 agent tenants by per-worktree `agent.id`): `scope=project` does **not** cross agents, so pin `CLAUDE_AGENT_ID` when using worktrees or each one reads a different slice of memory.
 
 ## [3.29.0] — 2026-08-05
 
