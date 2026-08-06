@@ -3773,6 +3773,81 @@ def create_app(
                 content["event"] = result["event"]
         return JSONResponse(status_code=200, content=content)
 
+    # ------------------------------------------------------------------
+    # KG predicate registry (TAP-5508)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/kg/predicates:register", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_predicates_register(request: Request) -> JSONResponse:
+        """Declare what a KG predicate means for this project.
+
+        REST counterpart of the ``brain_register_predicate`` MCP tool.
+
+        Request body (JSON):
+          ``{ "predicate": str, "max_count"?: int|null, "domain_type"?: str,
+              "range_type"?: str, "description"?: str }``
+
+        ``max_count`` omitted or ``null`` means unbounded; ``1`` declares a
+        functional edge (``refunded`` may hold at most once per subject).
+
+        The registry is descriptive and open by default — registering does not
+        retroactively validate existing edges, and an unregistered predicate
+        stays writable unless the project sets ``kg.strict_predicates``.
+
+        Introduced in TAP-5508.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        body = await _parse_json_object_body(request)
+
+        raw_max = body.get("max_count")
+        try:
+            max_count = int(raw_max) if raw_max is not None else None
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_request",
+                    "message": "max_count must be an integer or null",
+                },
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.register_predicate,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            predicate=str(body.get("predicate") or ""),
+            max_count=max_count,
+            domain_type=str(body.get("domain_type") or ""),
+            range_type=str(body.get("range_type") or ""),
+            description=str(body.get("description") or ""),
+            registered_by=agent_id or "unknown",
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/kg/predicates:list", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_predicates_list(request: Request) -> JSONResponse:
+        """List the KG predicates declared for this project.
+
+        REST counterpart of the ``brain_list_predicates`` MCP tool. An empty
+        registry is ``{"count": 0, "predicates": []}`` with a 200 — a project
+        that has declared nothing is in the normal open-by-default state.
+
+        Introduced in TAP-5508.
+        """
+        project_id = _require_project_id(request)
+        _resolve_tenant_headers(request)
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(_kg_svc.list_predicates, cm, project_id, _kg_brain_id())
+        return JSONResponse(status_code=200, content=result)
+
     @app.post("/v1/kg/resolve_entity", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_resolve_entity(request: Request) -> JSONResponse:
         """Resolve or create a KG entity by (entity_type, canonical_name).

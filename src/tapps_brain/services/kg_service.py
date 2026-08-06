@@ -1136,3 +1136,87 @@ def record_kg_feedback(
         kg.close()
 
     return {**fb_result, "kg_update": kg_result}
+
+
+# ---------------------------------------------------------------------------
+# Predicate registry (TAP-5508)
+# ---------------------------------------------------------------------------
+
+#: Upper bound on a declared cardinality. Not a storage limit — a guard against
+#: a caller typing an order of magnitude they did not mean, where the resulting
+#: "constraint" would silently permit everything.
+_MAX_PREDICATE_COUNT = 10_000
+
+
+def _invalid(message: str) -> dict[str, Any]:
+    """Return the wire form of a 400 for this module's dict-returning tools."""
+    from tapps_brain.errors import ErrorCode
+
+    return {"error": ErrorCode.INVALID_REQUEST.value, "message": message}
+
+
+def register_predicate(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    *,
+    predicate: str,
+    max_count: int | None = None,
+    domain_type: str = "",
+    range_type: str = "",
+    description: str = "",
+    registered_by: str = "unknown",
+) -> dict[str, Any]:
+    """Declare what a predicate means for this project (TAP-5508).
+
+    The registry is descriptive: registering does not retroactively validate
+    existing edges, and an unregistered predicate stays writable unless the
+    project sets ``kg.strict_predicates``. Enforcement of ``max_count`` on the
+    write path is TAP-5510 — keeping them separate lets a project declare its
+    predicates and see what *would* be rejected before anything is.
+
+    Args:
+        cm: Open connection manager.
+        project_id, brain_id: Tenant / identity scope.
+        predicate: The predicate label, e.g. ``refunded``.
+        max_count: Active objects one subject may hold. ``None`` = unbounded,
+            ``1`` = functional edge.
+        domain_type: Optional entity_type the subject must be.
+        range_type: Optional entity_type the object must be.
+        description: Free text for humans reading the registry.
+        registered_by: Who declared it.
+
+    Returns:
+        ``{"registered": True, "predicate": {...}}`` or an ``invalid_request``
+        envelope.
+    """
+    if not predicate.strip():
+        return _invalid("predicate is required")
+    if max_count is not None and (max_count < 1 or max_count > _MAX_PREDICATE_COUNT):
+        return _invalid(
+            f"max_count must be between 1 and {_MAX_PREDICATE_COUNT}, or omitted "
+            f"for unbounded; got {max_count}"
+        )
+
+    kg = _kg_store(cm, project_id, brain_id)
+    stored = kg.register_predicate(
+        predicate=predicate.strip(),
+        max_count=max_count,
+        domain_type=domain_type or None,
+        range_type=range_type or None,
+        description=description or None,
+        registered_by=registered_by,
+    )
+    return {"registered": True, "predicate": stored}
+
+
+def list_predicates(cm: Any, project_id: str, brain_id: str) -> dict[str, Any]:
+    """Return every predicate declared for this project.
+
+    An empty registry is ``{"count": 0, "predicates": []}`` with no error: a
+    project that has declared nothing is in the normal open-by-default state,
+    not a broken one.
+    """
+    kg = _kg_store(cm, project_id, brain_id)
+    predicates = kg.list_predicates()
+    return {"count": len(predicates), "predicates": predicates}

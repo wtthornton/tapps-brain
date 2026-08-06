@@ -280,6 +280,9 @@ class TestCoreTools:
             "brain_mission_state_get",
             # Learning decay / demotion sweep (TAP-5547, operator-only)
             "maintenance_decay_learnings",
+            # KG predicate registry (TAP-5508)
+            "brain_register_predicate",
+            "brain_list_predicates",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",

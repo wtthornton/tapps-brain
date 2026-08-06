@@ -873,3 +873,102 @@ class PostgresKnowledgeGraphStore:
         )
         config = DecayConfig()
         return update_stability(adapter, config, was_useful)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Predicate registry (TAP-5508)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _predicate_row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
+        """Shape one ``kg_predicates`` row for the wire.
+
+        Column order matches ``UPSERT_PREDICATE_SQL`` / ``LIST_PREDICATES_SQL`` /
+        ``GET_PREDICATE_SQL``, which deliberately select the same list so one
+        mapper serves all three.
+        """
+        return {
+            "id": str(row[0]),
+            "predicate": row[1],
+            "max_count": int(row[2]) if row[2] is not None else None,
+            "domain_type": row[3],
+            "range_type": row[4],
+            "description": row[5],
+            "registered_by": row[6],
+            "created_at": row[7].isoformat() if row[7] is not None else None,
+            "updated_at": row[8].isoformat() if row[8] is not None else None,
+        }
+
+    def register_predicate(
+        self,
+        *,
+        predicate: str,
+        max_count: int | None = None,
+        domain_type: str | None = None,
+        range_type: str | None = None,
+        description: str | None = None,
+        registered_by: str = "unknown",
+    ) -> dict[str, Any]:
+        """Declare what a predicate means for this project (TAP-5508).
+
+        Re-registering an existing predicate updates it in place. The registry
+        describes predicates; it does not own them — an unregistered predicate
+        stays writable, and nothing here rejects an edge. TAP-5510 enforces
+        ``max_count`` on the write path.
+
+        Args:
+            predicate: The predicate label, e.g. ``refunded``.
+            max_count: Active objects one subject may hold for this predicate.
+                ``None`` means unbounded; ``1`` declares a functional edge.
+            domain_type: Optional ``kg_entities.entity_type`` for the subject.
+            range_type: Optional ``kg_entities.entity_type`` for the object.
+            description: Free text for humans reading the registry.
+            registered_by: Who declared it.
+
+        Returns:
+            The stored declaration.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.UPSERT_PREDICATE_SQL,
+                (
+                    self._project_id,
+                    self._brain_id,
+                    self._project_id,
+                    predicate,
+                    max_count,
+                    domain_type,
+                    range_type,
+                    description,
+                    registered_by,
+                ),
+            )
+            row = cur.fetchone()
+
+        logger.info(
+            "kg.predicate.registered",
+            predicate=predicate,
+            max_count=max_count,
+            brain_id=self._brain_id,
+        )
+        return self._predicate_row_to_dict(row)
+
+    def list_predicates(self) -> list[dict[str, Any]]:
+        """Return every predicate declaration for this brain, ordered by name."""
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.LIST_PREDICATES_SQL, (self._project_id, self._brain_id))
+            rows = cur.fetchall()
+        return [self._predicate_row_to_dict(r) for r in rows]
+
+    def get_predicate(self, predicate: str) -> dict[str, Any] | None:
+        """Return one predicate declaration, or ``None`` when unregistered.
+
+        ``None`` is the normal answer for a free-form predicate, not an error —
+        the registry is open by default.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.GET_PREDICATE_SQL,
+                (self._project_id, self._brain_id, predicate),
+            )
+            row = cur.fetchone()
+        return self._predicate_row_to_dict(row) if row is not None else None

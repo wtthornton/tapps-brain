@@ -502,6 +502,15 @@ class KGProfileConfig(BaseModel):
             " decay; no runtime consumer yet."
         ),
     )
+    strict_predicates: bool = Field(
+        default=False,
+        description=(
+            "TAP-5508: reject edges whose predicate is not in the kg_predicates "
+            "registry. Off by default — existing graphs use free-form predicates, "
+            "and rejecting them on introduction would break every current writer "
+            "to buy a guarantee nobody asked for yet."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
