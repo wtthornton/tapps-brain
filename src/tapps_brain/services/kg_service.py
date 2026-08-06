@@ -1220,3 +1220,171 @@ def list_predicates(cm: Any, project_id: str, brain_id: str) -> dict[str, Any]:
     kg = _kg_store(cm, project_id, brain_id)
     predicates = kg.list_predicates()
     return {"count": len(predicates), "predicates": predicates}
+
+
+# ---------------------------------------------------------------------------
+# Ledger check (TAP-5509)
+# ---------------------------------------------------------------------------
+
+#: Reason codes on a check verdict. Stable strings — a firewall branches on
+#: these, so they are part of the contract, not log text.
+CHECK_UNREGISTERED = "predicate_not_registered"
+CHECK_UNBOUNDED = "predicate_unbounded"
+CHECK_NO_SUBJECT = "subject_not_found"
+CHECK_ALREADY_ASSERTED = "edge_already_asserted"
+CHECK_WITHIN_LIMIT = "within_cardinality"
+CHECK_EXCEEDED = "cardinality_exceeded"
+
+
+def _allow(reason: str, **extra: Any) -> dict[str, Any]:
+    return {"decision": "allow", "reason": reason, **extra}
+
+
+def _resolve_check_subject(
+    kg: Any, subject_key: str, subject_type: str
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve *subject_key* to an entity id.
+
+    Returns ``(entity_id, error)``. A missing subject is not an error — it has
+    no edges, so it cannot be over its limit. An *ambiguous* subject is: two
+    entity types sharing a name is a question only the caller can answer, and
+    guessing would hand a firewall a verdict about the wrong entity.
+    """
+    matches = kg.find_entities_by_name(subject_key)
+    if subject_type:
+        matches = [m for m in matches if m["entity_type"] == subject_type]
+    if not matches:
+        return None, None
+    if len(matches) > 1:
+        types = sorted(m["entity_type"] for m in matches)
+        return None, _invalid(
+            f"subject_key {subject_key!r} matches {len(matches)} entity types "
+            f"({', '.join(types)}); pass subject_type to disambiguate"
+        )
+    return str(matches[0]["entity_id"]), None
+
+
+def _check_inputs(subject_key: str, predicate: str) -> dict[str, Any] | None:
+    """Return an error payload when the required check arguments are unusable."""
+    if not subject_key.strip():
+        return _invalid("subject_key is required")
+    if not predicate.strip():
+        return _invalid("predicate is required")
+    return None
+
+
+def _cardinality_verdict(
+    kg: Any,
+    *,
+    subject_id: str,
+    predicate: str,
+    object_key: str,
+    object_type: str,
+    max_count: int,
+    base: dict[str, Any],
+) -> dict[str, Any]:
+    """Decide, once the subject is known and the predicate is bounded."""
+    count = kg.count_active_objects(subject_entity_id=subject_id, predicate=predicate)
+
+    if object_key.strip():
+        object_id, obj_error = _resolve_check_subject(kg, object_key.strip(), object_type.strip())
+        if obj_error is not None:
+            return obj_error
+        if object_id is not None and kg.active_edge_exists(
+            subject_entity_id=subject_id,
+            predicate=predicate,
+            object_entity_id=object_id,
+        ):
+            return _allow(CHECK_ALREADY_ASSERTED, count=count, max_count=max_count, **base)
+
+    if count >= max_count:
+        return {
+            "decision": "deny",
+            "reason": CHECK_EXCEEDED,
+            "count": count,
+            "max_count": max_count,
+            "detail": (
+                f"{base['subject_key']!r} already holds {count} object(s) for "
+                f"{predicate!r}, which is the declared maximum"
+            ),
+            **base,
+        }
+
+    return _allow(CHECK_WITHIN_LIMIT, count=count, max_count=max_count, **base)
+
+
+def kg_check(
+    cm: Any,
+    project_id: str,
+    brain_id: str,
+    *,
+    subject_key: str,
+    predicate: str,
+    object_key: str = "",
+    subject_type: str = "",
+    object_type: str = "",
+) -> dict[str, Any]:
+    """Would asserting this edge violate the predicate's declared cardinality?
+
+    A check-before-write for a semantic firewall: ``neighbors`` and
+    ``query_events`` are retrieval, this is a decision. It reads only — nothing
+    here writes an edge — so a caller may ask before committing a side effect.
+
+    **Open by default.** An unregistered predicate, or one registered without a
+    ``max_count``, allows. The registry describes predicates rather than owning
+    them (TAP-5508), and a check that denied everything undeclared would make
+    registration mandatory through the back door.
+
+    Re-asserting an edge that already exists allows even at the limit: it adds
+    no object, and denying an idempotent write would make retries unsafe.
+
+    Args:
+        cm: Open connection manager.
+        project_id, brain_id: Tenant / identity scope.
+        subject_key: Canonical name of the subject entity.
+        predicate: The predicate being asserted.
+        object_key: Optional canonical name of the object. Supplying it lets the
+            check recognise an idempotent re-assert.
+        subject_type, object_type: Optional entity types, to disambiguate a name
+            shared by several types.
+
+    Returns:
+        ``{"decision": "allow"|"deny", "count": int, "max_count": int|None,
+        "reason": str, ...}``, or an ``invalid_request`` envelope.
+    """
+    invalid = _check_inputs(subject_key, predicate)
+    if invalid is not None:
+        return invalid
+
+    predicate = predicate.strip()
+    kg = _kg_store(cm, project_id, brain_id)
+
+    base: dict[str, Any] = {
+        "subject_key": subject_key,
+        "predicate": predicate,
+        "object_key": object_key or None,
+    }
+
+    declaration = kg.get_predicate(predicate)
+    if declaration is None:
+        return _allow(CHECK_UNREGISTERED, count=0, max_count=None, **base)
+
+    max_count = declaration.get("max_count")
+    if max_count is None:
+        return _allow(CHECK_UNBOUNDED, count=0, max_count=None, **base)
+
+    subject_id, error = _resolve_check_subject(kg, subject_key.strip(), subject_type.strip())
+    if error is not None:
+        return error
+    if subject_id is None:
+        return _allow(CHECK_NO_SUBJECT, count=0, max_count=max_count, **base)
+
+    return _cardinality_verdict(
+        kg,
+        subject_id=subject_id,
+        predicate=predicate,
+        object_key=object_key,
+        object_type=object_type,
+        max_count=int(max_count),
+        base=base,
+    )

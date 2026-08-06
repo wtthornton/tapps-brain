@@ -1583,6 +1583,59 @@
         "summary": " V1 Forget"
       }
     },
+    "/v1/kg/check": {
+      "post": {
+        "description": "Check whether asserting an edge would violate declared cardinality.\n\nREST counterpart of the ``brain_kg_check`` MCP tool \u2014 the check-before-write\na semantic firewall asks before committing a side effect.\n\nRequest body (JSON):\n  ``{ \"subject_key\": str, \"predicate\": str, \"object_key\"?: str,\n      \"subject_type\"?: str, \"object_type\"?: str }``\n\nResponse: ``{ \"decision\": \"allow\"|\"deny\", \"count\": int,\n\"max_count\": int|null, \"reason\": str, ... }``\n\nRead-only \u2014 nothing is written. A **deny** is a 200 carrying a verdict,\nnot a 4xx: the question was answered successfully and the answer was no.\nReserving non-2xx for malformed requests keeps \"I could not ask\"\ndistinguishable from \"I asked, and the answer was no\".\n\nIntroduced in TAP-5509.",
+        "operationId": "_v1_kg_check_v1_kg_check_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Check"
+      }
+    },
     "/v1/kg/explain": {
       "post": {
         "description": "Find the shortest path between two KG entities.\n\nREST counterpart of the ``brain_explain_connection`` MCP tool.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier.\n\nRequest body (JSON):\n  ``{ \"subject_id\": str, \"object_id\": str, \"max_hops\"?: int=3 }``\n\nResponse: ``{ \"found\": bool, \"hops\": int|null, \"path\": [...],\n\"subject_id\": str, \"object_id\": str }``",

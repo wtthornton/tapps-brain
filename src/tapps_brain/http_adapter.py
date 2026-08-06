@@ -3848,6 +3848,47 @@ def create_app(
         result = await asyncio.to_thread(_kg_svc.list_predicates, cm, project_id, _kg_brain_id())
         return JSONResponse(status_code=200, content=result)
 
+    @app.post("/v1/kg/check", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_check(request: Request) -> JSONResponse:
+        """Check whether asserting an edge would violate declared cardinality.
+
+        REST counterpart of the ``brain_kg_check`` MCP tool — the check-before-write
+        a semantic firewall asks before committing a side effect.
+
+        Request body (JSON):
+          ``{ "subject_key": str, "predicate": str, "object_key"?: str,
+              "subject_type"?: str, "object_type"?: str }``
+
+        Response: ``{ "decision": "allow"|"deny", "count": int,
+        "max_count": int|null, "reason": str, ... }``
+
+        Read-only — nothing is written. A **deny** is a 200 carrying a verdict,
+        not a 4xx: the question was answered successfully and the answer was no.
+        Reserving non-2xx for malformed requests keeps "I could not ask"
+        distinguishable from "I asked, and the answer was no".
+
+        Introduced in TAP-5509.
+        """
+        project_id = _require_project_id(request)
+        _resolve_tenant_headers(request)
+        body = await _parse_json_object_body(request)
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.kg_check,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            subject_key=str(body.get("subject_key") or ""),
+            predicate=str(body.get("predicate") or ""),
+            object_key=str(body.get("object_key") or ""),
+            subject_type=str(body.get("subject_type") or ""),
+            object_type=str(body.get("object_type") or ""),
+        )
+        return _learning_response(result)
+
     @app.post("/v1/kg/resolve_entity", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_resolve_entity(request: Request) -> JSONResponse:
         """Resolve or create a KG entity by (entity_type, canonical_name).

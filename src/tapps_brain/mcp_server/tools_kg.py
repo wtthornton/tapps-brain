@@ -980,3 +980,71 @@ def register_kg_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, PLR0
 
         result = kg_service.list_predicates(cm, project_id, kg_service._DEFAULT_BRAIN_ID)
         return json.dumps(result, default=str)
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_kg_check(
+        subject_key: str,
+        predicate: str,
+        object_key: str = "",
+        subject_type: str = "",
+        object_type: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Check whether asserting an edge would violate declared cardinality (TAP-5509).
+
+        A check-before-write for a semantic firewall. ``brain_get_neighbors``
+        and ``brain_query_events`` are retrieval; this is a decision, returned
+        with the count and the limit that produced it so the caller can explain
+        a refusal rather than just report one.
+
+        Read-only: nothing is written, so it is safe to ask before committing a
+        side effect.
+
+        **Open by default.** A predicate that is unregistered, or registered
+        without a ``max_count``, allows — see ``brain_register_predicate``.
+        Re-asserting an edge that already exists also allows, even at the limit,
+        because it adds no object and denying it would make retries unsafe.
+
+        Parameters
+        ----------
+        subject_key:
+            Canonical name of the subject entity.
+        predicate:
+            The predicate being asserted, e.g. ``refunded``.
+        object_key:
+            Optional canonical name of the object. Supplying it lets the check
+            recognise an idempotent re-assert.
+        subject_type, object_type:
+            Optional entity types, to disambiguate a name shared by several types.
+        agent_id:
+            Override the server-level default for this call (STORY-070.7).
+
+        Returns
+        -------
+        JSON object: ``{ "decision": "allow"|"deny", "count": int,
+        "max_count": int|null, "reason": str, "subject_key": str,
+        "predicate": str, "object_key": str|null }``
+        """
+        try:
+            _rpc(agent_id, default=_server_aid)
+        except ValueError as exc:
+            return json.dumps({"error": "bad_request", "detail": str(exc)})
+        project_id = _pid()
+
+        cm = kg_service._get_or_create_cm()
+        if cm is None:
+            return json.dumps(
+                {"error": "db_unavailable", "detail": "TAPPS_BRAIN_DATABASE_URL is not set."}
+            )
+
+        result = kg_service.kg_check(
+            cm,
+            project_id,
+            kg_service._DEFAULT_BRAIN_ID,
+            subject_key=subject_key,
+            predicate=predicate,
+            object_key=object_key,
+            subject_type=subject_type,
+            object_type=object_type,
+        )
+        return json.dumps(result, default=str)

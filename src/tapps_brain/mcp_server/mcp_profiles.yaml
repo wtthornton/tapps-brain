@@ -5,12 +5,12 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (83 tools, all eager) — default fallback; full tools/list surface
-#   operator    (97 tools, all eager) — full + operator-only maintenance tools
-#   coder       (22 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
+#   full        (84 tools, all eager) — default fallback; full tools/list surface
+#   operator    (98 tools, all eager) — full + operator-only maintenance tools
+#   coder       (23 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (23 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (24 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # TAP-5542 note: the learning promote/demote tools are deliberately absent from
 # `coder`. A coding agent approving its own learnings is the gate approving
@@ -46,6 +46,7 @@ profiles:
       - brain_export
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
       - brain_list_predicates
@@ -135,6 +136,7 @@ profiles:
       - brain_export
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
       - brain_list_predicates
@@ -234,6 +236,7 @@ profiles:
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
       - brain_profile_get
@@ -290,6 +293,7 @@ profiles:
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
       - brain_list_predicates
