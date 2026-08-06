@@ -113,6 +113,21 @@ class TestMissionIsolation:
         result = _get(store, mission_id="m-2")
         assert result["found"] is False, "an entry owned by m-1 was served to m-2"
 
+    def test_dotted_identifiers_cannot_forge_a_colliding_key(self) -> None:
+        """`.` is the key separator, so it must not be legal inside a component.
+
+        `mission_id="m.1"` with no run and `mission_id="m", run_id="1"` would
+        otherwise both render `mission.m.1.contract`. The post-read mission_id
+        check makes that safe to *read*, but the second mission's save would
+        silently overwrite the first's row — after which neither can read its
+        own state. Rejecting the dotted form makes the collision
+        unconstructible.
+        """
+        store = _FakeStore()
+        assert _set(store, mission_id="m.1")["error"] == "invalid_request"
+        assert _set(store, mission_id="m", run_id="1.contract")["error"] == "invalid_request"
+        assert store.save_calls == [], "a colliding key reached the store"
+
     def test_run_id_narrows_within_a_mission(self) -> None:
         store = _FakeStore()
         _set(store, mission_id="m-1", value={"scope": "mission-level"})

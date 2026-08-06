@@ -2656,7 +2656,17 @@ _MISSION_KEY_PREFIX = "mission"
 #: slug (``_KEY_SLUG_PATTERN`` in ``models.py``).  Validated rather than
 #: normalised on purpose: silently lowercasing would map ``M-1`` and ``m-1``
 #: onto one key, which is an isolation bug wearing a convenience hat.
-_MISSION_COMPONENT_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+#:
+#: ``.`` is excluded even though the key grammar permits it, because ``.`` is the
+#: separator this module composes keys with. Allowing it inside a component makes
+#: the composition ambiguous: ``mission_id="m.1"`` with no run and
+#: ``mission_id="m", run_id="1"`` both render ``mission.m.1.<kind>``. Reads
+#: survive that — the post-read ``mission_id`` check rejects both directions —
+#: but the *write* does not: the second mission's save silently overwrites the
+#: first's row, and afterwards neither mission can read its own state. Excluding
+#: the delimiter from the components it delimits makes the collision
+#: unconstructible rather than merely undetectable.
+_MISSION_COMPONENT_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 #: Matches the key-length ceiling in ``models.py``.
 _MISSION_KEY_MAX = 128
@@ -2685,13 +2695,13 @@ def _validate_mission_args(mission_id: str, kind: str, run_id: str = "") -> dict
         return _invalid_request("mission_id is required")
     if not _MISSION_COMPONENT_PATTERN.match(mission_id):
         return _invalid_request(
-            "mission_id must be a lowercase slug (letters, digits, dots, hyphens, "
-            f"underscores) starting with alphanumeric, got {mission_id!r}"
+            "mission_id must be a lowercase slug (letters, digits, hyphens, "
+            f"underscores; no dots) starting with alphanumeric, got {mission_id!r}"
         )
     if run_id and not _MISSION_COMPONENT_PATTERN.match(run_id):
         return _invalid_request(
-            "run_id must be a lowercase slug (letters, digits, dots, hyphens, "
-            f"underscores) starting with alphanumeric, got {run_id!r}"
+            "run_id must be a lowercase slug (letters, digits, hyphens, "
+            f"underscores; no dots) starting with alphanumeric, got {run_id!r}"
         )
     if kind not in MISSION_STATE_KINDS:
         return _invalid_request(f"kind must be one of {list(MISSION_STATE_KINDS)}, got {kind!r}")

@@ -156,7 +156,7 @@ inheriting another agent's trajectory.
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `mission_id` | string | required | Scope key. Lowercase slug (`[a-z0-9][a-z0-9._-]*`). |
+| `mission_id` | string | required | Scope key. Lowercase slug (`[a-z0-9][a-z0-9_-]*`) — no dots. |
 | `kind` | string | required | `contract` \| `findings` \| `knowledge` — a closed set |
 | `value` | object | required on set | JSON payload; round-trips structurally |
 | `run_id` | string | optional | Narrows scope within a mission |
@@ -185,6 +185,14 @@ without a try/except.
 with a `400` when they do not match — including uppercase. They are not
 silently lowercased, because folding `M-1` onto `m-1` would merge two distinct
 missions into one slot.
+
+Dots are rejected inside `mission_id` / `run_id` even though the key grammar
+allows them, because `.` is the separator the key is composed with. Permitting
+it makes the composition ambiguous — `mission_id="m.1"` with no run and
+`mission_id="m", run_id="1"` both render `mission.m.1.<kind>`. Reads survive
+that (the post-read `mission_id` check rejects both directions), but the *write*
+does not: the second mission's save would overwrite the first's row, after which
+neither mission can read its own state.
 
 MCP equivalents: `brain_mission_state_set` / `brain_mission_state_get`, in the
 `full`, `operator` and `agent_brain` profiles. Absent from `coder`: a
