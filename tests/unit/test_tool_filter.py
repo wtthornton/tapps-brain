@@ -196,7 +196,7 @@ class TestListToolsFilter:
         """Docker reference stack: `full` profile lists every callable tool."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("full"))
-        assert len(all_tool_names) == 79
+        assert len(all_tool_names) == 81
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -206,7 +206,7 @@ class TestListToolsFilter:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 79
+        assert len(result) == 81
         assert {t.name for t in result} == real_registry.get("full")
 
     def test_bundled_full_profile_includes_previously_deferred_tools(self) -> None:
@@ -442,7 +442,7 @@ class TestDeferredToolBehavior:
         """Operator profile lists the full callable surface."""
         real_registry = ProfileRegistry()
         all_tool_names = list(real_registry.get("operator"))
-        assert len(all_tool_names) == 92
+        assert len(all_tool_names) == 94
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "test_profile", default=None
@@ -453,14 +453,14 @@ class TestDeferredToolBehavior:
         install_tool_filter(mcp, profile_registry=real_registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 92
+        assert len(result) == 94
 
     def test_small_profiles_all_eager(self) -> None:
         """coder/reviewer/seeder/agent_brain remain all-eager small profiles."""
         real_registry = ProfileRegistry()
         full_tools = list(real_registry.get("full"))
 
-        expected_counts = {"coder": 22, "reviewer": 10, "seeder": 6, "agent_brain": 19}
+        expected_counts = {"coder": 22, "reviewer": 10, "seeder": 6, "agent_brain": 21}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None

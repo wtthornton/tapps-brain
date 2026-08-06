@@ -68,6 +68,7 @@ class MemoryScope(StrEnum):
 
     project = "project"  # visible across the entire project
     branch = "branch"  # scoped to a git branch
+    mission = "mission"  # scoped to one mission (TAP-5544)
     ephemeral = "ephemeral"  # short-lived, momentary visibility
     session = "session"  # visible in the current session only
     shared = "shared"  # eligible for cross-project federation
@@ -164,6 +165,13 @@ class MemoryEntry(BaseModel):
     )
     access_count: int = Field(default=0, ge=0, description="Read access count.")
     branch: str | None = Field(default=None, description="Git branch (required when scope=branch).")
+    # TAP-5544: mission scope companion fields, mirroring ``branch``/``scope=branch``.
+    mission_id: str | None = Field(
+        default=None, description="Mission identifier (required when scope=mission)."
+    )
+    run_id: str | None = Field(
+        default=None, description="Run within a mission; narrows mission-scoped state."
+    )
 
     # Memory Intelligence (Epic 24): reinforcement + contradiction tracking
     last_reinforced: str | None = Field(
@@ -478,6 +486,14 @@ class MemoryEntry(BaseModel):
         # Branch required when scope=branch
         if self.scope == MemoryScope.branch and not self.branch:
             msg = "Branch name is required when scope is 'branch'."
+            raise ValueError(msg)
+
+        # Mission required when scope=mission (TAP-5544).  Without it the row
+        # is unreachable by the mission API and indistinguishable from another
+        # mission's state, so a mission-scoped entry with no mission is not a
+        # weaker record — it is an unowned one.
+        if self.scope == MemoryScope.mission and not self.mission_id:
+            msg = "mission_id is required when scope is 'mission'."
             raise ValueError(msg)
 
         # Temporal validation: invalid_at must be after valid_at.

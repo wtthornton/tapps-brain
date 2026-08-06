@@ -149,20 +149,55 @@ reading approved tool paths is the consumption side of the gate, not the
 approval side. It is absent from `reviewer`, which reviews diffs and has no
 routing decision to make.
 
-### `POST /v1/mission/state:set` and `:get` — TAP-5544
+### `POST /v1/mission/state:set` and `:get` — TAP-5544 (**live**)
 
 Mission/run-scoped shared state, so a fresh worker can pick up a mission without
 inheriting another agent's trajectory.
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `mission_id` | string | required | Scope key |
-| `kind` | string | required | `contract` \| `findings` \| `knowledge` |
-| `value` | object | required on set | JSON payload |
+| `mission_id` | string | required | Scope key. Lowercase slug (`[a-z0-9][a-z0-9_-]*`) — no dots. |
+| `kind` | string | required | `contract` \| `findings` \| `knowledge` — a closed set |
+| `value` | object | required on set | JSON payload; round-trips structurally |
 | `run_id` | string | optional | Narrows scope within a mission |
 
-Scoped state is tenant-isolated by the same `(project_id, agent_id)` rules as
-private memory; RLS is unchanged.
+Stored as a `scope="mission"` memory entry whose `mission_id` is the isolation
+key (migration 031), following the `scope=branch` precedent — a `MemoryScope`
+value plus a companion field that is required when that scope is set — rather
+than adding a parallel store.
+
+**Isolation.** Two missions under one `project_id` cannot read each other. This
+is enforced twice on purpose: the storage key is mission-namespaced
+(`mission.<mission_id>[.<run_id>].<kind>`), *and* the entry's own `mission_id`
+is re-checked after the read, so a caller that guesses or forges another
+mission's key still gets a miss rather than that mission's state. A DB CHECK
+makes a `mission`-scoped row without a `mission_id` unrepresentable.
+
+Note that the RLS policy from migration 009 gates on `project_id` only, so it
+cannot provide mission isolation — the mission predicate does.
+
+**A missing slot is `200` with `{"found": false, "value": null}`, not a `404`.**
+"This mission has not parked its contract yet" is the normal state for a worker
+picking up a mission, and it needs to be distinguishable from a failed call
+without a try/except.
+
+`mission_id` and `run_id` are validated against the key-slug rule and rejected
+with a `400` when they do not match — including uppercase. They are not
+silently lowercased, because folding `M-1` onto `m-1` would merge two distinct
+missions into one slot.
+
+Dots are rejected inside `mission_id` / `run_id` even though the key grammar
+allows them, because `.` is the separator the key is composed with. Permitting
+it makes the composition ambiguous — `mission_id="m.1"` with no run and
+`mission_id="m", run_id="1"` both render `mission.m.1.<kind>`. Reads survive
+that (the post-read `mission_id` check rejects both directions), but the *write*
+does not: the second mission's save would overwrite the first's row, after which
+neither mission can read its own state.
+
+MCP equivalents: `brain_mission_state_set` / `brain_mission_state_get`, in the
+`full`, `operator` and `agent_brain` profiles. Absent from `coder`: a
+repo-embedded coding agent works a task, not a mission, so it has nothing to
+park.
 
 ## What is deliberately not here
 

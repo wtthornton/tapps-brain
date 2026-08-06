@@ -53,12 +53,14 @@ class TestMemoryScope:
     def test_values(self) -> None:
         assert MemoryScope.project == "project"
         assert MemoryScope.branch == "branch"
+        assert MemoryScope.mission == "mission"
         assert MemoryScope.ephemeral == "ephemeral"
         assert MemoryScope.session == "session"
         assert MemoryScope.shared == "shared"
 
     def test_member_count(self) -> None:
-        assert len(MemoryScope) == 5  # project, branch, ephemeral, session, shared
+        # TAP-5544 added `mission`.
+        assert len(MemoryScope) == 6  # project, branch, mission, ephemeral, session, shared
 
 
 class TestMemoryEntry:

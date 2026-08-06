@@ -2640,3 +2640,185 @@ def brain_recall_tool_paths(
             "tool_paths": tool_paths,
             "learning_status": learning_status,
         }
+
+
+# ---------------------------------------------------------------------------
+# Mission-scoped shared state (TAP-5544)
+# ---------------------------------------------------------------------------
+
+#: The kinds of state a mission may park. A closed set, because an open one
+#: turns mission state into a general KV store with no schema anyone can rely on.
+MISSION_STATE_KINDS = ("contract", "findings", "knowledge")
+
+_MISSION_KEY_PREFIX = "mission"
+
+#: Mission/run identifiers become part of the memory key, which is a lowercase
+#: slug (``_KEY_SLUG_PATTERN`` in ``models.py``).  Validated rather than
+#: normalised on purpose: silently lowercasing would map ``M-1`` and ``m-1``
+#: onto one key, which is an isolation bug wearing a convenience hat.
+#:
+#: ``.`` is excluded even though the key grammar permits it, because ``.`` is the
+#: separator this module composes keys with. Allowing it inside a component makes
+#: the composition ambiguous: ``mission_id="m.1"`` with no run and
+#: ``mission_id="m", run_id="1"`` both render ``mission.m.1.<kind>``. Reads
+#: survive that — the post-read ``mission_id`` check rejects both directions —
+#: but the *write* does not: the second mission's save silently overwrites the
+#: first's row, and afterwards neither mission can read its own state. Excluding
+#: the delimiter from the components it delimits makes the collision
+#: unconstructible rather than merely undetectable.
+_MISSION_COMPONENT_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+#: Matches the key-length ceiling in ``models.py``.
+_MISSION_KEY_MAX = 128
+
+
+def _mission_state_key(mission_id: str, kind: str, run_id: str | None) -> str:
+    """Return the storage key for one slot of mission state.
+
+    Dot-separated because the key must be a lowercase slug — ``:`` is not a
+    legal key character. ``run_id`` participates in the key so a retry can keep
+    its own findings without clobbering the mission-level record.
+    """
+    if run_id:
+        return f"{_MISSION_KEY_PREFIX}.{mission_id}.{run_id}.{kind}"
+    return f"{_MISSION_KEY_PREFIX}.{mission_id}.{kind}"
+
+
+def _validate_mission_args(mission_id: str, kind: str, run_id: str = "") -> dict[str, Any] | None:
+    """Return an error payload when the shared mission arguments are unusable.
+
+    Identifiers are checked against the key-slug rule here so a bad one comes
+    back as a typed 400 instead of surfacing as a model ValidationError from
+    deep inside the save path.
+    """
+    if not mission_id.strip():
+        return _invalid_request("mission_id is required")
+    if not _MISSION_COMPONENT_PATTERN.match(mission_id):
+        return _invalid_request(
+            "mission_id must be a lowercase slug (letters, digits, hyphens, "
+            f"underscores; no dots) starting with alphanumeric, got {mission_id!r}"
+        )
+    if run_id and not _MISSION_COMPONENT_PATTERN.match(run_id):
+        return _invalid_request(
+            "run_id must be a lowercase slug (letters, digits, hyphens, "
+            f"underscores; no dots) starting with alphanumeric, got {run_id!r}"
+        )
+    if kind not in MISSION_STATE_KINDS:
+        return _invalid_request(f"kind must be one of {list(MISSION_STATE_KINDS)}, got {kind!r}")
+    if len(_mission_state_key(mission_id, kind, run_id or None)) > _MISSION_KEY_MAX:
+        return _invalid_request(
+            f"mission_id + run_id are too long; the composed key exceeds "
+            f"{_MISSION_KEY_MAX} characters"
+        )
+    return None
+
+
+def brain_mission_state_set(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    mission_id: str,
+    kind: str,
+    value: Any,
+    run_id: str = "",
+) -> dict[str, Any]:
+    """Park a slot of mission-scoped shared state (TAP-5544).
+
+    Stored as a `scope="mission"` memory entry whose `mission_id` is the
+    isolation key, following the `scope=branch` precedent rather than adding a
+    parallel store. The value is serialised as JSON so structured payloads
+    survive the round trip.
+
+    Args:
+        store: MemoryStore instance.
+        project_id: Project identifier.
+        agent_id: Agent identifier.
+        mission_id: Mission that owns this state.
+        kind: One of ``contract`` / ``findings`` / ``knowledge``.
+        value: JSON-serialisable payload.
+        run_id: Optional run within the mission.
+
+    Returns:
+        ``{"saved": True, "mission_id": ..., "kind": ..., "run_id": ...,
+        "key": ...}``, or ``{"error": "invalid_request", "message": ...}``.
+    """
+    error = _validate_mission_args(mission_id, kind, run_id)
+    if error is not None:
+        return error
+    try:
+        serialised = json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        return _invalid_request(f"value must be JSON-serialisable: {exc}")
+
+    with start_mcp_tool_span("brain_mission_state_set"):
+        key = _mission_state_key(mission_id, kind, run_id or None)
+        store.save(
+            key=key,
+            value=serialised,
+            tier="context",
+            scope="mission",
+            mission_id=mission_id,
+            run_id=run_id or None,
+            tags=[f"{_MISSION_KEY_PREFIX}:{mission_id}", f"mission-kind:{kind}"],
+        )
+        return {
+            "saved": True,
+            "mission_id": mission_id,
+            "kind": kind,
+            "run_id": run_id or None,
+            "key": key,
+        }
+
+
+def brain_mission_state_get(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    mission_id: str,
+    kind: str,
+    run_id: str = "",
+) -> dict[str, Any]:
+    """Read back a slot of mission-scoped shared state (TAP-5544).
+
+    Isolation is enforced twice on purpose. The key is mission-namespaced, and
+    the entry's own ``mission_id`` is re-checked after the read — so a caller
+    that guesses or forges another mission's key still gets a miss rather than
+    that mission's state. A missing slot is ``{"found": False}`` with a 200, not
+    a 404: "this mission has not written its contract yet" is a normal answer
+    for a worker picking up a mission.
+    """
+    error = _validate_mission_args(mission_id, kind, run_id)
+    if error is not None:
+        return error
+
+    with start_mcp_tool_span("brain_mission_state_get"):
+        key = _mission_state_key(mission_id, kind, run_id or None)
+        entry = store.get(key)
+        missing = {
+            "found": False,
+            "mission_id": mission_id,
+            "kind": kind,
+            "run_id": run_id or None,
+            "value": None,
+        }
+        if entry is None:
+            return missing
+        # Defence in depth: never serve a row that belongs to another mission.
+        if getattr(entry, "mission_id", None) != mission_id:
+            return missing
+        if (getattr(entry, "run_id", None) or None) != (run_id or None):
+            return missing
+        try:
+            value = json.loads(entry.value)
+        except (TypeError, ValueError):
+            value = entry.value
+        return {
+            "found": True,
+            "mission_id": mission_id,
+            "kind": kind,
+            "run_id": run_id or None,
+            "value": value,
+            "updated_at": getattr(entry, "updated_at", None),
+        }

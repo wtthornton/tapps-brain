@@ -182,7 +182,7 @@
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
     "version": "3.29.0",
-    "x-schema-version": 30
+    "x-schema-version": 31
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2064,6 +2064,112 @@
           }
         ],
         "summary": " V1 Learning Promote"
+      }
+    },
+    "/v1/mission/state:get": {
+      "post": {
+        "description": "Read back a slot of mission-scoped shared state.\n\nRequest body (JSON): ``{ \"mission_id\": str, \"kind\": str, \"run_id\"?: str }``\n\nAn unwritten slot is `200` with ``{\"found\": false, \"value\": null}``\nrather than a `404` \u2014 \"this mission has not parked its contract yet\" is\na normal answer for a worker picking up a mission, not a failure.",
+        "operationId": "_v1_mission_state_get_v1_mission_state_get_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Mission State Get"
+      }
+    },
+    "/v1/mission/state:set": {
+      "post": {
+        "description": "Park a slot of mission-scoped shared state.\n\nRequest body (JSON):\n  ``{ \"mission_id\": str, \"kind\": \"contract\" | \"findings\" | \"knowledge\",\n      \"value\": object, \"run_id\"?: str }``\n\nState is isolated per mission: two missions under one ``project_id``\ncannot read each other.",
+        "operationId": "_v1_mission_state_set_v1_mission_state_set_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Mission State Set"
       }
     },
     "/v1/profile/data:get": {

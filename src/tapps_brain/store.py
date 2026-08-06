@@ -1320,6 +1320,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         scope: str = "project",
         tags: list[str] | None = None,
         branch: str | None = None,
+        mission_id: str | None = None,
+        run_id: str | None = None,
         confidence: float = -1.0,
         agent_scope: str = "private",
         source_session_id: str = "",
@@ -1374,6 +1376,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 normalize to clear; pass a non-empty string to set.
             tags: Tags for categorization.
             branch: Git branch name (required when scope=branch).
+            mission_id: Mission identifier (required when scope=mission).
+            run_id: Run within a mission; narrows mission-scoped state.
             confidence: Confidence score (-1.0 for auto from source).
             skip_consolidation: If True, skip auto-consolidation check.
             session_id: Optional session identifier for implicit feedback tracking
@@ -1457,6 +1461,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 scope=scope,
                 tags=tags,
                 branch=branch,
+                mission_id=mission_id,
+                run_id=run_id,
                 confidence=confidence,
                 agent_scope=prep.agent_scope,
                 source_session_id=source_session_id,
@@ -1825,6 +1831,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 scope=item.get("scope", "project"),
                 tags=item.get("tags"),
                 branch=item.get("branch"),
+                mission_id=item.get("mission_id"),
+                run_id=item.get("run_id"),
                 confidence=item.get("confidence", -1.0),
                 agent_scope=prep.agent_scope,
                 source_session_id=item.get("source_session_id", ""),
@@ -2175,6 +2183,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         scope: str,
         tags: list[str] | None,
         branch: str | None,
+        mission_id: str | None,
+        run_id: str | None,
         confidence: float,
         agent_scope: str,
         source_session_id: str,
@@ -2221,6 +2231,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 scope=scope,
                 tags=tags,
                 branch=branch,
+                mission_id=mission_id,
+                run_id=run_id,
                 confidence=confidence,
                 agent_scope=agent_scope,
                 source_session_id=source_session_id,
@@ -2267,6 +2279,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         scope: str,
         tags: list[str] | None,
         branch: str | None,
+        mission_id: str | None,
+        run_id: str | None,
         confidence: float,
         agent_scope: str,
         source_session_id: str,
@@ -2357,6 +2371,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             embedding=preserved["embedding"],
             embedding_model_id=preserved["embedding_model_id"],
             branch=branch,
+            mission_id=mission_id,
+            run_id=run_id,
             last_reinforced=preserved["last_reinforced"],
             reinforce_count=preserved["reinforce_count"],
             contradicted=preserved["contradicted"],

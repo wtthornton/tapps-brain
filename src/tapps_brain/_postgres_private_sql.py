@@ -96,6 +96,8 @@ INSERT INTO private_memories (
     promoted_at,
     promotion_signal,
     demotion_reason,
+    mission_id,
+    run_id,
     embedding
 ) VALUES (
     %s, %s, %s, %s,
@@ -116,6 +118,7 @@ INSERT INTO private_memories (
     %s, %s, %s,
     %s,
     %s, %s, %s, %s, %s,
+    %s, %s,
     %s::vector
 )
 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
@@ -174,6 +177,8 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     promoted_at              = EXCLUDED.promoted_at,
     promotion_signal         = EXCLUDED.promotion_signal,
     demotion_reason          = EXCLUDED.demotion_reason,
+    mission_id               = EXCLUDED.mission_id,
+    run_id                   = EXCLUDED.run_id,
     embedding                = COALESCE(EXCLUDED.embedding, private_memories.embedding)
 """
 
@@ -267,6 +272,8 @@ def build_save_params(
         entry.promoted_at,
         promotion_signal,
         entry.demotion_reason,
+        entry.mission_id,
+        entry.run_id,
         embedding_to_pgvector(entry.embedding),
     )
 
@@ -292,7 +299,8 @@ ENTRY_COLUMNS_SQL = (
     "integrity_hash, integrity_hash_v, embedding_model_id, "
     "temporal_sensitivity, failed_approaches, "
     "status, stale_reason, stale_date, memory_class, "
-    "learning_status, promoted_by, promoted_at, promotion_signal, demotion_reason"
+    "learning_status, promoted_by, promoted_at, promotion_signal, demotion_reason, "
+    "mission_id, run_id"
 )
 
 LOAD_ALL_SQL = (

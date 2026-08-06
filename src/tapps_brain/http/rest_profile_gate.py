@@ -41,6 +41,9 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/learning:demote": "brain_demote_learning",
     # Approved-only tool-path recall (TAP-5545)
     "/v1/recall:tool_paths": "brain_recall_tool_paths",
+    # Mission-scoped shared state (TAP-5544)
+    "/v1/mission/state:set": "brain_mission_state_set",
+    "/v1/mission/state:get": "brain_mission_state_get",
     # Memory layer
     "/v1/reinforce": "memory_reinforce",
     "/v1/remember:batch": "memory_save_many",

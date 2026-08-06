@@ -275,6 +275,9 @@ class TestCoreTools:
             "brain_demote_learning",
             # Approved-only tool-path recall (TAP-5545)
             "brain_recall_tool_paths",
+            # Mission-scoped shared state (TAP-5544)
+            "brain_mission_state_set",
+            "brain_mission_state_get",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",
