@@ -5,12 +5,12 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (81 tools, all eager) — default fallback; full tools/list surface
-#   operator    (95 tools, all eager) — full + operator-only maintenance tools
+#   full        (83 tools, all eager) — default fallback; full tools/list surface
+#   operator    (97 tools, all eager) — full + operator-only maintenance tools
 #   coder       (22 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (21 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (23 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # TAP-5542 note: the learning promote/demote tools are deliberately absent from
 # `coder`. A coding agent approving its own learnings is the gate approving
@@ -48,6 +48,7 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
       - brain_mission_state_get
       - brain_mission_state_set
       - brain_profile_get
@@ -59,6 +60,7 @@ profiles:
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status
@@ -135,6 +137,7 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
       - brain_mission_state_get
       - brain_mission_state_set
       - brain_profile_get
@@ -146,6 +149,7 @@ profiles:
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status
@@ -288,6 +292,7 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
       - brain_mission_state_get
       - brain_mission_state_set
       - brain_profile_get
@@ -299,6 +304,7 @@ profiles:
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status

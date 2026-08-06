@@ -400,6 +400,42 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 | **Inferred edge confidence cap** | When the recorder is invoked with `evidence_required=False` (an internal path), edge confidence is capped at 0.4. The MCP tool always treats your edges as agent-asserted; supply evidence accordingly. |
 | **Single-transaction atomicity** | One `brain_record_event` call is all-or-nothing. A bad `EdgeSpec` UUID rolls back the event itself — there are no orphan events. |
 | **Monthly-partitioned event log** | `experience_events` is range-partitioned (`event_time`); the recorder lets Postgres route rows. Pre-created partitions cover 2026-05 through 2027-04 plus a default. No agent action needed. |
+| **Predicate registry, open by default** (TAP-5508) | A project may declare a predicate's cardinality via `brain_register_predicate`. Unregistered predicates stay writable — the registry describes predicates, it does not own them. Projects opt into rejection with `kg.strict_predicates`. |
+
+### 7.1 Declaring predicate cardinality (TAP-5508)
+
+Predicates are free-form TEXT. That is fine for exploratory graphs and useless
+for ledger questions: you cannot ask "was this order refunded twice" when
+nothing declares that `refunded` is functional.
+
+`brain_register_predicate` records what a predicate means for your project:
+
+| Field | Meaning |
+|---|---|
+| `predicate` | The label, e.g. `refunded` |
+| `max_count` | Active objects one subject may hold. `0`/omitted = unbounded; `1` = functional edge |
+| `domain_type` | Optional `entity_type` the subject must be |
+| `range_type` | Optional `entity_type` the object must be |
+| `description` | Free text for humans reading the registry |
+
+`brain_list_predicates` returns the declarations; an empty registry is
+`{"count": 0, "predicates": []}`, not an error.
+
+REST equivalents: `POST /v1/kg/predicates:register` and
+`POST /v1/kg/predicates:list`.
+
+**Registration is descriptive today.** It does not retroactively validate
+existing edges, and nothing rejects a write yet — enforcement of `max_count` on
+the upsert path is TAP-5510. Declaring first means you can see what *would* be
+rejected before anything is.
+
+**Open by default.** An unregistered predicate stays legal. Existing graphs use
+free-form predicates, and a registry that rejected them on introduction would
+break every current writer to buy a guarantee nobody has asked for yet. Set
+`kg.strict_predicates: true` in the project profile to opt into rejection.
+
+Declarations are tenant-scoped under the same fail-closed RLS as `kg_edges`:
+one project can neither read nor overwrite another's.
 
 ---
 
