@@ -1,8 +1,8 @@
 # Project status snapshot
 
-**Last updated:** 2026-08-01 — **v3.28.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
+**Last updated:** 2026-08-06 — **v3.30.0**. Delivery via [Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db) only.
 
-**Package version (`pyproject.toml`):** **3.28.0**
+**Package version (`pyproject.toml`):** **3.30.0**
 
 Human-readable snapshot of the repo. **Canonical queue:** [tapps-brain Linear project](https://linear.app/tappscodingagents/project/tapps-brain-e5604347c7db). Epic acceptance criteria: [`epics/`](./epics/).
 
@@ -34,7 +34,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
-- **Migrations 007–028:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`), gated-learning promotion axis (`030`), mission scope (`031`), KG predicate registry (`032`). Current max private migration: **032**.
+- **Migrations 007–032:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`), gated-learning promotion axis (`030`), mission scope (`031`), KG predicate registry (`032`). Current max private migration: **032**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
@@ -143,12 +143,21 @@ uv sync --extra mcp    # MCP SDK only (e.g. running the server without dev tools
 
 ## Current focus
 
-**Shipped in v3.24.0 (2026-06-09):**
-- **EPIC-074** — `brain_query_events` MCP + `POST /v1/experience:query`; migration 023 index; `EntitySpec` type/id shorthand; experience-events docs.
-- **EPIC-075** — `brain_profile_set/get` MCP + REST profile data endpoints; migration 024 `profile_scoped_data` with RLS.
-- **TAP-2981** — `GET /v1/skill` returns version-matched SKILL.md for HTTP-only consumers.
+**Shipped in v3.30.0 (2026-08-06):**
+- **Gated learning** — promotion is explicit (`candidate` / `approved` / `demoted`) with provenance, and `maintenance_decay_learnings` demotes on three rules: contradicted, decayed below the confidence floor, or unvalidated past `candidate_stale_days` ([TAP-5539](https://linear.app/tappscodingagents/issue/TAP-5539), [TAP-5547](https://linear.app/tappscodingagents/issue/TAP-5547)). Frequency never promotes — a DB CHECK makes an unsigned approval unrepresentable. Demotion is not deletion, and it is not GC.
+- **Mission-scoped shared state** — migration 031 adds `mission_id` + `run_id` to `private_memories`; `POST /v1/mission/state:set` / `:get` ([TAP-5544](https://linear.app/tappscodingagents/issue/TAP-5544)). Follows the existing `scope=branch` precedent rather than adding a parallel store.
+- **Approved-only tool-path recall** — `POST /v1/recall:tool_paths` excludes entries whose promotion state is unreadable rather than assuming approved ([TAP-5545](https://linear.app/tappscodingagents/issue/TAP-5545)).
+- **KG ledger chain** — predicate registry with cardinality (migration 032, [TAP-5508](https://linear.app/tappscodingagents/issue/TAP-5508)), advisory check-before-write `POST /v1/kg/check` ([TAP-5509](https://linear.app/tappscodingagents/issue/TAP-5509)), write-time enforcement in `upsert_edge` ([TAP-5510](https://linear.app/tappscodingagents/issue/TAP-5510)), and the AF ledger contract plus `semantic_validation_*` event vocabulary ([TAP-5511](https://linear.app/tappscodingagents/issue/TAP-5511)). **Brain runs no reasoner** — no OWL, SHACL or RDF; cardinality is a counted invariant over `kg_edges`.
 
-**Recently shipped (v3.17–v3.23):** EPIC-072 async-native Postgres (writes + HTTP recall), EPIC-071 SDK hardening, EPIC-073 MCP profile filtering, OpenClaw removal (3.23.0), June quality audit ([TAP-2755](https://linear.app/tappscodingagents/issue/TAP-2755)).
+Minor rather than patch: nine MCP tools, eight REST endpoints, three migrations (030–032). Everything is additive — no consumer action required to upgrade. The through-line across both epics is **fail-shut**.
+
+**Shipped in v3.29.0 (2026-08-05):**
+- **Per-save supersede scoping** — `supersede: "global" | "key-scoped"` on `/v1/remember`, `/v1/remember:batch` and MCP `brain_remember`. Default stays `"global"`.
+- **Write-only Bloom filter removed** ([TAP-5629](https://linear.app/tappscodingagents/issue/TAP-5629)) — `bloom.py` → `dedup.py`; **`bloom_saturation` is gone from `get_metrics()`, `/metrics` and `/snapshot`** — drop any alert or dashboard panel bound to it.
+- **Bounded durable merge** ([TAP-5633](https://linear.app/tappscodingagents/issue/TAP-5633)) — concurrent saves could push `count()` permanently past `max_entries`.
+- **Release gate now runs against HEAD, not the working tree** — a stage 0 fails when release-critical paths differ from HEAD. `ALLOW_DIRTY_TREE=1` skips it for local iteration.
+
+**Recently shipped (v3.25–v3.28):** `web_research` / `research_fetch` MCP tools (3.28.0, [TAP-5364](https://linear.app/tappscodingagents/issue/TAP-5364)); per-operation idempotency keys + migration 029 (3.28.1, [TAP-5444](https://linear.app/tappscodingagents/issue/TAP-5444)); save-path dedup and revive fixes plus the `coalesced` / `invalidated` response contract (3.28.3, [TAP-5615](https://linear.app/tappscodingagents/issue/TAP-5615) / [TAP-5616](https://linear.app/tappscodingagents/issue/TAP-5616) / [TAP-5617](https://linear.app/tappscodingagents/issue/TAP-5617)).
 
 **Next-session prompt (copy-paste for agents):** [`next-session-prompt.md`](next-session-prompt.md).
 

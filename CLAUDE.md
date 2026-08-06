@@ -1,4 +1,4 @@
-<!-- tapps-claude-version: 3.12.52 -->
+<!-- tapps-claude-version: 3.12.69 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -297,7 +297,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 <!-- END: karpathy-guidelines -->
 
-<!-- BEGIN: tapps-obligations v3.12.52 -->
+<!-- BEGIN: tapps-obligations v3.12.69 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.
@@ -361,18 +361,13 @@ You should call `tapps_validate_config(file_path)` when changing Dockerfile, doc
 
 ## Memory System
 
-`tapps_memory` provides persistent cross-session knowledge with **44 actions** (save, search, consolidate, federation, profiles, hive, health, knowledge graph, batch ops, feedback, native session memory, and more). **Tiers:** architectural (180d), pattern (60d), procedural (30d), context (14d). **Scopes:** project, branch, session. Max 1500 entries. Configure `memory_hooks` in `.tapps-mcp.yaml` for auto-recall and auto-capture.
-
-**Cross-session handoff:** prefer `/tapps-handoff-session` and `/tapps-continue-session` (`.tapps-mcp/session-handoff.md`). For ad-hoc payloads use `tapps-mcp memory save/get`. Cross-agent: `hive_propagate`; cross-project: federation actions.
+Use `/tapps-handoff-session` and `/tapps-continue-session` for cross-session handoffs (stored in `.tapps-mcp/session-handoff.md`). Use `tapps-mcp memory save/get` for ad-hoc payloads.
 
 ## Quality Gate Behavior
 
-Gate failures are sorted by category weight (highest-impact first).
-A security floor of 50/100 is enforced regardless of overall score.
+Gate failures are sorted by priority. Security floor: 50/100 regardless of score.
 
 ## Upgrade & Rollback
 
-After upgrading TappsMCP, run `tapps_upgrade` to refresh generated files.
-A timestamped backup is created before overwriting. Use `tapps-mcp rollback` to restore.
-To protect customized files from upgrade, add them to `upgrade_skip_files` in `.tapps-mcp.yaml`.
+Run `tapps_upgrade` after each release to refresh generated files. Use `tapps-mcp rollback` to restore. Protect custom artifacts by adding token to `upgrade_skip_files` in `.tapps-mcp.yaml` (e.g., `CLAUDE.md`, `.claude/skills`).
 <!-- END: tapps-obligations -->
