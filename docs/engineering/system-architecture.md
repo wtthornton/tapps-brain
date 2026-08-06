@@ -91,6 +91,34 @@ All durable stores live in **PostgreSQL** ([ADR-007](../planning/adr/ADR-007-pos
 | **Hive** | Cross-agent shared memory | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_HIVE_DSN` (`postgres://...`) |
 | **Federation** | Cross-project sharing | **PostgreSQL** only ([ADR-007](../planning/adr/ADR-007-postgres-only-no-sqlite.md)) | `TAPPS_BRAIN_FEDERATION_DSN` (`postgres://...`) |
 
+### Recall visibility: the per-agent boundary (read this before blaming search)
+
+Private-memory **search and get are both scoped to the full `(project_id, agent_id)`
+pair** (`postgres_private.py` — `LOAD_ONE_SQL`, `build_search_sql`, `build_knn_search_sql`).
+Two consequences that surprise every client eventually (measured on the WebStoreDNA
+project, 2026-08-06 — TAP-5677):
+
+1. **An entry's `scope` field (`project`/`branch`/`session`) does NOT cross agents.**
+   `scope=project` controls lifecycle visibility *within one agent's tenant*, not
+   sharing between agents of the same project. Cross-agent sharing is the Hive's job
+   (`agent_scope` + `PropagationEngine`).
+2. **Unstable agent identity silently shards a project's memory.** Clients that derive
+   `agent_id` per checkout (e.g. tapps-mcp persists `{project_root}/.tapps-mcp/agent.id`,
+   TAP-518) mint a **new tenant per git worktree, clone, or container**. Each session then
+   writes memories the next session cannot see — search returns 0 while same-session
+   get-by-key works, which presents as "search is broken" when the store is behaving as
+   designed. WebStoreDNA accumulated 29 entries across 17 agent tenants this way.
+
+**Client guidance:** pin agent identity for anything that spawns ephemeral worktrees or
+containers — set `CLAUDE_AGENT_ID` (wins over the `agent.id` file in tapps-mcp) or commit
+a stable identity into the workspace config. Server-side, `X-Agent-Id` on the HTTP API
+selects the tenant; omitting it defaults to `"unknown"`, which is its own tenant.
+
+Search itself is staged since TAP-5677 (`plainto_tsquery` AND → `to_tsquery` OR retry →
+pgvector KNN fallback when an embedding provider is configured), so a natural-language
+query inside the *right* tenant degrades to partial-token or semantic matches instead of
+returning nothing.
+
 ## Feature and technology inventory
 
 - **Industry features ↔ deps ↔ modules:** [`features-and-technologies.md`](features-and-technologies.md) (review-oriented map).

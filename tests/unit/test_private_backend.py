@@ -526,7 +526,8 @@ class TestSearch:
         backend, cur = _make_backend(rows=[], col_names=[])
         backend.search("test query")
         assert cur.execute.called
-        sql = cur.execute.call_args[0][0]
+        # First pass is the AND query; TAP-5677 may append an OR retry after it.
+        sql = cur.execute.call_args_list[0][0][0]
         assert "plainto_tsquery" in sql
 
     def test_search_with_memory_group_appends_filter(self) -> None:
