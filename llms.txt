@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.29.0
+- Version: 3.30.0
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -48,6 +48,7 @@
 - `llms.txt`
 - `docs/DOCUMENTATION_INDEX.md`
 - `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/MEMORY_REFERENCE.md`
 - `docs/ONBOARDING.md`
 - `docs/api-reference.md`
 - `docs/benchmarks/README.md`
@@ -55,6 +56,8 @@
 - `docs/benchmarks/longmemeval.md`
 - `docs/case-studies/README.md`
 - `docs/case-studies/TEMPLATE.md`
+- `docs/cross-project/PROMPT-brain-remember-write-loss.RESPONSE.md`
+- `docs/cross-project/PROMPT-brain-similarity-supersede-across-keys.RESPONSE.md`
 - `docs/design/nlt-brand/README.md`
 - `docs/engineering/README.md`
 - `docs/engineering/async-performance.md`
@@ -64,7 +67,4 @@
 - `docs/engineering/diagrams.md`
 - `docs/engineering/experience-events.md`
 - `docs/engineering/features-and-technologies.md`
-- `docs/engineering/optional-features-matrix.md`
-- `docs/engineering/partition-retention.md`
-- `docs/engineering/system-architecture.md`
-- ... and 246 more
+- ... and 275 more

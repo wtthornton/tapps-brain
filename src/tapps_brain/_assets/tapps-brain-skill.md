@@ -1,7 +1,7 @@
 ---
 name: tapps-brain
 description: Persistent cross-session memory + knowledge graph for AI coding agents. Use when you need to recall prior decisions before making a non-trivial choice, save the rationale behind a decision so it survives the session, share findings across agents in a project (Hive), or record an experience event / KG triple. Talk to the deployed brain at http://127.0.0.1:8080/mcp/ via MCP tools — never via raw psycopg.
-version: "3.29.0"
+version: "3.30.0"
 origin: tapps-brain
 ---
 
@@ -29,8 +29,12 @@ A thin trigger for the deployed tapps-brain memory service. **Routes you to the 
 | Share across agents | `brain_remember(..., agent_scope="hive")` | Modern primary param. `agent_scope` accepts `private` (default) / `domain` / `hive` / `group:<name>`. The legacy `share=True` / `share_with="hive"` flags still work but `agent_scope` supersedes them. Hive is a feature of the brain, not a separate service. |
 | Teach from an outcome | `brain_learn_success(...)` / `brain_learn_failure(...)` | AgentBrain facade — records what worked / what to avoid so future recalls surface it. Pass `failed_approaches=[...]` on `brain_remember` for inline anti-patterns. |
 | Query stored metrics / events | `brain_query_events(event_type=..., entity_id=...)` | v3.24.0+ — read back `experience_events.payload` (e.g. `quality_metric` scores by `file_path`). Not `brain_get_neighbors` (KG structure only). REST: `POST /v1/experience:query`. |
+| Read only *validated* learnings | `brain_recall_tool_paths(task_type=...)` | v3.30.0+. Returns learnings that are `approved` **and** tagged `fleet:learning` / `tool:*`. Fail-closed: nothing approved yields `count: 0`, never a fallback to candidates and never a 404. `demoted` entries are never returned. REST: `POST /v1/recall:tool_paths`. |
+| Approve / withdraw a learning | `brain_promote_learning(...)` / `brain_demote_learning(...)` | v3.30.0+. Only an explicit `eval` or `human` signal promotes — frequency never does, and `reinforce()` deliberately leaves `learning_status` alone. Absent from the `coder` profile: an agent approving its own learnings is the gate approving itself. |
+| Park state for a mission | `brain_mission_state_set(...)` / `brain_mission_state_get(...)` | v3.30.0+. `kind` is `contract` / `findings` / `knowledge`. Two missions under one `project_id` cannot read each other. An unwritten slot is `found: false`, not a 404. REST: `POST /v1/mission/state:set` / `:get`. |
+| Ask before an action (ledger) | `brain_kg_check(subject_key=..., predicate=...)` | v3.30.0+. Read-only allow/deny against declared predicate cardinality, with `count` + `max_count` + `reason` so you can explain a refusal. A `deny` is a `200`. Declare limits with `brain_register_predicate`. REST: `POST /v1/kg/check`. |
 
-The eager `tools/list` catalog on the Docker reference stack returns **all** profile tools (defer_loading disabled) — 76 on the `full` profile. Daily-driver tools include `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`, plus v3.24 helpers `brain_query_events`, `brain_profile_get`, `brain_profile_set` when using the `full` or `coder` profile.
+The eager `tools/list` catalog on the Docker reference stack returns **all** profile tools (defer_loading disabled) — 84 on the `full` profile. Daily-driver tools include `brain_recall`, `brain_remember`, `brain_status`, `brain_get_neighbors`, `brain_explain_connection`, `memory_search`, `memory_find_related`, `hive_search`, plus v3.24 helpers `brain_query_events`, `brain_profile_get`, `brain_profile_set` when using the `full` or `coder` profile.
 
 ### The save response contract (v3.28.3+)
 
@@ -112,4 +116,4 @@ make brain-healthcheck    # live MCP round-trip (server-mode OK if IDE is bridge
 - **Experience events + query API**: [`docs/engineering/experience-events.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
 - **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
 - **Deploy + upgrade**: [`docs/guides/hive-deployment.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/hive-deployment.md) — `make hive-deploy`, `BRAIN_VERSION` bump.
-- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3290--2026-08-05) — current at v3.29.0.
+- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3300--2026-08-06) — current at v3.30.0.
