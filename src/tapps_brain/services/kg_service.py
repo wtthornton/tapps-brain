@@ -68,6 +68,48 @@ def _get_or_create_cm() -> Any | None:
 # ---------------------------------------------------------------------------
 
 
+#: Cached ``kg.strict_predicates`` for this process. Resolving the profile means
+#: reading YAML from disk; doing that per edge write would put file I/O on the
+#: hot path for a value that cannot change without a restart.
+_STRICT_PREDICATES: bool | None = None
+_STRICT_PREDICATES_LOCK = threading.Lock()
+
+
+def _strict_predicates_enabled() -> bool:
+    """Return the project's ``kg.strict_predicates`` setting (TAP-5510).
+
+    Fails **open** on any resolution problem. Strict mode is opt-in, so a
+    profile that cannot be read means the project never asked for it — turning
+    rejection on because a config file was unreadable would break writers for a
+    reason unrelated to what they wrote.
+    """
+    global _STRICT_PREDICATES
+    if _STRICT_PREDICATES is not None:
+        return _STRICT_PREDICATES
+    with _STRICT_PREDICATES_LOCK:
+        if _STRICT_PREDICATES is None:
+            _STRICT_PREDICATES = _resolve_strict_predicates()
+        return _STRICT_PREDICATES
+
+
+def _resolve_strict_predicates() -> bool:
+    """Read ``kg.strict_predicates`` from the active profile, defaulting False."""
+    from pathlib import Path
+
+    try:
+        from tapps_brain.profile import resolve_profile
+
+        project_dir = Path(os.environ.get("TAPPS_BRAIN_PROJECT_DIR", ".")).expanduser()
+        profile = resolve_profile(project_dir)
+        return bool(getattr(getattr(profile, "kg", None), "strict_predicates", False))
+    except Exception as exc:
+        # Deliberately broad: any failure to read the profile means the project
+        # did not opt into strict mode, and no config error should start
+        # rejecting writes. See the caller's docstring.
+        logger.debug("kg.strict_predicates.unresolved", error=str(exc))
+        return False
+
+
 def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:
     from tapps_brain.postgres_kg import PostgresKnowledgeGraphStore
 
@@ -76,6 +118,7 @@ def _kg_store(cm: Any, project_id: str, brain_id: str) -> Any:
         project_id=project_id,
         brain_id=brain_id,
         evidence_required=False,  # recorder path; callers attach evidence explicitly
+        strict_predicates=_strict_predicates_enabled(),
     )
 
 
