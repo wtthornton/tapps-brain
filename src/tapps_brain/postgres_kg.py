@@ -972,3 +972,49 @@ class PostgresKnowledgeGraphStore:
             )
             row = cur.fetchone()
         return self._predicate_row_to_dict(row) if row is not None else None
+
+    # ------------------------------------------------------------------
+    # Ledger check (TAP-5509)
+    # ------------------------------------------------------------------
+
+    def find_entities_by_name(self, canonical_name: str) -> list[dict[str, Any]]:
+        """Return active entities matching *canonical_name* across all types.
+
+        Returns every match rather than picking one: a bare name that resolves
+        to two types is ambiguous input the caller has to disambiguate, not a
+        coin the store should flip.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.FIND_ENTITIES_BY_NAME_SQL, (self._brain_id, canonical_name))
+            rows = cur.fetchall()
+        return [{"entity_id": str(r[0]), "entity_type": r[1], "canonical_name": r[2]} for r in rows]
+
+    def count_active_objects(self, *, subject_entity_id: str, predicate: str) -> int:
+        """Return how many DISTINCT objects *subject* holds for *predicate*.
+
+        Distinct objects, not edge rows — cardinality bounds how many things a
+        subject points at, and counting rows would let one object with a
+        historical duplicate consume two slots.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.COUNT_ACTIVE_OBJECTS_SQL,
+                (self._brain_id, subject_entity_id, predicate),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def active_edge_exists(
+        self, *, subject_entity_id: str, predicate: str, object_entity_id: str
+    ) -> bool:
+        """Return whether this exact triple is already active.
+
+        Re-asserting an existing edge does not add an object, so it must not be
+        denied by a cardinality check that is already at its limit.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.GET_ACTIVE_EDGE_SQL,
+                (self._brain_id, subject_entity_id, predicate, object_entity_id),
+            )
+            return cur.fetchone() is not None

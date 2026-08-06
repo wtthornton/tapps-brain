@@ -61,6 +61,8 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     # KG predicate registry (TAP-5508)
     "/v1/kg/predicates:register": "brain_register_predicate",
     "/v1/kg/predicates:list": "brain_list_predicates",
+    # Ledger check (TAP-5509)
+    "/v1/kg/check": "brain_kg_check",
     "/v1/kg/resolve_entity": "brain_resolve_entity",  # TAP-2725
     "/v1/kg/resolve_entities": "brain_resolve_entity",  # TAP-3249 — same tool, batch
     # Document plane (TAP-4998 / TAP-5003)

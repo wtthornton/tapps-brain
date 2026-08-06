@@ -437,6 +437,38 @@ break every current writer to buy a guarantee nobody has asked for yet. Set
 Declarations are tenant-scoped under the same fail-closed RLS as `kg_edges`:
 one project can neither read nor overwrite another's.
 
+### 7.2 Checking before you write (TAP-5509)
+
+`brain_kg_check` (REST: `POST /v1/kg/check`) answers whether asserting an edge
+would violate a declared cardinality. Sections 3–5 are retrieval; this is a
+*decision*, meant to be asked before a side effect.
+
+Request: `subject_key`, `predicate`, optional `object_key`, and optional
+`subject_type` / `object_type` to disambiguate a name shared by several types.
+
+Response: `{ "decision": "allow"|"deny", "count", "max_count", "reason" }` —
+the count and the limit ride along so a caller can *explain* a refusal rather
+than just report one.
+
+| `reason` | Decision | Meaning |
+|---|---|---|
+| `predicate_not_registered` | allow | Nothing declared, nothing to enforce |
+| `predicate_unbounded` | allow | Registered with no `max_count` |
+| `subject_not_found` | allow | No edges exist, so no limit can be exceeded |
+| `edge_already_asserted` | allow | Re-asserting an existing edge adds no object |
+| `within_cardinality` | allow | Under the declared limit |
+| `cardinality_exceeded` | deny | At or over the declared limit |
+
+Three properties worth relying on:
+
+1. **Read-only.** Nothing is written, so it is safe to ask speculatively.
+2. **A `deny` is a `200`.** The question was answered successfully and the
+   answer was no. Non-2xx is reserved for malformed requests, which keeps
+   "I could not ask" distinguishable from "I asked, and the answer was no".
+3. **Ambiguity is never guessed.** A `subject_key` matching two entity types
+   returns `invalid_request` telling you to pass `subject_type` — guessing would
+   hand you a verdict about the wrong entity.
+
 ---
 
 ## 8. Failure modes

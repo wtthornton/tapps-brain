@@ -283,6 +283,8 @@ class TestCoreTools:
             # KG predicate registry (TAP-5508)
             "brain_register_predicate",
             "brain_list_predicates",
+            # KG ledger check (TAP-5509)
+            "brain_kg_check",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",

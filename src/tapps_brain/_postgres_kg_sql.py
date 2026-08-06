@@ -688,3 +688,35 @@ SELECT id, predicate, max_count, domain_type, range_type, description,
 FROM kg_predicates
 WHERE tenant_id = %s AND brain_id = %s AND predicate = %s
 """
+
+
+# ---------------------------------------------------------------------------
+# Ledger check (TAP-5509)
+# ---------------------------------------------------------------------------
+
+#: Active entities matching a canonical name across ALL types within a brain.
+#: Used by the ledger check when the caller supplies a bare ``subject_key`` with
+#: no type — more than one hit is ambiguous input, not a guess to make.
+#: Params: brain_id, canonical_name.
+FIND_ENTITIES_BY_NAME_SQL = """
+SELECT id, entity_type, canonical_name
+FROM kg_entities
+WHERE brain_id = %s
+  AND canonical_name_norm = lower(%s)
+  AND status = 'active'
+ORDER BY entity_type
+"""
+
+#: How many DISTINCT objects a subject currently holds for a predicate.
+#: DISTINCT matters: cardinality bounds the number of objects, not the number of
+#: edge rows, and a historical row for the same object must not count twice.
+#: Params: brain_id, subject_entity_id, predicate.
+COUNT_ACTIVE_OBJECTS_SQL = """
+SELECT COUNT(DISTINCT object_entity_id)
+FROM kg_edges
+WHERE brain_id = %s
+  AND subject_entity_id = %s::uuid
+  AND predicate = %s
+  AND status = 'active'
+  AND invalid_at IS NULL
+"""
