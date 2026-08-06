@@ -511,6 +511,56 @@ reason unrelated to what was written.
 No OWL or SHACL is involved — this is a counted ledger invariant, not a
 reasoner.
 
+### 7.4 The AF ledger contract — check, act, record (TAP-5511)
+
+For TAP-5501-style semantic firewalls. Three steps, in this order:
+
+```python
+# 1. ASK — read-only, safe before any side effect
+verdict = brain_kg_check(subject_key="order-1", predicate="refunded")
+
+# 2. ACT — or don't
+if verdict["decision"] == "deny":
+    refuse(verdict["reason"], verdict["count"], verdict["max_count"])
+else:
+    issue_refund("order-1")
+
+# 3. RECORD — both outcomes, always
+brain_record_event(
+    event_type=(
+        "semantic_validation_blocked"
+        if verdict["decision"] == "deny"
+        else "semantic_validation_allowed"
+    ),
+    subject_key="order-1",
+    payload={**verdict, "action": "issue_refund"},
+)
+```
+
+**Record the allows, not just the blocks.** Blocks alone make the denominator
+unknowable — a firewall that blocked 3 things is a very different system
+depending on whether it saw 4 actions or 40,000.
+
+**The check is advisory; the write path is authoritative.** Step 1 is a
+courtesy that lets you refuse cleanly with a reason. Even if a producer skips
+it, `upsert_edge` still enforces the same limit (§7.3) and returns a `conflict`.
+Treat a 409 on write as the same refusal arriving later — not as an unexpected
+error.
+
+**Do not cache a verdict across the action.** `allow` means "allow as of now".
+Another writer may consume the last slot in between; the write-path gate is what
+makes that safe, which is the reason it exists.
+
+**Brain runs no reasoner.** There is no OWL, SHACL, RDF, or inference engine
+anywhere in tapps-brain, and none is planned: cardinality here is a counted
+invariant over `kg_edges`, backed by a registry table and a `COUNT(DISTINCT …)`.
+Consumers that need description-logic entailment should own that themselves —
+brain deliberately does not become a semantic-web stack (TAP-5502, TAP-5501).
+
+Related: TAP-5501 (semantic tool firewall — domain ledger, not OWL core),
+TAP-5502 (KG ledger invariants for agent action checks). Event-type vocabulary:
+[`docs/engineering/experience-events.md`](../engineering/experience-events.md).
+
 ---
 
 ## 8. Failure modes
