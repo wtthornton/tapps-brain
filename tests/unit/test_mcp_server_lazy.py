@@ -32,15 +32,48 @@ def _import_in_fresh_process(module: str) -> tuple[float, set[str]]:
     return data["elapsed_ms"], set(data["modules"])
 
 
+#: How many cold-import samples to take before judging the import budget.
+#: Five keeps the test under a second while making a spurious failure require
+#: every one of five independent samples to be slow.
+_TIMING_SAMPLES = 5
+
+
+def _fastest_import_ms(module: str, *, samples: int = _TIMING_SAMPLES) -> tuple[float, list[float]]:
+    """Return ``(fastest_ms, all_samples_ms)`` for a cold import of *module*.
+
+    Judged on the **minimum**, not a single sample or a mean, because CPU
+    contention can only ever *add* time to a measurement — it never makes an
+    import look faster than it is. The fastest of several samples is therefore
+    the closest estimate of the true cost, and the one that does not turn a
+    busy machine into a red build. This is the same reasoning behind
+    ``timeit.repeat()``'s guidance to take the min rather than the average.
+
+    The wall-clock budget exists to catch a newly-added *eager* import, which
+    costs tens of milliseconds every time and so shows up in every sample. A
+    regression that real cannot hide behind the minimum.
+    """
+    timings = [_import_in_fresh_process(module)[0] for _ in range(samples)]
+    return min(timings), timings
+
+
 class TestMcpServerLazyImport:
     """TAP-1834 acceptance criteria: import tapps_brain.mcp_server is fast and lean."""
 
     def test_import_time_under_200ms(self) -> None:
-        """importing tapps_brain.mcp_server should complete in < 200 ms."""
-        elapsed, _ = _import_in_fresh_process("tapps_brain.mcp_server")
-        assert elapsed < 200, (
-            f"tapps_brain.mcp_server import took {elapsed:.0f} ms, expected < 200 ms. "
-            "Check for newly-added eager imports — use lazy imports inside function bodies instead."
+        """importing tapps_brain.mcp_server should complete in < 200 ms.
+
+        Uses the fastest of several samples so a loaded machine does not fail
+        the build: this test previously took a single wall-clock reading and
+        went red under parallel pytest while the real import cost was ~50 ms,
+        i.e. it reported the machine's load rather than the code's behaviour.
+        """
+        fastest, samples = _fastest_import_ms("tapps_brain.mcp_server")
+        assert fastest < 200, (
+            f"tapps_brain.mcp_server import took {fastest:.0f} ms at best "
+            f"(samples: {', '.join(f'{t:.0f}' for t in samples)} ms), expected < 200 ms. "
+            "Every sample was slow, so this is an eager-import regression rather than "
+            "machine load — check for newly-added module-level imports and move them "
+            "inside function bodies."
         )
 
     def test_psycopg_not_imported_at_load_time(self) -> None:
