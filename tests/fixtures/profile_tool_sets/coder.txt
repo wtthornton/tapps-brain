@@ -1,12 +1,14 @@
 brain_explain_connection
 brain_forget
 brain_get_neighbors
+brain_kg_check
 brain_learn_failure
 brain_learn_success
 brain_profile_get
 brain_profile_set
 brain_query_events
 brain_recall
+brain_recall_tool_paths
 brain_record_events_batch
 brain_remember
 brain_status

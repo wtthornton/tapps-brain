@@ -118,17 +118,26 @@ class TestGoldenFileContracts:
             f"  {sorted(extra_in_golden)}"
         )
 
-    def test_full_golden_has_76_tools(self) -> None:
-        """Golden file for 'full' must list exactly 76 tools."""
-        assert len(_load_golden("full")) == 76
+    def test_full_golden_has_84_tools(self) -> None:
+        """Golden file for 'full' must list exactly 84 tools (3.30.0: +8)."""
+        assert len(_load_golden("full")) == 84
 
-    def test_operator_golden_has_89_tools(self) -> None:
-        """Golden file for 'operator' must list exactly 89 tools."""
-        assert len(_load_golden("operator")) == 89
+    def test_operator_golden_has_98_tools(self) -> None:
+        """Golden file for 'operator' must list exactly 98 tools.
 
-    def test_coder_golden_has_21_tools(self) -> None:
-        """Golden file for 'coder' must list exactly 21 tools (v3.24 +3)."""
-        assert len(_load_golden("coder")) == 21
+        89 -> 98 in 3.30.0: the gated-learning tools (TAP-5542), tool-path
+        recall (TAP-5545), mission state (TAP-5544), the decay sweep (TAP-5547),
+        and the KG ledger chain (TAP-5508/5509).
+        """
+        assert len(_load_golden("operator")) == 98
+
+    def test_coder_golden_has_23_tools(self) -> None:
+        """Golden file for 'coder' must list exactly 23 tools.
+
+        v3.24 added 3; 3.30.0 added brain_recall_tool_paths + brain_kg_check,
+        the read-only consumption side of the gates (not promote/register).
+        """
+        assert len(_load_golden("coder")) == 23
 
     def test_reviewer_golden_has_10_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 10 tools."""
@@ -138,9 +147,13 @@ class TestGoldenFileContracts:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
 
-    def test_agent_brain_golden_has_16_tools(self) -> None:
-        """Golden file for 'agent_brain' must list exactly 16 brain_* tools (+resolve)."""
-        assert len(_load_golden("agent_brain")) == 16
+    def test_agent_brain_golden_has_24_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 24 brain_* tools (+resolve).
+
+        3.30.0 added 8: the AF-facing gated-learning, mission-state and KG
+        ledger surface.
+        """
+        assert len(_load_golden("agent_brain")) == 24
 
     def test_agent_brain_golden_is_brain_star_only(self) -> None:
         """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
@@ -219,11 +232,16 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
-    def test_registered_tool_count_is_87(self) -> None:
-        """The MCP server must have exactly 89 registered tools (76 standard + 13 operator)."""
+    def test_registered_tool_count_is_98(self) -> None:
+        """The MCP server must have exactly 98 registered tools (84 standard + 14 operator).
+
+        The name, the docstring and the assertion are kept in step deliberately:
+        this test previously read ``_is_87`` while asserting 89, so grepping the
+        old number to update it found nothing.
+        """
         all_tools = _all_registered_tools()
-        assert len(all_tools) == 89, (
-            f"Expected 89 registered tools, found {len(all_tools)}. "
+        assert len(all_tools) == 98, (
+            f"Expected 98 registered tools, found {len(all_tools)}. "
             "Update mcp_profiles.yaml if you added or removed a tool."
         )
 
@@ -305,7 +323,7 @@ class TestProfileFilterIntegration:
 
         result = mcp._tool_manager.list_tools()
         assert {t.name for t in result} == registry.get("full")
-        assert len(result) == 76
+        assert len(result) == 84
 
     def test_coder_excludes_destructive_ops(self) -> None:
         """'coder' profile must never expose destructive operations."""
@@ -504,7 +522,7 @@ class TestBackwardsCompat:
         """No profile header → list_tools returns the full callable surface."""
         registry = ProfileRegistry()
         full_tools = list(registry.get("full"))
-        assert len(full_tools) == 76
+        assert len(full_tools) == 84
 
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "cv_compat_no_header", default=None
@@ -513,7 +531,7 @@ class TestBackwardsCompat:
         install_tool_filter(mcp, profile_registry=registry, profile_contextvar=cv)
 
         result = mcp._tool_manager.list_tools()
-        assert len(result) == 76
+        assert len(result) == 84
         assert {t.name for t in result} == registry.get("full")
 
     def test_full_profile_explicit_header_matches_no_header(self) -> None:
@@ -617,7 +635,7 @@ class TestEndToEndProfileFiltering:
         token = REQUEST_PROFILE.set(None)
         try:
             tools = _mcp_server._tool_manager.list_tools()
-            assert len(tools) == 76
+            assert len(tools) == 84
         finally:
             REQUEST_PROFILE.reset(token)
 
