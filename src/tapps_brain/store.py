@@ -21,12 +21,14 @@ import structlog
 
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import (
+    LearningStatus,
     MemoryEntry,
     MemoryScope,
     MemorySnapshot,
     MemorySource,
     MemoryStatus,
     MemoryTier,
+    PromotionSignal,
     _parse_iso,
     _utc_now_iso,
 )
@@ -133,6 +135,36 @@ def _resolve_status(
     if existing is not None:
         return existing.status
     return MemoryStatus.active
+
+
+def _resolve_promotion_fields(existing: MemoryEntry | None, value: str) -> dict[str, Any]:
+    """Return the promotion columns to write on a save() call (TAP-5542).
+
+    Promotion attaches to *content*.  A save that rewrites the value re-opens
+    the gate: the approval was granted for text that no longer exists, and
+    carrying it over would let any writer launder new content through an old
+    approval — the gate would be bypassable by anyone who can save.  A save
+    that leaves the value untouched (metadata update, reinforce) keeps the
+    promotion state it found.
+
+    Promotion is never *granted* here.  Only :meth:`MemoryStore.promote_learning`
+    can move an entry to ``approved``.
+    """
+    if existing is None or existing.value != value:
+        return {
+            "learning_status": LearningStatus.candidate,
+            "promoted_by": None,
+            "promoted_at": None,
+            "promotion_signal": None,
+            "demotion_reason": None,
+        }
+    return {
+        "learning_status": existing.learning_status,
+        "promoted_by": existing.promoted_by,
+        "promoted_at": existing.promoted_at,
+        "promotion_signal": existing.promotion_signal,
+        "demotion_reason": existing.demotion_reason,
+    }
 
 
 def _max_entries_from_env() -> int:
@@ -2349,6 +2381,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             stale_date=stale_date
             if stale_date is not None
             else (existing.stale_date if existing else None),
+            **_resolve_promotion_fields(existing, value),
         )
 
     @staticmethod
@@ -2899,6 +2932,136 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     self._entries[key] = entry
             raise
         self._drop_if_concurrently_removed(key)
+        return updated
+
+    # ------------------------------------------------------------------
+    # Gated learning (TAP-5542)
+    # ------------------------------------------------------------------
+
+    def promote_learning(
+        self,
+        key: str,
+        *,
+        signal: str,
+        actor: str,
+        evidence: str | None = None,
+    ) -> MemoryEntry:
+        """Approve a learning so it becomes eligible for injection.
+
+        Only an explicit ``eval`` or ``human`` signal can promote.  Frequency
+        cannot: :meth:`reinforce` raises confidence and access counts and
+        deliberately leaves ``learning_status`` alone, because a learning that
+        is merely *frequent* is not thereby *correct*.
+
+        *evidence* is recorded in the audit log rather than on the row — it is
+        provenance for the decision, not state the recall path reads.
+
+        Args:
+            key: Memory key to promote.
+            signal: ``eval`` or ``human``.  No other value is accepted.
+            actor: Eval run id or human identifier.  Required — an approval
+                nobody signed is not an approval.
+            evidence: Optional free text or eval artifact reference.
+
+        Returns:
+            The promoted ``MemoryEntry``.
+
+        Raises:
+            InvalidRequestError: *signal* is not eval/human, or *actor* is empty.
+            NotFoundError: No entry with that key.
+            ConflictError: The entry is already ``approved``.
+        """
+        from tapps_brain.errors import ConflictError, InvalidRequestError, NotFoundError
+
+        try:
+            promotion_signal = PromotionSignal(signal)
+        except ValueError:
+            msg = (
+                f"signal must be one of {sorted(s.value for s in PromotionSignal)}, got {signal!r}"
+            )
+            raise InvalidRequestError(msg) from None
+        if not actor.strip():
+            raise InvalidRequestError("actor is required to promote a learning")
+
+        entry = self._ensure_entry_cached(key)
+        if entry is None:
+            raise NotFoundError(f"no memory entry with key {key!r}")
+        if entry.learning_status is LearningStatus.approved:
+            raise ConflictError(f"entry {key!r} is already approved")
+
+        updated = self.update_fields(
+            key,
+            learning_status=LearningStatus.approved,
+            promoted_by=actor,
+            promoted_at=_utc_now_iso(),
+            promotion_signal=promotion_signal,
+            # Promoting a demoted entry clears the stale demotion note.
+            demotion_reason=None,
+            # Promotion is a metadata event; bumping updated_at would inflate
+            # the entry's recency ranking signal without its content changing.
+            updated_at=entry.updated_at,
+        )
+        if updated is None:  # pragma: no cover — removed between hydrate and write
+            raise NotFoundError(f"no memory entry with key {key!r}")
+
+        self._metrics.increment("store.learning.promote")
+        self._persistence.append_audit(
+            action="learning_promote",
+            key=key,
+            extra={
+                "from_status": str(entry.learning_status),
+                "signal": promotion_signal.value,
+                "actor": actor,
+                "evidence": evidence,
+            },
+        )
+        logger.info("learning_promoted", key=key, signal=promotion_signal.value, actor=actor)
+        return updated
+
+    def demote_learning(self, key: str, *, reason: str) -> MemoryEntry:
+        """Withdraw a learning's approval so it stops being injected.
+
+        Promotion provenance (``promoted_by`` / ``promoted_at`` /
+        ``promotion_signal``) is deliberately left in place: it records which
+        approval was withdrawn, which is exactly what an audit of a bad
+        injection needs.
+
+        Args:
+            key: Memory key to demote.
+            reason: Why — recorded in ``demotion_reason``.  Required.
+
+        Returns:
+            The demoted ``MemoryEntry``.
+
+        Raises:
+            InvalidRequestError: *reason* is empty.
+            NotFoundError: No entry with that key.
+        """
+        from tapps_brain.errors import InvalidRequestError, NotFoundError
+
+        if not reason.strip():
+            raise InvalidRequestError("reason is required to demote a learning")
+
+        entry = self._ensure_entry_cached(key)
+        if entry is None:
+            raise NotFoundError(f"no memory entry with key {key!r}")
+
+        updated = self.update_fields(
+            key,
+            learning_status=LearningStatus.demoted,
+            demotion_reason=reason,
+            updated_at=entry.updated_at,
+        )
+        if updated is None:  # pragma: no cover — removed between hydrate and write
+            raise NotFoundError(f"no memory entry with key {key!r}")
+
+        self._metrics.increment("store.learning.demote")
+        self._persistence.append_audit(
+            action="learning_demote",
+            key=key,
+            extra={"from_status": str(entry.learning_status), "reason": reason},
+        )
+        logger.info("learning_demoted", key=key, reason=reason)
         return updated
 
     def undo_consolidation_merge(self, consolidated_key: str) -> ConsolidationUndoResult:

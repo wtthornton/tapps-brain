@@ -82,6 +82,30 @@ class MemoryStatus(StrEnum):
     archived = "archived"  # GC-archived
 
 
+class LearningStatus(StrEnum):
+    """Promotion status of a learning (TAP-5542).
+
+    A *trust* axis, independent of :class:`MemoryStatus`'s *lifecycle* axis:
+    an ``active`` row can be a ``candidate``, and an ``approved`` learning can
+    later go ``stale``.  See ``docs/engineering/gated-learning-contract.md``.
+    """
+
+    candidate = "candidate"  # agent-emitted, ungated; not eligible for injection
+    approved = "approved"  # passed an explicit eval/human gate; eligible
+    demoted = "demoted"  # was approved, then contradicted or decayed
+
+
+class PromotionSignal(StrEnum):
+    """What gated a promotion (TAP-5542).
+
+    Deliberately excludes anything frequency-derived: raising confidence or
+    access count must never promote.  Only an eval run or a human can.
+    """
+
+    eval = "eval"
+    human = "human"
+
+
 # ---------------------------------------------------------------------------
 # Source-based confidence defaults
 # ---------------------------------------------------------------------------
@@ -304,6 +328,30 @@ class MemoryEntry(BaseModel):
     stale_date: str | None = Field(
         default=None,
         description="ISO-8601 UTC timestamp when status was set to 'stale'.",
+    )
+    # TAP-5542: Promotion (trust) axis — orthogonal to ``status`` above.
+    # Frequency alone cannot approve: reinforce() must never move this field.
+    # Unrelated to *tier* promotion (EPIC-010, promotion.py), which moves
+    # ``tier`` on reinforcement and writes none of these columns.
+    learning_status: LearningStatus = Field(
+        default=LearningStatus.candidate,
+        description="Promotion status: candidate | approved | demoted.",
+    )
+    promoted_by: str | None = Field(
+        default=None,
+        description="Eval run id or human identifier that approved this learning.",
+    )
+    promoted_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp of the promotion.",
+    )
+    promotion_signal: PromotionSignal | None = Field(
+        default=None,
+        description="What gated the promotion: eval | human. Never frequency-derived.",
+    )
+    demotion_reason: str | None = Field(
+        default=None,
+        description="Why an approved learning was demoted (contradiction, decay, human call).",
     )
     # TAP-733: Semantic type classification for pre-filter recall.
     memory_class: Literal["incident", "guidance", "decision", "convention"] | None = Field(

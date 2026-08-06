@@ -2445,3 +2445,70 @@ async def async_memory_reinforce_many(
         "reinforced_count": reinforced,
         "error_count": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Gated learning (TAP-5542)
+# ---------------------------------------------------------------------------
+
+
+def _promotion_result(entry: Any) -> dict[str, Any]:
+    """Serialise the promotion state of *entry* for the wire."""
+    return {
+        "key": entry.key,
+        "learning_status": str(entry.learning_status),
+        "promoted_by": entry.promoted_by,
+        "promoted_at": entry.promoted_at,
+        "promotion_signal": (
+            str(entry.promotion_signal) if entry.promotion_signal is not None else None
+        ),
+        "demotion_reason": entry.demotion_reason,
+    }
+
+
+def brain_promote_learning(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    key: str,
+    signal: str,
+    actor: str,
+    evidence: str = "",
+) -> dict[str, Any]:
+    """Approve a learning so consumers may inject it.
+
+    Only ``eval`` or ``human`` signals promote — frequency never does.  Errors
+    are returned as ``{"error": <taxonomy code>, "message": ...}`` rather than
+    raised, so both surfaces (MCP tool, ``POST /v1/learning:promote``) can shape
+    them without a second mapping table.
+    """
+    from tapps_brain.errors import TaxonomyError
+
+    with start_mcp_tool_span("brain_promote_learning"):
+        try:
+            entry = store.promote_learning(
+                key, signal=signal, actor=actor, evidence=evidence or None
+            )
+        except TaxonomyError as exc:
+            return {"error": exc.error_code.value, "message": exc.message}
+        return {"promoted": True, **_promotion_result(entry)}
+
+
+def brain_demote_learning(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    key: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Withdraw a learning's approval so it stops being injected."""
+    from tapps_brain.errors import TaxonomyError
+
+    with start_mcp_tool_span("brain_demote_learning"):
+        try:
+            entry = store.demote_learning(key, reason=reason)
+        except TaxonomyError as exc:
+            return {"error": exc.error_code.value, "message": exc.message}
+        return {"demoted": True, **_promotion_result(entry)}

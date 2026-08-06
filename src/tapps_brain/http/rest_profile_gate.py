@@ -36,6 +36,9 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/forget": "brain_forget",
     "/v1/learn_success": "brain_learn_success",
     "/v1/learn_failure": "brain_learn_failure",
+    # Gated learning (TAP-5542)
+    "/v1/learning:promote": "brain_promote_learning",
+    "/v1/learning:demote": "brain_demote_learning",
     # Memory layer
     "/v1/reinforce": "memory_reinforce",
     "/v1/remember:batch": "memory_save_many",

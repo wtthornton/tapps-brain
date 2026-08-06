@@ -23,11 +23,13 @@ import structlog
 
 from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain.models import (
+    LearningStatus,
     MemoryEntry,
     MemoryScope,
     MemorySource,
     MemoryStatus,
     MemoryTier,
+    PromotionSignal,
 )
 from tapps_brain.visual_snapshot import (
     _TOP_TAGS_LIMIT,
@@ -1081,6 +1083,23 @@ class PostgresPrivateBackend:
         except ValueError:
             mem_status = MemoryStatus.active
 
+        # TAP-5542: promotion status.  An unreadable value falls back to
+        # ``candidate``, never ``approved`` — a row whose trust state cannot be
+        # parsed has not demonstrably passed a gate.
+        try:
+            learning_status = LearningStatus(str(row.get("learning_status") or "candidate"))
+        except ValueError:
+            learning_status = LearningStatus.candidate
+
+        try:
+            promotion_signal = (
+                PromotionSignal(str(row["promotion_signal"]))
+                if row.get("promotion_signal") is not None
+                else None
+            )
+        except ValueError:
+            promotion_signal = None
+
         return MemoryEntry(
             key=str(row["key"]),
             value=str(row["value"]),
@@ -1128,6 +1147,11 @@ class PostgresPrivateBackend:
             status=mem_status,
             stale_reason=_str_or_none(row.get("stale_reason")),
             stale_date=_iso_or_none(row.get("stale_date")),
+            learning_status=learning_status,
+            promoted_by=_str_or_none(row.get("promoted_by")),
+            promoted_at=_iso_or_none(row.get("promoted_at")),
+            promotion_signal=promotion_signal,
+            demotion_reason=_str_or_none(row.get("demotion_reason")),
             memory_class=cast(
                 "Literal['incident', 'guidance', 'decision', 'convention'] | None",
                 _str_or_none(row.get("memory_class")),

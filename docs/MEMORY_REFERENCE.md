@@ -25,6 +25,22 @@ Defined in `src/tapps_brain/models.py` (`MemoryTier`). Half-lives from `src/tapp
 
 Cross-project sharing uses Federation (not a `scope=` value). See [`docs/guides/federation.md`](guides/federation.md).
 
+## Learning status (promotion gate)
+
+Separate from `status` (the lifecycle axis: `active` / `stale` / `superseded` / `archived`), every entry carries a **trust** axis in `learning_status` (migration 030, `LearningStatus` in `models.py`). The two are independent — an `active` row can be a `candidate`, and an `approved` learning can later go `stale`.
+
+| Value | Meaning |
+|-------|---------|
+| `candidate` | Default for anything an agent saves. Not eligible for injection. |
+| `approved` | Passed an explicit gate. Eligible for injection. |
+| `demoted` | Was approved, then contradicted or withdrawn. Not eligible. |
+
+**Frequency alone cannot approve.** `reinforce()` raises confidence and access counts and never touches `learning_status`; promotion needs `brain_promote_learning` (MCP) or `POST /v1/learning:promote` with `signal` of `eval` or `human` plus an `actor`. Consumers filter on `learning_status`, not on confidence — a high-confidence `candidate` is still a candidate.
+
+Approval is bound to content: re-saving an entry with a **different value** resets it to `candidate`, so new text cannot inherit an old approval. A metadata-only save keeps it. Provenance lives in `promoted_by` / `promoted_at` / `promotion_signal`, and `demotion_reason` records why an approval was withdrawn (the promotion columns are kept on demotion so an audit can see which approval it was). `evidence` passed to a promotion is recorded in the audit log rather than on the row.
+
+Promote/demote are absent from the `coder` MCP profile by design — a coding agent approving its own learnings is the gate approving itself. Full request/response shapes: [`docs/engineering/gated-learning-contract.md`](engineering/gated-learning-contract.md).
+
 ## Agent-facing API (`AgentBrain`)
 
 Simplified 5-method facade in `src/tapps_brain/agent_brain.py`:

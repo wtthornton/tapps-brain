@@ -182,7 +182,7 @@
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
     "version": "3.29.0",
-    "x-schema-version": 29
+    "x-schema-version": 30
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1960,6 +1960,112 @@
         "summary": " V1 Learn Success"
       }
     },
+    "/v1/learning:demote": {
+      "post": {
+        "description": "Withdraw a learning's approval so it stops being injected.\n\nRequest body (JSON): ``{ \"key\": str, \"reason\": str }``.  Both are\nrequired \u2014 a demotion nobody explained cannot be audited later.",
+        "operationId": "_v1_learning_demote_v1_learning_demote_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Learning Demote"
+      }
+    },
+    "/v1/learning:promote": {
+      "post": {
+        "description": "Approve a learning so consumers may inject it.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"signal\": \"eval\" | \"human\", \"actor\": str,\n      \"evidence\"?: str }``\n\n``signal`` is required and accepts nothing else: frequency does not\npromote. Returns 404 when the key is unknown and 409 when the entry is\nalready approved.",
+        "operationId": "_v1_learning_promote_v1_learning_promote_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Learning Promote"
+      }
+    },
     "/v1/profile/data:get": {
       "post": {
         "description": "Read profile-scoped learned KV (REST counterpart of ``brain_profile_get``).",
@@ -2296,7 +2402,7 @@
     },
     "/v1/remember": {
       "post": {
-        "description": "Save a memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"value\": str, \"tier\"?: str, \"source\"?: str,\n      \"tags\"?: list[str], \"scope\"?: str, \"confidence\"?: float,\n      \"agent_scope\"?: str, \"group\"?: str }``\n\nResponse (200) \u2014 read ``status``, do not assume 200 means persisted:\n  - ``{\"status\": \"saved\", \"key\": <the requested key>, ...}`` \u2014 durable.\n  - ``{\"status\": \"coalesced\", \"persisted\": false,\n    \"coalesced_into\": <other key>, ...}`` \u2014 folded onto another row;\n    the requested key does not exist (TAP-5617).\n  - optional ``\"invalidated\": [<key>, ...]`` \u2014 entries whose validity\n    interval this save closed, removing them from recall.",
+        "description": "Save a memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"value\": str, \"tier\"?: str, \"source\"?: str,\n      \"tags\"?: list[str], \"scope\"?: str, \"confidence\"?: float,\n      \"agent_scope\"?: str, \"group\"?: str }``\n\nResponse (200) \u2014 read ``status``, do not assume 200 means persisted:\n  - ``{\"status\": \"saved\", \"key\": <the requested key>, ...}`` \u2014 durable.\n  - ``{\"status\": \"coalesced\", \"persisted\": false,\n    \"coalesced_into\": <other key>, ...}`` \u2014 folded onto another row;\n    the requested key does not exist (TAP-5617).\n  - optional ``\"invalidated\": [<key>, ...]`` \u2014 entries whose validity\n    interval this save closed, removing them from recall.\n  - optional ``\"invalidated_detail\": [{\"key\", \"similarity\", \"tier\",\n    \"threshold\"}, ...]`` \u2014 the similarity that triggered each\n    invalidation and the threshold it cleared, so the line can be tuned\n    from real traffic rather than guessed at.\n\nInvalidations you did not want are usually a threshold question rather\nthan a defect.  Supersede fires within a tier above the\n``conflict_check`` similarity threshold, which is tunable **per\nproject** via ``conflict_check.per_tier`` \u2014 one project's tuning does\nnot affect any other (see\n``docs/guides/per-project-profile-overrides.md``).  For a key-space of\nindependent facts, where no neighbour should win, pass\n``\"supersede\": \"key-scoped\"`` on the save instead.",
         "operationId": "_v1_remember_v1_remember_post",
         "parameters": [
           {
