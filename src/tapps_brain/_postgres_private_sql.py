@@ -91,6 +91,11 @@ INSERT INTO private_memories (
     stale_reason,
     stale_date,
     memory_class,
+    learning_status,
+    promoted_by,
+    promoted_at,
+    promotion_signal,
+    demotion_reason,
     embedding
 ) VALUES (
     %s, %s, %s, %s,
@@ -110,6 +115,7 @@ INSERT INTO private_memories (
     %s::jsonb,
     %s, %s, %s,
     %s,
+    %s, %s, %s, %s, %s,
     %s::vector
 )
 ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
@@ -158,6 +164,16 @@ ON CONFLICT (project_id, agent_id, key) DO UPDATE SET
     stale_reason             = EXCLUDED.stale_reason,
     stale_date               = EXCLUDED.stale_date,
     memory_class             = EXCLUDED.memory_class,
+    -- TAP-5542: entry-driven, like every other column here.  The
+    -- preserve-vs-reset policy lives in one place — MemoryStore's
+    -- ``_resolve_promotion_fields`` — so a writer that bypasses the store
+    -- (import, bundle restore) lands on ``candidate``, which is the
+    -- fail-safe direction: an approval that cannot be proven is not one.
+    learning_status          = EXCLUDED.learning_status,
+    promoted_by              = EXCLUDED.promoted_by,
+    promoted_at              = EXCLUDED.promoted_at,
+    promotion_signal         = EXCLUDED.promotion_signal,
+    demotion_reason          = EXCLUDED.demotion_reason,
     embedding                = COALESCE(EXCLUDED.embedding, private_memories.embedding)
 """
 
@@ -190,6 +206,15 @@ def build_save_params(
     source = entry.source.value if hasattr(entry.source, "value") else str(entry.source)
     scope = entry.scope.value if hasattr(entry.scope, "value") else str(entry.scope)
     status = entry.status.value if hasattr(entry.status, "value") else str(entry.status)
+    learning_status = (
+        entry.learning_status.value
+        if hasattr(entry.learning_status, "value")
+        else str(entry.learning_status)
+    )
+    signal = entry.promotion_signal
+    promotion_signal = (
+        (signal.value if hasattr(signal, "value") else str(signal)) if signal else None
+    )
     return (
         project_id,
         agent_id,
@@ -237,6 +262,11 @@ def build_save_params(
         entry.stale_reason,
         entry.stale_date,
         getattr(entry, "memory_class", None),
+        learning_status,
+        entry.promoted_by,
+        entry.promoted_at,
+        promotion_signal,
+        entry.demotion_reason,
         embedding_to_pgvector(entry.embedding),
     )
 
@@ -261,7 +291,8 @@ ENTRY_COLUMNS_SQL = (
     "positive_feedback_count, negative_feedback_count, "
     "integrity_hash, integrity_hash_v, embedding_model_id, "
     "temporal_sensitivity, failed_approaches, "
-    "status, stale_reason, stale_date, memory_class"
+    "status, stale_reason, stale_date, memory_class, "
+    "learning_status, promoted_by, promoted_at, promotion_signal, demotion_reason"
 )
 
 LOAD_ALL_SQL = (

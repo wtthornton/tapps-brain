@@ -294,3 +294,64 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             ),
             default=str,
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_promote_learning(
+        key: str,
+        signal: str,
+        actor: str,
+        evidence: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Approve a learning so it becomes eligible for injection (TAP-5542).
+
+        ``signal`` must be ``"eval"`` (an eval run validated it) or ``"human"``
+        (a person signed off). Frequency is not a signal: reinforcing a memory
+        raises its confidence but never promotes it, because a learning that is
+        merely frequent is not thereby correct.
+
+        ``actor`` is the eval run id or human identifier and is required.
+        ``evidence`` is optional free text recorded in the audit log.
+
+        Returns ``{"error": "conflict"}`` when the entry is already approved and
+        ``{"error": "not_found"}`` when the key is unknown.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_promote_learning(
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                signal=signal,
+                actor=actor,
+                evidence=evidence,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_demote_learning(
+        key: str,
+        reason: str,
+        agent_id: str = "",
+    ) -> str:
+        """Withdraw a learning's approval so it stops being injected (TAP-5542).
+
+        ``reason`` is required and stored on the entry. The promotion
+        provenance is kept, so an audit can still see which approval was
+        withdrawn.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_demote_learning(
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                reason=reason,
+            ),
+            default=str,
+        )

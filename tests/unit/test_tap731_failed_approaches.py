@@ -19,6 +19,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+def _param_index(column: str) -> int:
+    """Return *column*'s position in ``SAVE_UPSERT_SQL``'s parameter tuple.
+
+    Derived from the INSERT column list rather than hard-coded, because a
+    negative index breaks every time a column is appended before ``embedding``
+    (it did, when migration 030 added the promotion columns).
+    """
+    from tapps_brain import _postgres_private_sql as _sql
+
+    column_list = _sql.SAVE_UPSERT_SQL.split("INSERT INTO private_memories (")[1].split(") VALUES")[
+        0
+    ]
+    names = [c.strip() for c in column_list.replace("\n", " ").split(",")]
+    return names.index(column)
+
+
 # ---------------------------------------------------------------------------
 # MemoryEntry field tests
 # ---------------------------------------------------------------------------
@@ -154,9 +171,7 @@ class TestSaveFailedApproaches:
         backend.save(entry)
         assert cur.execute.called
         params = cur.execute.call_args[0][1]
-        # failed_approaches JSONB is followed by status, stale_reason, stale_date,
-        # memory_class, embedding (TAP-2672 appended the embedding param last).
-        fa_json = params[-6]
+        fa_json = params[_param_index("failed_approaches")]
         assert json.loads(fa_json) == ["tried A", "tried B"]
 
     def test_save_empty_failed_approaches(self) -> None:
@@ -166,9 +181,7 @@ class TestSaveFailedApproaches:
         entry = MemoryEntry(key="empty-key", value="val", failed_approaches=[])
         backend.save(entry)
         params = cur.execute.call_args[0][1]
-        # -6: embedding is now the last param (TAP-2672); failed_approaches precedes
-        # status, stale_reason, stale_date, memory_class, embedding.
-        fa_json = params[-6]
+        fa_json = params[_param_index("failed_approaches")]
         assert json.loads(fa_json) == []
 
 

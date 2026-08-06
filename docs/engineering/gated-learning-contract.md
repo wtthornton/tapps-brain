@@ -2,11 +2,12 @@
 
 Request/response shapes for **AgentForge BrainBridge** to bind against.
 
-> **Status: proposed, not yet implemented.** Nothing below is live on
-> `tapps-brain` 3.29.0. This document exists so AF can build against a fixed
-> contract in parallel with brain-side implementation rather than after it.
-> Each section names the story that lands it. Treat a call to any endpoint here
-> as a 404 until its story is marked Done.
+> **Status: partially implemented.** `POST /v1/learning:promote` and
+> `POST /v1/learning:demote` are **live** (TAP-5542, migration 030). Everything
+> else below is still proposed — treat a call to those endpoints as a 404 until
+> the story named in its section is marked Done. This document exists so AF can
+> build against a fixed contract in parallel with brain-side implementation
+> rather than after it.
 
 AF's fleet-learning side channel (TAP-5532) shipped 2026-08-04 and its
 `learning_injection` path needs *promoted* tool-path learnings. Brain has no
@@ -49,24 +50,53 @@ Filter on `learning_status`, not on confidence.
 Naming follows the existing surface: colon-suffixed verbs for actions
 (`/v1/experience:query`, `/v1/documents:search`), path segments for resources.
 
-### `POST /v1/learning:promote` — TAP-5542
+### `POST /v1/learning:promote` — TAP-5542 (**live**)
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `key` | string | required | Memory key to promote |
 | `signal` | string | required | `eval` \| `human`. No other value accepted. |
 | `actor` | string | required | Eval run id, or human identifier |
-| `evidence` | string | optional | Free text or eval artifact reference |
+| `evidence` | string | optional | Free text or eval artifact reference; recorded in the audit log |
 
 Returns `409` when the entry is already `approved`, `404` when the key is
-unknown. Promoting a `demoted` entry is allowed and clears `demotion_reason`.
+unknown, `400` on a bad `signal` or an empty `actor`. Promoting a `demoted`
+entry is allowed and clears `demotion_reason`. Success body:
 
-### `POST /v1/learning:demote` — TAP-5542
+```json
+{"promoted": true, "key": "...", "learning_status": "approved",
+ "promoted_by": "...", "promoted_at": "...", "promotion_signal": "eval",
+ "demotion_reason": null}
+```
+
+Errors use the standard envelope — `{"error": "conflict" | "not_found" |
+"invalid_request", "message": "..."}`.
+
+MCP equivalent: `brain_promote_learning`. Exposed in the `full`, `operator`,
+and `agent_brain` profiles; deliberately **not** in `coder` — a coding agent
+approving its own learnings is the gate approving itself.
+
+Note on scope: this is a *provenance* gate, not an authorization gate. It
+records who approved a learning and on what signal; it does not verify that the
+caller is entitled to be that actor. Deployments that need that should gate the
+endpoint at the auth layer.
+
+### `POST /v1/learning:demote` — TAP-5542 (**live**)
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `key` | string | required | Memory key to demote |
 | `reason` | string | required | Why; stored in `demotion_reason` |
+
+Returns `404` for an unknown key and `400` for an empty `reason`. Promotion
+provenance is retained, so an audit can still see which approval was withdrawn.
+
+### Re-saving an approved entry
+
+Approval is bound to content. A save that changes an entry's `value` resets it
+to `candidate` and clears the promotion provenance; a metadata-only save (same
+value) keeps the approval. Without this, anyone who can save could launder new
+content through an old approval.
 
 ### `POST /v1/recall:tool_paths` — TAP-5545
 

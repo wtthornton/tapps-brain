@@ -5,12 +5,16 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (76 tools, all eager) — default fallback; full tools/list surface
-#   operator    (89 tools, all eager) — full + operator-only maintenance tools
+#   full        (78 tools, all eager) — default fallback; full tools/list surface
+#   operator    (91 tools, all eager) — full + operator-only maintenance tools
 #   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (16 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (18 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#
+# TAP-5542 note: the learning promote/demote tools are deliberately absent from
+# `coder`. A coding agent approving its own learnings is the gate approving
+# itself — promotion belongs to an eval run or a human.
 #
 # defer_loading (TAP-1985) is disabled in the Docker reference stack so every
 # registered tool appears in the default tools/list response. Re-enable per-tool
@@ -28,6 +32,7 @@ profiles:
       - agent_list
       - agent_register
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_export
       - brain_forget
@@ -36,6 +41,7 @@ profiles:
       - brain_learn_success
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
       - brain_record_event
@@ -110,6 +116,7 @@ profiles:
       - agent_list
       - agent_register
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_export
       - brain_forget
@@ -118,6 +125,7 @@ profiles:
       - brain_learn_success
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
       - brain_record_event
@@ -257,6 +265,7 @@ profiles:
       experience query and profile-scoped KV helpers.
     tools:
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors
@@ -264,6 +273,7 @@ profiles:
       - brain_learn_success
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
       - brain_record_event

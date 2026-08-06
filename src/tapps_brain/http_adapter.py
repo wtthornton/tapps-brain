@@ -3189,6 +3189,83 @@ def create_app(
         )
         return _document_response(result)
 
+    # ------------------------------------------------------------------
+    # Gated learning routes (TAP-5542)
+    # ------------------------------------------------------------------
+
+    def _learning_response(result: dict[str, Any]) -> JSONResponse:
+        """Map a service result onto its HTTP status.
+
+        The status comes from the error taxonomy itself rather than a
+        route-local table, so ``not_found`` → 404 and ``conflict`` → 409 stay
+        correct without a second place to keep in sync.
+        """
+        error = result.get("error") if isinstance(result, dict) else None
+        if error is None:
+            return JSONResponse(status_code=200, content=result)
+        from tapps_brain.errors import ErrorCode, http_status
+
+        try:
+            status = http_status(ErrorCode(str(error)))
+        except ValueError:
+            status = 400
+        return JSONResponse(status_code=status, content=result)
+
+    @app.post("/v1/learning:promote", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learning_promote(request: Request) -> JSONResponse:
+        """Approve a learning so consumers may inject it.
+
+        Request body (JSON):
+          ``{ "key": str, "signal": "eval" | "human", "actor": str,
+              "evidence"?: str }``
+
+        ``signal`` is required and accepts nothing else: frequency does not
+        promote. Returns 404 when the key is unknown and 409 when the entry is
+        already approved.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_promote_learning,
+            store,
+            project_id,
+            agent_id,
+            key=str(body.get("key") or ""),
+            signal=str(body.get("signal") or ""),
+            actor=str(body.get("actor") or ""),
+            evidence=str(body.get("evidence") or ""),
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/learning:demote", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learning_demote(request: Request) -> JSONResponse:
+        """Withdraw a learning's approval so it stops being injected.
+
+        Request body (JSON): ``{ "key": str, "reason": str }``.  Both are
+        required — a demotion nobody explained cannot be audited later.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_demote_learning,
+            store,
+            project_id,
+            agent_id,
+            key=str(body.get("key") or ""),
+            reason=str(body.get("reason") or ""),
+        )
+        return _learning_response(result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.

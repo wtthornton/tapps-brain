@@ -270,6 +270,9 @@ class TestCoreTools:
             # Profile-scoped learned data (EPIC-075)
             "brain_profile_set",
             "brain_profile_get",
+            # Gated learning (TAP-5542)
+            "brain_promote_learning",
+            "brain_demote_learning",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",
