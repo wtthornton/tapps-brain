@@ -381,6 +381,13 @@ class PostgresPrivateBackend:
         in ``migrations/private/001_initial.sql``.  Results are ranked by
         ``ts_rank``.
 
+        TAP-5677: when the AND-semantics ``plainto_tsquery`` pass matches
+        nothing and the query has two or more distinct tokens, the search is
+        retried once with OR semantics (``to_tsquery`` over the sanitized
+        token set) so natural-language queries degrade to partial-token
+        matches instead of returning nothing.  Queries that match on the
+        first pass are unaffected.
+
         Args:
             query: Plain-text search query (passed to ``plainto_tsquery``).
             memory_group: Restrict results to a project-local group.
@@ -415,9 +422,37 @@ class PostgresPrivateBackend:
         with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
+            col_names = [desc[0] for desc in cur.description] if rows else []
+
+            # TAP-5677 stage 2: plainto_tsquery ANDs every token, so a
+            # multi-word natural-language query with one non-matching term
+            # returns nothing.  Retry once with OR semantics before giving up.
             if not rows:
-                return []
-            col_names = [desc[0] for desc in cur.description]
+                or_query = _sql.build_or_tsquery(query)
+                if or_query is None:
+                    return []
+                or_sql, _ = _sql.build_search_sql(
+                    memory_group=memory_group,
+                    since=since,
+                    until=until,
+                    time_field=time_field,
+                    memory_class=memory_class,
+                    as_of=as_of,
+                    include_expired=include_expired,
+                    match_any=True,
+                )
+                or_params: list[Any] = [
+                    or_query,
+                    self._project_id,
+                    self._agent_id,
+                    or_query,
+                    *extra_params,
+                ]
+                cur.execute(or_sql, or_params)
+                rows = cur.fetchall()
+                if not rows:
+                    return []
+                col_names = [desc[0] for desc in cur.description]
 
         results = []
         for row in rows:

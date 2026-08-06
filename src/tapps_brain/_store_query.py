@@ -33,6 +33,12 @@ from tapps_brain.otel_tracer import (
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+#: TAP-5677 — pool size for the stage-3 semantic fallback.  Deliberately far
+#: below the FTS LIMIT 100: nearest-neighbour results without a lexical match
+#: are speculative, and downstream consumers (``brain_recall`` max_results,
+#: flywheel top-3) never read more than a handful.
+_KNN_FALLBACK_K = 10
+
 
 def _filter_memory_entries(
     entries: list[MemoryEntry],
@@ -421,6 +427,16 @@ class QueryMixin(_MemoryStoreBase):
                 include_expired=include_historical,
             )
 
+            # TAP-5677 stage 3: lexical stages (AND, then the backend's OR
+            # retry) found nothing — fall back to vector KNN when available.
+            # Stands down for since/until/memory_class queries: those filters
+            # live in the FTS SQL only, and a speculative semantic match must
+            # never resurface rows a precision filter excluded.
+            if not results and since is None and until is None and memory_class is None:
+                results = self._knn_fallback_entries(
+                    query, include_expired=include_historical, as_of=as_of
+                )
+
             results = self._apply_search_filters(
                 results,
                 tags=tags,
@@ -446,3 +462,55 @@ class QueryMixin(_MemoryStoreBase):
                 _search_span.set_attribute("gen_ai.data_source.id", GEN_AI_DATA_SOURCE_ID)
             rm_add_recall_latency_ms(_search_elapsed_ms)
             return results
+
+    def _knn_fallback_entries(
+        self,
+        query: str,
+        *,
+        include_expired: bool,
+        as_of: str | None,
+    ) -> list[MemoryEntry]:
+        """Semantic fallback for lexically unmatched queries (TAP-5677).
+
+        Embeds *query* with the store's embedding provider and returns the
+        nearest :data:`_KNN_FALLBACK_K` entries by cosine distance, closest
+        first.  Requires both a configured embedding provider and a backend
+        with ``knn_search`` (the Postgres backend); otherwise — or when
+        embedding/KNN fails — returns ``[]`` so search degrades to its
+        previous empty-result behaviour rather than raising.  Failures are
+        logged; ``knn_search`` degradation flags stay the backend's concern.
+        """
+        knn = getattr(self._persistence, "knn_search", None)
+        load_one = getattr(self._persistence, "load_one", None)
+        if (
+            not query.strip()
+            or self._embedding_provider is None
+            or not callable(knn)
+            or not callable(load_one)
+        ):
+            return []
+        try:
+            embedding = self._embedding_provider.embed(query)
+        except Exception:
+            logger.warning("search.knn_fallback.embed_failed", exc_info=True)
+            return []
+        if not embedding:
+            return []
+        try:
+            pairs = knn(
+                list(embedding),
+                _KNN_FALLBACK_K,
+                include_expired=include_expired,
+                as_of=as_of,
+            )
+        except Exception:
+            logger.warning("search.knn_fallback.knn_failed", exc_info=True)
+            return []
+        entries: list[MemoryEntry] = []
+        for key, _distance in pairs:
+            entry = cast("MemoryEntry | None", load_one(key))
+            if entry is not None:
+                entries.append(entry)
+        if entries:
+            self._metrics.increment("store.search.knn_fallback")
+        return entries

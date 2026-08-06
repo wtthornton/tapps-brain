@@ -19,6 +19,7 @@ Naming: ``<DOMAIN>_<OPERATION>_SQL``.
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -323,13 +324,53 @@ DELETE_BY_KEY_SQL = (
 # Search (FTS) — base + composable filter snippets
 # ---------------------------------------------------------------------------
 
-_SEARCH_BASE_SQL = (
-    f"SELECT {ENTRY_COLUMNS_SQL}, "
-    "ts_rank(search_vector, plainto_tsquery('english', %s)) AS _rank "
-    "FROM private_memories "
-    "WHERE project_id = %s AND agent_id = %s "
-    "  AND search_vector @@ plainto_tsquery('english', %s)"
-)
+
+def _search_base_sql(tsquery_fn: str) -> str:
+    """Base FTS SELECT with *tsquery_fn* in the rank and WHERE positions.
+
+    *tsquery_fn* is interpolated (not bound) because Postgres cannot
+    parameterise function names; callers pass one of two module-literal
+    values, never user input.
+    """
+    return (
+        f"SELECT {ENTRY_COLUMNS_SQL}, "
+        f"ts_rank(search_vector, {tsquery_fn}('english', %s)) AS _rank "
+        "FROM private_memories "
+        "WHERE project_id = %s AND agent_id = %s "
+        f"  AND search_vector @@ {tsquery_fn}('english', %s)"
+    )
+
+
+_SEARCH_BASE_SQL = _search_base_sql("plainto_tsquery")
+#: TAP-5677 — OR-retry variant: ``to_tsquery`` over a pre-sanitized
+#: ``"tok1 | tok2"`` string from :func:`build_or_tsquery`.
+_SEARCH_BASE_MATCH_ANY_SQL = _search_base_sql("to_tsquery")
+
+_OR_TSQUERY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+#: Cap OR-retry breadth: beyond this, extra terms add cost, not precision.
+_OR_TSQUERY_MAX_TOKENS = 16
+#: Below two distinct tokens, OR-matching is identical to the AND pass.
+_OR_TSQUERY_MIN_TOKENS = 2
+
+
+def build_or_tsquery(query: str) -> str | None:
+    """Sanitized ``" | "``-joined token string for the OR-retry (TAP-5677).
+
+    Tokens are lowercased ``[A-Za-z0-9]+`` runs, deduplicated preserving
+    first-seen order, and capped at :data:`_OR_TSQUERY_MAX_TOKENS`.  The
+    result is safe ``to_tsquery`` input by construction (no operators or
+    quotes can survive the token regex) and is still bound as a ``%s``
+    parameter, never interpolated.
+
+    Returns ``None`` when the query has fewer than two distinct tokens —
+    OR-matching a single token is identical to the AND query that already
+    returned nothing, so the retry would be wasted.
+    """
+    tokens = list(dict.fromkeys(t.lower() for t in _OR_TSQUERY_TOKEN_RE.findall(query)))
+    if len(tokens) < _OR_TSQUERY_MIN_TOKENS:
+        return None
+    return " | ".join(tokens[:_OR_TSQUERY_MAX_TOKENS])
+
 
 #: TAP-4586 — live-row predicate pushed into recall SQL so expired
 #: (``valid_until`` in the past) and superseded (``superseded_by`` set) rows
@@ -396,6 +437,7 @@ def build_search_sql(
     memory_class: str | None,
     as_of: str | None,
     include_expired: bool = False,
+    match_any: bool = False,
 ) -> tuple[str, list[Any]]:
     """Compose the FTS search SQL + the variable-portion params.
 
@@ -421,6 +463,11 @@ def build_search_sql(
     ``valid_at``/``invalid_at`` window, and a superseded row is *expected* for
     the timestamp at which it was valid.
 
+    *match_any* (TAP-5677): when ``True``, the base SELECT uses ``to_tsquery``
+    so the caller can bind a pre-sanitized OR token string from
+    :func:`build_or_tsquery` in the two query positions.  Filter snippets and
+    *extra_params* are identical in both modes.
+
     Raises:
         ValueError: if *time_field* is not in :data:`VALID_TIME_FIELDS`.
     """
@@ -428,7 +475,7 @@ def build_search_sql(
         msg = f"time_field must be one of {sorted(VALID_TIME_FIELDS)}, got {time_field!r}"
         raise ValueError(msg)
 
-    sql = _SEARCH_BASE_SQL
+    sql = _SEARCH_BASE_MATCH_ANY_SQL if match_any else _SEARCH_BASE_SQL
     params: list[Any] = []
 
     if memory_group is not None:
