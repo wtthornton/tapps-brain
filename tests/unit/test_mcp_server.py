@@ -273,6 +273,8 @@ class TestCoreTools:
             # Gated learning (TAP-5542)
             "brain_promote_learning",
             "brain_demote_learning",
+            # Approved-only tool-path recall (TAP-5545)
+            "brain_recall_tool_paths",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",

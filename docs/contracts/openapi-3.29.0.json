@@ -2278,6 +2278,59 @@
         "summary": " V1 Recall Batch"
       }
     },
+    "/v1/recall:tool_paths": {
+      "post": {
+        "description": "Recall approved tool paths for a task type (TAP-5545).\n\nRequest body (JSON):\n  ``{ \"task_type\": str, \"limit\"?: int (1-50, default 5),\n      \"learning_status\"?: \"approved\" | \"any\", \"min_confidence\"?: float }``\n\nFail-closed: when nothing approved matches, this returns 200 with an\nempty ``tool_paths`` list rather than a 404 or a downgrade to\ncandidates.  ``demoted`` entries are never returned.",
+        "operationId": "_v1_recall_tool_paths_v1_recall_tool_paths_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Recall Tool Paths"
+      }
+    },
     "/v1/reinforce": {
       "post": {
         "description": "Reinforce an existing memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"confidence_boost\"?: float }``",

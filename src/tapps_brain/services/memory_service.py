@@ -18,7 +18,7 @@ from pydantic import ValidationError as _PydanticValidationError
 from tapps_brain.agent_brain import _content_key
 from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normalize_agent_scope
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
-from tapps_brain.models import MemoryStatus, MemoryTier, tier_str
+from tapps_brain.models import LearningStatus, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import start_mcp_tool_span
 from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST, validate_iso_timestamp
 from tapps_brain.tier_normalize import normalize_save_tier
@@ -2512,3 +2512,131 @@ def brain_demote_learning(
         except TaxonomyError as exc:
             return {"error": exc.error_code.value, "message": exc.message}
         return {"demoted": True, **_promotion_result(entry)}
+
+
+# ---------------------------------------------------------------------------
+# Approved-only tool-path recall (TAP-5545)
+# ---------------------------------------------------------------------------
+
+#: Tags that mark a memory as a fleet tool path.  Mirrors the gate in
+#: AgentForge's ``candidates_from_tool_path_learnings`` so the consumer needs
+#: no translation layer.
+_FLEET_LEARNING_TAG = "fleet:learning"
+_TOOL_TAG_PREFIX = "tool:"
+
+_TOOL_PATH_LIMIT_MAX = 50
+
+#: Recall-time lifecycle exclusions, matching :func:`brain_recall`.
+_TOOL_PATH_EXCLUDED_STATUSES = frozenset(
+    {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
+)
+
+
+def _invalid_request(message: str) -> dict[str, Any]:
+    """Return the wire form of a 400 for this module's dict-returning tools."""
+    from tapps_brain.errors import ErrorCode
+
+    return {"error": ErrorCode.INVALID_REQUEST.value, "message": message}
+
+
+def _is_tool_path(tags: list[str]) -> bool:
+    """Return whether *tags* mark an entry as a tool path.
+
+    Approval alone is not enough: a promoted architectural decision is an
+    approved learning but not a tool path, and injecting it into a routing
+    decision would be noise.
+    """
+    return any(t == _FLEET_LEARNING_TAG or t.startswith(_TOOL_TAG_PREFIX) for t in tags)
+
+
+def brain_recall_tool_paths(
+    store: Any,
+    project_id: str,
+    agent_id: str,
+    *,
+    task_type: str,
+    limit: int = 5,
+    learning_status: str = "approved",
+    min_confidence: float | None = None,
+) -> dict[str, Any]:
+    """Recall approved tool paths for *task_type* (TAP-5545).
+
+    Fail-closed by design.  When nothing approved matches, the answer is an
+    empty list with a 200 — never a fallback to candidates and never a 404.
+    A caller that asked for validated learnings and silently received unvetted
+    ones is worse off than one that received nothing, because it cannot tell
+    the difference.
+
+    ``learning_status="any"`` opts into candidates for diagnostic callers, but
+    ``demoted`` is excluded unconditionally: demotion is a withdrawal, and no
+    opt-in brings a withdrawn learning back.
+
+    Entries whose promotion state is unreadable are excluded rather than
+    assumed approved — the gate must fail shut.
+
+    Args:
+        store: MemoryStore instance.
+        project_id: Project identifier, echoed onto each item for AF.
+        agent_id: Agent identifier.
+        task_type: Task descriptor to search on, e.g. ``"refactor-python-module"``.
+        limit: Maximum paths to return, 1-50.
+        learning_status: ``"approved"`` (default) or ``"any"``.
+        min_confidence: Drop entries scoring below this.
+
+    Returns:
+        ``{"count": int, "tool_paths": [...], "learning_status": str}``, or
+        ``{"error": "invalid_request", "message": ...}``.
+    """
+    if not task_type.strip():
+        return _invalid_request("task_type is required")
+    if not 1 <= limit <= _TOOL_PATH_LIMIT_MAX:
+        return _invalid_request(f"limit must be between 1 and {_TOOL_PATH_LIMIT_MAX}, got {limit}")
+    if learning_status not in ("approved", "any"):
+        return _invalid_request(
+            f"learning_status must be 'approved' or 'any', got {learning_status!r}"
+        )
+
+    with start_mcp_tool_span("brain_recall_tool_paths"):
+        entries = store.search(task_type)
+
+        tool_paths: list[dict[str, Any]] = []
+        for entry in entries:
+            if len(tool_paths) >= limit:
+                break
+            entry_learning_status = getattr(entry, "learning_status", None)
+            if entry_learning_status is LearningStatus.demoted or entry_learning_status is None:
+                continue
+            if (
+                learning_status == "approved"
+                and entry_learning_status is not LearningStatus.approved
+            ):
+                continue
+            if getattr(entry, "status", MemoryStatus.active) in _TOOL_PATH_EXCLUDED_STATUSES:
+                continue
+            tags = list(entry.tags) if entry.tags else []
+            if not _is_tool_path(tags):
+                continue
+            if min_confidence is not None and entry.confidence < min_confidence:
+                continue
+            promotion_signal = getattr(entry, "promotion_signal", None)
+            tool_paths.append(
+                {
+                    "key": entry.key,
+                    "value": entry.value,
+                    "tags": tags,
+                    "confidence": entry.confidence,
+                    "project_id": project_id,
+                    "learning_status": str(entry_learning_status),
+                    "promoted_by": getattr(entry, "promoted_by", None),
+                    "promoted_at": getattr(entry, "promoted_at", None),
+                    "promotion_signal": (
+                        str(promotion_signal) if promotion_signal is not None else None
+                    ),
+                }
+            )
+
+        return {
+            "count": len(tool_paths),
+            "tool_paths": tool_paths,
+            "learning_status": learning_status,
+        }

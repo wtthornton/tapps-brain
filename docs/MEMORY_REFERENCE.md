@@ -41,6 +41,12 @@ Approval is bound to content: re-saving an entry with a **different value** rese
 
 Promote/demote are absent from the `coder` MCP profile by design — a coding agent approving its own learnings is the gate approving itself. Full request/response shapes: [`docs/engineering/gated-learning-contract.md`](engineering/gated-learning-contract.md).
 
+### Reading approved learnings back
+
+`brain_recall_tool_paths` (MCP) / `POST /v1/recall:tool_paths` is the consumption side of the gate: it returns only learnings that are `approved` **and** carry the tool-path tag convention (a `fleet:learning` tag or any `tool:*` tag). Approval alone is not enough — an approved architectural decision is a valid learning but not a tool path.
+
+It is **fail-closed**: when nothing approved matches, the answer is `200` with `count: 0` and an empty list, never a `404` and never a downgrade to candidates, because a caller that asked for validated learnings and silently received unvetted ones cannot tell the difference. `learning_status: "any"` opts into candidates for diagnostics; `demoted` entries are never returned under any setting. Unlike promote/demote, this tool **is** in the `coder` profile — reading approved paths is consumption, not approval.
+
 ## Agent-facing API (`AgentBrain`)
 
 Simplified 5-method facade in `src/tapps_brain/agent_brain.py`:

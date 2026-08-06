@@ -5,16 +5,20 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (78 tools, all eager) — default fallback; full tools/list surface
-#   operator    (91 tools, all eager) — full + operator-only maintenance tools
-#   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
+#   full        (79 tools, all eager) — default fallback; full tools/list surface
+#   operator    (92 tools, all eager) — full + operator-only maintenance tools
+#   coder       (22 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (18 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (19 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # TAP-5542 note: the learning promote/demote tools are deliberately absent from
 # `coder`. A coding agent approving its own learnings is the gate approving
 # itself — promotion belongs to an eval run or a human.
+#
+# TAP-5545 note: `brain_recall_tool_paths` IS in `coder` — reading approved tool
+# paths is the consumption side of that gate, not the approval side. It is
+# absent from `reviewer`, which reviews diffs and has no routing decision to make.
 #
 # defer_loading (TAP-1985) is disabled in the Docker reference stack so every
 # registered tool appears in the default tools/list response. Re-enable per-tool
@@ -44,6 +48,7 @@ profiles:
       - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
@@ -128,6 +133,7 @@ profiles:
       - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
@@ -220,6 +226,7 @@ profiles:
       - brain_profile_set
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_events_batch
       - brain_remember
       - brain_status
@@ -276,6 +283,7 @@ profiles:
       - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback

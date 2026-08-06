@@ -355,3 +355,37 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             ),
             default=str,
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_recall_tool_paths(
+        task_type: str,
+        limit: int = 5,
+        learning_status: str = "approved",
+        min_confidence: float | None = None,
+        agent_id: str = "",
+    ) -> str:
+        """Recall approved tool paths for a task type (TAP-5545).
+
+        Returns only learnings that passed an explicit promotion gate and carry
+        a ``fleet:learning`` or ``tool:*`` tag. When nothing approved matches,
+        the answer is an empty list — never a fallback to candidates, because a
+        caller that asked for validated learnings and silently got unvetted ones
+        cannot tell the difference.
+
+        ``learning_status="any"`` opts into candidates for diagnostics;
+        ``demoted`` entries are never returned.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_recall_tool_paths(
+                s,
+                _pid(),
+                eff_aid,
+                task_type=task_type,
+                limit=limit,
+                learning_status=learning_status,
+                min_confidence=min_confidence,
+            ),
+            default=str,
+        )
