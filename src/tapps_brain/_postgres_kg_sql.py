@@ -644,3 +644,79 @@ SELECT
 FROM kg_edges
 WHERE brain_id = %s
 """
+
+
+# ---------------------------------------------------------------------------
+# Predicate registry (TAP-5508)
+# ---------------------------------------------------------------------------
+
+#: Register or update one predicate declaration. Re-registering the same
+#: predicate updates it in place rather than accumulating conflicting rows that
+#: a reader would have to rank. Params:
+#: tenant_id, brain_id, project_id, predicate, max_count, domain_type,
+#: range_type, description, registered_by.
+UPSERT_PREDICATE_SQL = """
+INSERT INTO kg_predicates (
+    tenant_id, brain_id, project_id, predicate,
+    max_count, domain_type, range_type, description, registered_by
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (tenant_id, brain_id, predicate) DO UPDATE SET
+    max_count     = EXCLUDED.max_count,
+    domain_type   = EXCLUDED.domain_type,
+    range_type    = EXCLUDED.range_type,
+    description   = EXCLUDED.description,
+    registered_by = EXCLUDED.registered_by,
+    updated_at    = now()
+RETURNING id, predicate, max_count, domain_type, range_type, description,
+          registered_by, created_at, updated_at
+"""
+
+#: All predicate declarations for a brain, newest declaration last so the list
+#: reads in registration order. Params: tenant_id, brain_id.
+LIST_PREDICATES_SQL = """
+SELECT id, predicate, max_count, domain_type, range_type, description,
+       registered_by, created_at, updated_at
+FROM kg_predicates
+WHERE tenant_id = %s AND brain_id = %s
+ORDER BY predicate
+"""
+
+#: One predicate declaration, or no row. Params: tenant_id, brain_id, predicate.
+GET_PREDICATE_SQL = """
+SELECT id, predicate, max_count, domain_type, range_type, description,
+       registered_by, created_at, updated_at
+FROM kg_predicates
+WHERE tenant_id = %s AND brain_id = %s AND predicate = %s
+"""
+
+
+# ---------------------------------------------------------------------------
+# Ledger check (TAP-5509)
+# ---------------------------------------------------------------------------
+
+#: Active entities matching a canonical name across ALL types within a brain.
+#: Used by the ledger check when the caller supplies a bare ``subject_key`` with
+#: no type — more than one hit is ambiguous input, not a guess to make.
+#: Params: brain_id, canonical_name.
+FIND_ENTITIES_BY_NAME_SQL = """
+SELECT id, entity_type, canonical_name
+FROM kg_entities
+WHERE brain_id = %s
+  AND canonical_name_norm = lower(%s)
+  AND status = 'active'
+ORDER BY entity_type
+"""
+
+#: How many DISTINCT objects a subject currently holds for a predicate.
+#: DISTINCT matters: cardinality bounds the number of objects, not the number of
+#: edge rows, and a historical row for the same object must not count twice.
+#: Params: brain_id, subject_entity_id, predicate.
+COUNT_ACTIVE_OBJECTS_SQL = """
+SELECT COUNT(DISTINCT object_entity_id)
+FROM kg_edges
+WHERE brain_id = %s
+  AND subject_entity_id = %s::uuid
+  AND predicate = %s
+  AND status = 'active'
+  AND invalid_at IS NULL
+"""

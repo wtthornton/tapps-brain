@@ -400,6 +400,166 @@ Routes through `MemoryStore.record_feedback()` as a generic `FeedbackEvent`. Any
 | **Inferred edge confidence cap** | When the recorder is invoked with `evidence_required=False` (an internal path), edge confidence is capped at 0.4. The MCP tool always treats your edges as agent-asserted; supply evidence accordingly. |
 | **Single-transaction atomicity** | One `brain_record_event` call is all-or-nothing. A bad `EdgeSpec` UUID rolls back the event itself — there are no orphan events. |
 | **Monthly-partitioned event log** | `experience_events` is range-partitioned (`event_time`); the recorder lets Postgres route rows. Pre-created partitions cover 2026-05 through 2027-04 plus a default. No agent action needed. |
+| **Predicate registry, open by default** (TAP-5508) | A project may declare a predicate's cardinality via `brain_register_predicate`. Unregistered predicates stay writable — the registry describes predicates, it does not own them. Projects opt into rejection with `kg.strict_predicates`. |
+
+### 7.1 Declaring predicate cardinality (TAP-5508)
+
+Predicates are free-form TEXT. That is fine for exploratory graphs and useless
+for ledger questions: you cannot ask "was this order refunded twice" when
+nothing declares that `refunded` is functional.
+
+`brain_register_predicate` records what a predicate means for your project:
+
+| Field | Meaning |
+|---|---|
+| `predicate` | The label, e.g. `refunded` |
+| `max_count` | Active objects one subject may hold. `0`/omitted = unbounded; `1` = functional edge |
+| `domain_type` | Optional `entity_type` the subject must be |
+| `range_type` | Optional `entity_type` the object must be |
+| `description` | Free text for humans reading the registry |
+
+`brain_list_predicates` returns the declarations; an empty registry is
+`{"count": 0, "predicates": []}`, not an error.
+
+REST equivalents: `POST /v1/kg/predicates:register` and
+`POST /v1/kg/predicates:list`.
+
+**Registration is descriptive today.** It does not retroactively validate
+existing edges, and nothing rejects a write yet — enforcement of `max_count` on
+the upsert path is TAP-5510. Declaring first means you can see what *would* be
+rejected before anything is.
+
+**Open by default.** An unregistered predicate stays legal. Existing graphs use
+free-form predicates, and a registry that rejected them on introduction would
+break every current writer to buy a guarantee nobody has asked for yet. Set
+`kg.strict_predicates: true` in the project profile to opt into rejection.
+
+Declarations are tenant-scoped under the same fail-closed RLS as `kg_edges`:
+one project can neither read nor overwrite another's.
+
+### 7.2 Checking before you write (TAP-5509)
+
+`brain_kg_check` (REST: `POST /v1/kg/check`) answers whether asserting an edge
+would violate a declared cardinality. Sections 3–5 are retrieval; this is a
+*decision*, meant to be asked before a side effect.
+
+Request: `subject_key`, `predicate`, optional `object_key`, and optional
+`subject_type` / `object_type` to disambiguate a name shared by several types.
+
+Response: `{ "decision": "allow"|"deny", "count", "max_count", "reason" }` —
+the count and the limit ride along so a caller can *explain* a refusal rather
+than just report one.
+
+| `reason` | Decision | Meaning |
+|---|---|---|
+| `predicate_not_registered` | allow | Nothing declared, nothing to enforce |
+| `predicate_unbounded` | allow | Registered with no `max_count` |
+| `subject_not_found` | allow | No edges exist, so no limit can be exceeded |
+| `edge_already_asserted` | allow | Re-asserting an existing edge adds no object |
+| `within_cardinality` | allow | Under the declared limit |
+| `cardinality_exceeded` | deny | At or over the declared limit |
+
+Three properties worth relying on:
+
+1. **Read-only.** Nothing is written, so it is safe to ask speculatively.
+2. **A `deny` is a `200`.** The question was answered successfully and the
+   answer was no. Non-2xx is reserved for malformed requests, which keeps
+   "I could not ask" distinguishable from "I asked, and the answer was no".
+3. **Ambiguity is never guessed.** A `subject_key` matching two entity types
+   returns `invalid_request` telling you to pass `subject_type` — guessing would
+   hand you a verdict about the wrong entity.
+
+### 7.3 Enforcement on write (TAP-5510)
+
+The check above is advisory on its own: an agent that skips it can still write
+the edge, so the ledger would guarantee nothing. `upsert_edge` therefore applies
+the same rule on the write path.
+
+**Declaring a `max_count` is the request to enforce it.** There is no separate
+enforcement switch — if you registered `refunded` with `max_count=1`, a second
+distinct object for the same subject is rejected with a `conflict` (409):
+
+```json
+{"error": "conflict",
+ "message": "predicate 'refunded' declares max_count=1; subject already holds 1 object(s), so this edge would exceed it"}
+```
+
+The error names the predicate, the limit, and the current count, because a
+rollback the caller cannot explain is a rollback they will simply retry.
+
+**Reinforcement is never blocked.** `upsert_edge` reinforces an existing
+`(subject, predicate, object)` triple and returns *before* the gate, so
+re-asserting an edge you already wrote always succeeds — even at the limit. It
+adds no object.
+
+**A violation rolls back the whole event.** The check runs on the same cursor as
+the insert, inside the caller's transaction. `brain_record_event` is already
+all-or-nothing, so a rejected edge leaves no partial event and no orphan
+entities — and no window where a concurrent writer could slip past a check that
+had already passed.
+
+| Mode | Unregistered predicate | Registered, no `max_count` | Registered with `max_count` |
+|---|---|---|---|
+| **open** (default) | allowed | allowed | enforced |
+| **strict** (`kg.strict_predicates: true`) | rejected | allowed | enforced |
+
+Strict mode is resolved from the project profile once per process and **fails
+open**: if the profile cannot be read, the project is treated as never having
+asked for strict mode. A config error should not start rejecting writes for a
+reason unrelated to what was written.
+
+No OWL or SHACL is involved — this is a counted ledger invariant, not a
+reasoner.
+
+### 7.4 The AF ledger contract — check, act, record (TAP-5511)
+
+For TAP-5501-style semantic firewalls. Three steps, in this order:
+
+```python
+# 1. ASK — read-only, safe before any side effect
+verdict = brain_kg_check(subject_key="order-1", predicate="refunded")
+
+# 2. ACT — or don't
+if verdict["decision"] == "deny":
+    refuse(verdict["reason"], verdict["count"], verdict["max_count"])
+else:
+    issue_refund("order-1")
+
+# 3. RECORD — both outcomes, always
+brain_record_event(
+    event_type=(
+        "semantic_validation_blocked"
+        if verdict["decision"] == "deny"
+        else "semantic_validation_allowed"
+    ),
+    subject_key="order-1",
+    payload={**verdict, "action": "issue_refund"},
+)
+```
+
+**Record the allows, not just the blocks.** Blocks alone make the denominator
+unknowable — a firewall that blocked 3 things is a very different system
+depending on whether it saw 4 actions or 40,000.
+
+**The check is advisory; the write path is authoritative.** Step 1 is a
+courtesy that lets you refuse cleanly with a reason. Even if a producer skips
+it, `upsert_edge` still enforces the same limit (§7.3) and returns a `conflict`.
+Treat a 409 on write as the same refusal arriving later — not as an unexpected
+error.
+
+**Do not cache a verdict across the action.** `allow` means "allow as of now".
+Another writer may consume the last slot in between; the write-path gate is what
+makes that safe, which is the reason it exists.
+
+**Brain runs no reasoner.** There is no OWL, SHACL, RDF, or inference engine
+anywhere in tapps-brain, and none is planned: cardinality here is a counted
+invariant over `kg_edges`, backed by a registry table and a `COUNT(DISTINCT …)`.
+Consumers that need description-logic entailment should own that themselves —
+brain deliberately does not become a semantic-web stack (TAP-5502, TAP-5501).
+
+Related: TAP-5501 (semantic tool firewall — domain ledger, not OWL core),
+TAP-5502 (KG ledger invariants for agent action checks). Event-type vocabulary:
+[`docs/engineering/experience-events.md`](../engineering/experience-events.md).
 
 ---
 

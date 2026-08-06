@@ -3189,6 +3189,189 @@ def create_app(
         )
         return _document_response(result)
 
+    # ------------------------------------------------------------------
+    # Gated learning routes (TAP-5542)
+    # ------------------------------------------------------------------
+
+    def _learning_response(result: dict[str, Any]) -> JSONResponse:
+        """Map a service result onto its HTTP status.
+
+        The status comes from the error taxonomy itself rather than a
+        route-local table, so ``not_found`` → 404 and ``conflict`` → 409 stay
+        correct without a second place to keep in sync.
+        """
+        error = result.get("error") if isinstance(result, dict) else None
+        if error is None:
+            return JSONResponse(status_code=200, content=result)
+        from tapps_brain.errors import ErrorCode, http_status
+
+        try:
+            status = http_status(ErrorCode(str(error)))
+        except ValueError:
+            status = 400
+        return JSONResponse(status_code=status, content=result)
+
+    @app.post("/v1/learning:promote", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learning_promote(request: Request) -> JSONResponse:
+        """Approve a learning so consumers may inject it.
+
+        Request body (JSON):
+          ``{ "key": str, "signal": "eval" | "human", "actor": str,
+              "evidence"?: str }``
+
+        ``signal`` is required and accepts nothing else: frequency does not
+        promote. Returns 404 when the key is unknown and 409 when the entry is
+        already approved.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_promote_learning,
+            store,
+            project_id,
+            agent_id,
+            key=str(body.get("key") or ""),
+            signal=str(body.get("signal") or ""),
+            actor=str(body.get("actor") or ""),
+            evidence=str(body.get("evidence") or ""),
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/learning:demote", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_learning_demote(request: Request) -> JSONResponse:
+        """Withdraw a learning's approval so it stops being injected.
+
+        Request body (JSON): ``{ "key": str, "reason": str }``.  Both are
+        required — a demotion nobody explained cannot be audited later.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_demote_learning,
+            store,
+            project_id,
+            agent_id,
+            key=str(body.get("key") or ""),
+            reason=str(body.get("reason") or ""),
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/recall:tool_paths", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_recall_tool_paths(request: Request) -> JSONResponse:
+        """Recall approved tool paths for a task type (TAP-5545).
+
+        Request body (JSON):
+          ``{ "task_type": str, "limit"?: int (1-50, default 5),
+              "learning_status"?: "approved" | "any", "min_confidence"?: float }``
+
+        Fail-closed: when nothing approved matches, this returns 200 with an
+        empty ``tool_paths`` list rather than a 404 or a downgrade to
+        candidates.  ``demoted`` entries are never returned.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        raw_min_confidence = body.get("min_confidence")
+        try:
+            limit = int(body.get("limit", 5))
+            min_confidence = float(raw_min_confidence) if raw_min_confidence is not None else None
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_request",
+                    "message": "limit must be an integer and min_confidence a number",
+                },
+            )
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_recall_tool_paths,
+            store,
+            project_id,
+            agent_id,
+            task_type=str(body.get("task_type") or ""),
+            limit=limit,
+            learning_status=str(body.get("learning_status") or "approved"),
+            min_confidence=min_confidence,
+        )
+        return _learning_response(result)
+
+    # ------------------------------------------------------------------
+    # Mission-scoped shared state routes (TAP-5544)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/mission/state:set", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_mission_state_set(request: Request) -> JSONResponse:
+        """Park a slot of mission-scoped shared state.
+
+        Request body (JSON):
+          ``{ "mission_id": str, "kind": "contract" | "findings" | "knowledge",
+              "value": object, "run_id"?: str }``
+
+        State is isolated per mission: two missions under one ``project_id``
+        cannot read each other.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_mission_state_set,
+            store,
+            project_id,
+            agent_id,
+            mission_id=str(body.get("mission_id") or ""),
+            kind=str(body.get("kind") or ""),
+            value=body.get("value"),
+            run_id=str(body.get("run_id") or ""),
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/mission/state:get", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_mission_state_get(request: Request) -> JSONResponse:
+        """Read back a slot of mission-scoped shared state.
+
+        Request body (JSON): ``{ "mission_id": str, "kind": str, "run_id"?: str }``
+
+        An unwritten slot is `200` with ``{"found": false, "value": null}``
+        rather than a `404` — "this mission has not parked its contract yet" is
+        a normal answer for a worker picking up a mission, not a failure.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_mission_state_get,
+            store,
+            project_id,
+            agent_id,
+            mission_id=str(body.get("mission_id") or ""),
+            kind=str(body.get("kind") or ""),
+            run_id=str(body.get("run_id") or ""),
+        )
+        return _learning_response(result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.
@@ -3589,6 +3772,122 @@ def create_app(
             if "event" in result:
                 content["event"] = result["event"]
         return JSONResponse(status_code=200, content=content)
+
+    # ------------------------------------------------------------------
+    # KG predicate registry (TAP-5508)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/kg/predicates:register", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_predicates_register(request: Request) -> JSONResponse:
+        """Declare what a KG predicate means for this project.
+
+        REST counterpart of the ``brain_register_predicate`` MCP tool.
+
+        Request body (JSON):
+          ``{ "predicate": str, "max_count"?: int|null, "domain_type"?: str,
+              "range_type"?: str, "description"?: str }``
+
+        ``max_count`` omitted or ``null`` means unbounded; ``1`` declares a
+        functional edge (``refunded`` may hold at most once per subject).
+
+        The registry is descriptive and open by default — registering does not
+        retroactively validate existing edges, and an unregistered predicate
+        stays writable unless the project sets ``kg.strict_predicates``.
+
+        Introduced in TAP-5508.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        body = await _parse_json_object_body(request)
+
+        raw_max = body.get("max_count")
+        try:
+            max_count = int(raw_max) if raw_max is not None else None
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_request",
+                    "message": "max_count must be an integer or null",
+                },
+            )
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.register_predicate,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            predicate=str(body.get("predicate") or ""),
+            max_count=max_count,
+            domain_type=str(body.get("domain_type") or ""),
+            range_type=str(body.get("range_type") or ""),
+            description=str(body.get("description") or ""),
+            registered_by=agent_id or "unknown",
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/kg/predicates:list", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_predicates_list(request: Request) -> JSONResponse:
+        """List the KG predicates declared for this project.
+
+        REST counterpart of the ``brain_list_predicates`` MCP tool. An empty
+        registry is ``{"count": 0, "predicates": []}`` with a 200 — a project
+        that has declared nothing is in the normal open-by-default state.
+
+        Introduced in TAP-5508.
+        """
+        project_id = _require_project_id(request)
+        _resolve_tenant_headers(request)
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(_kg_svc.list_predicates, cm, project_id, _kg_brain_id())
+        return JSONResponse(status_code=200, content=result)
+
+    @app.post("/v1/kg/check", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_kg_check(request: Request) -> JSONResponse:
+        """Check whether asserting an edge would violate declared cardinality.
+
+        REST counterpart of the ``brain_kg_check`` MCP tool — the check-before-write
+        a semantic firewall asks before committing a side effect.
+
+        Request body (JSON):
+          ``{ "subject_key": str, "predicate": str, "object_key"?: str,
+              "subject_type"?: str, "object_type"?: str }``
+
+        Response: ``{ "decision": "allow"|"deny", "count": int,
+        "max_count": int|null, "reason": str, ... }``
+
+        Read-only — nothing is written. A **deny** is a 200 carrying a verdict,
+        not a 4xx: the question was answered successfully and the answer was no.
+        Reserving non-2xx for malformed requests keeps "I could not ask"
+        distinguishable from "I asked, and the answer was no".
+
+        Introduced in TAP-5509.
+        """
+        project_id = _require_project_id(request)
+        _resolve_tenant_headers(request)
+        body = await _parse_json_object_body(request)
+
+        cm = _get_kg_cm_or_503()
+        from tapps_brain.services import kg_service as _kg_svc
+
+        result = await asyncio.to_thread(
+            _kg_svc.kg_check,
+            cm,
+            project_id,
+            _kg_brain_id(),
+            subject_key=str(body.get("subject_key") or ""),
+            predicate=str(body.get("predicate") or ""),
+            object_key=str(body.get("object_key") or ""),
+            subject_type=str(body.get("subject_type") or ""),
+            object_type=str(body.get("object_type") or ""),
+        )
+        return _learning_response(result)
 
     @app.post("/v1/kg/resolve_entity", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_resolve_entity(request: Request) -> JSONResponse:

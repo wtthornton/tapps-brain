@@ -68,6 +68,7 @@ class MemoryScope(StrEnum):
 
     project = "project"  # visible across the entire project
     branch = "branch"  # scoped to a git branch
+    mission = "mission"  # scoped to one mission (TAP-5544)
     ephemeral = "ephemeral"  # short-lived, momentary visibility
     session = "session"  # visible in the current session only
     shared = "shared"  # eligible for cross-project federation
@@ -80,6 +81,30 @@ class MemoryStatus(StrEnum):
     stale = "stale"  # known to be wrong/outdated; replacement not yet written
     superseded = "superseded"  # replaced by another entry (superseded_by points to it)
     archived = "archived"  # GC-archived
+
+
+class LearningStatus(StrEnum):
+    """Promotion status of a learning (TAP-5542).
+
+    A *trust* axis, independent of :class:`MemoryStatus`'s *lifecycle* axis:
+    an ``active`` row can be a ``candidate``, and an ``approved`` learning can
+    later go ``stale``.  See ``docs/engineering/gated-learning-contract.md``.
+    """
+
+    candidate = "candidate"  # agent-emitted, ungated; not eligible for injection
+    approved = "approved"  # passed an explicit eval/human gate; eligible
+    demoted = "demoted"  # was approved, then contradicted or decayed
+
+
+class PromotionSignal(StrEnum):
+    """What gated a promotion (TAP-5542).
+
+    Deliberately excludes anything frequency-derived: raising confidence or
+    access count must never promote.  Only an eval run or a human can.
+    """
+
+    eval = "eval"
+    human = "human"
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +165,13 @@ class MemoryEntry(BaseModel):
     )
     access_count: int = Field(default=0, ge=0, description="Read access count.")
     branch: str | None = Field(default=None, description="Git branch (required when scope=branch).")
+    # TAP-5544: mission scope companion fields, mirroring ``branch``/``scope=branch``.
+    mission_id: str | None = Field(
+        default=None, description="Mission identifier (required when scope=mission)."
+    )
+    run_id: str | None = Field(
+        default=None, description="Run within a mission; narrows mission-scoped state."
+    )
 
     # Memory Intelligence (Epic 24): reinforcement + contradiction tracking
     last_reinforced: str | None = Field(
@@ -305,6 +337,30 @@ class MemoryEntry(BaseModel):
         default=None,
         description="ISO-8601 UTC timestamp when status was set to 'stale'.",
     )
+    # TAP-5542: Promotion (trust) axis — orthogonal to ``status`` above.
+    # Frequency alone cannot approve: reinforce() must never move this field.
+    # Unrelated to *tier* promotion (EPIC-010, promotion.py), which moves
+    # ``tier`` on reinforcement and writes none of these columns.
+    learning_status: LearningStatus = Field(
+        default=LearningStatus.candidate,
+        description="Promotion status: candidate | approved | demoted.",
+    )
+    promoted_by: str | None = Field(
+        default=None,
+        description="Eval run id or human identifier that approved this learning.",
+    )
+    promoted_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp of the promotion.",
+    )
+    promotion_signal: PromotionSignal | None = Field(
+        default=None,
+        description="What gated the promotion: eval | human. Never frequency-derived.",
+    )
+    demotion_reason: str | None = Field(
+        default=None,
+        description="Why an approved learning was demoted (contradiction, decay, human call).",
+    )
     # TAP-733: Semantic type classification for pre-filter recall.
     memory_class: Literal["incident", "guidance", "decision", "convention"] | None = Field(
         default=None,
@@ -430,6 +486,14 @@ class MemoryEntry(BaseModel):
         # Branch required when scope=branch
         if self.scope == MemoryScope.branch and not self.branch:
             msg = "Branch name is required when scope is 'branch'."
+            raise ValueError(msg)
+
+        # Mission required when scope=mission (TAP-5544).  Without it the row
+        # is unreachable by the mission API and indistinguishable from another
+        # mission's state, so a mission-scoped entry with no mission is not a
+        # weaker record — it is an unowned one.
+        if self.scope == MemoryScope.mission and not self.mission_id:
+            msg = "mission_id is required when scope is 'mission'."
             raise ValueError(msg)
 
         # Temporal validation: invalid_at must be after valid_at.

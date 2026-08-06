@@ -270,6 +270,21 @@ class TestCoreTools:
             # Profile-scoped learned data (EPIC-075)
             "brain_profile_set",
             "brain_profile_get",
+            # Gated learning (TAP-5542)
+            "brain_promote_learning",
+            "brain_demote_learning",
+            # Approved-only tool-path recall (TAP-5545)
+            "brain_recall_tool_paths",
+            # Mission-scoped shared state (TAP-5544)
+            "brain_mission_state_set",
+            "brain_mission_state_get",
+            # Learning decay / demotion sweep (TAP-5547, operator-only)
+            "maintenance_decay_learnings",
+            # KG predicate registry (TAP-5508)
+            "brain_register_predicate",
+            "brain_list_predicates",
+            # KG ledger check (TAP-5509)
+            "brain_kg_check",
             # Docs lookup (Context7 + llms.txt cache)
             "docs_lookup",
             "docs_warm",

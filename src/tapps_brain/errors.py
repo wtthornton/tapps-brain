@@ -17,6 +17,7 @@ Error codes and retry semantics
 | project_not_registered      | 403    | -32002     | retry-never        |
 | invalid_request             | 400    | -32600     | retry-never        |
 | idempotency_conflict        | 409    | -32009     | retry-never        |
+| conflict                    | 409    | -32010     | retry-never        |
 | not_found                   | 404    | -32004     | retry-never        |
 | internal_error              | 500    | -32500     | retry-safe-once    |
 +-----------------------------+--------+------------+--------------------+
@@ -72,6 +73,10 @@ class ErrorCode(StrEnum):
     PROJECT_NOT_REGISTERED = "project_not_registered"
     INVALID_REQUEST = "invalid_request"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    CONFLICT = "conflict"
+    """Request contradicts the resource's current state (e.g. promoting an
+    already-approved learning).  Distinct from ``idempotency_conflict``, which
+    is about replaying a key, not about the resource."""
     NOT_FOUND = "not_found"
     INTERNAL_ERROR = "internal_error"
 
@@ -102,6 +107,7 @@ _TAXONOMY: dict[ErrorCode, tuple[int, int, RetryPolicy]] = {
     ErrorCode.PROJECT_NOT_REGISTERED: (403, -32002, RetryPolicy.RETRY_NEVER),
     ErrorCode.INVALID_REQUEST: (400, -32600, RetryPolicy.RETRY_NEVER),
     ErrorCode.IDEMPOTENCY_CONFLICT: (409, -32009, RetryPolicy.RETRY_NEVER),
+    ErrorCode.CONFLICT: (409, -32010, RetryPolicy.RETRY_NEVER),
     ErrorCode.NOT_FOUND: (404, -32004, RetryPolicy.RETRY_NEVER),
     ErrorCode.INTERNAL_ERROR: (500, -32500, RetryPolicy.RETRY_SAFE_ONCE),
 }
@@ -298,6 +304,16 @@ class IdempotencyConflictError(TaxonomyError, TappsBrainValidationError):
     error_code = ErrorCode.IDEMPOTENCY_CONFLICT
 
 
+class ConflictError(TaxonomyError, TappsBrainValidationError):
+    """The request contradicts the resource's current state (409).
+
+    Raised for state conflicts the caller can only resolve by changing the
+    request — e.g. promoting a learning that is already ``approved``.
+    """
+
+    error_code = ErrorCode.CONFLICT
+
+
 class NotFoundError(TaxonomyError, TappsBrainNotFoundError):
     """The requested resource does not exist (404)."""
 
@@ -321,6 +337,7 @@ EXCEPTION_BY_CODE: dict[ErrorCode, type[TaxonomyError]] = {
     ErrorCode.PROJECT_NOT_REGISTERED: ProjectNotFoundError,
     ErrorCode.INVALID_REQUEST: InvalidRequestError,
     ErrorCode.IDEMPOTENCY_CONFLICT: IdempotencyConflictError,
+    ErrorCode.CONFLICT: ConflictError,
     ErrorCode.NOT_FOUND: NotFoundError,
     ErrorCode.INTERNAL_ERROR: InternalError,
 }

@@ -23,11 +23,13 @@ import structlog
 
 from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain.models import (
+    LearningStatus,
     MemoryEntry,
     MemoryScope,
     MemorySource,
     MemoryStatus,
     MemoryTier,
+    PromotionSignal,
 )
 from tapps_brain.visual_snapshot import (
     _TOP_TAGS_LIMIT,
@@ -379,6 +381,13 @@ class PostgresPrivateBackend:
         in ``migrations/private/001_initial.sql``.  Results are ranked by
         ``ts_rank``.
 
+        TAP-5677: when the AND-semantics ``plainto_tsquery`` pass matches
+        nothing and the query has two or more distinct tokens, the search is
+        retried once with OR semantics (``to_tsquery`` over the sanitized
+        token set) so natural-language queries degrade to partial-token
+        matches instead of returning nothing.  Queries that match on the
+        first pass are unaffected.
+
         Args:
             query: Plain-text search query (passed to ``plainto_tsquery``).
             memory_group: Restrict results to a project-local group.
@@ -413,9 +422,37 @@ class PostgresPrivateBackend:
         with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
+            col_names = [desc[0] for desc in cur.description] if rows else []
+
+            # TAP-5677 stage 2: plainto_tsquery ANDs every token, so a
+            # multi-word natural-language query with one non-matching term
+            # returns nothing.  Retry once with OR semantics before giving up.
             if not rows:
-                return []
-            col_names = [desc[0] for desc in cur.description]
+                or_query = _sql.build_or_tsquery(query)
+                if or_query is None:
+                    return []
+                or_sql, _ = _sql.build_search_sql(
+                    memory_group=memory_group,
+                    since=since,
+                    until=until,
+                    time_field=time_field,
+                    memory_class=memory_class,
+                    as_of=as_of,
+                    include_expired=include_expired,
+                    match_any=True,
+                )
+                or_params: list[Any] = [
+                    or_query,
+                    self._project_id,
+                    self._agent_id,
+                    or_query,
+                    *extra_params,
+                ]
+                cur.execute(or_sql, or_params)
+                rows = cur.fetchall()
+                if not rows:
+                    return []
+                col_names = [desc[0] for desc in cur.description]
 
         results = []
         for row in rows:
@@ -1081,6 +1118,23 @@ class PostgresPrivateBackend:
         except ValueError:
             mem_status = MemoryStatus.active
 
+        # TAP-5542: promotion status.  An unreadable value falls back to
+        # ``candidate``, never ``approved`` — a row whose trust state cannot be
+        # parsed has not demonstrably passed a gate.
+        try:
+            learning_status = LearningStatus(str(row.get("learning_status") or "candidate"))
+        except ValueError:
+            learning_status = LearningStatus.candidate
+
+        try:
+            promotion_signal = (
+                PromotionSignal(str(row["promotion_signal"]))
+                if row.get("promotion_signal") is not None
+                else None
+            )
+        except ValueError:
+            promotion_signal = None
+
         return MemoryEntry(
             key=str(row["key"]),
             value=str(row["value"]),
@@ -1097,6 +1151,8 @@ class PostgresPrivateBackend:
             useful_access_count=int(row.get("useful_access_count", 0)),
             total_access_count=int(row.get("total_access_count", 0)),
             branch=_str_or_none(row.get("branch")),
+            mission_id=_str_or_none(row.get("mission_id")),
+            run_id=_str_or_none(row.get("run_id")),
             last_reinforced=_iso_or_none(row.get("last_reinforced")),
             reinforce_count=int(row.get("reinforce_count", 0)),
             contradicted=bool(row.get("contradicted", False)),
@@ -1128,6 +1184,11 @@ class PostgresPrivateBackend:
             status=mem_status,
             stale_reason=_str_or_none(row.get("stale_reason")),
             stale_date=_iso_or_none(row.get("stale_date")),
+            learning_status=learning_status,
+            promoted_by=_str_or_none(row.get("promoted_by")),
+            promoted_at=_iso_or_none(row.get("promoted_at")),
+            promotion_signal=promotion_signal,
+            demotion_reason=_str_or_none(row.get("demotion_reason")),
             memory_class=cast(
                 "Literal['incident', 'guidance', 'decision', 'convention'] | None",
                 _str_or_none(row.get("memory_class")),

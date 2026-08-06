@@ -180,3 +180,36 @@ class TestSearch:
             assert not any(e.key == "other-entry" for e in results)
         finally:
             other.close()
+
+
+class TestSearchOrFallback:
+    """TAP-5677: OR-retry when the plainto_tsquery AND pass matches nothing."""
+
+    def test_partial_token_overlap_returns_entry(self, backend: Any) -> None:
+        backend.save(_make_entry("or-k1", "postgres retrieval design notes"))
+        results = backend.search("postgres kangaroo zeppelin")
+        assert [e.key for e in results] == ["or-k1"]
+
+    def test_and_match_takes_precedence_no_dilution(self, backend: Any) -> None:
+        backend.save(_make_entry("and-k1", "alpha bravo shared"))
+        backend.save(_make_entry("and-k2", "alpha charlie other"))
+        # AND pass matches and-k1 only; the OR retry must not run and pull in and-k2.
+        results = backend.search("alpha bravo")
+        assert [e.key for e in results] == ["and-k1"]
+
+    def test_single_unknown_token_still_empty(self, backend: Any) -> None:
+        backend.save(_make_entry("or-k2", "ordinary content"))
+        assert backend.search("kangaroo") == []
+
+    def test_or_retry_stays_agent_scoped(self, backend: Any) -> None:
+        other = _make_backend(_unique_project(), _unique_agent())
+        try:
+            other.save(_make_entry("or-other", "kangaroo zeppelin content"))
+            assert backend.search("kangaroo zeppelin") == []
+        finally:
+            other.close()
+
+    def test_stopword_only_query_returns_empty(self, backend: Any) -> None:
+        backend.save(_make_entry("or-k3", "ordinary content"))
+        # Both tokens are English stopwords: OR tsquery normalizes to empty.
+        assert backend.search("the of") == []

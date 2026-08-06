@@ -294,3 +294,162 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             ),
             default=str,
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_promote_learning(
+        key: str,
+        signal: str,
+        actor: str,
+        evidence: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Approve a learning so it becomes eligible for injection (TAP-5542).
+
+        ``signal`` must be ``"eval"`` (an eval run validated it) or ``"human"``
+        (a person signed off). Frequency is not a signal: reinforcing a memory
+        raises its confidence but never promotes it, because a learning that is
+        merely frequent is not thereby correct.
+
+        ``actor`` is the eval run id or human identifier and is required.
+        ``evidence`` is optional free text recorded in the audit log.
+
+        Returns ``{"error": "conflict"}`` when the entry is already approved and
+        ``{"error": "not_found"}`` when the key is unknown.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_promote_learning(
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                signal=signal,
+                actor=actor,
+                evidence=evidence,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_demote_learning(
+        key: str,
+        reason: str,
+        agent_id: str = "",
+    ) -> str:
+        """Withdraw a learning's approval so it stops being injected (TAP-5542).
+
+        ``reason`` is required and stored on the entry. The promotion
+        provenance is kept, so an audit can still see which approval was
+        withdrawn.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_demote_learning(
+                s,
+                _pid(),
+                eff_aid,
+                key=key,
+                reason=reason,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_recall_tool_paths(
+        task_type: str,
+        limit: int = 5,
+        learning_status: str = "approved",
+        min_confidence: float | None = None,
+        agent_id: str = "",
+    ) -> str:
+        """Recall approved tool paths for a task type (TAP-5545).
+
+        Returns only learnings that passed an explicit promotion gate and carry
+        a ``fleet:learning`` or ``tool:*`` tag. When nothing approved matches,
+        the answer is an empty list — never a fallback to candidates, because a
+        caller that asked for validated learnings and silently got unvetted ones
+        cannot tell the difference.
+
+        ``learning_status="any"`` opts into candidates for diagnostics;
+        ``demoted`` entries are never returned.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_recall_tool_paths(
+                s,
+                _pid(),
+                eff_aid,
+                task_type=task_type,
+                limit=limit,
+                learning_status=learning_status,
+                min_confidence=min_confidence,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_mission_state_set(
+        mission_id: str,
+        kind: str,
+        value_json: str,
+        run_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Park mission-scoped shared state (TAP-5544).
+
+        Lets a fresh worker pick up a mission without inheriting another
+        agent's trajectory. ``kind`` is one of ``contract`` / ``findings`` /
+        ``knowledge``; ``value_json`` is a JSON-encoded payload. ``run_id``
+        narrows the slot to one run within the mission.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        try:
+            value = json.loads(value_json)
+        except (TypeError, ValueError) as exc:
+            return json.dumps(
+                {"error": "invalid_request", "message": f"value_json must be JSON: {exc}"}
+            )
+        return json.dumps(
+            memory_service.brain_mission_state_set(
+                s,
+                _pid(),
+                eff_aid,
+                mission_id=mission_id,
+                kind=kind,
+                value=value,
+                run_id=run_id,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_mission_state_get(
+        mission_id: str,
+        kind: str,
+        run_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Read back mission-scoped shared state (TAP-5544).
+
+        Returns ``{"found": false, "value": null}`` when the mission has not
+        written that slot yet — a normal answer for a worker picking up a
+        mission, not an error. State belonging to another mission is never
+        returned.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_mission_state_get(
+                s,
+                _pid(),
+                eff_aid,
+                mission_id=mission_id,
+                kind=kind,
+                run_id=run_id,
+            ),
+            default=str,
+        )

@@ -5,12 +5,25 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (76 tools, all eager) — default fallback; full tools/list surface
-#   operator    (89 tools, all eager) — full + operator-only maintenance tools
-#   coder       (21 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
+#   full        (84 tools, all eager) — default fallback; full tools/list surface
+#   operator    (98 tools, all eager) — full + operator-only maintenance tools
+#   coder       (23 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (16 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (24 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#
+# TAP-5542 note: the learning promote/demote tools are deliberately absent from
+# `coder`. A coding agent approving its own learnings is the gate approving
+# itself — promotion belongs to an eval run or a human.
+#
+# TAP-5545 note: `brain_recall_tool_paths` IS in `coder` — reading approved tool
+# paths is the consumption side of that gate, not the approval side. It is
+# absent from `reviewer`, which reviews diffs and has no routing decision to make.
+#
+# TAP-5544 note: the mission-state tools sit in `full`, `operator` and
+# `agent_brain` — missions are an orchestration concept owned by the agents that
+# run them. A repo-embedded `coder` works a task, not a mission, so adding them
+# there would widen the surface for a caller with nothing to park.
 #
 # defer_loading (TAP-1985) is disabled in the Docker reference stack so every
 # registered tool appears in the default tools/list response. Re-enable per-tool
@@ -28,19 +41,27 @@ profiles:
       - agent_list
       - agent_register
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_export
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status
@@ -110,19 +131,27 @@ profiles:
       - agent_list
       - agent_register
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_export
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status
@@ -152,6 +181,7 @@ profiles:
       - hive_wait_write
       - hive_write_revision
       - maintenance_consolidate
+      - maintenance_decay_learnings
       - maintenance_gc
       - maintenance_stale
       - memory_audit
@@ -206,12 +236,14 @@ profiles:
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
       - brain_profile_get
       - brain_profile_set
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_events_batch
       - brain_remember
       - brain_status
@@ -257,18 +289,26 @@ profiles:
       experience query and profile-scoped KV helpers.
     tools:
       - brain_audit_consumers
+      - brain_demote_learning
       - brain_explain_connection
       - brain_forget
       - brain_get_neighbors
+      - brain_kg_check
       - brain_learn_failure
       - brain_learn_success
+      - brain_list_predicates
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
+      - brain_promote_learning
       - brain_query_events
       - brain_recall
+      - brain_recall_tool_paths
       - brain_record_event
       - brain_record_events_batch
       - brain_record_feedback
+      - brain_register_predicate
       - brain_remember
       - brain_resolve_entity
       - brain_status

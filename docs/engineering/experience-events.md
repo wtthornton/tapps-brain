@@ -46,6 +46,38 @@ Well-known types used by the tapps-brain toolchain:
 | `quality_metric` | TappsMCP tool-call quality score emitted after `tapps_score_file` / `tapps_quick_check`. |
 | `quality_gate_fail` | Quality gate rejected a file; captures preset, score, and blocking findings. |
 | `checklist_outcome` | End-of-task checklist result (`complete` / missing required tools). |
+| `semantic_validation_allowed` | A semantic-firewall check passed and the action proceeded (TAP-5511). |
+| `semantic_validation_blocked` | A semantic-firewall check denied an action before it ran (TAP-5511). |
+
+### `semantic_validation_*` — the firewall vocabulary (TAP-5511)
+
+Producers of TAP-5501-style semantic firewalls emit **both** outcomes under this
+single pair of event types, so one query answers "what did the firewall do"
+without a union across per-producer names:
+
+```python
+brain_query_events(event_type="semantic_validation_blocked", limit=50)
+```
+
+Record the allows as well as the blocks. Blocks alone make the denominator
+unknowable — a firewall that blocked 3 things is a very different system
+depending on whether it saw 4 actions or 40,000.
+
+Recommended payload, mirroring the `/v1/kg/check` response so the verdict and
+the record agree field-for-field:
+
+```json
+{"decision": "deny", "reason": "cardinality_exceeded",
+ "predicate": "refunded", "subject_key": "order-1",
+ "count": 1, "max_count": 1, "action": "issue_refund"}
+```
+
+Set the event's `subject_key` to the entity the action targeted — that is the
+column `brain_query_events` filters on, so a per-subject audit ("has anything
+been blocked against this order?") stays a single indexed query.
+
+See [`docs/guides/knowledge-graph.md`](../guides/knowledge-graph.md) §7.4 for the
+full producer contract.
 
 ---
 

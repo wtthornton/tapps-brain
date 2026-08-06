@@ -62,6 +62,27 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
         )
 
     @mcp.tool()  # type: ignore[untyped-decorator]
+    def maintenance_decay_learnings(dry_run: bool = False) -> str:
+        """Demote unvalidated and contradicted learnings (TAP-5547).
+
+        Demotes an approved learning that has been contradicted, and a candidate
+        that has either decayed below the confidence floor or gone unvalidated
+        past the staleness threshold. Thresholds live in
+        ``profile.learning_decay``.
+
+        This is not GC: nothing is archived or deleted, and promotion provenance
+        is kept so an audit can still see which approval was withdrawn. What
+        changes is eligibility — a demoted learning stops being returned by
+        ``brain_recall_tool_paths`` under any ``learning_status``.
+        """
+        _require_operator_enabled()
+        return json.dumps(
+            maintenance_service.maintenance_decay_learnings(
+                store, _pid(), agent_id, dry_run=dry_run
+            )
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
     def maintenance_stale() -> str:
         """List GC stale memory candidates with reasons (read-only; GitHub #21)."""
         _require_operator_enabled()

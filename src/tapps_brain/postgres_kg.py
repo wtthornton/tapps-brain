@@ -128,6 +128,12 @@ class PostgresKnowledgeGraphStore:
             ``ValueError`` if no *evidence_id* is supplied.  When ``False``,
             the inferred path is used and edge confidence is capped at
             :data:`_INFERRED_CONFIDENCE_CAP`.
+        strict_predicates: When ``True``, :meth:`upsert_edge` rejects a
+            predicate that is not in the ``kg_predicates`` registry (TAP-5508).
+            Defaults to ``False`` — the registry is open by default, and a
+            project opts in via ``kg.strict_predicates`` in its profile.
+            Registered ``max_count`` limits are enforced regardless of this
+            flag: declaring a cardinality *is* the request to enforce it.
     """
 
     def __init__(
@@ -137,11 +143,13 @@ class PostgresKnowledgeGraphStore:
         project_id: str,
         brain_id: str,
         evidence_required: bool = True,
+        strict_predicates: bool = False,
     ) -> None:
         self._cm = connection_manager
         self._project_id = project_id
         self._brain_id = brain_id
         self._evidence_required = evidence_required
+        self._strict_predicates = strict_predicates
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -278,6 +286,13 @@ class PostgresKnowledgeGraphStore:
                     (new_s, new_d, edge_id, self._brain_id),
                 )
             else:
+                # TAP-5510: a NEW object for this (subject, predicate) is the
+                # only case that can breach cardinality. Reinforcement returns
+                # above without reaching here, so an idempotent re-assert is
+                # never blocked. Run on THIS cursor so the check and the insert
+                # share one transaction — a violation rolls the whole experience
+                # write back rather than leaving a partially-applied event.
+                self._assert_cardinality_allows(cur, subject_entity_id, predicate)
                 # Insert new edge.
                 cur.execute(
                     _sql.INSERT_EDGE_SQL,
@@ -873,3 +888,208 @@ class PostgresKnowledgeGraphStore:
         )
         config = DecayConfig()
         return update_stability(adapter, config, was_useful)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Predicate registry (TAP-5508)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _predicate_row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
+        """Shape one ``kg_predicates`` row for the wire.
+
+        Column order matches ``UPSERT_PREDICATE_SQL`` / ``LIST_PREDICATES_SQL`` /
+        ``GET_PREDICATE_SQL``, which deliberately select the same list so one
+        mapper serves all three.
+        """
+        return {
+            "id": str(row[0]),
+            "predicate": row[1],
+            "max_count": int(row[2]) if row[2] is not None else None,
+            "domain_type": row[3],
+            "range_type": row[4],
+            "description": row[5],
+            "registered_by": row[6],
+            "created_at": row[7].isoformat() if row[7] is not None else None,
+            "updated_at": row[8].isoformat() if row[8] is not None else None,
+        }
+
+    def register_predicate(
+        self,
+        *,
+        predicate: str,
+        max_count: int | None = None,
+        domain_type: str | None = None,
+        range_type: str | None = None,
+        description: str | None = None,
+        registered_by: str = "unknown",
+    ) -> dict[str, Any]:
+        """Declare what a predicate means for this project (TAP-5508).
+
+        Re-registering an existing predicate updates it in place. The registry
+        describes predicates; it does not own them — an unregistered predicate
+        stays writable, and nothing here rejects an edge. TAP-5510 enforces
+        ``max_count`` on the write path.
+
+        Args:
+            predicate: The predicate label, e.g. ``refunded``.
+            max_count: Active objects one subject may hold for this predicate.
+                ``None`` means unbounded; ``1`` declares a functional edge.
+            domain_type: Optional ``kg_entities.entity_type`` for the subject.
+            range_type: Optional ``kg_entities.entity_type`` for the object.
+            description: Free text for humans reading the registry.
+            registered_by: Who declared it.
+
+        Returns:
+            The stored declaration.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.UPSERT_PREDICATE_SQL,
+                (
+                    self._project_id,
+                    self._brain_id,
+                    self._project_id,
+                    predicate,
+                    max_count,
+                    domain_type,
+                    range_type,
+                    description,
+                    registered_by,
+                ),
+            )
+            row = cur.fetchone()
+
+        logger.info(
+            "kg.predicate.registered",
+            predicate=predicate,
+            max_count=max_count,
+            brain_id=self._brain_id,
+        )
+        return self._predicate_row_to_dict(row)
+
+    def list_predicates(self) -> list[dict[str, Any]]:
+        """Return every predicate declaration for this brain, ordered by name."""
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.LIST_PREDICATES_SQL, (self._project_id, self._brain_id))
+            rows = cur.fetchall()
+        return [self._predicate_row_to_dict(r) for r in rows]
+
+    def get_predicate(self, predicate: str) -> dict[str, Any] | None:
+        """Return one predicate declaration, or ``None`` when unregistered.
+
+        ``None`` is the normal answer for a free-form predicate, not an error —
+        the registry is open by default.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.GET_PREDICATE_SQL,
+                (self._project_id, self._brain_id, predicate),
+            )
+            row = cur.fetchone()
+        return self._predicate_row_to_dict(row) if row is not None else None
+
+    # ------------------------------------------------------------------
+    # Ledger check (TAP-5509)
+    # ------------------------------------------------------------------
+
+    def find_entities_by_name(self, canonical_name: str) -> list[dict[str, Any]]:
+        """Return active entities matching *canonical_name* across all types.
+
+        Returns every match rather than picking one: a bare name that resolves
+        to two types is ambiguous input the caller has to disambiguate, not a
+        coin the store should flip.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(_sql.FIND_ENTITIES_BY_NAME_SQL, (self._brain_id, canonical_name))
+            rows = cur.fetchall()
+        return [{"entity_id": str(r[0]), "entity_type": r[1], "canonical_name": r[2]} for r in rows]
+
+    def count_active_objects(self, *, subject_entity_id: str, predicate: str) -> int:
+        """Return how many DISTINCT objects *subject* holds for *predicate*.
+
+        Distinct objects, not edge rows — cardinality bounds how many things a
+        subject points at, and counting rows would let one object with a
+        historical duplicate consume two slots.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.COUNT_ACTIVE_OBJECTS_SQL,
+                (self._brain_id, subject_entity_id, predicate),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def active_edge_exists(
+        self, *, subject_entity_id: str, predicate: str, object_entity_id: str
+    ) -> bool:
+        """Return whether this exact triple is already active.
+
+        Re-asserting an existing edge does not add an object, so it must not be
+        denied by a cardinality check that is already at its limit.
+        """
+        with self._scoped_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                _sql.GET_ACTIVE_EDGE_SQL,
+                (self._brain_id, subject_entity_id, predicate, object_entity_id),
+            )
+            return cur.fetchone() is not None
+
+    # ------------------------------------------------------------------
+    # Cardinality enforcement on write (TAP-5510)
+    # ------------------------------------------------------------------
+
+    def _assert_cardinality_allows(self, cur: Any, subject_entity_id: str, predicate: str) -> None:
+        """Raise when a NEW edge would breach the predicate's declared limit.
+
+        Runs on the caller's cursor so the check and the insert share one
+        transaction: without that, a check that passed could be invalidated by a
+        concurrent writer before the insert landed, and the violation would be
+        committed anyway.
+
+        Only reached for genuinely new (subject, predicate, object) triples —
+        :meth:`upsert_edge` reinforces an existing edge and returns before this
+        point, so re-asserting never counts as a new edge (TAP-5510 AC2).
+
+        A check API without this would be advisory only: an agent could bypass
+        the ledger by writing edges directly and never calling ``kg_check``.
+
+        Raises:
+            ConflictError: The predicate is unregistered under strict mode, or
+                the subject already holds ``max_count`` objects for it.
+        """
+        from tapps_brain.errors import ConflictError
+
+        cur.execute(
+            _sql.GET_PREDICATE_SQL,
+            (self._project_id, self._brain_id, predicate),
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            if self._strict_predicates:
+                msg = (
+                    f"predicate {predicate!r} is not registered and this project "
+                    f"runs in strict mode; register it first"
+                )
+                raise ConflictError(msg)
+            return
+
+        # GET_PREDICATE_SQL column order: [0]=id [1]=predicate [2]=max_count
+        max_count = row[2]
+        if max_count is None:
+            return
+
+        cur.execute(
+            _sql.COUNT_ACTIVE_OBJECTS_SQL,
+            (self._brain_id, subject_entity_id, predicate),
+        )
+        count_row = cur.fetchone()
+        count = int(count_row[0]) if count_row and count_row[0] is not None else 0
+
+        if count >= int(max_count):
+            msg = (
+                f"predicate {predicate!r} declares max_count={int(max_count)}; "
+                f"subject already holds {count} object(s), so this edge would "
+                f"exceed it"
+            )
+            raise ConflictError(msg)

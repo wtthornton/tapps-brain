@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.29.0
+- Version: 3.30.0
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -48,14 +48,16 @@
 - `llms.txt`
 - `docs/DOCUMENTATION_INDEX.md`
 - `docs/GITHUB_SETUP_GUIDE.md`
+- `docs/MEMORY_REFERENCE.md`
 - `docs/ONBOARDING.md`
-- `docs/RALPH_SETUP_GUIDE.md`
 - `docs/api-reference.md`
 - `docs/benchmarks/README.md`
 - `docs/benchmarks/locomo.md`
 - `docs/benchmarks/longmemeval.md`
 - `docs/case-studies/README.md`
 - `docs/case-studies/TEMPLATE.md`
+- `docs/cross-project/PROMPT-brain-remember-write-loss.RESPONSE.md`
+- `docs/cross-project/PROMPT-brain-similarity-supersede-across-keys.RESPONSE.md`
 - `docs/design/nlt-brand/README.md`
 - `docs/engineering/README.md`
 - `docs/engineering/async-performance.md`
@@ -65,21 +67,20 @@
 - `docs/engineering/diagrams.md`
 - `docs/engineering/experience-events.md`
 - `docs/engineering/features-and-technologies.md`
-- `docs/engineering/optional-features-matrix.md`
-- `docs/engineering/partition-retention.md`
-- ... and 228 more
+- ... and 275 more
 
 ## API Summary
 
-- Packages: 11
-- Modules: 115
-- Public API symbols: 699
+- Packages: 12
+- Modules: 141
+- Public API symbols: 860
 
 ## Project Structure
 
 ```
 .coverage
 .cursorignore
+.docker-last-migrate-sha
 .docsmcp.yaml
 .env
 .env.example
@@ -87,7 +88,6 @@
 .gitattributes
 .gitignore
 .mcp.json
-.ralphrc
 .tapps-mcp.yaml
 AGENTS.md
 CHANGELOG.md
@@ -98,6 +98,7 @@ Makefile
 README.md
 SECURITY.md
 TECH_STACK.md
+brain-eval-reports/
 config/
 docker/
 docker-compose.yml
@@ -107,6 +108,5 @@ llms-full.txt
 llms.txt
 package-lock.json
 package.json
-packages/
-... and 8 more
+... and 9 more
 ```

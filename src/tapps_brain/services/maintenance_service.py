@@ -36,6 +36,22 @@ def maintenance_consolidate(
     return result.to_dict()
 
 
+def maintenance_decay_learnings(
+    store: Any, project_id: str, agent_id: str, *, dry_run: bool = False
+) -> dict[str, Any]:
+    """Demote unvalidated and contradicted learnings (TAP-5547).
+
+    Separate from ``maintenance_gc`` on purpose: GC decides what to *archive*,
+    this decides what is still *injectable*. A learning can stop being
+    trustworthy long before it is stale enough to remove, and conflating the two
+    would tie the trust decision to the retention schedule.
+    """
+    result: dict[str, Any] = store.decay_learnings(dry_run=dry_run)
+    if dry_run:
+        result["candidates"] = len(result.get("demoted_keys", []))
+    return result
+
+
 def maintenance_gc(
     store: Any, project_id: str, agent_id: str, *, dry_run: bool = False
 ) -> dict[str, Any]:

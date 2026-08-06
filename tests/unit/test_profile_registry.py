@@ -48,12 +48,13 @@ class TestBundledProfiles:
         # Sorted
         assert names == sorted(names)
 
-    def test_get_full_returns_76_tools(self) -> None:
+    def test_get_full_returns_84_tools(self) -> None:
         # EPIC-075 added brain_query_events, brain_record_events_batch,
         # brain_record_feedback to full (+3 over TAP-2725 baseline).
+        # TAP-5542 added brain_promote_learning, brain_demote_learning (+2).
         reg = ProfileRegistry()
         tools = reg.get("full")
-        assert len(tools) == 76
+        assert len(tools) == 84
         # Spot-check key tools
         assert "brain_recall" in tools
         assert "brain_remember" in tools
@@ -68,11 +69,12 @@ class TestBundledProfiles:
         assert "memory_export" not in tools
         assert "flywheel_evaluate" not in tools
 
-    def test_get_operator_returns_82_tools(self) -> None:
+    def test_get_operator_returns_98_tools(self) -> None:
         # EPIC-075: +3 experience/feedback tools in operator superset.
+        # TAP-5542: +2 gated-learning tools.
         reg = ProfileRegistry()
         tools = reg.get("operator")
-        assert len(tools) == 89
+        assert len(tools) == 98
         # Operator-only tools must be present
         assert "maintenance_consolidate" in tools
         assert "tapps_brain_health" in tools
@@ -128,11 +130,15 @@ class TestBundledProfiles:
         assert "brain_get_neighbors" in coder
         assert "brain_explain_connection" in coder
 
-    def test_get_coder_tool_count_is_21(self) -> None:
-        """Pin the coder profile size at 21 tools (v3.24 +3 experience/profile KV)."""
+    def test_get_coder_tool_count_is_23(self) -> None:
+        """Pin the coder profile size at 23 tools.
+
+        v3.24 added 3 experience/profile KV tools; TAP-5545 added
+        ``brain_recall_tool_paths``; TAP-5509 added ``brain_kg_check`` (+1 each).
+        """
         reg = ProfileRegistry()
         coder = reg.get("coder")
-        assert len(coder) == 21, sorted(coder)
+        assert len(coder) == 23, sorted(coder)
 
     def test_coder_description_calls_out_kg_discovery_tools(self) -> None:
         """TAP-2006: description must surface the discovery primitives by name.
@@ -217,11 +223,11 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
-    def test_get_agent_brain_returns_16_tools(self) -> None:
+    def test_get_agent_brain_returns_24_tools(self) -> None:
         """TAP-1579 + v3.24: agent_brain exposes brain_* facade + experience/profile KV."""
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        assert len(agent_brain) == 16
+        assert len(agent_brain) == 24
         assert "brain_record_events_batch" in agent_brain
         assert "brain_audit_consumers" in agent_brain
 
@@ -374,7 +380,7 @@ class TestValidateAgainst:
         content = "\n".join(p.read_text() for p in tool_files)
         pattern = r"@mcp\.tool\(\)[^\n]*\n\s+(?:async )?def ([a-z_]+)\("
         all_tools = frozenset(re.findall(pattern, content))
-        assert len(all_tools) == 89, f"Expected 89 tools, found {len(all_tools)}"
+        assert len(all_tools) == 98, f"Expected 98 tools, found {len(all_tools)}"
 
         reg = ProfileRegistry()
         # Should not raise
@@ -448,7 +454,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("full")
         eager = reg.get("full") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 76
+        assert len(eager) == 84
 
     def test_bundled_full_eager_set_matches_callable_surface(self) -> None:
         """All callable tools in `full` appear in tools/list by default."""
@@ -462,7 +468,7 @@ class TestDeferredTools:
         deferred = reg.get_deferred("operator")
         eager = reg.get("operator") - deferred
         assert len(deferred) == 0
-        assert len(eager) == 89
+        assert len(eager) == 98
 
     def test_bundled_operator_eager_matches_callable_surface(self) -> None:
         """All callable tools in `operator` appear in tools/list by default."""

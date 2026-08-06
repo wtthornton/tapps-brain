@@ -36,6 +36,14 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/forget": "brain_forget",
     "/v1/learn_success": "brain_learn_success",
     "/v1/learn_failure": "brain_learn_failure",
+    # Gated learning (TAP-5542)
+    "/v1/learning:promote": "brain_promote_learning",
+    "/v1/learning:demote": "brain_demote_learning",
+    # Approved-only tool-path recall (TAP-5545)
+    "/v1/recall:tool_paths": "brain_recall_tool_paths",
+    # Mission-scoped shared state (TAP-5544)
+    "/v1/mission/state:set": "brain_mission_state_set",
+    "/v1/mission/state:get": "brain_mission_state_get",
     # Memory layer
     "/v1/reinforce": "memory_reinforce",
     "/v1/remember:batch": "memory_save_many",
@@ -50,6 +58,11 @@ REST_ROUTE_TO_TOOL: dict[str, str] = {
     "/v1/kg/neighbors": "brain_get_neighbors",
     "/v1/kg/explain": "brain_explain_connection",
     "/v1/kg/feedback": "brain_record_feedback",
+    # KG predicate registry (TAP-5508)
+    "/v1/kg/predicates:register": "brain_register_predicate",
+    "/v1/kg/predicates:list": "brain_list_predicates",
+    # Ledger check (TAP-5509)
+    "/v1/kg/check": "brain_kg_check",
     "/v1/kg/resolve_entity": "brain_resolve_entity",  # TAP-2725
     "/v1/kg/resolve_entities": "brain_resolve_entity",  # TAP-3249 — same tool, batch
     # Document plane (TAP-4998 / TAP-5003)

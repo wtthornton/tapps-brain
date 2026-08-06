@@ -182,7 +182,7 @@
     "description": "HTTP + MCP contract for the tapps-brain memory service (ADR-007 Postgres-only, ADR-010 multi-tenant project_id).\n\n**Transport.**  REST data plane (``/v1/*``, ``/snapshot``, ``/info``) and admin plane (``/admin/*``) use bearer-token auth; the MCP transport at ``/mcp`` uses the same data-plane token plus ``X-Project-Id``.\n\n**Tenancy.**  Every data-plane and MCP request must carry ``X-Project-Id`` (ADR-010); ``X-Agent-Id`` is optional and defaults to ``\"unknown\"``.\n\n**Errors.**  All error responses share the envelope ``{\"error\": <taxonomy_code>, \"detail\": <text>}``; see ``tapps_brain.errors`` for the canonical code list.",
     "title": "tapps-brain HTTP API",
     "version": "3.29.0",
-    "x-schema-version": 29
+    "x-schema-version": 32
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1583,6 +1583,59 @@
         "summary": " V1 Forget"
       }
     },
+    "/v1/kg/check": {
+      "post": {
+        "description": "Check whether asserting an edge would violate declared cardinality.\n\nREST counterpart of the ``brain_kg_check`` MCP tool \u2014 the check-before-write\na semantic firewall asks before committing a side effect.\n\nRequest body (JSON):\n  ``{ \"subject_key\": str, \"predicate\": str, \"object_key\"?: str,\n      \"subject_type\"?: str, \"object_type\"?: str }``\n\nResponse: ``{ \"decision\": \"allow\"|\"deny\", \"count\": int,\n\"max_count\": int|null, \"reason\": str, ... }``\n\nRead-only \u2014 nothing is written. A **deny** is a 200 carrying a verdict,\nnot a 4xx: the question was answered successfully and the answer was no.\nReserving non-2xx for malformed requests keeps \"I could not ask\"\ndistinguishable from \"I asked, and the answer was no\".\n\nIntroduced in TAP-5509.",
+        "operationId": "_v1_kg_check_v1_kg_check_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Check"
+      }
+    },
     "/v1/kg/explain": {
       "post": {
         "description": "Find the shortest path between two KG entities.\n\nREST counterpart of the ``brain_explain_connection`` MCP tool.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional): agent identifier.\n\nRequest body (JSON):\n  ``{ \"subject_id\": str, \"object_id\": str, \"max_hops\"?: int=3 }``\n\nResponse: ``{ \"found\": bool, \"hops\": int|null, \"path\": [...],\n\"subject_id\": str, \"object_id\": str }``",
@@ -1740,6 +1793,112 @@
           }
         ],
         "summary": " V1 Kg Neighbors"
+      }
+    },
+    "/v1/kg/predicates:list": {
+      "post": {
+        "description": "List the KG predicates declared for this project.\n\nREST counterpart of the ``brain_list_predicates`` MCP tool. An empty\nregistry is ``{\"count\": 0, \"predicates\": []}`` with a 200 \u2014 a project\nthat has declared nothing is in the normal open-by-default state.\n\nIntroduced in TAP-5508.",
+        "operationId": "_v1_kg_predicates_list_v1_kg_predicates_list_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Predicates List"
+      }
+    },
+    "/v1/kg/predicates:register": {
+      "post": {
+        "description": "Declare what a KG predicate means for this project.\n\nREST counterpart of the ``brain_register_predicate`` MCP tool.\n\nRequest body (JSON):\n  ``{ \"predicate\": str, \"max_count\"?: int|null, \"domain_type\"?: str,\n      \"range_type\"?: str, \"description\"?: str }``\n\n``max_count`` omitted or ``null`` means unbounded; ``1`` declares a\nfunctional edge (``refunded`` may hold at most once per subject).\n\nThe registry is descriptive and open by default \u2014 registering does not\nretroactively validate existing edges, and an unregistered predicate\nstays writable unless the project sets ``kg.strict_predicates``.\n\nIntroduced in TAP-5508.",
+        "operationId": "_v1_kg_predicates_register_v1_kg_predicates_register_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Kg Predicates Register"
       }
     },
     "/v1/kg/resolve_entities": {
@@ -1960,6 +2119,218 @@
         "summary": " V1 Learn Success"
       }
     },
+    "/v1/learning:demote": {
+      "post": {
+        "description": "Withdraw a learning's approval so it stops being injected.\n\nRequest body (JSON): ``{ \"key\": str, \"reason\": str }``.  Both are\nrequired \u2014 a demotion nobody explained cannot be audited later.",
+        "operationId": "_v1_learning_demote_v1_learning_demote_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Learning Demote"
+      }
+    },
+    "/v1/learning:promote": {
+      "post": {
+        "description": "Approve a learning so consumers may inject it.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"signal\": \"eval\" | \"human\", \"actor\": str,\n      \"evidence\"?: str }``\n\n``signal`` is required and accepts nothing else: frequency does not\npromote. Returns 404 when the key is unknown and 409 when the entry is\nalready approved.",
+        "operationId": "_v1_learning_promote_v1_learning_promote_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Learning Promote"
+      }
+    },
+    "/v1/mission/state:get": {
+      "post": {
+        "description": "Read back a slot of mission-scoped shared state.\n\nRequest body (JSON): ``{ \"mission_id\": str, \"kind\": str, \"run_id\"?: str }``\n\nAn unwritten slot is `200` with ``{\"found\": false, \"value\": null}``\nrather than a `404` \u2014 \"this mission has not parked its contract yet\" is\na normal answer for a worker picking up a mission, not a failure.",
+        "operationId": "_v1_mission_state_get_v1_mission_state_get_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Mission State Get"
+      }
+    },
+    "/v1/mission/state:set": {
+      "post": {
+        "description": "Park a slot of mission-scoped shared state.\n\nRequest body (JSON):\n  ``{ \"mission_id\": str, \"kind\": \"contract\" | \"findings\" | \"knowledge\",\n      \"value\": object, \"run_id\"?: str }``\n\nState is isolated per mission: two missions under one ``project_id``\ncannot read each other.",
+        "operationId": "_v1_mission_state_set_v1_mission_state_set_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Mission State Set"
+      }
+    },
     "/v1/profile/data:get": {
       "post": {
         "description": "Read profile-scoped learned KV (REST counterpart of ``brain_profile_get``).",
@@ -2172,6 +2543,59 @@
         "summary": " V1 Recall Batch"
       }
     },
+    "/v1/recall:tool_paths": {
+      "post": {
+        "description": "Recall approved tool paths for a task type (TAP-5545).\n\nRequest body (JSON):\n  ``{ \"task_type\": str, \"limit\"?: int (1-50, default 5),\n      \"learning_status\"?: \"approved\" | \"any\", \"min_confidence\"?: float }``\n\nFail-closed: when nothing approved matches, this returns 200 with an\nempty ``tool_paths`` list rather than a 404 or a downgrade to\ncandidates.  ``demoted`` entries are never returned.",
+        "operationId": "_v1_recall_tool_paths_v1_recall_tool_paths_post",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/XAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/XTappsAgent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing/malformed Authorization header."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": " V1 Recall Tool Paths"
+      }
+    },
     "/v1/reinforce": {
       "post": {
         "description": "Reinforce an existing memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"confidence_boost\"?: float }``",
@@ -2296,7 +2720,7 @@
     },
     "/v1/remember": {
       "post": {
-        "description": "Save a memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"value\": str, \"tier\"?: str, \"source\"?: str,\n      \"tags\"?: list[str], \"scope\"?: str, \"confidence\"?: float,\n      \"agent_scope\"?: str, \"group\"?: str }``\n\nResponse (200) \u2014 read ``status``, do not assume 200 means persisted:\n  - ``{\"status\": \"saved\", \"key\": <the requested key>, ...}`` \u2014 durable.\n  - ``{\"status\": \"coalesced\", \"persisted\": false,\n    \"coalesced_into\": <other key>, ...}`` \u2014 folded onto another row;\n    the requested key does not exist (TAP-5617).\n  - optional ``\"invalidated\": [<key>, ...]`` \u2014 entries whose validity\n    interval this save closed, removing them from recall.",
+        "description": "Save a memory entry.\n\nAccepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.\nA duplicate key within 24 h replays the original response.\n\nRequest headers:\n  - ``X-Project-Id`` (required): project identifier.\n  - ``X-Agent-Id`` (optional, default ``\"unknown\"``): agent identifier.\n  - ``X-Idempotency-Key`` (optional): idempotency UUID.\n\nRequest body (JSON):\n  ``{ \"key\": str, \"value\": str, \"tier\"?: str, \"source\"?: str,\n      \"tags\"?: list[str], \"scope\"?: str, \"confidence\"?: float,\n      \"agent_scope\"?: str, \"group\"?: str }``\n\nResponse (200) \u2014 read ``status``, do not assume 200 means persisted:\n  - ``{\"status\": \"saved\", \"key\": <the requested key>, ...}`` \u2014 durable.\n  - ``{\"status\": \"coalesced\", \"persisted\": false,\n    \"coalesced_into\": <other key>, ...}`` \u2014 folded onto another row;\n    the requested key does not exist (TAP-5617).\n  - optional ``\"invalidated\": [<key>, ...]`` \u2014 entries whose validity\n    interval this save closed, removing them from recall.\n  - optional ``\"invalidated_detail\": [{\"key\", \"similarity\", \"tier\",\n    \"threshold\"}, ...]`` \u2014 the similarity that triggered each\n    invalidation and the threshold it cleared, so the line can be tuned\n    from real traffic rather than guessed at.\n\nInvalidations you did not want are usually a threshold question rather\nthan a defect.  Supersede fires within a tier above the\n``conflict_check`` similarity threshold, which is tunable **per\nproject** via ``conflict_check.per_tier`` \u2014 one project's tuning does\nnot affect any other (see\n``docs/guides/per-project-profile-overrides.md``).  For a key-space of\nindependent facts, where no neighbour should win, pass\n``\"supersede\": \"key-scoped\"`` on the save instead.",
         "operationId": "_v1_remember_v1_remember_post",
         "parameters": [
           {
