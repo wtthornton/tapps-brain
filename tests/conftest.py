@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -12,10 +13,24 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-# sentence-transformers is not installed in the test environment.
-# MemoryStore() auto-detects this via get_embedding_provider() which returns
-# None when sentence-transformers is unavailable. Tests that need embeddings
-# pass their own provider explicitly.
+# Cap native thread pools before anything imports torch (pulled in by
+# sentence-transformers via the _cached_embedding_model fixture below).
+# Without caps, every pytest-xdist worker sizes its OpenMP/BLAS intra-op pool
+# to the machine's core count, so `-n 4` on a 20-core box runs ~80 compute
+# threads and pegs every core. Parallelism comes from xdist workers, not from
+# per-worker BLAS pools. setdefault leaves an escape hatch for deliberate
+# full-thread runs, e.g. `OMP_NUM_THREADS=20 pytest tests/benchmarks ...`.
+# Keep this above any top-level import that could transitively load torch.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+# sentence-transformers is a core dependency (pyproject) and is normally
+# installed; _cached_embedding_model below then shares one loaded model per
+# pytest process. In minimal environments without it, get_embedding_provider()
+# returns None and MemoryStore() runs without embeddings — tests that need
+# embeddings pass their own provider explicitly.
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -79,7 +94,13 @@ def _cached_embedding_model():
         yield
         return
 
+    import torch
+
     import tapps_brain.embeddings as _emb
+
+    # Belt-and-braces alongside the module-level OMP/BLAS env caps: keep each
+    # xdist worker's torch intra-op pool at a single thread.
+    torch.set_num_threads(1)
 
     _original = _emb.get_embedding_provider
     _provider = _emb.SentenceTransformerProvider()
