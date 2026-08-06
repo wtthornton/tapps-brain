@@ -3310,6 +3310,68 @@ def create_app(
         )
         return _learning_response(result)
 
+    # ------------------------------------------------------------------
+    # Mission-scoped shared state routes (TAP-5544)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/mission/state:set", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_mission_state_set(request: Request) -> JSONResponse:
+        """Park a slot of mission-scoped shared state.
+
+        Request body (JSON):
+          ``{ "mission_id": str, "kind": "contract" | "findings" | "knowledge",
+              "value": object, "run_id"?: str }``
+
+        State is isolated per mission: two missions under one ``project_id``
+        cannot read each other.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_mission_state_set,
+            store,
+            project_id,
+            agent_id,
+            mission_id=str(body.get("mission_id") or ""),
+            kind=str(body.get("kind") or ""),
+            value=body.get("value"),
+            run_id=str(body.get("run_id") or ""),
+        )
+        return _learning_response(result)
+
+    @app.post("/v1/mission/state:get", dependencies=[Depends(require_data_plane_auth)])
+    async def _v1_mission_state_get(request: Request) -> JSONResponse:
+        """Read back a slot of mission-scoped shared state.
+
+        Request body (JSON): ``{ "mission_id": str, "kind": str, "run_id"?: str }``
+
+        An unwritten slot is `200` with ``{"found": false, "value": null}``
+        rather than a `404` — "this mission has not parked its contract yet" is
+        a normal answer for a worker picking up a mission, not a failure.
+        """
+        project_id = _require_project_id(request)
+        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        store = _get_tenant_store_or_503(project_id, agent_id)
+        body = await _parse_json_object_body(request)
+
+        from tapps_brain.services import memory_service as _mem_svc
+
+        result = await asyncio.to_thread(
+            _mem_svc.brain_mission_state_get,
+            store,
+            project_id,
+            agent_id,
+            mission_id=str(body.get("mission_id") or ""),
+            kind=str(body.get("kind") or ""),
+            run_id=str(body.get("run_id") or ""),
+        )
+        return _learning_response(result)
+
     @app.post("/v1/kg/neighbors", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_kg_neighbors(request: Request) -> JSONResponse:
         """Return the neighbourhood graph around one or more KG entities.

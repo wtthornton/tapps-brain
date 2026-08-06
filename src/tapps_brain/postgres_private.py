@@ -1116,6 +1116,8 @@ class PostgresPrivateBackend:
             useful_access_count=int(row.get("useful_access_count", 0)),
             total_access_count=int(row.get("total_access_count", 0)),
             branch=_str_or_none(row.get("branch")),
+            mission_id=_str_or_none(row.get("mission_id")),
+            run_id=_str_or_none(row.get("run_id")),
             last_reinforced=_iso_or_none(row.get("last_reinforced")),
             reinforce_count=int(row.get("reinforce_count", 0)),
             contradicted=bool(row.get("contradicted", False)),

@@ -47,6 +47,14 @@ Promote/demote are absent from the `coder` MCP profile by design — a coding ag
 
 It is **fail-closed**: when nothing approved matches, the answer is `200` with `count: 0` and an empty list, never a `404` and never a downgrade to candidates, because a caller that asked for validated learnings and silently received unvetted ones cannot tell the difference. `learning_status: "any"` opts into candidates for diagnostics; `demoted` entries are never returned under any setting. Unlike promote/demote, this tool **is** in the `coder` profile — reading approved paths is consumption, not approval.
 
+## Mission scope
+
+`MemoryScope.mission` (migration 031) scopes an entry to one mission, following the same shape as `scope=branch`: a scope value plus a companion field (`mission_id`) that is required when that scope is set. `run_id` optionally narrows to one run within the mission.
+
+`brain_mission_state_set` / `brain_mission_state_get` (MCP) and `POST /v1/mission/state:set` / `:get` park and read the mission's `contract`, `findings`, or `knowledge` so a fresh worker can pick up an in-flight mission without inheriting another agent's trajectory.
+
+**Two missions under one `project_id` cannot read each other.** The key is mission-namespaced (`mission.<mission_id>[.<run_id>].<kind>`) *and* the entry's `mission_id` is re-checked after the read, so a forged key still misses. RLS gates on `project_id` only, so it cannot supply this on its own. An unwritten slot is `200` with `{"found": false}` — not a `404`, since "nothing parked yet" is normal for a worker starting a mission.
+
 ## Agent-facing API (`AgentBrain`)
 
 Simplified 5-method facade in `src/tapps_brain/agent_brain.py`:

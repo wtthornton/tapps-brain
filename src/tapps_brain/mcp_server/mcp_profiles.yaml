@@ -5,12 +5,12 @@
 # src/tapps_brain/mcp_server/__init__.py.
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
-#   full        (79 tools, all eager) — default fallback; full tools/list surface
-#   operator    (92 tools, all eager) — full + operator-only maintenance tools
+#   full        (81 tools, all eager) — default fallback; full tools/list surface
+#   operator    (94 tools, all eager) — full + operator-only maintenance tools
 #   coder       (22 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (19 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (21 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # TAP-5542 note: the learning promote/demote tools are deliberately absent from
 # `coder`. A coding agent approving its own learnings is the gate approving
@@ -19,6 +19,11 @@
 # TAP-5545 note: `brain_recall_tool_paths` IS in `coder` — reading approved tool
 # paths is the consumption side of that gate, not the approval side. It is
 # absent from `reviewer`, which reviews diffs and has no routing decision to make.
+#
+# TAP-5544 note: the mission-state tools sit in `full`, `operator` and
+# `agent_brain` — missions are an orchestration concept owned by the agents that
+# run them. A repo-embedded `coder` works a task, not a mission, so adding them
+# there would widen the surface for a caller with nothing to park.
 #
 # defer_loading (TAP-1985) is disabled in the Docker reference stack so every
 # registered tool appears in the default tools/list response. Re-enable per-tool
@@ -43,6 +48,8 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
       - brain_promote_learning
@@ -128,6 +135,8 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
       - brain_promote_learning
@@ -278,6 +287,8 @@ profiles:
       - brain_get_neighbors
       - brain_learn_failure
       - brain_learn_success
+      - brain_mission_state_get
+      - brain_mission_state_set
       - brain_profile_get
       - brain_profile_set
       - brain_promote_learning

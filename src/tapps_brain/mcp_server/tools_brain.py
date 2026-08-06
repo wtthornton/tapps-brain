@@ -389,3 +389,67 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             ),
             default=str,
         )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_mission_state_set(
+        mission_id: str,
+        kind: str,
+        value_json: str,
+        run_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Park mission-scoped shared state (TAP-5544).
+
+        Lets a fresh worker pick up a mission without inheriting another
+        agent's trajectory. ``kind`` is one of ``contract`` / ``findings`` /
+        ``knowledge``; ``value_json`` is a JSON-encoded payload. ``run_id``
+        narrows the slot to one run within the mission.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        try:
+            value = json.loads(value_json)
+        except (TypeError, ValueError) as exc:
+            return json.dumps(
+                {"error": "invalid_request", "message": f"value_json must be JSON: {exc}"}
+            )
+        return json.dumps(
+            memory_service.brain_mission_state_set(
+                s,
+                _pid(),
+                eff_aid,
+                mission_id=mission_id,
+                kind=kind,
+                value=value,
+                run_id=run_id,
+            ),
+            default=str,
+        )
+
+    @mcp.tool()  # type: ignore[untyped-decorator]
+    def brain_mission_state_get(
+        mission_id: str,
+        kind: str,
+        run_id: str = "",
+        agent_id: str = "",
+    ) -> str:
+        """Read back mission-scoped shared state (TAP-5544).
+
+        Returns ``{"found": false, "value": null}`` when the mission has not
+        written that slot yet — a normal answer for a worker picking up a
+        mission, not an error. State belonging to another mission is never
+        returned.
+        """
+        eff_aid = _rpc(agent_id, default=_server_aid)
+        s = _resolve(agent_id)
+        return json.dumps(
+            memory_service.brain_mission_state_get(
+                s,
+                _pid(),
+                eff_aid,
+                mission_id=mission_id,
+                kind=kind,
+                run_id=run_id,
+            ),
+            default=str,
+        )

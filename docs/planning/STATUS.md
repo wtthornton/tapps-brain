@@ -34,7 +34,7 @@ All durable stores are **PostgreSQL** (ADR-007; SQLite removed in v3.4.0). Schem
 - **Migration 004:** diagnostics history table.
 - **Migration 005:** `audit_log` table (replaces `memory_log.jsonl`).
 - **Migration 006:** GC archive table.
-- **Migrations 007–028:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`), gated-learning promotion axis (`030`). Current max private migration: **030**.
+- **Migrations 007–028:** flywheel meta, project profiles, RLS, idempotency keys, per-tenant auth, KG tables (`016`–`021`), partitioned `experience_events` (`020`/`022`), experience query index (`023`), profile-scoped learned KV (`024`), KG entities tenant unique (`025`), renumbered `memory_class`/`memory_status` (`026`/`027`), document plane (`028`), idempotency keys scoped by operation (`029`), gated-learning promotion axis (`030`), mission scope (`031`). Current max private migration: **031**.
 - **Federation:** PostgreSQL (`TAPPS_BRAIN_FEDERATION_DSN`) — `federated_memories` carries optional publisher `memory_group` (GitHub **#51** / EPIC-041); see `docs/guides/federation.md`.
 - **Hive:** PostgreSQL (`TAPPS_BRAIN_HIVE_DSN`) — pgvector + tsvector + `LISTEN/NOTIFY`; namespace-aware schema.
 
