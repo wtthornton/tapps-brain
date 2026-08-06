@@ -4243,6 +4243,114 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 _rs_pin = getattr(_sfc, "ruleset_version", None)
         return prof_name, seed_ver, resolve_safety_ruleset_version(_rs_pin)
 
+    def decay_learnings(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """Demote learnings whose promotion state no longer holds (TAP-5547).
+
+        Three rules, tuned by ``profile.learning_decay``: an approved entry that
+        has been contradicted is demoted; a candidate whose decayed confidence
+        fell below the floor is demoted; a candidate nobody promoted within
+        ``candidate_stale_days`` is demoted.
+
+        Demotion is not deletion and not archival. The entry keeps its promotion
+        provenance so an audit of a bad injection can still see which approval
+        was withdrawn — GC remains the only thing that archives rows. What
+        changes is eligibility: a demoted learning stops being returned by
+        ``brain_recall_tool_paths`` under any ``learning_status``.
+
+        Args:
+            dry_run: Identify demotions without writing them.
+
+        Returns:
+            ``{"demoted_count", "demoted_keys", "reason_counts", "dry_run",
+            "enabled"}``.
+        """
+        from datetime import UTC, datetime
+
+        from tapps_brain.decay import identify_learning_demotions
+        from tapps_brain.exceptions import TappsBrainError
+
+        learning_config = (
+            getattr(self._profile, "learning_decay", None) if self._profile is not None else None
+        )
+        if learning_config is None:
+            from tapps_brain.profile import LearningDecayConfig
+
+            learning_config = LearningDecayConfig()
+
+        if not getattr(learning_config, "enabled", True):
+            return {
+                "demoted_count": 0,
+                "demoted_keys": [],
+                "reason_counts": {},
+                "dry_run": dry_run,
+                "enabled": False,
+            }
+
+        self._metrics.increment("store.learning.decay")
+        # Include durable overflow: a candidate the cold-start cache never
+        # hydrated is one this sweep could otherwise never demote.
+        self._merge_durable_entries(allow_over_cap=True)
+        with self._serialized():
+            entries = list(self._entries.values())
+
+        demotions = identify_learning_demotions(
+            entries,
+            self._get_decay_config(),
+            learning_config,
+            now=datetime.now(tz=UTC),
+        )
+
+        reason_counts: dict[str, int] = {}
+        for demotion in demotions:
+            reason_counts[demotion.reason_code] = reason_counts.get(demotion.reason_code, 0) + 1
+
+        if dry_run:
+            return {
+                "demoted_count": 0,
+                "demoted_keys": [d.key for d in demotions],
+                "reason_counts": reason_counts,
+                "dry_run": True,
+                "enabled": True,
+            }
+
+        demoted_keys: list[str] = []
+        for demotion in demotions:
+            try:
+                self.demote_learning(demotion.key, reason=demotion.reason)
+            except TappsBrainError as exc:
+                # A key that vanished between the scan and the write is a normal
+                # race, not a failed sweep — skip it and keep going rather than
+                # abandoning the remaining demotions.
+                logger.info(
+                    "learning_decay.skip",
+                    key=demotion.key,
+                    reason_code=demotion.reason_code,
+                    error=str(exc),
+                )
+                continue
+            demoted_keys.append(demotion.key)
+
+        applied_counts: dict[str, int] = {}
+        for demotion in demotions:
+            if demotion.key in demoted_keys:
+                applied_counts[demotion.reason_code] = (
+                    applied_counts.get(demotion.reason_code, 0) + 1
+                )
+
+        self._metrics.increment("store.learning.decay.demoted", len(demoted_keys))
+        logger.info(
+            "learning_decay_swept",
+            demoted=len(demoted_keys),
+            reason_counts=applied_counts,
+        )
+        return {
+            "demoted_count": len(demoted_keys),
+            "demoted_keys": demoted_keys,
+            "reason_counts": applied_counts,
+            "dry_run": False,
+            "enabled": True,
+        }
+
     def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
 

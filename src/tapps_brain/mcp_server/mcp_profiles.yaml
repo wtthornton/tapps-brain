@@ -6,7 +6,7 @@
 #
 # Profile summary (Docker full-promotion stack, 2026-08):
 #   full        (81 tools, all eager) — default fallback; full tools/list surface
-#   operator    (94 tools, all eager) — full + operator-only maintenance tools
+#   operator    (95 tools, all eager) — full + operator-only maintenance tools
 #   coder       (22 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
@@ -175,6 +175,7 @@ profiles:
       - hive_wait_write
       - hive_write_revision
       - maintenance_consolidate
+      - maintenance_decay_learnings
       - maintenance_gc
       - maintenance_stale
       - memory_audit

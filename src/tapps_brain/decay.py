@@ -553,3 +553,129 @@ def decay_config_from_profile(profile: object) -> DecayConfig:
         layer_decay_k=layer_decay_k,
         layer_importance_tags=layer_importance_tags,
     )
+
+
+# ---------------------------------------------------------------------------
+# Learning demotion (TAP-5547)
+# ---------------------------------------------------------------------------
+
+#: Reason codes written to ``demotion_reason``. Stable strings, because
+#: operators grep them and dashboards group by them.
+DEMOTE_REASON_UNVALIDATED = "unvalidated"
+DEMOTE_REASON_DECAYED = "decayed"
+DEMOTE_REASON_CONTRADICTED = "contradicted"
+
+
+class LearningDemotion(BaseModel):
+    """One entry the decay sweep judges no longer injectable."""
+
+    key: str
+    from_status: str
+    reason_code: str
+    reason: str = Field(description="Human-readable text written to demotion_reason.")
+
+
+def identify_learning_demotions(
+    entries: list[MemoryEntry],
+    config: DecayConfig,
+    learning_config: object,
+    *,
+    now: datetime | None = None,
+) -> list[LearningDemotion]:
+    """Return the learnings whose promotion state no longer holds (TAP-5547).
+
+    Pure and deterministic — it decides, it does not write. The caller applies
+    the demotions, which keeps this testable without a store and keeps the
+    dry-run path honest (the same list is reported and applied).
+
+    Three rules, in priority order per entry:
+
+    1. An ``approved`` entry that is marked contradicted is demoted. An approval
+       that survives its own contradiction is worse than no gate at all, because
+       consumers trust it specifically *because* it is approved.
+    2. A ``candidate`` whose decayed confidence has fallen below the floor is
+       demoted — the evidence for it has aged out.
+    3. A ``candidate`` nobody promoted within ``candidate_stale_days`` is
+       demoted. A learning that sat unvalidated for a quarter is not pending
+       review, it is abandoned.
+
+    ``demoted`` entries are skipped: demotion is idempotent, and re-demoting
+    would rewrite the original reason with a less specific one.
+    """
+    from tapps_brain.models import LearningStatus
+
+    enabled = bool(getattr(learning_config, "enabled", True))
+    if not enabled:
+        return []
+
+    floor = float(getattr(learning_config, "candidate_confidence_floor", 0.25))
+    stale_days = int(getattr(learning_config, "candidate_stale_days", 90))
+    demote_contradicted = bool(getattr(learning_config, "demote_contradicted_approved", True))
+    moment = now or datetime.now(tz=UTC)
+
+    demotions: list[LearningDemotion] = []
+    for entry in entries:
+        status = getattr(entry, "learning_status", None)
+        if status is None or status == LearningStatus.demoted:
+            continue
+
+        if status == LearningStatus.approved:
+            if demote_contradicted and getattr(entry, "contradicted", False):
+                detail = getattr(entry, "contradiction_reason", None) or "no reason recorded"
+                demotions.append(
+                    LearningDemotion(
+                        key=entry.key,
+                        from_status=str(status),
+                        reason_code=DEMOTE_REASON_CONTRADICTED,
+                        reason=f"approved learning was contradicted: {detail}",
+                    )
+                )
+            continue
+
+        # Remaining case: candidate.
+        decayed = calculate_decayed_confidence(entry, config, now=moment)
+        if decayed < floor:
+            demotions.append(
+                LearningDemotion(
+                    key=entry.key,
+                    from_status=str(status),
+                    reason_code=DEMOTE_REASON_DECAYED,
+                    reason=(
+                        f"candidate confidence decayed to {decayed:.2f}, "
+                        f"below the {floor:.2f} floor"
+                    ),
+                )
+            )
+            continue
+
+        age_days = _days_since_last_update(entry, moment)
+        if age_days is not None and age_days >= stale_days:
+            demotions.append(
+                LearningDemotion(
+                    key=entry.key,
+                    from_status=str(status),
+                    reason_code=DEMOTE_REASON_UNVALIDATED,
+                    reason=(
+                        f"candidate went unvalidated for {age_days:.0f} days "
+                        f"(threshold {stale_days})"
+                    ),
+                )
+            )
+
+    return demotions
+
+
+def _days_since_last_update(entry: MemoryEntry, moment: datetime) -> float | None:
+    """Return days since *entry* was last updated, or None if unparseable."""
+    from tapps_brain.models import _parse_iso
+
+    stamp = getattr(entry, "updated_at", None) or getattr(entry, "created_at", None)
+    if not stamp:
+        return None
+    try:
+        parsed = _parse_iso(stamp)
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return (moment - parsed).total_seconds() / 86400.0
