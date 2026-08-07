@@ -1350,8 +1350,15 @@ class MemoryRetriever:
                     sim = 1.0 / (1.0 + max(0.0, float(dist)))
                     scored_knn.append((key, sim))
                 scored_knn.sort(key=lambda x: x[1], reverse=True)
-                # Only pay the per-row hydrate when something actually filters.
-                if memory_group is not None or not include_contradicted:
+                # Only ``memory_group`` filters here.  Contradicted rows are NOT
+                # dropped in this channel: ``_ensure_entry_cached`` is a per-row
+                # ``load_one`` round-trip on a cache miss, so filtering here costs
+                # one pooled connection per candidate — enough to exhaust the pool
+                # under concurrent recall (max_size=10, max_waiting=20).
+                # ``_filter_candidates_to_pending`` is the authoritative
+                # contradicted filter and runs on every channel, so dropping them
+                # here would buy only top-k slot utilisation at that price.
+                if memory_group is not None:
                     filtered: list[tuple[str, float]] = []
                     for k, s in scored_knn:
                         # Read-only hydrate — do not use get() (mutates access_count).
@@ -1366,13 +1373,8 @@ class MemoryRetriever:
                                 entry = None
                         elif hasattr(store, "_entries"):
                             entry = store._entries.get(k)
-                        if entry is None:
-                            continue
-                        if memory_group is not None and entry.memory_group != memory_group:
-                            continue
-                        if entry.contradicted and not include_contradicted:
-                            continue
-                        filtered.append((k, s))
+                        if entry is not None and entry.memory_group == memory_group:
+                            filtered.append((k, s))
                     scored_knn = filtered
                 return scored_knn[:limit]
         else:
