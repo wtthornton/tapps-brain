@@ -12,6 +12,10 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.31.0] — 2026-08-06
+
+Minor release: auto-consolidation no longer replaces full-bodied memory entries with a truncated summary. Minor rather than patch because it adds new public surface — the `skip_consolidation` and `include_sources` tool parameters, the `consolidation.exempt_tiers` profile setting, and the document plane on the `coder` and `agent_brain` profiles — and because it materially narrows when consolidation fires. No migrations; nothing removed.
+
 ### Fixed
 
 - **Auto-consolidation replaced full-bodied entries with a truncated summary** — three ~3.7k-char `architectural` entries sharing tags were merged on the third save, and the merge kept only the newest value plus at most two sentence fragments per older source, capped at 4096 chars. The sources were then marked `contradicted` with `superseded_by`, so the originals vanished from recall and the truncated blob inherited the most durable tier's 180-day half-life.
