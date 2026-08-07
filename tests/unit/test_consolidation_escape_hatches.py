@@ -215,3 +215,137 @@ class TestBrainRecallIncludeSources:
             for r in json.loads(recall(query="JWT signing", max_results=10, include_sources=True))
         ]
         assert "jwt-signing-expired" not in keys
+
+
+class TestBrainRecallIncludeContradicted:
+    """TAP-5783 — the save-conflict flag reaches ``brain_recall``."""
+
+    def _seed_conflict_victim(self, store: MemoryStore) -> str:
+        """Persist an entry invalidated the way save-time conflict detection does.
+
+        Unlike a consolidation source this carries no ``invalid_at`` and no
+        ``superseded_by`` — only the ``contradicted`` flag.
+        """
+        from tapps_brain.contradictions import format_save_conflict_reason
+
+        store.save(
+            key="redis-eviction-policy",
+            value="Set Redis maxmemory-policy to allkeys-lru for the cache tier.",
+            tier="procedural",
+            tags=["redis"],
+            skip_consolidation=True,
+            dedup=False,
+            conflict_check=False,
+        )
+        store.update_fields(
+            "redis-eviction-policy",
+            contradicted=True,
+            contradiction_reason=format_save_conflict_reason(
+                incoming_key="redis-eviction-policy-v2", tier="procedural", similarity=0.81
+            ),
+        )
+        return "redis-eviction-policy"
+
+    def test_contradicted_entry_is_hidden_by_default(
+        self, brain_tools: tuple[dict[str, Any], MemoryStore]
+    ) -> None:
+        tools, store = brain_tools
+        recall = tools["brain_recall"]
+        victim = self._seed_conflict_victim(store)
+
+        keys = [
+            r["key"] for r in json.loads(recall(query="Redis maxmemory policy", max_results=10))
+        ]
+        assert victim not in keys
+
+    def test_include_contradicted_returns_it(
+        self, brain_tools: tuple[dict[str, Any], MemoryStore]
+    ) -> None:
+        tools, store = brain_tools
+        recall = tools["brain_recall"]
+        victim = self._seed_conflict_victim(store)
+
+        keys = [
+            r["key"]
+            for r in json.loads(
+                recall(query="Redis maxmemory policy", max_results=10, include_contradicted=True)
+            )
+        ]
+        assert victim in keys
+
+    def test_include_contradicted_does_not_widen_the_temporal_filter(
+        self, brain_tools: tuple[dict[str, Any], MemoryStore]
+    ) -> None:
+        """The flag is about the contradicted bit, not about expired rows.
+
+        ``include_sources`` is what reaches past ``invalid_at``; this flag alone
+        must leave a plain expired entry hidden.
+        """
+        tools, store = brain_tools
+        recall = tools["brain_recall"]
+        self._seed_conflict_victim(store)
+        store.save(
+            key="redis-expired-note",
+            value="Legacy Redis maxmemory guidance that expired on its own.",
+            tier="procedural",
+            tags=["redis"],
+            skip_consolidation=True,
+            dedup=False,
+            conflict_check=False,
+        )
+        store.update_fields("redis-expired-note", invalid_at="2020-01-01T00:00:00+00:00")
+
+        keys = [
+            r["key"]
+            for r in json.loads(
+                recall(query="Redis maxmemory policy", max_results=10, include_contradicted=True)
+            )
+        ]
+        assert "redis-expired-note" not in keys
+
+    def test_both_flags_together_return_at_least_what_each_returns_alone(
+        self, brain_tools: tuple[dict[str, Any], MemoryStore]
+    ) -> None:
+        """A prune written for one flag must not cancel out the other."""
+        tools, store = brain_tools
+        recall = tools["brain_recall"]
+        victim = self._seed_conflict_victim(store)
+        store.save(
+            key="redis-merged",
+            value="Redis maxmemory policy guidance, consolidated.",
+            tier="procedural",
+            tags=["redis"],
+            skip_consolidation=True,
+            dedup=False,
+            conflict_check=False,
+        )
+        store.save(
+            key="redis-merge-source",
+            value="Redis maxmemory policy guidance with the full original body.",
+            tier="procedural",
+            tags=["redis"],
+            skip_consolidation=True,
+            dedup=False,
+            conflict_check=False,
+        )
+        store.update_fields(
+            "redis-merge-source",
+            contradicted=True,
+            contradiction_reason="consolidated into redis-merged",
+            invalid_at="2020-01-01T00:00:00+00:00",
+            superseded_by="redis-merged",
+        )
+
+        keys = [
+            r["key"]
+            for r in json.loads(
+                recall(
+                    query="Redis maxmemory policy",
+                    max_results=10,
+                    include_sources=True,
+                    include_contradicted=True,
+                )
+            )
+        ]
+        assert victim in keys, "include_contradicted's row was pruned by the include_sources prune"
+        assert "redis-merge-source" in keys

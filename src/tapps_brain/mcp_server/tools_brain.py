@@ -103,6 +103,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         max_results: int = 5,
         agent_id: str = "",
         include_sources: bool = False,
+        include_contradicted: bool = False,
     ) -> str:
         """Recall memories matching a query.
 
@@ -112,6 +113,11 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         Pass ``include_sources=True`` to also return the original entries a
         consolidated memory was merged from — the merged value is capped and
         summarised, so this is how you get the untruncated originals back.
+
+        Pass ``include_contradicted=True`` to also return entries that lost a
+        save-time conflict against a newer write. Off by default; useful for
+        auditing what was invalidated before running
+        ``maintenance save-conflict-undo``.
         """
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -123,6 +129,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
                 query=query,
                 max_results=max_results,
                 include_sources=include_sources,
+                include_contradicted=include_contradicted,
             ),
             default=str,
         )

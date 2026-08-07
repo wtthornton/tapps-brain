@@ -397,6 +397,7 @@ class AgentBrain:
         *,
         max_results: int = 5,
         scope: str = "all",
+        include_contradicted: bool = False,
     ) -> list[dict[str, Any]]:
         """Recall memories matching *query*.  Returns list of result dicts.
 
@@ -407,10 +408,13 @@ class AgentBrain:
                 filtering), ``"private"`` (only this agent's memories),
                 ``"domain"`` (domain-shared memories), ``"hive"`` (hive-wide
                 shared memories), or a group name (``"group:<name>"``).
+            include_contradicted: When True, include entries marked as contradicted
+                by save-time conflict detection. When False (default), contradicted
+                entries are excluded (TAP-5783).
         """
         if max_results <= 0:
             raise BrainValidationError("max_results must be a positive integer")
-        entries = self._store.search(query)
+        entries = self._store.search(query, include_contradicted=include_contradicted)
 
         # Filter by agent_scope when the caller requests a specific scope.
         # ``"all"`` is the opt-out sentinel — no filtering applied.

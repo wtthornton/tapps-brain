@@ -226,6 +226,7 @@ def brain_recall(
     max_results: int = 5,
     include_stale: bool = False,
     include_sources: bool = False,
+    include_contradicted: bool = False,
     filter_tier: str | None = None,
     filter_tags: list[str] | None = None,
     filter_tags_any: list[str] | None = None,
@@ -247,6 +248,12 @@ def brain_recall(
         include_sources: Also return the source entries a consolidated memory
             was merged from. Off by default (the merged summary is the answer);
             on when the caller needs the untruncated originals back.
+        include_contradicted: Also return entries marked ``contradicted`` by
+            save-time conflict detection (TAP-5783). Off by default — a
+            contradicted entry lost a conflict against a newer save. Distinct
+            from ``include_sources``: this does *not* widen the temporal
+            filter, so consolidation sources (which carry ``invalid_at``) stay
+            hidden unless ``include_sources`` is also set.
         filter_tier: Restrict to entries with this tier (e.g. ``"architectural"``).
         filter_tags: ALL tags must be present on each matching entry.
         filter_tags_any: ANY one of these tags must be present.
@@ -261,15 +268,25 @@ def brain_recall(
             tier=filter_tier,
             tags=filter_tags_any or None,  # store.search tags= is OR (any)
             memory_class=filter_memory_class,
-            # Consolidation stamps ``invalid_at`` on every source it supersedes,
-            # so the default temporal filter hides the full-bodied originals
-            # behind the merged summary. ``include_sources`` reaches past that
-            # filter — and *only* for those sources (see the prune below), never
-            # for arbitrary expired rows.
+            # Consolidation stamps ``invalid_at`` and ``contradicted=True`` on every
+            # source it supersedes, so the default temporal + contradicted filters hide
+            # the full-bodied originals behind the merged summary. ``include_sources``
+            # reaches past both filters — and *only* for those sources (see the prune
+            # below), never for arbitrary expired rows (TAP-5783).
             include_historical=include_sources,
+            include_contradicted=include_sources or include_contradicted,
         )
         if include_sources:
-            entries = [e for e in entries if not _is_historical_non_source(e)]
+            # The historical widening above also drags in plain expired rows;
+            # prune them back out. A caller who asked for ``include_contradicted``
+            # keeps its contradicted rows through the prune — otherwise the two
+            # flags together would return less than either alone (TAP-5783).
+            entries = [
+                e
+                for e in entries
+                if not _is_historical_non_source(e)
+                or (include_contradicted and getattr(e, "contradicted", False))
+            ]
         # Apply ALL-tags filter in Python (store.search tags= uses OR semantics)
         if filter_tags:
             entries = [e for e in entries if all(t in e.tags for t in filter_tags)]

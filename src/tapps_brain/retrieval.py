@@ -698,13 +698,25 @@ class MemoryRetriever:
             include_superseded=include_superseded,
         )
 
+        # Include contradicted entries if explicitly requested OR if include_sources=True
+        # (consolidated sources are marked as contradicted). The final filtering
+        # happens in _filter_candidates_to_pending (TAP-5783).
+        include_contradicted_for_candidates = include_contradicted or include_sources
         if self._semantic_enabled:
             candidates = self._get_hybrid_candidates(
-                effective_query, store, memory_group=effective_group, **_temporal_kw
+                effective_query,
+                store,
+                memory_group=effective_group,
+                include_contradicted=include_contradicted_for_candidates,
+                **_temporal_kw,
             )
         else:
             candidates = self._get_candidates(
-                effective_query, store, memory_group=effective_group, **_temporal_kw
+                effective_query,
+                store,
+                memory_group=effective_group,
+                include_contradicted=include_contradicted_for_candidates,
+                **_temporal_kw,
             )
 
         # Enforce the since/until window on every channel. The FTS path applies
@@ -1099,6 +1111,7 @@ class MemoryRetriever:
         time_field: str = "created_at",
         as_of: str | None = None,
         include_superseded: bool = False,
+        include_contradicted: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
@@ -1122,6 +1135,7 @@ class MemoryRetriever:
                 time_field=time_field,
                 as_of=as_of,
                 include_historical=include_superseded,
+                include_contradicted=include_contradicted,
             )
             if fts_results:
                 results = self._bm25_score_entries(query, fts_results, store)
@@ -1141,6 +1155,7 @@ class MemoryRetriever:
             time_field=time_field,
             as_of=as_of,
             include_superseded=include_superseded,
+            include_contradicted=include_contradicted,
         )
         rm_add_bm25_candidates(len(results))
         return results
@@ -1156,6 +1171,7 @@ class MemoryRetriever:
         time_field: str = "created_at",
         as_of: str | None = None,
         include_superseded: bool = False,
+        include_contradicted: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
 
@@ -1195,6 +1211,7 @@ class MemoryRetriever:
                 time_field=time_field,
                 as_of=as_of,
                 include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
             )
             # Take top top_k_lexical by score
             sorted_cands = sorted(
@@ -1213,6 +1230,7 @@ class MemoryRetriever:
                 memory_group=memory_group,
                 include_expired=include_superseded,
                 as_of=as_of,
+                include_contradicted=include_contradicted,
             )
             vector_keys = [k for k, _ in vector_results]
 
@@ -1258,6 +1276,9 @@ class MemoryRetriever:
                 if entry is None:
                     continue
                 entry_by_key[key] = entry
+            # Filter contradicted entries unless explicitly requested
+            if not include_contradicted and entry.contradicted:
+                continue
             relevance_raw = rrf_score / max_rrf if max_rrf > 0 else 0.0
             results.append((entry, relevance_raw))
 
@@ -1275,6 +1296,7 @@ class MemoryRetriever:
         memory_group: str | None = None,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_contradicted: bool = False,
     ) -> list[tuple[str, float]]:
         """Epic 65.8: Embed query, cosine similarity with entry embeddings.
 
@@ -1328,7 +1350,8 @@ class MemoryRetriever:
                     sim = 1.0 / (1.0 + max(0.0, float(dist)))
                     scored_knn.append((key, sim))
                 scored_knn.sort(key=lambda x: x[1], reverse=True)
-                if memory_group is not None:
+                # Only pay the per-row hydrate when something actually filters.
+                if memory_group is not None or not include_contradicted:
                     filtered: list[tuple[str, float]] = []
                     for k, s in scored_knn:
                         # Read-only hydrate — do not use get() (mutates access_count).
@@ -1343,8 +1366,13 @@ class MemoryRetriever:
                                 entry = None
                         elif hasattr(store, "_entries"):
                             entry = store._entries.get(k)
-                        if entry is not None and entry.memory_group == memory_group:
-                            filtered.append((k, s))
+                        if entry is None:
+                            continue
+                        if memory_group is not None and entry.memory_group != memory_group:
+                            continue
+                        if entry.contradicted and not include_contradicted:
+                            continue
+                        filtered.append((k, s))
                     scored_knn = filtered
                 return scored_knn[:limit]
         else:
@@ -1361,6 +1389,9 @@ class MemoryRetriever:
             memory_group=memory_group,
             include_superseded=include_expired,
         )
+        # Filter out contradicted entries unless explicitly requested
+        if not include_contradicted:
+            all_entries = [e for e in all_entries if not e.contradicted]
         if not all_entries:
             return empty
         # Corpus embeddings are the most expensive computation in this module —
@@ -1436,6 +1467,7 @@ class MemoryRetriever:
         time_field: str = "created_at",
         as_of: str | None = None,
         include_superseded: bool = False,
+        include_contradicted: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Full corpus BM25 scan as fallback.
 
@@ -1445,6 +1477,9 @@ class MemoryRetriever:
             memory_group=memory_group,
             include_superseded=include_superseded,
         )
+        # Filter out contradicted entries unless explicitly requested
+        if not include_contradicted:
+            all_entries = [e for e in all_entries if not e.contradicted]
         if not include_superseded or as_of or since or until:
             all_entries = [
                 e
@@ -1480,6 +1515,7 @@ class MemoryRetriever:
                 time_field=time_field,
                 as_of=as_of,
                 include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
             )
 
     def _like_search(
@@ -1493,6 +1529,7 @@ class MemoryRetriever:
         time_field: str = "created_at",
         as_of: str | None = None,
         include_superseded: bool = False,
+        include_contradicted: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Fallback LIKE-based search with simple word overlap scoring."""
         query_words = set(query.lower().split())
@@ -1503,6 +1540,9 @@ class MemoryRetriever:
             memory_group=memory_group,
             include_superseded=include_superseded,
         )
+        # Filter out contradicted entries unless explicitly requested
+        if not include_contradicted:
+            all_entries = [e for e in all_entries if not e.contradicted]
         if not include_superseded or as_of or since or until:
             all_entries = [
                 e

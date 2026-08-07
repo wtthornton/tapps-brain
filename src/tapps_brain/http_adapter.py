@@ -1970,8 +1970,9 @@ def create_app(
 
         Request body (JSON):
           ``{ "query": str, "max_results"?: int=5, "include_stale"?: bool=false,
-              "filter_tier"?: str, "filter_tags"?: [str],
-              "filter_tags_any"?: [str], "filter_memory_class"?: str }``
+              "include_contradicted"?: bool=false, "filter_tier"?: str,
+              "filter_tags"?: [str], "filter_tags_any"?: [str],
+              "filter_memory_class"?: str }``
 
         Response: ``{ "results": [...], "query": str }``
         """
@@ -2056,6 +2057,7 @@ def create_app(
             query=query,
             max_results=max_results,
             include_stale=bool(body.get("include_stale", False)),
+            include_contradicted=bool(body.get("include_contradicted", False)),
             filter_tier=body.get("filter_tier"),
             filter_tags=filter_tags,
             filter_tags_any=filter_tags_any,
