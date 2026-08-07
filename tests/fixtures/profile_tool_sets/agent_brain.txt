@@ -22,3 +22,7 @@ brain_register_predicate
 brain_remember
 brain_resolve_entity
 brain_status
+document_get
+document_list
+document_put
+document_search

@@ -20,6 +20,7 @@ from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normali
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import LearningStatus, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import start_mcp_tool_span
+from tapps_brain.retrieval import _is_consolidated_source
 from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST, validate_iso_timestamp
 from tapps_brain.tier_normalize import normalize_save_tier
 
@@ -57,6 +58,7 @@ def brain_remember(
     temporal_sensitivity: str | None = None,
     failed_approaches: list[str] | None = None,
     supersedes: str | None = None,
+    skip_consolidation: bool = False,
 ) -> dict[str, Any]:
     """Save a memory and optionally supersede an existing entry.
 
@@ -74,6 +76,10 @@ def brain_remember(
     When *supersedes* is not provided but an existing active entry shares
     the word-prefix of the new key, a ``supersession_candidate`` key is
     returned in the response so the caller can confirm with a follow-up call.
+
+    Pass ``skip_consolidation=True`` to save the entry without triggering the
+    auto-consolidation check — the escape hatch for a long, self-contained
+    artifact that must not be folded into a merged summary.
     """
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
         key = _content_key(fact)
@@ -107,6 +113,9 @@ def brain_remember(
             "temporal_sensitivity": temporal_sensitivity,
             "failed_approaches": failed_approaches,
             "status": MemoryStatus.active.value,
+            # Escape hatch for callers saving a self-contained artifact that
+            # must not be merged into a neighbour's summary.
+            "skip_consolidation": skip_consolidation,
         }
         if memory_group:
             save_kwargs["memory_group"] = memory_group
@@ -192,6 +201,22 @@ def _find_supersession_candidate(store: Any, new_key: str) -> str | None:
     return None
 
 
+def _is_historical_non_source(entry: Any) -> bool:
+    """Whether *entry* is a historical row that is NOT a consolidation source.
+
+    ``include_sources`` widens the query to historical rows so superseded
+    merge sources become reachable; everything else the widening dragged in
+    (expired entries, closed validity intervals) is pruned back out here so the
+    flag stays narrowly about consolidation.
+    """
+    if isinstance(entry, dict):
+        return False
+    if not getattr(entry, "contradicted", False):
+        # Not historical-by-consolidation; the normal filters already judged it.
+        return getattr(entry, "invalid_at", None) is not None
+    return not _is_consolidated_source(entry)
+
+
 def brain_recall(
     store: Any,
     project_id: str,
@@ -200,6 +225,7 @@ def brain_recall(
     query: str,
     max_results: int = 5,
     include_stale: bool = False,
+    include_sources: bool = False,
     filter_tier: str | None = None,
     filter_tags: list[str] | None = None,
     filter_tags_any: list[str] | None = None,
@@ -218,6 +244,9 @@ def brain_recall(
         query: Search query string.
         max_results: Maximum number of results to return.
         include_stale: Include stale/superseded entries in results.
+        include_sources: Also return the source entries a consolidated memory
+            was merged from. Off by default (the merged summary is the answer);
+            on when the caller needs the untruncated originals back.
         filter_tier: Restrict to entries with this tier (e.g. ``"architectural"``).
         filter_tags: ALL tags must be present on each matching entry.
         filter_tags_any: ANY one of these tags must be present.
@@ -232,7 +261,15 @@ def brain_recall(
             tier=filter_tier,
             tags=filter_tags_any or None,  # store.search tags= is OR (any)
             memory_class=filter_memory_class,
+            # Consolidation stamps ``invalid_at`` on every source it supersedes,
+            # so the default temporal filter hides the full-bodied originals
+            # behind the merged summary. ``include_sources`` reaches past that
+            # filter — and *only* for those sources (see the prune below), never
+            # for arbitrary expired rows.
+            include_historical=include_sources,
         )
+        if include_sources:
+            entries = [e for e in entries if not _is_historical_non_source(e)]
         # Apply ALL-tags filter in Python (store.search tags= uses OR semantics)
         if filter_tags:
             entries = [e for e in entries if all(t in e.tags for t in filter_tags)]

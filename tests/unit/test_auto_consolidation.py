@@ -184,9 +184,12 @@ def test_persist_consolidated_rolls_back_on_source_mark_failure(
     store.save(key="src-a", value="alpha shared content about JWT RS256", skip_consolidation=True)
     store.save(key="src-b", value="beta shared content about JWT RS256", skip_consolidation=True)
 
+    # The merged value must clear the content-preservation floor (>=60% of the
+    # summed source bytes); below it the merge is refused before any write and
+    # this test's rollback path is never reached.
     consolidated = ConsolidatedEntry(
         key="consolidated-jwt",
-        value="merged JWT RS256 guidance",
+        value="merged JWT RS256 guidance covering the alpha and beta sources",
         tier=MemoryTier.architectural,
         source=MemorySource.agent,
         source_keys=["src-a", "src-b"],
@@ -203,8 +206,16 @@ def test_persist_consolidated_rolls_back_on_source_mark_failure(
 
     monkeypatch.setattr(store, "update_fields", _fail_second)
 
+    snapshots = {k: store.get(k) for k in ("src-a", "src-b")}
+    assert all(v is not None for v in snapshots.values())
+
     with pytest.raises(KeyError, match="src-b"):
-        _persist_consolidated_entry(store, consolidated, ["src-a", "src-b"])
+        _persist_consolidated_entry(
+            store,
+            consolidated,
+            ["src-a", "src-b"],
+            source_snapshots=snapshots,
+        )
 
     assert store.get("consolidated-jwt") is None
     # First source may have been marked before the failure; leave that as-is.

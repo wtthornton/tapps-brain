@@ -166,7 +166,7 @@ mcp_servers:
 ```
 
 **Verification** — after restarting your MCP client run `tools/list`; you
-should see ~17 tools when using the `coder` profile, 10 when using
+should see 27 tools when using the `coder` profile, 28 when using
 `agent_brain`, or 8 (the daily-driver eager budget) on the default `full`
 profile. The healthcheck script (`scripts/brain-healthcheck.sh`) also
 reports the configured profile when `mcpServers.tapps-brain` is present.

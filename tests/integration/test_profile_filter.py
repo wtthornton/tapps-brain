@@ -131,13 +131,14 @@ class TestGoldenFileContracts:
         """
         assert len(_load_golden("operator")) == 98
 
-    def test_coder_golden_has_23_tools(self) -> None:
-        """Golden file for 'coder' must list exactly 23 tools.
+    def test_coder_golden_has_27_tools(self) -> None:
+        """Golden file for 'coder' must list exactly 27 tools.
 
         v3.24 added 3; 3.30.0 added brain_recall_tool_paths + brain_kg_check,
-        the read-only consumption side of the gates (not promote/register).
+        the read-only consumption side of the gates (not promote/register);
+        the document plane added 4 (put/get/search/list).
         """
-        assert len(_load_golden("coder")) == 23
+        assert len(_load_golden("coder")) == 27
 
     def test_reviewer_golden_has_10_tools(self) -> None:
         """Golden file for 'reviewer' must list exactly 10 tools."""
@@ -147,19 +148,20 @@ class TestGoldenFileContracts:
         """Golden file for 'seeder' must list exactly 6 tools."""
         assert len(_load_golden("seeder")) == 6
 
-    def test_agent_brain_golden_has_24_tools(self) -> None:
-        """Golden file for 'agent_brain' must list exactly 24 brain_* tools (+resolve).
+    def test_agent_brain_golden_has_28_tools(self) -> None:
+        """Golden file for 'agent_brain' must list exactly 28 tools.
 
         3.30.0 added 8: the AF-facing gated-learning, mission-state and KG
-        ledger surface.
+        ledger surface. The document plane added 4 (put/get/search/list).
         """
-        assert len(_load_golden("agent_brain")) == 24
+        assert len(_load_golden("agent_brain")) == 28
 
-    def test_agent_brain_golden_is_brain_star_only(self) -> None:
-        """TAP-1579: 'agent_brain' profile must contain only brain_* tools."""
+    def test_agent_brain_golden_is_brain_star_plus_document_plane(self) -> None:
+        """TAP-1579: 'agent_brain' is the brain_* facade plus the document plane."""
         for tool in _load_golden("agent_brain"):
-            assert tool.startswith("brain_"), (
-                f"'agent_brain' profile must contain only brain_* tools, found {tool!r}"
+            assert tool.startswith(("brain_", "document_")), (
+                "'agent_brain' profile must contain only brain_* / document_* tools, "
+                f"found {tool!r}"
             )
 
     @pytest.mark.parametrize("profile", _STANDARD_PROFILES)

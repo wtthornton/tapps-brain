@@ -7,10 +7,10 @@
 # Profile summary (Docker full-promotion stack, 2026-08):
 #   full        (84 tools, all eager) — default fallback; full tools/list surface
 #   operator    (98 tools, all eager) — full + operator-only maintenance tools
-#   coder       (23 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
+#   coder       (27 tools) — repo-embedded coding agent (+ v3.24 experience/profile KV)
 #   reviewer    ( 9 tools) — read-only PR/code review agents
 #   seeder      ( 6 tools) — bulk ingestion scripts
-#   agent_brain (24 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
+#   agent_brain (28 tools) — TAP-1579 brain_* facade (+ resolve_entity for experience edges)
 #
 # TAP-5542 note: the learning promote/demote tools are deliberately absent from
 # `coder`. A coding agent approving its own learnings is the gate approving
@@ -65,6 +65,10 @@ profiles:
       - brain_remember
       - brain_resolve_entity
       - brain_status
+      - document_get
+      - document_list
+      - document_put
+      - document_search
       - diagnostics_history
       - diagnostics_report
       - docs_lookup
@@ -155,6 +159,10 @@ profiles:
       - brain_remember
       - brain_resolve_entity
       - brain_status
+      - document_get
+      - document_list
+      - document_put
+      - document_search
       - diagnostics_history
       - diagnostics_report
       - docs_lookup
@@ -247,6 +255,10 @@ profiles:
       - brain_record_events_batch
       - brain_remember
       - brain_status
+      - document_get
+      - document_list
+      - document_put
+      - document_search
       - feedback_gap
       - feedback_rate
       - hive_search
@@ -312,4 +324,8 @@ profiles:
       - brain_remember
       - brain_resolve_entity
       - brain_status
+      - document_get
+      - document_list
+      - document_put
+      - document_search
 

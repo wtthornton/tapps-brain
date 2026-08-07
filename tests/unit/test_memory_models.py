@@ -46,6 +46,21 @@ class TestMemorySource:
     def test_member_count(self) -> None:
         assert len(MemorySource) == 4
 
+    def test_user_is_an_input_alias_for_human(self) -> None:
+        """``"user"`` resolves to ``human`` without becoming a fifth member."""
+        assert MemorySource("user") is MemorySource.human
+        assert MemorySource("user").value == "human"
+        assert len(MemorySource) == 4
+        assert "user" not in {m.value for m in MemorySource}
+
+    def test_alias_resolution_is_case_and_space_insensitive(self) -> None:
+        assert MemorySource(" User ") is MemorySource.human
+
+    def test_unknown_source_is_still_rejected(self) -> None:
+        """The alias table must not turn the enum into a permissive parser."""
+        with pytest.raises(ValueError, match="not a valid MemorySource"):
+            MemorySource("definitely-not-a-source")
+
 
 class TestMemoryScope:
     """Tests for MemoryScope enum."""

@@ -46,6 +46,49 @@ MIN_CONSOLIDATION_ENTRIES = 2
 # Page size for audit-log lookups in find_last_consolidation_merge_audit.
 _AUDIT_PAGE_LIMIT = 1000
 
+# Minimum fraction of the summed source bytes a merged value must retain.
+# ``merge_values`` keeps the newest value verbatim and at most two sentences
+# per older source, and the result is hard-capped at 4096 chars — merging
+# long-form entries therefore *destroys* content while superseding the
+# originals, which then vanish from recall. Below this floor the merge is
+# refused outright rather than shipped lossy.
+MIN_CONTENT_PRESERVATION_RATIO = 0.6
+MERGE_BLOCKED_CONTENT_LOSS_METRIC = "store.consolidate.blocked_content_loss"
+
+
+class MergeWouldLoseContentError(RuntimeError):
+    """Raised when a merge would discard too much of its sources' content.
+
+    Carries :attr:`reason` so callers can surface a stable machine-readable
+    outcome instead of parsing the message.
+    """
+
+    reason = "merge_would_lose_content"
+
+    def __init__(self, consolidated_key: str, ratio: float) -> None:
+        self.consolidated_key = consolidated_key
+        self.ratio = ratio
+        super().__init__(
+            f"merge '{consolidated_key}' would retain only {ratio:.2%} of its sources' "
+            f"content (floor {MIN_CONTENT_PRESERVATION_RATIO:.0%}); aborting"
+        )
+
+
+def _content_preservation_ratio(
+    merged_value: str,
+    source_snapshots: dict[str, MemoryEntry],
+) -> float | None:
+    """Fraction of the summed source bytes retained by *merged_value*.
+
+    Returns ``None`` when the ratio is undefined (no snapshots, or sources
+    with no content at all) so the caller can skip the guard rather than
+    treat an unknowable ratio as a violation.
+    """
+    total = sum(len(e.value) for e in source_snapshots.values())
+    if total <= 0:
+        return None
+    return len(merged_value) / total
+
 
 @dataclass(frozen=True)
 class ConsolidationUndoResult:
@@ -421,12 +464,15 @@ class PeriodicScanResult:
         entries_consolidated: int = 0,
         consolidated_entries: list[str] | None = None,
         skipped_reason: str = "",
+        blocked_content_loss: int = 0,
     ) -> None:
         self.scanned = scanned
         self.groups_found = groups_found
         self.entries_consolidated = entries_consolidated
         self.consolidated_entries = consolidated_entries or []
         self.skipped_reason = skipped_reason
+        #: Groups the content-preservation floor refused (not failures).
+        self.blocked_content_loss = blocked_content_loss
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -436,6 +482,7 @@ class PeriodicScanResult:
             "entries_consolidated": self.entries_consolidated,
             "consolidated_entries": self.consolidated_entries,
             "skipped_reason": self.skipped_reason,
+            "blocked_content_loss": self.blocked_content_loss,
         }
 
 
@@ -502,16 +549,25 @@ def check_consolidation_on_save(
 
     source_keys = [e.key for e in entries_to_consolidate]
 
-    _persist_consolidated_entry(
-        store,
-        consolidated,
-        source_keys,
-        audit_trigger="save",
-        audit_threshold=threshold,
-        audit_similarity_score=audit_similarity_score,
-        audit_merge_rule=audit_merge_rule,
-        source_snapshots={e.key: e for e in entries_to_consolidate},
-    )
+    try:
+        _persist_consolidated_entry(
+            store,
+            consolidated,
+            source_keys,
+            audit_trigger="save",
+            audit_threshold=threshold,
+            audit_similarity_score=audit_similarity_score,
+            audit_merge_rule=audit_merge_rule,
+            source_snapshots={e.key: e for e in entries_to_consolidate},
+        )
+    except MergeWouldLoseContentError as exc:
+        # A refused merge is a normal, expected outcome — not a failure to
+        # log-and-swallow upstream. Report it as an untriggered result so the
+        # reason reaches operators via ConsolidationResult.
+        return ConsolidationResult(
+            triggered=False,
+            reason=exc.reason,
+        )
 
     logger.info(
         "auto_consolidation_triggered",
@@ -581,6 +637,31 @@ def _append_consolidation_audit(
             )
 
 
+def _enforce_content_preservation(
+    store: MemoryStore,
+    consolidated: ConsolidatedEntry,
+    source_keys: list[str],
+    source_snapshots: dict[str, MemoryEntry],
+) -> None:
+    """Refuse a merge that would retain too little of its sources' content.
+
+    Raises:
+        MergeWouldLoseContentError: When the ratio is below the floor.
+    """
+    ratio = _content_preservation_ratio(consolidated.value, source_snapshots)
+    if ratio is None or ratio >= MIN_CONTENT_PRESERVATION_RATIO:
+        return
+    store._metrics.increment(MERGE_BLOCKED_CONTENT_LOSS_METRIC)
+    logger.warning(
+        "consolidation_blocked_content_loss",
+        consolidated_key=consolidated.key,
+        source_keys=source_keys,
+        preservation_ratio=round(ratio, 4),
+        floor=MIN_CONTENT_PRESERVATION_RATIO,
+    )
+    raise MergeWouldLoseContentError(consolidated.key, ratio)
+
+
 def _persist_consolidated_entry(
     store: MemoryStore,
     consolidated: ConsolidatedEntry,
@@ -590,7 +671,7 @@ def _persist_consolidated_entry(
     audit_threshold: float | None = None,
     audit_similarity_score: float | None = None,
     audit_merge_rule: str = "text_similarity",
-    source_snapshots: dict[str, MemoryEntry] | None = None,
+    source_snapshots: dict[str, MemoryEntry],
 ) -> None:
     """Persist the consolidated entry and mark sources as consolidated.
 
@@ -601,17 +682,29 @@ def _persist_consolidated_entry(
     forwarded to :func:`_append_consolidation_audit` for operator traceability.
 
     *source_snapshots* carries the entries the merged value was computed
-    from.  Before a source is superseded its live ``value`` is compared
-    against the snapshot — a concurrent ``save()`` landing new content
-    between snapshot and marking means the fresh write is absent from the
-    merged value, and superseding the source anyway would hide it from
-    recall (lost update).  On mismatch the merge is aborted and rolled back.
-    (``value`` is compared rather than ``updated_at`` because save-path
+    from, and is **required** — it backs both the content-preservation floor
+    and the lost-update guard, and a default of ``None`` would let a new call
+    site silently opt out of both.  Before a source is superseded its live
+    ``value`` is compared against the snapshot — a concurrent ``save()``
+    landing new content between snapshot and marking means the fresh write is
+    absent from the merged value, and superseding the source anyway would hide
+    it from recall (lost update).  On mismatch the merge is aborted and rolled
+    back.  (``value`` is compared rather than ``updated_at`` because save-path
     metadata re-stamps — access counts, embeddings, reinforcement — touch
     ``updated_at`` without invalidating the merged content.)
+
+    Raises:
+        MergeWouldLoseContentError: When the merged value would retain less
+            than :data:`MIN_CONTENT_PRESERVATION_RATIO` of the summed source
+            bytes.  Raised before any write, so nothing needs rolling back.
     """
     consolidated_saved = False
     try:
+        # Content-preservation floor. Raised *before* any write so the
+        # existing rollback below is a no-op: no merge row is created and no
+        # source is superseded.
+        _enforce_content_preservation(store, consolidated, source_keys, source_snapshots)
+
         with batch_exempt_scope("consolidate"):
             saved = store.save(
                 key=consolidated.key,
@@ -831,6 +924,7 @@ def run_periodic_consolidation_scan(
 
     consolidated_keys: list[str] = []
     total_entries_consolidated = 0
+    blocked_content_loss = 0
 
     entry_by_key = {e.key: e for e in active_entries}
 
@@ -870,6 +964,18 @@ def run_periodic_consolidation_scan(
                 audit_merge_rule=periodic_merge_rule,
                 source_snapshots={e.key: e for e in group_entries},
             )
+        except MergeWouldLoseContentError as exc:
+            # A refused merge is a deliberate outcome, not a failure. Logging
+            # it as ``..._persist_failed`` would send operators hunting for a
+            # broken write; the guard already emitted its own warning + metric.
+            logger.info(
+                "periodic_consolidation_group_blocked_content_loss",
+                group_keys=group_keys,
+                reason=exc.reason,
+                preservation_ratio=round(exc.ratio, 4),
+            )
+            blocked_content_loss += 1
+            continue
         except Exception:
             # One failing group (write-policy rejection, vanished source,
             # profile value-length limit, concurrent-modification abort) must
@@ -902,6 +1008,7 @@ def run_periodic_consolidation_scan(
         groups_found=len(groups),
         groups_consolidated=len(consolidated_keys),
         entries_consolidated=total_entries_consolidated,
+        blocked_content_loss=blocked_content_loss,
     )
 
     return PeriodicScanResult(
@@ -909,6 +1016,7 @@ def run_periodic_consolidation_scan(
         groups_found=len(groups),
         entries_consolidated=total_entries_consolidated,
         consolidated_entries=consolidated_keys,
+        blocked_content_loss=blocked_content_loss,
     )
 
 

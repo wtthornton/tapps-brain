@@ -10,6 +10,7 @@ import pytest
 from tapps_brain.consolidation import (
     DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE,
     MAX_CONSOLIDATED_VALUE_LENGTH,
+    _extract_sentences,
     calculate_weighted_confidence,
     consolidate,
     detect_consolidation_reason,
@@ -26,6 +27,11 @@ from tapps_brain.models import (
     MemoryEntry,
     MemorySource,
     MemoryTier,
+)
+from tapps_brain.similarity import (
+    compute_similarity,
+    compute_similarity_with_embeddings,
+    is_same_topic,
 )
 from tests.factories import make_entry as _make_entry
 
@@ -155,6 +161,97 @@ class TestMergeValues:
         ]
         result = merge_values(entries)
         assert len(result) <= MAX_CONSOLIDATED_VALUE_LENGTH
+
+    def test_url_survives_a_merge_intact(self) -> None:
+        """VAL-09: a merged value keeps ``learn.microsoft.com`` whole and cased.
+
+        Regression: splitting on bare ``[.!?]+`` cut the host into
+        ``['...official learn', 'microsoft', 'com docs)']``; ``microsoft`` was
+        already in ``seen_sentences``, so the merge emitted
+        ``official learn com docs)``.
+        """
+        newest = _make_entry(
+            "graph-api-newest",
+            "Graph API paging uses @odata.nextLink.",
+            updated_at="2024-01-02T00:00:00+00:00",
+        )
+        older = _make_entry(
+            "graph-api-older",
+            "Throttling limits are documented at https://learn.microsoft.com/graph/throttling "
+            "(the official Learn docs).",
+            updated_at="2024-01-01T00:00:00+00:00",
+        )
+        result = merge_values([newest, older])
+
+        assert "https://learn.microsoft.com/graph/throttling" in result
+        assert "official Learn docs" in result
+        # The mangled fragments the old splitter produced must not appear.
+        assert "learn com" not in result
+        assert "com docs" not in result
+
+    def test_merge_preserves_original_casing(self) -> None:
+        """Merged fragments keep proper nouns and acronyms as written."""
+        newest = _make_entry(
+            "casing-newest", "We ship weekly.", updated_at="2024-01-02T00:00:00+00:00"
+        )
+        older = _make_entry(
+            "casing-older",
+            "PostgreSQL and pgvector back the HNSW index.",
+            updated_at="2024-01-01T00:00:00+00:00",
+        )
+        result = merge_values([newest, older])
+        assert "PostgreSQL and pgvector back the HNSW index." in result
+
+    def test_merge_is_byte_identical_across_runs(self) -> None:
+        """Determinism guarantee: same inputs, same bytes, every time."""
+        entries = [
+            _make_entry(
+                "det-a",
+                "Alpha one. Alpha two. Alpha three.",
+                updated_at="2024-01-01T00:00:00+00:00",
+            ),
+            _make_entry(
+                "det-b",
+                "Beta one. Beta two. Beta three.",
+                updated_at="2024-01-02T00:00:00+00:00",
+            ),
+            _make_entry(
+                "det-c",
+                "Gamma one. Gamma two. Gamma three.",
+                updated_at="2024-01-03T00:00:00+00:00",
+            ),
+        ]
+        first = merge_values(entries)
+        assert all(merge_values(entries) == first for _ in range(5))
+
+
+class TestExtractSentences:
+    """Boundary detection for the sentence splitter used by ``merge_values``."""
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("learn.microsoft.com is the host.", ["learn.microsoft.com is the host."]),
+            ("Pinned at v3.30.0 for now.", ["Pinned at v3.30.0 for now."]),
+            ("The floor is 0.6 exactly.", ["The floor is 0.6 exactly."]),
+            (
+                "Use RS256, e.g. for signing. Rotate quarterly.",
+                ["Use RS256, e.g. for signing.", "Rotate quarterly."],
+            ),
+            ("First one! Second one? Third one.", ["First one!", "Second one?", "Third one."]),
+        ],
+    )
+    def test_boundaries(self, text: str, expected: list[str]) -> None:
+        assert _extract_sentences(text) == expected
+
+    def test_returns_an_ordered_deduplicated_list(self) -> None:
+        """Never a set — set order is hash-seed dependent and breaks determinism."""
+        result = _extract_sentences("One. Two. One. Three. two.")
+        assert isinstance(result, list)
+        assert result == ["One.", "Two.", "Three."]
+
+    def test_dedup_is_case_insensitive_but_emission_is_not(self) -> None:
+        assert _extract_sentences("Alpha beta. ALPHA BETA.") == ["Alpha beta."]
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +534,96 @@ class TestShouldConsolidate:
         )
         matches = should_consolidate(new_entry, jwt_entries, threshold=0.3)
         assert len(matches) > 0
+
+    def test_same_topic_below_threshold_is_not_a_match(self) -> None:
+        """Same tier + tags is necessary but NOT sufficient — threshold still applies.
+
+        Regression: the same-topic fast path used to return matches without
+        ever consulting *threshold*, so unrelated long-form entries that
+        merely shared tags were merged and lost their bodies to the 4096-char
+        merge cap.
+        """
+        shared_tags = ["linkedin", "publishing", "content"]
+        entry = _make_entry(
+            key="linkedin-publish-cadence",
+            value=(
+                "Publishing cadence targets three posts per week, scheduled "
+                "Tuesday, Wednesday and Thursday mornings in the author's "
+                "local timezone."
+            ),
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        )
+        unrelated = _make_entry(
+            key="linkedin-publish-image-pipeline",
+            value=(
+                "Rendered artwork is uploaded through the asset service, which "
+                "returns a signed URL that expires after fifteen minutes and "
+                "must be refreshed before attachment."
+            ),
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        )
+
+        # Precondition: they *are* same-topic, so only the threshold can stop them.
+        assert is_same_topic(entry, unrelated) is True
+        assert compute_similarity(entry, unrelated).combined_score < 0.7
+
+        assert should_consolidate(entry, [unrelated], threshold=0.7) == []
+
+    def test_same_topic_below_threshold_on_the_embedding_path(self) -> None:
+        """The gate holds under the metric production actually uses.
+
+        ``should_consolidate`` scores same-topic pairs with
+        ``compute_similarity_with_embeddings``, which takes the *embedding*
+        path whenever both entries carry vectors — a different code path from
+        the text-only case above, and the one that runs on any pgvector
+        deployment. The gate has to hold there too.
+        """
+        shared_tags = ["linkedin", "publishing", "content"]
+        dim = 8
+        entry = _make_entry(
+            key="embedded-cadence",
+            value="Publishing cadence targets three posts per week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": [1.0, *([0.0] * (dim - 1))]})
+        unrelated = _make_entry(
+            key="embedded-image-pipeline",
+            value="Rendered artwork uploads return a signed URL.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": [0.0, 1.0, *([0.0] * (dim - 2))]})
+
+        scored = compute_similarity_with_embeddings(entry, unrelated)
+        assert scored.used_embeddings is True, "fixture must exercise the embedding path"
+        assert scored.combined_score < 0.7
+
+        assert should_consolidate(entry, [unrelated], threshold=0.7) == []
+
+    def test_same_topic_above_threshold_on_the_embedding_path_still_matches(self) -> None:
+        """Control: the embedding-path gate is a threshold, not a blanket refusal."""
+        shared_tags = ["linkedin", "publishing", "content"]
+        dim = 8
+        vector = [1.0, *([0.0] * (dim - 1))]
+        entry = _make_entry(
+            key="embedded-a",
+            value="Publishing cadence targets three posts per week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": vector})
+        near_duplicate = _make_entry(
+            key="embedded-b",
+            value="Publishing cadence targets three posts each week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": list(vector)})
+
+        scored = compute_similarity_with_embeddings(entry, near_duplicate)
+        assert scored.used_embeddings is True
+        assert scored.combined_score >= 0.7
+
+        assert should_consolidate(entry, [near_duplicate], threshold=0.7) == [near_duplicate]
 
     def test_empty_candidates(self) -> None:
         """Returns empty list for no candidates."""

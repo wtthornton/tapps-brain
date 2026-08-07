@@ -356,7 +356,7 @@ All entries carrying a specific tag.
 
 ## Minimal working set
 
-The **`coder` profile** (15 tools, set via `X-Brain-Profile: coder` in `.mcp.json`) is purpose-built for everyday coding turns. If I could only have six tools from that set, this is the core:
+The **`coder` profile** (27 tools, set via `X-Brain-Profile: coder` in `.mcp.json`) is purpose-built for everyday coding turns. If I could only have six tools from that set, this is the core:
 
 1. `brain_recall` — read
 2. `brain_remember` — write
