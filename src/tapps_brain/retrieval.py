@@ -31,7 +31,6 @@ from __future__ import annotations
 import contextlib
 import math
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -1200,45 +1199,41 @@ class MemoryRetriever:
         bm25_candidates: list[tuple[MemoryEntry, float]] = []
         vector_keys: list[str] = []
 
-        def run_bm25() -> None:
-            nonlocal bm25_keys, bm25_candidates
-            bm25_candidates = self._get_candidates(
-                query,
-                store,
-                memory_group=memory_group,
-                since=since,
-                until=until,
-                time_field=time_field,
-                as_of=as_of,
-                include_superseded=include_superseded,
-                include_contradicted=include_contradicted,
-            )
-            # Take top top_k_lexical by score
-            sorted_cands = sorted(
-                bm25_candidates,
-                key=lambda x: x[1],
-                reverse=True,
-            )[:top_k_lexical]
-            bm25_keys = [e.key for e, _ in sorted_cands]
+        # Run BM25 and vector searches sequentially instead of in a nested
+        # ThreadPoolExecutor. When called from AsyncMemoryStore.recall(), this
+        # method already runs in an asyncio.to_thread() worker, and spawning
+        # additional threads complicates connection pool management (TAP-5838).
+        # Sequential execution avoids nested thread pool overhead while keeping
+        # the same ranking quality through RRF fusion below.
+        bm25_candidates = self._get_candidates(
+            query,
+            store,
+            memory_group=memory_group,
+            since=since,
+            until=until,
+            time_field=time_field,
+            as_of=as_of,
+            include_superseded=include_superseded,
+            include_contradicted=include_contradicted,
+        )
+        # Take top top_k_lexical by score
+        sorted_cands = sorted(
+            bm25_candidates,
+            key=lambda x: x[1],
+            reverse=True,
+        )[:top_k_lexical]
+        bm25_keys = [e.key for e, _ in sorted_cands]
 
-        def run_vector() -> None:
-            nonlocal vector_keys
-            vector_results = self._vector_search(
-                query,
-                store,
-                limit=top_k_dense,
-                memory_group=memory_group,
-                include_expired=include_superseded,
-                as_of=as_of,
-                include_contradicted=include_contradicted,
-            )
-            vector_keys = [k for k, _ in vector_results]
-
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            f1 = ex.submit(run_bm25)
-            f2 = ex.submit(run_vector)
-            for f in as_completed([f1, f2]):
-                f.result()
+        vector_results = self._vector_search(
+            query,
+            store,
+            limit=top_k_dense,
+            memory_group=memory_group,
+            include_expired=include_superseded,
+            as_of=as_of,
+            include_contradicted=include_contradicted,
+        )
+        vector_keys = [k for k, _ in vector_results]
 
         rm_add_vector_candidates(len(vector_keys))
         if bm25_keys and vector_keys:
