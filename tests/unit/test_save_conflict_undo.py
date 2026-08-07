@@ -71,13 +71,11 @@ class TestUndoSaveConflict:
         assert entry.contradiction_reason is None
 
     def test_restored_entry_returns_to_ranked_recall(self, store: MemoryStore) -> None:
-        """The point of the undo — surviving in the store is not surviving recall.
+        """The point of the undo — contradicted entries are hidden from recall until restored.
 
-        Asserted against ``MemoryRetriever.search``, which is the layer that
-        actually drops contradicted rows. ``MemoryStore.search`` (the lexical FTS
-        path behind ``brain_recall``) does **not** filter on ``contradicted`` —
-        the two surfaces disagree, which is why a contradicted entry can be
-        reachable from one and not the other.
+        Both ``MemoryStore.search`` and ``MemoryRetriever.search`` filter contradicted
+        entries by default (TAP-5783), so an entry that was contradicted is not found
+        in ranked recall until its contradicted flag is cleared.
         """
         from tapps_brain.retrieval import MemoryRetriever
 
@@ -97,17 +95,23 @@ class TestUndoSaveConflict:
         found = {r.entry.key for r in retriever.search("agent observability teams", store)}
         assert "observability-brief" in found
 
-    def test_store_search_does_not_filter_contradicted(self, store: MemoryStore) -> None:
-        """Pin the surface disagreement so it is a known contract, not a surprise.
+    def test_store_search_filters_contradicted_by_default(self, store: MemoryStore) -> None:
+        """Contradicted entries are filtered by MemoryStore.search by default (TAP-5783).
 
-        A contradicted entry stays visible to ``MemoryStore.search`` while being
-        excluded from ``MemoryRetriever.search``. Recorded here because reasoning
-        about "is this entry hidden?" depends entirely on which surface asked.
+        This matches the behavior of ``MemoryRetriever.search`` so both surfaces
+        agree on default filtering. Callers can opt-in with ``include_contradicted=True``
+        to see all entries including contradicted ones.
         """
-        store.save(key="split-surface", value="A distinct fact.", tier="procedural")
-        _invalidate(store, "split-surface")
+        store.save(key="filtered", value="A distinct fact.", tier="procedural")
+        _invalidate(store, "filtered")
 
-        assert "split-surface" in {e.key for e in store.search("distinct fact")}
+        # By default, contradicted entries are excluded
+        assert "filtered" not in {e.key for e in store.search("distinct fact")}
+
+        # With include_contradicted=True, the entry is visible
+        assert "filtered" in {
+            e.key for e in store.search("distinct fact", include_contradicted=True)
+        }
 
     def test_preserves_every_other_field(self, store: MemoryStore) -> None:
         store.save(

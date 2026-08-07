@@ -278,6 +278,7 @@ class QueryMixin(_MemoryStoreBase):
         memory_group: str | None,
         include_historical: bool,
         as_of: str | None,
+        include_contradicted: bool = False,
     ) -> list[MemoryEntry]:
         """Apply post-FTS attribute filters and temporal filtering.
 
@@ -296,6 +297,10 @@ class QueryMixin(_MemoryStoreBase):
         # Temporal filtering (EPIC-004 + GitHub #29)
         if not include_historical:
             results = [r for r in results if r.is_temporally_valid(as_of)]
+        # Filter contradicted entries unless explicitly requested (TAP-5783).
+        # This matches MemoryRetriever.search default behavior.
+        if not include_contradicted:
+            results = [r for r in results if not r.contradicted]
         return results
 
     def _append_group_memories(
@@ -374,6 +379,7 @@ class QueryMixin(_MemoryStoreBase):
         include_group_memories: bool = False,
         max_group_results: int = 20,
         memory_class: str | None = None,
+        include_contradicted: bool = False,
     ) -> list[MemoryEntry]:
         """Search via the Postgres FTS backend, with optional post-filters.
 
@@ -400,6 +406,10 @@ class QueryMixin(_MemoryStoreBase):
             memory_class: TAP-733 — when set, restrict to entries with this semantic
                 class (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
                 Pushed into the SQL WHERE clause for DB-level pre-filtering.
+            include_contradicted: When True, include entries marked as contradicted
+                by save-time conflict detection. When False (default), contradicted
+                entries are excluded. Matches the default behavior of
+                ``MemoryRetriever.search`` (TAP-5783).
         """
         self._metrics.increment("store.search")
         rm_increment_recall_total()
@@ -445,6 +455,7 @@ class QueryMixin(_MemoryStoreBase):
                 memory_group=memory_group,
                 include_historical=include_historical,
                 as_of=as_of,
+                include_contradicted=include_contradicted,
             )
 
             # STORY-056.5: Group-aware recall — search group namespaces in Hive

@@ -12,6 +12,20 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.32.0] — 2026-08-07
+
+### Changed
+
+- **Both retrieval surfaces now filter `contradicted` by default** ([TAP-5783](https://linear.app/tappscodingagents/issue/TAP-5783)) — 3.31.2 pinned the disagreement between `MemoryStore.search` (lexical FTS, behind `brain_recall`) and `MemoryRetriever.search` (ranked recall) as a known contract and deferred the decision. Resolved in favour of filtering on both: a contradicted entry lost a save-time conflict against a newer write, so hiding it is the correct default everywhere, and a per-surface answer to "is this entry hidden?" makes every recall bug ambiguous to diagnose.
+
+  **Observably a no-op on existing data.** Every `contradicted` row in the production corpus already carries `invalid_at`, so all of them were already excluded by the temporal filter — measured across 5,184 contradicted rows spanning 29 projects, of which **zero** were reachable via `brain_recall`. What this closes is the path where a row is marked contradicted *without* `invalid_at` — `update_fields(contradicted=True)` alone produces exactly that shape — which previously leaked into the lexical surface while staying hidden from the ranked one.
+
+### Added
+
+- **`include_contradicted` on the recall path** ([TAP-5783](https://linear.app/tappscodingagents/issue/TAP-5783)) — opt back in to entries hidden by save-time conflict detection, for auditing what was invalidated before running `maintenance save-conflict-undo`. Reachable from `MemoryStore.search`, `AgentBrain.recall`, `MemoryRetriever.search`, `memory_service.brain_recall`, the `brain_recall` MCP tool, and `POST /v1/recall`.
+
+  **Not an alias for `include_sources`, and the two compose.** `include_sources` widens the *temporal* filter, because consolidation sources carry `invalid_at` alongside `contradicted`; `include_contradicted` widens *only* the contradicted filter, because a save-conflict victim has no `invalid_at`. Set together, the `_is_historical_non_source` prune previously cancelled the second flag, so the pair returned strictly less than either alone — fixed, and pinned by `test_both_flags_together_return_at_least_what_each_returns_alone`.
+
 ## [3.31.2] — 2026-08-06
 
 ### Added
