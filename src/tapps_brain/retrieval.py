@@ -1159,7 +1159,7 @@ class MemoryRetriever:
         rm_add_bm25_candidates(len(results))
         return results
 
-    def _get_hybrid_candidates(  # noqa: PLR0915
+    def _get_hybrid_candidates(
         self,
         query: str,
         store: MemoryStore,
