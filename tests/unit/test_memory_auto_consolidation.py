@@ -434,6 +434,17 @@ class TestContentPreservationGuard:
             # The full body survives — not a truncated merge summary.
             assert entry.value == value
 
+        # ...and each is still reachable by its own topic. Surviving in the
+        # store is not the same as surviving in recall: a consolidation source
+        # keeps its row but is filtered out of search results.
+        for query, expected_key in (
+            ("scheduling windows cadence", "linkedin-publish-cadence"),
+            ("signed asset URLs image pipeline", "linkedin-publish-images"),
+            ("engagement analytics rollup", "linkedin-publish-analytics"),
+        ):
+            hits = {e.key for e in mock_store.search(query)}
+            assert expected_key in hits, f"{expected_key!r} not recallable for {query!r}: {hits}"
+
     def test_lossy_merge_is_blocked_and_rolled_back(self, mock_store: MemoryStore) -> None:
         """VAL-04: a merge retaining <60% of summed source bytes is refused,
         sources stay un-superseded, and no merge row is written.
@@ -503,6 +514,54 @@ class TestContentPreservationGuard:
 
         after = mock_store.get_metrics().counters.get(MERGE_BLOCKED_CONTENT_LOSS_METRIC, 0)
         assert after == before + 1
+
+    def test_real_save_path_blocks_and_logs_the_refusal(self, temp_project_root: Path) -> None:
+        """The refusal survives ``_maybe_consolidate``'s catch-all.
+
+        The tests above call ``check_consolidation_on_save`` directly. The
+        production route is ``store.save`` → ``_maybe_consolidate``, which
+        swallows exceptions by design — so without an explicit branch on
+        ``result.reason`` a blocked merge would leave the metric as its only
+        trace, naming nothing.
+        """
+        config = ConsolidationConfig(enabled=True, threshold=0.3, min_entries=3, exempt_tiers=())
+        store = MemoryStore(temp_project_root, consolidation_config=config)
+        try:
+            shared_tags = ["savepath", "runbook"]
+            base = _long_body(
+                "Deployment runbook for the release pipeline",
+                "Run the migration sidecar, then restart the http container and smoke test.",
+            )
+            keys = ["savepath-runbook-a", "savepath-runbook-b", "savepath-runbook-c"]
+            with patch("tapps_brain.store.logger") as mock_logger:
+                for i, key in enumerate(keys):
+                    store.save(
+                        key=key,
+                        value=f"{base} Variant {i}.",
+                        tier="pattern",
+                        tags=shared_tags,
+                        conflict_check=False,
+                    )
+
+            blocked = [
+                call
+                for call in mock_logger.warning.call_args_list
+                if call.args and call.args[0] == "auto_consolidation_blocked_on_save"
+            ]
+            assert blocked, (
+                "expected auto_consolidation_blocked_on_save; got "
+                f"{[c.args[0] for c in mock_logger.warning.call_args_list if c.args]}"
+            )
+            assert blocked[-1].kwargs["reason"] == "merge_would_lose_content"
+
+            assert store.get_metrics().counters.get(MERGE_BLOCKED_CONTENT_LOSS_METRIC, 0) >= 1
+            assert store.count() == len(keys)
+            for key in keys:
+                entry = store.get(key)
+                assert entry is not None
+                assert entry.superseded_by is None
+        finally:
+            store.close()
 
     def test_periodic_scan_reports_blocked_merges_separately(
         self, mock_store: MemoryStore, temp_project_root: Path

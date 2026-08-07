@@ -28,7 +28,11 @@ from tapps_brain.models import (
     MemorySource,
     MemoryTier,
 )
-from tapps_brain.similarity import compute_similarity, is_same_topic
+from tapps_brain.similarity import (
+    compute_similarity,
+    compute_similarity_with_embeddings,
+    is_same_topic,
+)
 from tests.factories import make_entry as _make_entry
 
 
@@ -566,6 +570,60 @@ class TestShouldConsolidate:
         assert compute_similarity(entry, unrelated).combined_score < 0.7
 
         assert should_consolidate(entry, [unrelated], threshold=0.7) == []
+
+    def test_same_topic_below_threshold_on_the_embedding_path(self) -> None:
+        """The gate holds under the metric production actually uses.
+
+        ``should_consolidate`` scores same-topic pairs with
+        ``compute_similarity_with_embeddings``, which takes the *embedding*
+        path whenever both entries carry vectors — a different code path from
+        the text-only case above, and the one that runs on any pgvector
+        deployment. The gate has to hold there too.
+        """
+        shared_tags = ["linkedin", "publishing", "content"]
+        dim = 8
+        entry = _make_entry(
+            key="embedded-cadence",
+            value="Publishing cadence targets three posts per week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": [1.0, *([0.0] * (dim - 1))]})
+        unrelated = _make_entry(
+            key="embedded-image-pipeline",
+            value="Rendered artwork uploads return a signed URL.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": [0.0, 1.0, *([0.0] * (dim - 2))]})
+
+        scored = compute_similarity_with_embeddings(entry, unrelated)
+        assert scored.used_embeddings is True, "fixture must exercise the embedding path"
+        assert scored.combined_score < 0.7
+
+        assert should_consolidate(entry, [unrelated], threshold=0.7) == []
+
+    def test_same_topic_above_threshold_on_the_embedding_path_still_matches(self) -> None:
+        """Control: the embedding-path gate is a threshold, not a blanket refusal."""
+        shared_tags = ["linkedin", "publishing", "content"]
+        dim = 8
+        vector = [1.0, *([0.0] * (dim - 1))]
+        entry = _make_entry(
+            key="embedded-a",
+            value="Publishing cadence targets three posts per week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": vector})
+        near_duplicate = _make_entry(
+            key="embedded-b",
+            value="Publishing cadence targets three posts each week.",
+            tier=MemoryTier.architectural,
+            tags=shared_tags,
+        ).model_copy(update={"embedding": list(vector)})
+
+        scored = compute_similarity_with_embeddings(entry, near_duplicate)
+        assert scored.used_embeddings is True
+        assert scored.combined_score >= 0.7
+
+        assert should_consolidate(entry, [near_duplicate], threshold=0.7) == [near_duplicate]
 
     def test_empty_candidates(self) -> None:
         """Returns empty list for no candidates."""
