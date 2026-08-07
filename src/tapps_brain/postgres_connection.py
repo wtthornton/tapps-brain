@@ -66,7 +66,7 @@ def is_postgres_dsn(dsn: str | None) -> bool:
 
 
 def default_pool_max_size() -> int:
-    """Default pool ``max_size`` from the environment (TAP-5816).
+    """Default pool ``max_size`` from the environment (TAP-5839).
 
     Single source of truth shared by :class:`PostgresConnectionManager` and any
     caller that needs to size itself against the pool.  Read it rather than
@@ -79,7 +79,7 @@ def default_pool_max_size() -> int:
 
 
 def default_pool_max_waiting() -> int:
-    """Default pool ``max_waiting`` from the environment (TAP-5816)."""
+    """Default pool ``max_waiting`` from the environment (TAP-5839)."""
     return int(os.environ.get("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "20"))
 
 

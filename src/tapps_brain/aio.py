@@ -343,7 +343,7 @@ class AsyncMemoryStore:
             else int(os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "16"))
         )
         # Default to what the connection pool will actually admit rather than a
-        # standalone constant (TAP-5816).  This used to be a hard-coded 64 while
+        # standalone constant (TAP-5839).  This used to be a hard-coded 64 while
         # the pool admitted max_size(10) + max_waiting(20) = 30, so a caller with
         # enough cores could push more concurrent reads at the pool than it would
         # accept and get psycopg_pool.TooManyRequests instead of backpressure.
