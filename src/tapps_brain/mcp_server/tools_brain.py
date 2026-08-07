@@ -39,6 +39,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         agent_id: str = "",
         temporal_sensitivity: str | None = None,
         failed_approaches: list[str] | None = None,
+        skip_consolidation: bool = False,
     ) -> str:
         """Save a memory to the agent's brain.
 
@@ -66,6 +67,9 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         agents don't repeat them (max 5 items).  These are surfaced in brain_recall
         responses when non-empty.
 
+        Pass ``skip_consolidation=True`` for a long, self-contained artifact that
+        must not be folded into a neighbouring entry's merged summary.
+
         When ``TAPPS_BRAIN_IDEMPOTENCY=1``, pass ``_meta.idempotency_key`` (UUID)
         for duplicate-safe writes.
         """
@@ -87,17 +91,27 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
             memory_group=memory_group,
             temporal_sensitivity=temporal_sensitivity,
             failed_approaches=failed_approaches,
+            skip_consolidation=skip_consolidation,
         )
         if ikey and dsn:
             _mcp_idempotency_record(dsn, project_id, ikey, result, "brain_remember")
         return json.dumps(result)
 
     @mcp.tool()  # type: ignore[untyped-decorator]
-    def brain_recall(query: str, max_results: int = 5, agent_id: str = "") -> str:
+    def brain_recall(
+        query: str,
+        max_results: int = 5,
+        agent_id: str = "",
+        include_sources: bool = False,
+    ) -> str:
         """Recall memories matching a query.
 
         Pass ``agent_id`` to override the server-level default for this call
         (STORY-070.7).
+
+        Pass ``include_sources=True`` to also return the original entries a
+        consolidated memory was merged from — the merged value is capped and
+        summarised, so this is how you get the untruncated originals back.
         """
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -108,6 +122,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
                 eff_aid,
                 query=query,
                 max_results=max_results,
+                include_sources=include_sources,
             ),
             default=str,
         )

@@ -42,6 +42,10 @@ def _parse_iso(iso: str) -> datetime:
 
 _KEY_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 
+# Input-only aliases resolved by ``MemorySource._missing_``. The value on the
+# right is the canonical member that gets stored.
+_MEMORY_SOURCE_ALIASES: dict[str, str] = {"user": "human"}
+
 
 class MemoryTier(StrEnum):
     """Decay classification for memory entries."""
@@ -61,6 +65,22 @@ class MemorySource(StrEnum):
     agent = "agent"  # created by an AI agent
     inferred = "inferred"  # derived from analysis
     system = "system"  # created by TappsMCP internals
+
+    @classmethod
+    def _missing_(cls, value: object) -> MemorySource | None:
+        """Accept input aliases for a canonical member.
+
+        ``"user"`` is the word callers reach for when they mean *a person
+        wrote this*, and rejecting it turned an obvious save into a bare
+        ``ValueError``. It is an **input alias only**: the stored canonical
+        value is ``human`` and the enum keeps exactly four members.
+        Implemented on ``_missing_`` so every input boundary — ``save``,
+        ``save_many``, Pydantic field validation, HTTP and MCP payloads —
+        resolves it identically.
+        """
+        if isinstance(value, str) and value.strip().lower() in _MEMORY_SOURCE_ALIASES:
+            return cls(_MEMORY_SOURCE_ALIASES[value.strip().lower()])
+        return None
 
 
 class MemoryScope(StrEnum):

@@ -12,6 +12,10 @@ brain_recall_tool_paths
 brain_record_events_batch
 brain_remember
 brain_status
+document_get
+document_list
+document_put
+document_search
 feedback_gap
 feedback_rate
 hive_search

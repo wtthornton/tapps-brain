@@ -611,6 +611,14 @@ class ConsolidationProfileConfig(BaseModel):
         default=0.7, ge=0.0, le=1.0, description="Similarity threshold for merging."
     )
     min_entries: int = Field(default=3, ge=1, description="Minimum entries before consolidation.")
+    exempt_tiers: list[str] = Field(
+        default_factory=lambda: ["architectural"],
+        description=(
+            "Tiers that never auto-consolidate. Architectural entries are exempt by "
+            "default: they are long-lived, long-form, and a merge caps the result at "
+            "4096 chars while superseding the sources."
+        ),
+    )
 
 
 class LearningDecayConfig(BaseModel):

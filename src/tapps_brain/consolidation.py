@@ -28,7 +28,7 @@ from tapps_brain.models import (
 from tapps_brain.relations import RelationEntry
 from tapps_brain.similarity import (
     DEFAULT_SIMILARITY_THRESHOLD,
-    compute_similarity,
+    compute_similarity_with_embeddings,
     find_similar,
     is_same_topic,
 )
@@ -44,6 +44,42 @@ DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE = 2
 MAX_CONSOLIDATED_VALUE_LENGTH = 4096
 _MIN_PREFIX_LENGTH = 3
 _MIN_ENTRIES_FOR_CONSOLIDATION = DEFAULT_MIN_ENTRIES_TO_CONSOLIDATE
+
+# Sentence boundary: terminal punctuation followed by whitespace or end of
+# text.  Requiring the whitespace is what keeps ``learn.microsoft.com``,
+# ``v3.30.0`` and ``0.6`` in one piece — see :func:`_extract_sentences`.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+
+# Tokens whose trailing dot is not a sentence end.  Kept deliberately small —
+# every entry here is a token that reliably ends with '.' and is reliably
+# followed by more of the same sentence.
+_ABBREVIATIONS = frozenset(
+    {
+        "e.g.",
+        "i.e.",
+        "etc.",
+        "vs.",
+        "cf.",
+        "approx.",
+        "no.",
+        "fig.",
+        "al.",
+        "inc.",
+        "ltd.",
+        "co.",
+        "vol.",
+        "ch.",
+        "sec.",
+        "ref.",
+        "dr.",
+        "mr.",
+        "mrs.",
+        "ms.",
+        "st.",
+        "jr.",
+        "sr.",
+    }
+)
 
 
 def _updated_at_key(entry: MemoryEntry) -> datetime:
@@ -194,17 +230,54 @@ def merge_values(entries: list[MemoryEntry]) -> str:
 
 
 def _extract_sentences(text: str) -> list[str]:
-    """Extract normalized sentences from text, in document order.
+    """Extract sentences from text, in document order, with original casing.
 
     Returns a deduplicated *list* (not a set) so that ``merge_values`` picks
     the same "first N unique sentences" on every run — set iteration order
     would make the merged value non-deterministic (hash-seed dependent),
     violating the deterministic-consolidation guarantee (ADR: no LLM,
-    reproducible merges).
+    reproducible merges).  Dedup compares case-insensitively but the emitted
+    fragment keeps its **original casing**: the previous implementation
+    lowercased every fragment, so a merge silently rewrote proper nouns,
+    acronyms and URLs.
+
+    A boundary is only recognised at ``[.!?]`` followed by whitespace (or end
+    of text) and not preceded by a known abbreviation.  Splitting on bare
+    ``[.!?]+`` cut ``learn.microsoft.com`` into ``['...learn', 'microsoft',
+    'com docs)']`` — and since ``microsoft`` was already seen, the merge
+    emitted the mangled ``official learn com docs)``.  Domains, version
+    numbers (``v3.30.0``) and decimals have no space after the dot, so the
+    whitespace requirement alone keeps them intact.
     """
-    sentences = re.split(r"[.!?]+", text)
-    normalized = (s.strip().lower() for s in sentences)
-    return list(dict.fromkeys(s for s in normalized if s))
+    parts = _SENTENCE_BOUNDARY.split(text)
+
+    # Re-join a fragment that ends in an abbreviation ("e.g.", "Inc.") with
+    # the fragment after it — those dots ARE followed by whitespace.
+    joined: list[str] = []
+    for part in parts:
+        if joined and _ends_with_abbreviation(joined[-1]):
+            joined[-1] = f"{joined[-1]} {part}"
+        else:
+            joined.append(part)
+
+    seen: set[str] = set()
+    sentences: list[str] = []
+    for part in joined:
+        sentence = part.strip()
+        if not sentence:
+            continue
+        fingerprint = sentence.lower()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        sentences.append(sentence)
+    return sentences
+
+
+def _ends_with_abbreviation(fragment: str) -> bool:
+    """Whether *fragment*'s last token is a known abbreviation, not a sentence end."""
+    tail = fragment.rsplit(None, 1)[-1] if fragment.strip() else ""
+    return tail.lower() in _ABBREVIATIONS
 
 
 # ---------------------------------------------------------------------------
@@ -465,18 +538,29 @@ def should_consolidate(
     if not active_candidates:
         return []
 
-    # Check for same-topic entries first. NOTE: this path matches on tier +
-    # tag overlap only and deliberately bypasses *threshold* — same-topic
-    # entries merge even when their text similarity is low.
-    same_topic_matches = [c for c in active_candidates if is_same_topic(entry, c)]
-    if same_topic_matches:
+    # Check for same-topic entries first. Same topic (same tier + >=50% tag
+    # overlap of the smaller set) is a *necessary* condition, never a
+    # sufficient one: it carries no text signal at all, so on its own it
+    # merged unrelated long-form entries that merely shared tags and lost
+    # their bodies to the 4096-char merge cap. The threshold is AND-gated in.
+    #
+    # Scored with the *same* metric the ``find_similar`` fallback below uses
+    # (embedding cosine when both entries carry vectors, text similarity
+    # otherwise). Scoring the gate with text-only similarity would let a pair
+    # the gate rejected reappear through the fallback on any pgvector
+    # deployment — the gate has to be at least as permissive as what follows it.
+    same_topic_scored = [
+        (c, compute_similarity_with_embeddings(entry, c).combined_score)
+        for c in active_candidates
+        if is_same_topic(entry, c)
+    ]
+    above_threshold = [pair for pair in same_topic_scored if pair[1] >= threshold]
+    if above_threshold:
         # Honor the documented "best match first" contract on this path too:
         # callers truncate (matches[:min_entries-1]), so raw list_all() order
         # would merge arbitrary same-topic entries instead of the strongest.
-        same_topic_matches.sort(
-            key=lambda c: compute_similarity(entry, c).combined_score, reverse=True
-        )
-        return same_topic_matches
+        above_threshold.sort(key=lambda pair: pair[1], reverse=True)
+        return [c for c, _ in above_threshold]
 
     # Fall back to similarity-based detection, preserving find_similar's
     # best-first ordering so callers that truncate keep the strongest matches.

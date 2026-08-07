@@ -22,7 +22,47 @@ This document maps the dominant runtime call paths as implemented now.
 6. Persist write-through to Postgres via `PostgresPrivateBackend.save`.
 7. Optional Hive propagation via `PropagationEngine`.
 8. Relation extraction/persistence.
-9. Optional auto-consolidation trigger.
+9. Optional auto-consolidation trigger — see below.
+
+### Auto-consolidation trigger (save path)
+
+`store.save` enters `_maybe_consolidate` only when **all** of these hold: consolidation
+is enabled, the caller did not pass `skip_consolidation=True`, no merge is already in
+progress, and the entry's tier is **not** in `consolidation.exempt_tiers` (default
+`["architectural"]`). From there `check_consolidation_on_save` → `should_consolidate`
+decides what merges:
+
+- **Same-topic path** — `is_same_topic` is *only* "same tier AND ≥50% tag overlap of
+  the smaller set" (`similarity.py`). It carries no text signal, so it is **AND-gated**
+  with the similarity threshold: a same-topic pair still has to score
+  `>= threshold` under `compute_similarity_with_embeddings` to match. Same topic is a
+  necessary condition, never a sufficient one. Before that gate existed, three
+  `architectural` entries that merely shared tags matched pairwise and merged.
+- **Fallback path** — `find_similar` with the same threshold, best-match-first.
+- `min_entries` (default **3**) is the count *including* the entry being saved, so the
+  merge fires on the third qualifying save. There is **no time window and no write-rate
+  signal** — save proximity is irrelevant to the trigger.
+
+Two guards then bound the damage a merge can do:
+
+- **Content-preservation floor** (`MIN_CONTENT_PRESERVATION_RATIO`, 0.6) — a merge
+  retaining less than 60% of its sources' summed bytes raises
+  `merge_would_lose_content` *before any write*, so no merge row is created and no
+  source is superseded. `merge_values` keeps the newest value verbatim plus at most two
+  sentences per older source and caps at `MAX_CONSOLIDATED_VALUE_LENGTH` (4096), so
+  merging long-form entries destroys content while superseding the originals. Blocked
+  merges increment `store.consolidate.blocked_content_loss`.
+- **Lost-update guard** — each source's live `value` is compared against the snapshot
+  the merge was computed from; a concurrent write aborts and rolls back the merge.
+
+**This applies to the save path only.** `run_periodic_consolidation_scan` groups via
+`find_consolidation_groups` → `find_similar` with a real threshold and never had the
+same-topic bypass. It shares the preservation floor, and reports refusals separately as
+`PeriodicScanResult.blocked_content_loss` rather than as persist failures.
+
+Recovering the originals after a merge: `brain_recall(..., include_sources=True)`
+returns the source entries a merge superseded, and
+`maintenance consolidation-merge-undo <key>` reverses one merge deterministically.
 
 ## 2) Recall flow
 

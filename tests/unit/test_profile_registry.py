@@ -130,15 +130,18 @@ class TestBundledProfiles:
         assert "brain_get_neighbors" in coder
         assert "brain_explain_connection" in coder
 
-    def test_get_coder_tool_count_is_23(self) -> None:
-        """Pin the coder profile size at 23 tools.
+    def test_get_coder_tool_count_is_27(self) -> None:
+        """Pin the coder profile size at 27 tools.
 
         v3.24 added 3 experience/profile KV tools; TAP-5545 added
         ``brain_recall_tool_paths``; TAP-5509 added ``brain_kg_check`` (+1 each).
+        The document plane (``document_get`` / ``document_list`` /
+        ``document_put`` / ``document_search``) added 4 — long artifacts belong
+        there rather than split across ``memory_save``.
         """
         reg = ProfileRegistry()
         coder = reg.get("coder")
-        assert len(coder) == 23, sorted(coder)
+        assert len(coder) == 27, sorted(coder)
 
     def test_coder_description_calls_out_kg_discovery_tools(self) -> None:
         """TAP-2006: description must surface the discovery primitives by name.
@@ -223,11 +226,11 @@ class TestBundledProfiles:
         reg = ProfileRegistry()
         assert reg.get("seeder").issubset(reg.get("full"))
 
-    def test_get_agent_brain_returns_24_tools(self) -> None:
-        """TAP-1579 + v3.24: agent_brain exposes brain_* facade + experience/profile KV."""
+    def test_get_agent_brain_returns_28_tools(self) -> None:
+        """TAP-1579 + v3.24: brain_* facade + experience/profile KV + document plane."""
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        assert len(agent_brain) == 24
+        assert len(agent_brain) == 28
         assert "brain_record_events_batch" in agent_brain
         assert "brain_audit_consumers" in agent_brain
 
@@ -254,13 +257,20 @@ class TestBundledProfiles:
                 f"agent_brain profile must not contain memory_* tools, found {tool!r}"
             )
 
-    def test_get_agent_brain_contains_only_brain_star_tools(self) -> None:
-        """TAP-1579: every tool in agent_brain must start with brain_."""
+    def test_get_agent_brain_contains_only_brain_and_document_tools(self) -> None:
+        """TAP-1579: agent_brain is the brain_* facade plus the document plane.
+
+        The read-only ``document_*`` tools are the sanctioned home for long
+        artifacts — an agent that cannot reach them has no alternative to
+        splitting a long document across ``memory_save`` calls, which is what
+        auto-consolidation then merged into a truncated summary.
+        """
         reg = ProfileRegistry()
         agent_brain = reg.get("agent_brain")
-        non_brain = [t for t in agent_brain if not t.startswith("brain_")]
-        assert not non_brain, (
-            f"agent_brain profile must contain only brain_* tools, found {sorted(non_brain)}"
+        unexpected = [t for t in agent_brain if not t.startswith(("brain_", "document_"))]
+        assert not unexpected, (
+            "agent_brain profile must contain only brain_* / document_* tools, "
+            f"found {sorted(unexpected)}"
         )
 
     def test_get_agent_brain_is_subset_of_full(self) -> None:

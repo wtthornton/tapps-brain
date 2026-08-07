@@ -167,6 +167,15 @@ This repo is wired to the deployed tapps-brain at `http://127.0.0.1:8080/mcp/` a
 
 Tag important entries with `critical` or `security` for ranking boost.
 
+**Long artifacts go to the document plane, not split across `memory_save`.** Use
+`document_put` / `document_get` / `document_search` / `document_list` for anything
+long-form — a design doc, a runbook, a generated report. Memory entries are capped at
+4096 chars (`MAX_VALUE_LENGTH`), so a long artifact chopped into several same-tagged
+`memory_save` calls is exactly the shape auto-consolidation used to merge into one
+truncated summary while superseding the pieces. If you must keep a long entry in the
+memory plane, pass `skip_consolidation=True`; to read back the originals behind an
+existing merge, use `brain_recall(..., include_sources=True)`.
+
 **Do NOT save:**
 - Code patterns / file paths / module layout — derivable by reading the repo.
 - Git history, recent diffs, who-changed-what — `git log` / `git blame` are authoritative.

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tapps_brain.models import MemoryEntry
+from tapps_brain.models import MemoryEntry, MemorySource
 from tapps_brain.store import (
     VALID_AGENT_SCOPES,
     ConsolidationConfig,
@@ -45,6 +45,16 @@ class TestMemoryStoreCRUD:
 
     def test_get_nonexistent(self, store: MemoryStore) -> None:
         assert store.get("nonexistent") is None
+
+    def test_save_accepts_user_source_alias(self, store: MemoryStore) -> None:
+        """``source="user"`` saves and stores the canonical ``human``."""
+        result = store.save(key="alias-key", value="Written by a person", source="user")
+        assert isinstance(result, MemoryEntry)
+        assert result.source is MemorySource.human
+
+        loaded = store.get("alias-key")
+        assert loaded is not None
+        assert loaded.source is MemorySource.human
 
     def test_save_updates_existing(self, store: MemoryStore) -> None:
         store.save(key="k1", value="original")

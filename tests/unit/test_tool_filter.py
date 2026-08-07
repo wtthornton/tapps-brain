@@ -174,11 +174,11 @@ class TestListToolsFilter:
         result = mcp._tool_manager.list_tools()
         assert result == []
 
-    def test_bundled_coder_profile_returns_23_tools(self) -> None:
-        """Real ProfileRegistry.get('coder') must return exactly 23 tools."""
+    def test_bundled_coder_profile_returns_27_tools(self) -> None:
+        """Real ProfileRegistry.get('coder') must return exactly 27 tools."""
         real_registry = ProfileRegistry()
         coder_tools = real_registry.get("coder")
-        assert len(coder_tools) == 23
+        assert len(coder_tools) == 27
 
         all_tool_names = list(real_registry.get("full"))
         cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -460,7 +460,7 @@ class TestDeferredToolBehavior:
         real_registry = ProfileRegistry()
         full_tools = list(real_registry.get("full"))
 
-        expected_counts = {"coder": 23, "reviewer": 10, "seeder": 6, "agent_brain": 24}
+        expected_counts = {"coder": 27, "reviewer": 10, "seeder": 6, "agent_brain": 28}
         for profile_name, expected_count in expected_counts.items():
             cv: contextvars.ContextVar[str | None] = contextvars.ContextVar(
                 f"test_profile_{profile_name}", default=None

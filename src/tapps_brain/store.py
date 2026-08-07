@@ -369,6 +369,10 @@ class ConsolidationConfig:
     enabled: bool = True
     threshold: float = 0.7
     min_entries: int = 3
+    # Tiers that never auto-consolidate. ``architectural`` is exempt by default:
+    # those entries are long-form and long-lived, and a merge caps the result at
+    # MAX_CONSOLIDATED_VALUE_LENGTH while superseding its full-bodied sources.
+    exempt_tiers: tuple[str, ...] = ("architectural",)
 
     def to_dict(self) -> dict[str, object]:
         """Return config as a plain dict."""
@@ -376,6 +380,7 @@ class ConsolidationConfig:
             "enabled": self.enabled,
             "threshold": self.threshold,
             "min_entries": self.min_entries,
+            "exempt_tiers": list(self.exempt_tiers),
         }
 
 
@@ -607,6 +612,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 enabled=_pc.enabled,
                 threshold=_pc.threshold,
                 min_entries=_pc.min_entries,
+                exempt_tiers=tuple(getattr(_pc, "exempt_tiers", ("architectural",))),
             )
         return ConsolidationConfig()
 
@@ -1683,6 +1689,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             self._consolidation_config.enabled
             and not skip_consolidation
             and not self._consolidation_in_progress
+            and str(entry.tier) not in self._consolidation_config.exempt_tiers
         ):
             with MetricsTimer(self._metrics, "store.save.phase.consolidate_ms"):
                 self._maybe_consolidate(entry)
@@ -2799,7 +2806,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 return
             self._consolidation_in_progress = True
         try:
-            from tapps_brain.auto_consolidation import check_consolidation_on_save
+            from tapps_brain.auto_consolidation import (
+                MergeWouldLoseContentError,
+                check_consolidation_on_save,
+            )
 
             result = check_consolidation_on_save(
                 entry,
@@ -2818,6 +2828,15 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     if result.consolidated_entry
                     else None,
                     source_keys=result.source_keys,
+                )
+            elif result.reason == MergeWouldLoseContentError.reason:
+                # A refused merge is a deliberate outcome an operator needs to
+                # see. Dropping ``result.reason`` here left the metric as the
+                # only trace, with nothing naming the entry that tripped it.
+                logger.warning(
+                    "auto_consolidation_blocked_on_save",
+                    entry_key=entry.key,
+                    reason=result.reason,
                 )
         except Exception:
             # Best-effort like the other post-persist steps (Hive propagation,

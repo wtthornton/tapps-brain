@@ -50,7 +50,14 @@ class TestConsolidationConfig:
             "enabled": True,
             "threshold": 0.6,
             "min_entries": 4,
+            "exempt_tiers": ["architectural"],
         }
+
+    def test_to_dict_reflects_custom_exempt_tiers(self) -> None:
+        from tapps_brain.store import ConsolidationConfig
+
+        cfg = ConsolidationConfig(exempt_tiers=("architectural", "pattern"))
+        assert cfg.to_dict()["exempt_tiers"] == ["architectural", "pattern"]
 
 
 # ---------------------------------------------------------------------------
