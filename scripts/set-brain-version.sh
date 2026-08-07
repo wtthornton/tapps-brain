@@ -31,7 +31,16 @@ for f in docker/.env docker/.env.example; do
     echo "ERROR: $f has no BRAIN_VERSION line" >&2
     exit 1
   fi
-  cp -p "$f" "$f.bak.$(date +%Y%m%d-%H%M%S)"
+  # Back up ONLY untracked files. docker/.env holds live secrets and is
+  # gitignored, so a local copy is its only rollback — but the copy must stay
+  # gitignored too (see .gitignore `.env.bak.*`; the pre-existing
+  # `*.env.*.bak` rule does not match this name shape and left secret backups
+  # as untracked files a `git add -A` would have committed).
+  # docker/.env.example is tracked, so git history is already its backup and an
+  # extra .bak is untracked noise.
+  if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    cp -p "$f" "$f.bak.$(date +%Y%m%d-%H%M%S)"
+  fi
   sed -i "s/^BRAIN_VERSION=.*/BRAIN_VERSION=$VERSION/" "$f"
   echo "set    $f -> $(grep -E '^BRAIN_VERSION=' "$f")"
 done

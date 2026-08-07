@@ -12,6 +12,16 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.31.1] — 2026-08-06
+
+### Fixed
+
+- **Save-time conflict detection invalidated unrelated `procedural` entries** — the `repo-brain` profile raised the cutoff to 0.85 for `context` (TAP-4464, "many distinct facts are ~0.6 similar and would otherwise invalidate each other") but left `procedural` on the 0.6 default. `procedural` holds the same shape of content — runbooks, workflows, agent-execution transcripts — where TF-cosine over long, structurally-similar bodies converges on document *shape* rather than subject. Measured on a live corpus of ~4k-char transcripts sharing an output schema but no topic: cross-topic pairs scored **0.6026-0.7254** and same-topic duplicates **0.7324-0.8862**, so the 0.6 default hid 7 unrelated entries while correctly catching 5 duplicates. `procedural` now uses **0.75**, above every measured false positive.
+
+  The asymmetry is deliberate. A surviving duplicate is visible and can be superseded later; a false invalidation removes the entry from recall entirely and — unlike a consolidation merge, which has `maintenance consolidation-merge-undo` — **has no supported undo**. Prefer keeping the entry. Short-bodied tiers (`architectural`, `pattern`) keep the 0.6 default; this is not a blanket raise.
+
+  Embedding cosine was evaluated as an alternative signal and rejected: on the same corpus it separated *worse* (same-topic 0.9751 min vs cross-topic 0.9230 max — a 0.05 margin, against TF-cosine's 0.19).
+
 ## [3.31.0] — 2026-08-06
 
 Minor release: auto-consolidation no longer replaces full-bodied memory entries with a truncated summary. Minor rather than patch because it adds new public surface — the `skip_consolidation` and `include_sources` tool parameters, the `consolidation.exempt_tiers` profile setting, and the document plane on the `coder` and `agent_brain` profiles — and because it materially narrows when consolidation fires. No migrations; nothing removed.

@@ -8,6 +8,11 @@
 # Local secret backups (smoke-test artifacts) — never commit.
 .env.smoke-*
 *.env.*.bak
+# `*.env.*.bak` does NOT match `.env.bak.<timestamp>` — the token order differs,
+# so timestamped backups were landing as untracked files a `git add -A` would
+# have committed. Match them explicitly.
+.env.bak.*
+*.env.bak.*
 
 __pycache__/
 *.egg-info/

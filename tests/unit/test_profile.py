@@ -950,6 +950,23 @@ class TestConflictCheckConfig:
         c = ConflictCheckConfig(aggressiveness="low", similarity_threshold=0.3)
         assert c.effective_similarity_threshold() == 0.3
 
+    def test_repo_brain_raises_the_long_body_tiers(self) -> None:
+        """`context` and `procedural` both hold long, structurally-similar bodies.
+
+        TF-cosine over ~4k-char documents that share an output schema converges on
+        document *shape*, not subject, so the 0.6 default invalidated entries about
+        entirely different topics. Measured on a live corpus: cross-topic pairs
+        scored 0.6026-0.7254 (false positives) while true same-topic duplicates
+        scored 0.7324-0.8862. A false invalidation removes an entry from recall
+        with no supported undo, so these tiers stay deliberately conservative.
+        """
+        cc = get_builtin_profile("repo-brain").conflict_check
+        assert cc.effective_similarity_threshold("procedural") == 0.75
+        assert cc.effective_similarity_threshold("context") == 0.85
+        # Short-bodied tiers keep the default — this is not a blanket raise.
+        assert cc.effective_similarity_threshold("architectural") == 0.6
+        assert cc.effective_similarity_threshold("pattern") == 0.6
+
     def test_yaml_roundtrip_under_profile(self, tmp_path: Path) -> None:
         data = {
             "profile": {

@@ -109,6 +109,21 @@ profile:
     aggressiveness: "medium"
     per_tier:
       context: 0.85
+      # `procedural` gets the same treatment as `context` (TAP-4464) and for the
+      # same reason: it holds long, structurally-similar bodies — runbooks,
+      # workflows, agent-execution transcripts — where TF-cosine converges on
+      # document *shape* rather than subject. Measured on a live corpus of ~4k-char
+      # transcripts that shared an output schema but no topic:
+      #   cross-topic (should NOT conflict): 0.6026 - 0.7254  -> 7 entries hidden
+      #   same-topic  (should conflict):     0.7324 - 0.8862  -> 5 entries, correct
+      # The default 0.6 invalidated all twelve. 0.75 sits above every measured
+      # false positive and below every true duplicate but one.
+      #
+      # The asymmetry is deliberate: a surviving duplicate is visible and can be
+      # superseded later, while a false invalidation removes the entry from recall
+      # with NO supported undo (unlike a consolidation merge, which has
+      # `maintenance consolidation-merge-undo`). Prefer keeping the entry.
+      procedural: 0.75
 
   gc:
     floor_retention_days: 30
