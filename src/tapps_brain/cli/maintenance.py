@@ -214,6 +214,93 @@ def maintenance_save_conflict_candidates(
         store.close()
 
 
+@maintenance_app.command("save-conflict-undo")
+def maintenance_save_conflict_undo(
+    keys: Annotated[
+        list[str],
+        typer.Argument(help="Key(s) of the conflict-invalidated row(s) to restore."),
+    ],
+    project_dir: ProjectDir = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview which keys would be restored, without changes."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip confirmation prompt (also: TAPPS_BRAIN_CONFIRM_YES=1 env var).",
+        ),
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Restore entries hidden by save-time conflict detection (TAP-5782).
+
+    Save-time conflict detection marks an entry ``contradicted=true``, which drops
+    it from recall. A false positive was previously unrecoverable: this command is
+    the counterpart to ``consolidation-merge-undo`` for that mechanism.
+
+    Clears ``contradicted`` and ``contradiction_reason`` only — value, tier, tags,
+    confidence and ``updated_at`` are untouched — and appends ``save_conflict_undo``
+    to the audit log. Refuses any contradiction not written by save-time conflict
+    detection, naming the reason it found instead.
+
+    Scope note: private memory is keyed by ``(project_id, agent_id, key)``. Set
+    ``TAPPS_BRAIN_PROJECT`` and ``TAPPS_BRAIN_AGENT_ID`` to target the right
+    partition, or the command will report ``not_found`` for rows that plainly exist.
+
+    Pass ``--dry-run`` to preview. Pass ``--yes`` (or ``TAPPS_BRAIN_CONFIRM_YES=1``)
+    for non-interactive scripts.
+    """
+    auto_yes = yes or os.environ.get("TAPPS_BRAIN_CONFIRM_YES") == "1"
+
+    store = _get_store(project_dir)
+    try:
+        if dry_run:
+            previews = [store.undo_save_conflict(k, dry_run=True) for k in keys]
+            eligible = [r for r in previews if r["ok"]]
+            if as_json:
+                _output({"dry_run": True, "results": previews}, as_json=True)
+            else:
+                typer.echo("Dry run — no changes made.")
+                typer.echo(f"  would restore {len(eligible)} of {len(keys)} key(s):")
+                for r in previews:
+                    mark = "<-" if r["ok"] else "skip"
+                    typer.echo(f"    {mark} {r['key']}  ({r['reason']})")
+            return
+
+        if not auto_yes:
+            if sys.stdin.isatty():
+                typer.confirm(
+                    f"Clear the save-time conflict flag on {len(keys)} entr(y/ies)?",
+                    abort=True,
+                    default=False,
+                )
+            else:
+                typer.echo(
+                    "Non-interactive mode: pass --yes or set TAPPS_BRAIN_CONFIRM_YES=1 "
+                    "to confirm this operation.",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+        results = [store.undo_save_conflict(k) for k in keys]
+        restored = [r for r in results if r["restored"]]
+        if as_json:
+            _output({"restored": len(restored), "results": results}, as_json=True)
+        else:
+            typer.echo(f"Restored {len(restored)} of {len(keys)} key(s).")
+            for r in results:
+                mark = "<-" if r["restored"] else "skip"
+                typer.echo(f"  {mark} {r['key']}  ({r['reason']})")
+        # Partial success is still a non-zero exit so a script notices.
+        if len(restored) != len(keys):
+            raise typer.Exit(code=1)
+    finally:
+        store.close()
+
+
 @maintenance_app.command("consolidation-merge-undo")
 def maintenance_consolidation_merge_undo(
     consolidated_key: Annotated[str, typer.Argument(help="Key of the consolidated row to undo.")],

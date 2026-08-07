@@ -56,6 +56,13 @@ def _normalize_ws(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+#: Prefix identifying a ``contradiction_reason`` written by save-time conflict
+#: detection.  ``undo_save_conflict`` matches on this so it can never revert a
+#: contradiction written by some other mechanism (a consolidation source, a doc
+#: validation, a manual supersede) whose semantics it does not understand.
+SAVE_CONFLICT_REASON_PREFIX = "Save-time conflict:"
+
+
 def format_save_conflict_reason(
     *,
     incoming_key: str,
@@ -65,9 +72,14 @@ def format_save_conflict_reason(
     """Deterministic user-visible / audit text for save-time conflict invalidation."""
     sim_r = round(float(similarity), 4)
     return (
-        f"Save-time conflict: invalidated by incoming memory '{incoming_key}' "
+        f"{SAVE_CONFLICT_REASON_PREFIX} invalidated by incoming memory '{incoming_key}' "
         f"(tier={tier}, similarity={sim_r})."
     )
+
+
+def is_save_conflict_reason(reason: str | None) -> bool:
+    """Whether *reason* was written by save-time conflict detection."""
+    return bool(reason) and str(reason).startswith(SAVE_CONFLICT_REASON_PREFIX)
 
 
 def detect_save_conflicts(

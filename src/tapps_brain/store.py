@@ -2973,6 +2973,85 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     # Gated learning (TAP-5542)
     # ------------------------------------------------------------------
 
+    def undo_save_conflict(self, key: str, *, dry_run: bool = False) -> dict[str, Any]:
+        """Revert a save-time conflict invalidation for *key* (TAP-5782).
+
+        Save-time conflict detection marks an entry ``contradicted=True``, which
+        removes it from recall (``retrieval.py`` drops contradicted entries).  A
+        false positive was therefore unrecoverable: ``consolidation-merge-undo``
+        only understands consolidation merges, and re-saving the key *preserves*
+        the flag because ``_construct_memory_entry`` carries ``contradicted``
+        forward from the existing row.
+
+        Clears ``contradicted`` and ``contradiction_reason`` and nothing else —
+        value, tier, tags, confidence and ``updated_at`` are untouched, so a
+        recovery does not inflate the entry's recency ranking signal.
+
+        Refuses any contradiction that was **not** written by save-time conflict
+        detection.  A consolidation source, a doc-validation flag or a manual
+        supersede each carry their own linkage (``superseded_by``, merge audit
+        rows) that this operation does not know how to unwind; silently clearing
+        them would strand that linkage.
+
+        Args:
+            key: Entry to restore.
+            dry_run: Report what would change without writing.
+
+        Returns:
+            ``{"ok", "reason", "key", "restored", "contradiction_reason", "dry_run"}``.
+            ``ok=False`` with a machine-readable ``reason`` when the entry is
+            absent, not contradicted, or contradicted by another mechanism —
+            these are ordinary outcomes an operator scripts against, not errors.
+        """
+        from tapps_brain.contradictions import is_save_conflict_reason
+
+        entry = self._ensure_entry_cached(key)
+        if entry is None:
+            return {"ok": False, "reason": "not_found", "key": key, "restored": False}
+        if not entry.contradicted:
+            return {"ok": False, "reason": "not_contradicted", "key": key, "restored": False}
+
+        prior_reason = entry.contradiction_reason
+        if not is_save_conflict_reason(prior_reason):
+            return {
+                "ok": False,
+                "reason": "not_a_save_conflict",
+                "key": key,
+                "restored": False,
+                "contradiction_reason": prior_reason,
+            }
+
+        result: dict[str, Any] = {
+            "ok": True,
+            "reason": "ok",
+            "key": key,
+            "contradiction_reason": prior_reason,
+            "dry_run": dry_run,
+        }
+        if dry_run:
+            result["restored"] = False
+            return result
+
+        updated = self.update_fields(
+            key,
+            contradicted=False,
+            contradiction_reason=None,
+            # Recovery is a metadata event — keep the entry's own timestamp.
+            updated_at=entry.updated_at,
+        )
+        if updated is None:  # pragma: no cover — removed between hydrate and write
+            return {"ok": False, "reason": "not_found", "key": key, "restored": False}
+
+        self._metrics.increment("store.save_conflict_undo")
+        self._persistence.append_audit(
+            action="save_conflict_undo",
+            key=key,
+            extra={"prior_contradiction_reason": prior_reason},
+        )
+        logger.info("save_conflict_undo", key=key, prior_reason=prior_reason)
+        result["restored"] = True
+        return result
+
     def promote_learning(
         self,
         key: str,

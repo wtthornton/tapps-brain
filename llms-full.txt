@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.31.1
+- Version: 3.31.2
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -73,7 +73,7 @@
 
 - Packages: 12
 - Modules: 141
-- Public API symbols: 861
+- Public API symbols: 863
 
 ## Project Structure
 

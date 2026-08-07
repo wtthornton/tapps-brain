@@ -12,6 +12,22 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.31.2] — 2026-08-06
+
+### Added
+
+- **`maintenance save-conflict-undo <keys...>` — recover entries hidden by save-time conflict detection** ([TAP-5782](https://linear.app/tappscodingagents/issue/TAP-5782)) — save-time conflict detection marks an entry `contradicted=true`, which excludes it from the ranked-recall path (`retrieval.py:516`). That was a one-way door: `consolidation-merge-undo` only understands consolidation merges, and re-saving the key *preserves* the flag because `_construct_memory_entry` carries `contradicted` forward from the existing row. The only recovery was a raw `UPDATE` against the production table.
+
+  Clears `contradicted` and `contradiction_reason` and nothing else — value, tier, tags, confidence and **`updated_at`** are untouched, so a recovery does not inflate the entry's recency ranking signal. Writes a `save_conflict_undo` audit row and a `store.save_conflict_undo` metric. Accepts several keys, and supports `--dry-run` / `--yes` / `--json`.
+
+  **Refuses any contradiction it did not write.** A consolidation source, a doc-validation flag or a manual supersede each carry linkage (`superseded_by`, merge audit rows) this operation cannot unwind; clearing them would strand it. Matching is on the `Save-time conflict:` reason prefix, now a named constant with `is_save_conflict_reason()` beside it rather than an inline string.
+
+  Scope note carried in the command help: private memory is keyed by `(project_id, agent_id, key)`, so a CLI run without `TAPPS_BRAIN_AGENT_ID` reports `not_found` for rows that plainly exist.
+
+### Fixed
+
+- **The two retrieval surfaces disagree on contradicted entries, and that is now pinned by a test** — `MemoryRetriever.search` (behind `store.recall`) excludes `contradicted` rows; `MemoryStore.search` (the lexical FTS path behind `brain_recall`) does not filter on it at all. Whether a contradicted entry is "hidden" depends entirely on which surface asked. No behaviour changed here — the disagreement is recorded as a known contract so it stops being a surprise, and flagged for a decision (see [TAP-5783](https://linear.app/tappscodingagents/issue/TAP-5783)).
+
 ## [3.31.1] — 2026-08-06
 
 ### Fixed

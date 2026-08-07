@@ -46,3 +46,37 @@ for f in docker/.env docker/.env.example; do
 done
 
 echo "done   BRAIN_VERSION=$VERSION"
+
+# ---------------------------------------------------------------------------
+# Release-artifact staleness guard.
+#
+# The OpenAPI snapshot and llms*.txt EMBED the package version, so a bump that
+# does not regenerate them fails three tests — but only on the push-to-main CI
+# run, long after the bump looked successful:
+#   test_openapi_contract.py::test_runtime_spec_matches_checked_in_snapshot
+#   test_release_artifacts.py::test_openapi_snapshot_for_current_version_exists
+#   test_release_artifacts.py::test_llms_txt_version_matches_pyproject
+# This shipped a red main on 3.31.0 and 3.31.1. Report it here, at the moment
+# of the bump, with the exact commands — rather than letting CI find it.
+#
+# Warn rather than fail: this script is also used to re-pin a deploy without a
+# version change, where regenerating artifacts is not wanted.
+# ---------------------------------------------------------------------------
+stale=""
+[ -f "docs/contracts/openapi-$VERSION.json" ] || stale="$stale\n    docs/contracts/openapi-$VERSION.json (missing)"
+for f in llms.txt llms-full.txt; do
+  if [ -f "$f" ] && ! grep -qE "^- Version: $VERSION\$" "$f"; then
+    stale="$stale\n    $f (declares $(grep -E '^- Version:' "$f" | head -1 | sed 's/^- Version: //'))"
+  fi
+done
+
+if [ -n "$stale" ]; then
+  echo
+  echo "WARNING: release artifacts are stale for $VERSION:"
+  printf '%b\n' "$stale"
+  echo
+  echo "  Regenerate before committing, or main CI will go red:"
+  echo "    uv run python scripts/snapshot_openapi.py"
+  echo "    # llms.txt + llms-full.txt: docs_generate_llms_txt (docs-mcp), modes compact and full"
+  echo
+fi
