@@ -588,7 +588,7 @@ class TestBoundedConcurrency:
     async def test_read_semaphore_defaults_to_pool_capacity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Unset env → the read bound tracks what the pool admits (TAP-5816).
+        """Unset env → the read bound tracks what the pool admits (TAP-5839).
 
         This used to be a standalone 64 while the pool admitted max_size(10) +
         max_waiting(20) = 30, so enough concurrent readers could out-run the
