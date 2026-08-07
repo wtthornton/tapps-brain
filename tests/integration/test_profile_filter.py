@@ -606,7 +606,14 @@ class TestEndToEndProfileFiltering:
         "profile,expected_count",
         [
             ("full", 84),
-            ("coder", 23),
+            # 27, not 23: TAP-4998 added the document plane (document_get /
+            # _list / _put / _search) to `coder` in 3.31.0 and this expectation
+            # was not updated with it.  mcp_profiles.yaml is the source of
+            # truth and declares 27.  The drift survived because CI runs an
+            # explicit integration allowlist that excludes this file (TAP-2803),
+            # so only a full local `release-ready.sh` run with a live DSN
+            # surfaces it.
+            ("coder", 27),
             ("reviewer", 10),
             ("seeder", 6),
         ],
