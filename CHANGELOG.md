@@ -90,6 +90,11 @@ The through-line across both epics is **fail-shut**: frequency never promotes a 
 
   Also documents the per-agent recall boundary measured on WebStoreDNA (29 entries sharded across 17 agent tenants by per-worktree `agent.id`): `scope=project` does **not** cross agents, so pin `CLAUDE_AGENT_ID` when using worktrees or each one reads a different slice of memory.
 
+### Added
+
+- **`invalidated_detail` on the save response** — `invalidated` names the entries a save evicted from recall; it does not say why. The similarity score behind each eviction is already computed for the conflict audit and previously reached only a log line, so a consumer watching evictions could tell that *something* was dropped but not whether the threshold sits above or below where they want it. Each save that invalidates neighbours now also returns `invalidated_detail`: one `{key, similarity, tier, threshold}` row per invalidation, listing only entries whose invalidation actually persisted. That turns "something was evicted" into "evicted at 0.71 against a threshold of 0.6", which is tunable from real traffic instead of guesswork. Additive — `invalidated` keeps its bare-key shape, because consumers gate on it today. Requested by nlt-ideas-scout, who rated it above the threshold change itself.
+- **Supersede tuning is now documented at the point of pain** — a consumer only learned that `conflict_check.per_tier` existed, or that profiles are per-project at all, by reading `profile.py`. The `/v1/remember` and save-envelope docs now say so where invalidations are described, and point at the per-project profile overrides guide. Not knowing the knob existed was half the problem; assuming any tuning would be server-wide, and therefore not asking, was the other half.
+
 ## [3.29.0] — 2026-08-05
 
 Minor release: adds per-save supersede scoping, removes the write-only Bloom filter and its `bloom_saturation` gauge, and closes a release-gate hole that let a release ship without its own code. Minor rather than patch because a field is removed from the metrics/health payload.
