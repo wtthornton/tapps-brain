@@ -12,6 +12,18 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.32.1] — 2026-08-07
+
+### Fixed
+
+- **`AsyncMemoryStore` could admit more concurrent reads than the connection pool accepts** ([TAP-5816](https://linear.app/tappscodingagents/issue/TAP-5816)) — the read semaphore defaulted to a hard-coded **64** while the pool admits `max_size` (10) + `max_waiting` (20) = **30**. The two numbers lived in different modules with nothing reconciling them, so a caller with enough concurrency could push more reads at the pool than it will accept and receive `psycopg_pool.TooManyRequests` instead of backpressure.
+
+  `postgres_connection.py` — the pool's own module — now owns the defaults and exposes `default_pool_max_size()`, `default_pool_max_waiting()` and `default_pool_capacity()`. `PostgresConnectionManager.__init__` reads those same helpers instead of re-parsing the env vars inline, so each default has exactly one definition, and `aio.py` defaults `_read_sem` to the pool's capacity. An explicit `max_concurrent_reads` argument or `TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS` still wins.
+
+  Two tests pin the *relationship* rather than the number, so tuning either pool env var cannot silently reopen the gap: one patches the pool env to 7 + 5 and asserts the read bound follows to 12, the other asserts the invariant at the shipped defaults.
+
+  **This does not fix `test_100_concurrent_recalls_no_errors`.** The semaphore was never that test's binding constraint — `asyncio.to_thread` caps at `min(32, cpu+4)` = 24 workers on the affected host, already below both 64 and 30. Exceeding a capacity of 30 from 24 threads means an operation holds more than one connection at once, which points at a nested checkout in the recall path and is tracked separately. That flake predates this release and reproduces on 3ee0347.
+
 ## [3.32.0] — 2026-08-07
 
 ### Changed
