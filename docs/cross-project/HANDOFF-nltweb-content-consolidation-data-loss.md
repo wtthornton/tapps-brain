@@ -153,6 +153,79 @@ short pointer entries in memory. Memory values are capped at 4096 chars; these
 are 2.8k–3.8k each and growing. The document plane is built for exactly this and
 is not subject to consolidation at all.
 
+---
+
+# Second, unrelated defect found in your data — save-time conflict detection
+
+While verifying the above we found a **different** mechanism hiding entries of
+yours. It is not consolidation and the 3.31.0 fix does nothing for it.
+
+**12 of your 34 entries (35%) were invisible to `brain_recall`.** They carry
+`contradicted=true` with reason `Save-time conflict: invalidated by incoming
+memory ...`. `retrieval.py:516` drops contradicted entries; the content was never
+deleted, but an exact `memory_get` was the only way to reach it.
+
+## Cause — a tapps-brain default, not your configuration
+
+Your `exec-nltweb-content-post-strategist-*` entries are ~4,094-char agent
+execution transcripts saved to the `procedural` tier. TF-cosine over long,
+structurally-similar documents converges on document **shape** rather than
+subject, so entries about entirely different topics cleared the 0.6 cutoff.
+Measured on your live corpus:
+
+| | count | similarity |
+|---|---|---|
+| cross-topic — should NOT conflict | **7** | 0.6026 – 0.7254 |
+| same-topic duplicates — correctly caught | 5 | 0.7324 – 0.8862 |
+
+`repo-brain` had already raised `context` to 0.85 for this exact reason
+(TAP-4464) and simply never gave `procedural` the same treatment. You were on
+stock defaults, so **nothing you configured caused this.**
+
+## Fixed in tapps-brain 3.31.1 — no action needed from you
+
+`repo-brain.yaml` now sets `conflict_check.per_tier.procedural: 0.75`, above
+every measured false positive. Short-bodied tiers (`architectural`, `pattern`)
+keep 0.6 — this is not a blanket raise. Embedding cosine was evaluated as an
+alternative signal and rejected: it separated *worse* (0.05 margin vs
+TF-cosine's 0.19).
+
+**New saves are protected.** One true duplicate at 0.7324 will now survive
+instead of being invalidated — deliberate, because a surviving duplicate is
+visible and supersedable while a false invalidation is not.
+
+## The 7 already-hidden entries
+
+Restoring an existing conflict invalidation needs a direct DB write — there is no
+supported undo (tracked as TAP-5782; `consolidation-merge-undo` covers merges
+only, and re-saving preserves the flag via `store.py:346`). Ask the tapps-brain
+operator to clear `contradicted` on these 7 keys; the other 5 are genuine
+duplicates and should stay:
+
+```
+exec-nltweb-content-post-strategist-produce-a-brief-for-one-nlt-labs-8aa39833432c
+exec-nltweb-content-post-strategist-topic-agent-observability-matte-585e59c675d9
+exec-nltweb-content-post-strategist-topic-agent-observability-matte-fd198c23f0a7
+exec-nltweb-content-post-strategist-topic-engineering-leaders-shoul-257e45a315be
+exec-nltweb-content-post-strategist-topic-engineering-leaders-shoul-345a2e113481
+exec-nltweb-content-post-strategist-topic-topic-seed-in-agentforge-855384ad078e
+exec-nltweb-content-post-strategist-workflow-node-strategist-topic-8a8d8b22eb6b
+```
+
+## Same recommendation, stronger
+
+These transcripts are the clearest case yet for the **document plane**. At ~4,094
+chars they sit against the 4,096 cap, they are archival rather than recallable
+facts, and `document_put` has neither conflict detection nor a length cap. Both
+defects in this handoff — the consolidation merge and the conflict invalidation —
+came from long-form artifacts living in the memory plane.
+
+## Related tracking
+
+- TAP-5782 — no supported undo for save-time conflict invalidation
+- TAP-5783 — `include_contradicted` unreachable from `brain_recall`, so hidden
+  entries cannot even be listed without SQL
+
 ## References
 
 - Fix: tapps-brain `9a0d09e` (release 3.31.0), PR #263
