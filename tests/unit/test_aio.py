@@ -583,3 +583,47 @@ class TestBoundedConcurrency:
         astore = AsyncMemoryStore(base.sync_store)
         assert astore._read_sem._value == 32  # type: ignore[attr-defined]
         await base.close()
+
+    @pytest.mark.asyncio
+    async def test_read_semaphore_defaults_to_pool_capacity(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unset env → the read bound tracks what the pool admits (TAP-5816).
+
+        This used to be a standalone 64 while the pool admitted max_size(10) +
+        max_waiting(20) = 30, so enough concurrent readers could out-run the
+        pool and get ``psycopg_pool.TooManyRequests`` instead of backpressure.
+        Pinning the relationship — not the number — is what stops the two
+        drifting apart again when either pool env var is tuned.
+        """
+        from tapps_brain.postgres_connection import default_pool_capacity
+
+        monkeypatch.delenv("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", raising=False)
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX", "7")
+        monkeypatch.setenv("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "5")
+
+        base = await AsyncMemoryStore.open(tmp_path)
+        astore = AsyncMemoryStore(base.sync_store)
+        assert default_pool_capacity() == 12
+        assert astore._read_sem._value == 12  # type: ignore[attr-defined]
+        await base.close()
+
+    @pytest.mark.asyncio
+    async def test_read_bound_never_exceeds_pool_capacity_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The invariant itself, at the shipped defaults."""
+        from tapps_brain.postgres_connection import default_pool_capacity
+
+        for var in (
+            "TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS",
+            "TAPPS_BRAIN_PG_POOL_MAX",
+            "TAPPS_BRAIN_HIVE_POOL_MAX",
+            "TAPPS_BRAIN_PG_POOL_MAX_WAITING",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        base = await AsyncMemoryStore.open(tmp_path)
+        astore = AsyncMemoryStore(base.sync_store)
+        assert astore._read_sem._value <= default_pool_capacity()  # type: ignore[attr-defined]
+        await base.close()

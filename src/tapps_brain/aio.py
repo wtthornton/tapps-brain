@@ -40,7 +40,7 @@ import structlog
 
 from tapps_brain.audit import AuditEntry
 from tapps_brain.backends import create_async_private_backend
-from tapps_brain.postgres_connection import is_postgres_dsn
+from tapps_brain.postgres_connection import default_pool_capacity, is_postgres_dsn
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
@@ -302,9 +302,12 @@ class AsyncMemoryStore:
     calls) are bounded by a write semaphore (default 16 concurrent writes,
     configurable via ``TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES`` env var or the
     ``max_concurrent_writes`` constructor argument).  Read methods are bounded
-    by a separate read semaphore (default 64, ``TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS``
-    / ``max_concurrent_reads``).  Both bounds make back-pressure explicit and
-    observable via :attr:`write_queue_depth` / :attr:`read_queue_depth`.
+    by a separate read semaphore (``TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS`` /
+    ``max_concurrent_reads``, defaulting to
+    :func:`~tapps_brain.postgres_connection.default_pool_capacity` — what the
+    connection pool will actually admit).  Both bounds make back-pressure
+    explicit and observable via :attr:`write_queue_depth` /
+    :attr:`read_queue_depth`.
 
     When an :class:`~tapps_brain.async_postgres_private.AsyncPostgresPrivateBackend`
     is wired, write-path Postgres I/O also goes through the async pool instead
@@ -339,10 +342,20 @@ class AsyncMemoryStore:
             if max_concurrent_writes is not None
             else int(os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_WRITES", "16"))
         )
+        # Default to what the connection pool will actually admit rather than a
+        # standalone constant (TAP-5816).  This used to be a hard-coded 64 while
+        # the pool admitted max_size(10) + max_waiting(20) = 30, so a caller with
+        # enough cores could push more concurrent reads at the pool than it would
+        # accept and get psycopg_pool.TooManyRequests instead of backpressure.
+        # Deriving the default keeps the two from drifting when either pool env
+        # var is tuned; an explicit arg or env var still wins.
+        _r_env = os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS")
         _r = (
             max_concurrent_reads
             if max_concurrent_reads is not None
-            else int(os.environ.get("TAPPS_BRAIN_AIO_MAX_CONCURRENT_READS", "64"))
+            else int(_r_env)
+            if _r_env
+            else default_pool_capacity()
         )
         # Guard against misconfigured zero/negative values so asyncio.Semaphore
         # never receives a value < 1.
@@ -789,7 +802,7 @@ class AsyncMemoryStore:
         sync return type.  Otherwise delegates to the sync store via
         :func:`asyncio.to_thread`.
 
-        Bounded by ``_read_sem`` (default 64).
+        Bounded by ``_read_sem`` (defaults to the pool's admission capacity).
         """
         if self._async_backend is None:
             return await self._read_thread(self._store.audit, **kwargs)

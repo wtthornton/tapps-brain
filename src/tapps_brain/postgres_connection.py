@@ -65,6 +65,40 @@ def is_postgres_dsn(dsn: str | None) -> bool:
     return dsn.lower().startswith(("postgres://", "postgresql://"))
 
 
+def default_pool_max_size() -> int:
+    """Default pool ``max_size`` from the environment (TAP-5816).
+
+    Single source of truth shared by :class:`PostgresConnectionManager` and any
+    caller that needs to size itself against the pool.  Read it rather than
+    re-parsing the env vars, or the two drift.
+    """
+    return int(
+        os.environ.get("TAPPS_BRAIN_PG_POOL_MAX")
+        or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10")
+    )
+
+
+def default_pool_max_waiting() -> int:
+    """Default pool ``max_waiting`` from the environment (TAP-5816)."""
+    return int(os.environ.get("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "20"))
+
+
+def default_pool_capacity() -> int:
+    """In-flight requests the default pool admits before it starts refusing.
+
+    ``max_size`` connections may be checked out at once and ``max_waiting`` more
+    may queue for one; request number ``max_size + max_waiting + 1`` raises
+    ``psycopg_pool.TooManyRequests`` rather than waiting.
+
+    Callers that bound their own concurrency against this pool — notably
+    :class:`tapps_brain.aio.AsyncMemoryStore` — should default to this value so
+    they cannot admit more work than the pool can absorb.  Assumes an operation
+    holds at most one connection at a time; a caller that nests checkouts needs
+    proportionally less.
+    """
+    return max(1, default_pool_max_size() + default_pool_max_waiting())
+
+
 class PostgresConnectionManager:
     """Connection pool manager using psycopg + psycopg_pool.
 
@@ -139,14 +173,7 @@ class PostgresConnectionManager:
                 or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MIN", "1")
             )
         )
-        self._max_size = (
-            max_size
-            if max_size is not None
-            else int(
-                os.environ.get("TAPPS_BRAIN_PG_POOL_MAX")
-                or os.environ.get("TAPPS_BRAIN_HIVE_POOL_MAX", "10")
-            )
-        )
+        self._max_size = max_size if max_size is not None else default_pool_max_size()
         self._connect_timeout = (
             connect_timeout
             if connect_timeout is not None
@@ -163,11 +190,7 @@ class PostgresConnectionManager:
                 or os.environ.get("TAPPS_BRAIN_HIVE_POOL_IDLE_TIMEOUT", "300")
             )
         )
-        self._max_waiting = (
-            max_waiting
-            if max_waiting is not None
-            else int(os.environ.get("TAPPS_BRAIN_PG_POOL_MAX_WAITING", "20"))
-        )
+        self._max_waiting = max_waiting if max_waiting is not None else default_pool_max_waiting()
         self._max_lifetime = (
             max_lifetime
             if max_lifetime is not None
