@@ -310,7 +310,14 @@
       "Read(.env.template)",
       "Read(.env.sample)",
       "Read(.env.schema)",
-      "Read(.env.dist)"
+      "Read(.env.dist)",
+      "Edit(.env.example)",
+      "Write(.env.example)",
+      "Edit(.env.template)",
+      "Write(.env.template)",
+      "Bash(bash scripts/set-brain-version.sh:*)",
+      "Bash(make check-brain-env:*)",
+      "Bash(make dev-deploy:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -325,8 +332,7 @@
       "Read(.env.test)",
       "Read(.env.smoke-backup.*)",
       "Read(.env.*backup*)",
-      "Read(.env.bak*)",
-      "Read(.env.*)"
+      "Read(.env.bak*)"
     ],
     "ask": [
       "Read(.env.*)"
