@@ -12,6 +12,18 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+## [3.32.2] — 2026-08-08
+
+### Fixed
+
+- **Hybrid recall held two pool connections per read, so concurrent recall could exhaust the pool instead of applying backpressure** ([TAP-5838](https://linear.app/tappscodingagents/issue/TAP-5838)) — `_get_hybrid_candidates()` evaluated its BM25 and vector channels inside a nested `ThreadPoolExecutor`. Each channel checks out its own connection, so a single logical read occupied **two** pool slots concurrently rather than one.
+
+  That is the term missing from the capacity arithmetic. `asyncio.to_thread` caps at `min(32, cpu+4)` = 24 workers on a 20-core host and the pool admits `max_size` + `max_waiting` = 28–30, which looks safe until each of those 24 reads is really two requests: 48 against a capacity of 28 overflows, and callers saw `psycopg_pool.TooManyRequests` where they should have seen queueing. 3.32.1 reconciled the read semaphore with pool capacity ([TAP-5839](https://linear.app/tappscodingagents/issue/TAP-5839)) — a real latent mismatch, but not this one, because the semaphore was never the binding constraint below 24 workers.
+
+  The channels now evaluate sequentially in the calling thread, so a read holds exactly one connection. The lost parallelism is close to nothing measurable: both channels were already wrapped in an outer `to_thread`, so the nested pool bought overlap only between two short queries while paying thread-handoff and a second checkout for every read. Removing it also dropped `_get_hybrid_candidates()` back under the complexity threshold, so its `PLR0915` suppression is gone rather than merely tolerated.
+
+  **Verification.** Ten consecutive runs of `pytest tests/compat/ tests/integration/ tests/unit/test_aio.py -m "not benchmark"` against a live DSN, no `TooManyRequests`; `tests/unit/test_aio.py` green against live Postgres including `test_100_concurrent_recalls_no_errors`.
+
 ## [3.32.1] — 2026-08-07
 
 ### Fixed

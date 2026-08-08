@@ -1,7 +1,7 @@
 ---
 name: tapps-brain
 description: Persistent cross-session memory + knowledge graph for AI coding agents. Use when you need to recall prior decisions before making a non-trivial choice, save the rationale behind a decision so it survives the session, share findings across agents in a project (Hive), or record an experience event / KG triple. Talk to the deployed brain at http://127.0.0.1:8080/mcp/ via MCP tools — never via raw psycopg.
-version: "3.32.1"
+version: "3.32.2"
 origin: tapps-brain
 ---
 
@@ -116,4 +116,4 @@ make brain-healthcheck    # live MCP round-trip (server-mode OK if IDE is bridge
 - **Experience events + query API**: [`docs/engineering/experience-events.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/engineering/experience-events.md) — `quality_metric` contract, `brain_query_events` filters.
 - **KG populate-then-query flow**: [`docs/guides/kg-experience-flow.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/kg-experience-flow.md) — when to use neighbours vs event query.
 - **Deploy + upgrade**: [`docs/guides/hive-deployment.md`](https://github.com/wtthornton/tapps-brain/blob/main/docs/guides/hive-deployment.md) — `make hive-deploy`, `BRAIN_VERSION` bump.
-- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3321--2026-08-07) — current at v3.32.1.
+- **Latest release notes**: [`CHANGELOG.md`](https://github.com/wtthornton/tapps-brain/blob/main/CHANGELOG.md#3322--2026-08-08) — current at v3.32.2.
