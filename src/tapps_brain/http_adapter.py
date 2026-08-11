@@ -1970,9 +1970,17 @@ def create_app(
 
         Request body (JSON):
           ``{ "query": str, "max_results"?: int=5, "include_stale"?: bool=false,
-              "include_contradicted"?: bool=false, "filter_tier"?: str,
-              "filter_tags"?: [str], "filter_tags_any"?: [str],
-              "filter_memory_class"?: str }``
+              "include_sources"?: bool=false, "include_contradicted"?: bool=false,
+              "filter_tier"?: str, "filter_tags"?: [str],
+              "filter_tags_any"?: [str], "filter_memory_class"?: str }``
+
+        ``include_sources`` and ``include_contradicted`` are not aliases and
+        widen different filters. ``include_sources`` widens the *temporal*
+        filter, so consolidation sources — which carry ``invalid_at`` as well as
+        ``contradicted`` — become reachable. ``include_contradicted`` widens only
+        the contradicted filter, which is what a save-time conflict victim
+        carries (it has no ``invalid_at``). Setting both must return at least
+        what either returns alone.
 
         Response: ``{ "results": [...], "query": str }``
         """
@@ -2057,6 +2065,7 @@ def create_app(
             query=query,
             max_results=max_results,
             include_stale=bool(body.get("include_stale", False)),
+            include_sources=bool(body.get("include_sources", False)),
             include_contradicted=bool(body.get("include_contradicted", False)),
             filter_tier=body.get("filter_tier"),
             filter_tags=filter_tags,

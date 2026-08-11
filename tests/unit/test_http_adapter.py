@@ -2530,6 +2530,133 @@ class TestV1AgentBrainEndpoints:
             )
         assert resp.status_code == 400
 
+    def test_recall_forwards_include_sources(self) -> None:
+        """TAP-5814: the route must read include_sources from the body.
+
+        It previously never did, so consolidation sources were unreachable for
+        every REST caller even though the MCP tool honoured the flag and the
+        route's own docstring advertised parity.
+        """
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                client.post(
+                    "/v1/recall",
+                    json={"query": "jwt", "include_sources": True},
+                    headers=self._AUTH,
+                )
+        assert mocked.call_args.kwargs["include_sources"] is True
+
+    def test_recall_include_sources_defaults_to_false(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                client.post("/v1/recall", json={"query": "jwt"}, headers=self._AUTH)
+        assert mocked.call_args.kwargs["include_sources"] is False
+
+    def test_recall_include_sources_and_contradicted_are_independent(self) -> None:
+        """The two flags widen different filters and must not collapse together."""
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                client.post(
+                    "/v1/recall",
+                    json={"query": "jwt", "include_sources": True},
+                    headers=self._AUTH,
+                )
+        kwargs = mocked.call_args.kwargs
+        assert kwargs["include_sources"] is True
+        assert kwargs["include_contradicted"] is False, (
+            "include_sources must not imply include_contradicted — one widens the "
+            "temporal filter, the other the contradicted filter"
+        )
+
+    def test_recall_include_sources_reaches_consolidation_sources_over_rest(
+        self, tmp_path: Any
+    ) -> None:
+        """End-to-end: the flag must change what REST actually returns.
+
+        Asserting only that a mock received the kwarg would still pass if the
+        retrieval path ignored it, so this drives a real store through the real
+        route. Seeds a merged entry plus its consolidation source exactly as a
+        merge leaves them (mirrors TestBrainRecallIncludeSources).
+        """
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        store.save(
+            key="jwt-signing-original",
+            value="Use RS256 for JWT signing keys and rotate them quarterly.",
+            tier="pattern",
+            tags=["jwt"],
+            skip_consolidation=True,
+        )
+        store.save(
+            key="jwt-signing-merged",
+            value="Use RS256 for JWT signing keys.",
+            tier="pattern",
+            tags=["jwt"],
+            skip_consolidation=True,
+            dedup=False,
+            conflict_check=False,
+        )
+        store.update_fields(
+            "jwt-signing-original",
+            contradicted=True,
+            contradiction_reason="consolidated into jwt-signing-merged",
+            invalid_at="2020-01-01T00:00:00+00:00",
+            superseded_by="jwt-signing-merged",
+        )
+
+        # Pin tenant resolution to the seeded store. That step builds a fresh
+        # per-project store, which would leave this asserting against an empty
+        # tenant. It is orthogonal to the flag under test — the retrieval path
+        # below stays entirely real.
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=store)
+        with (
+            _client(settings) as client,
+            patch(
+                "tapps_brain.mcp_server.context._get_store_for_project",
+                return_value=store,
+            ),
+        ):
+            default = client.post(
+                "/v1/recall",
+                json={"query": "JWT signing", "max_results": 10},
+                headers=self._AUTH,
+            ).json()
+            widened = client.post(
+                "/v1/recall",
+                json={"query": "JWT signing", "max_results": 10, "include_sources": True},
+                headers=self._AUTH,
+            ).json()
+
+        default_keys = {r["key"] for r in default["results"]}
+        widened_keys = {r["key"] for r in widened["results"]}
+
+        assert "jwt-signing-merged" in default_keys
+        assert "jwt-signing-original" not in default_keys, (
+            "the consolidation source must stay hidden by default"
+        )
+        assert "jwt-signing-original" in widened_keys, (
+            "include_sources over REST must surface the consolidation source; if "
+            "this fails the flag is being accepted and dropped"
+        )
+
     def test_forget_happy_path(self) -> None:
         from unittest.mock import patch
 
