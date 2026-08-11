@@ -57,6 +57,7 @@ from tapps_brain._save_propagation import (
     propagate_group_save,
     publish_to_experts,
 )
+from tapps_brain._store_durable_view import durable_pass
 from tapps_brain._store_feedback import FeedbackMixin
 from tapps_brain._store_integrity import IntegrityMixin
 from tapps_brain._store_query import QueryMixin
@@ -918,6 +919,70 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             project_id=str(project_id),
             agent_id=agent_id,
         )
+
+    @contextmanager
+    def _durable_view(self) -> Iterator[None]:
+        """Hydrate the full durable set for a maintenance pass, then give it back.
+
+        Maintenance surfaces reconcile the **durable** set, not the capped cache
+        view: :meth:`gc` cannot archive a row it has not hydrated (its archive
+        loop skips keys absent from ``_entries``), and the integrity and
+        reconciliation counters would under-report.  They therefore merge with
+        ``allow_over_cap=True``.
+
+        That left a narrower version of the TAP-5633 hole open (TAP-5648).  When
+        the durable set genuinely exceeds the cap — after ``max_entries`` is
+        lowered, or while a large eviction backlog drains — such a pass hydrated
+        the overflow into ``_entries`` and left it there, so a following
+        :meth:`count` or :meth:`snapshot` reported *above* the cap until
+        eviction caught up.  The cap is a documented store invariant that every
+        read surface reports; a door through which it can be exceeded makes it
+        hold only conditionally.
+
+        This restores the invariant on exit, and does so by **cache eviction
+        only** — never :meth:`_evict_entry_key`, which deletes the durable row
+        and calls :meth:`_note_removed_locked`.  Using it here would turn a read
+        into data loss, and the removal-epoch bump would additionally make
+        :meth:`_merge_durable_entries` refuse to re-hydrate those keys later.
+        The rows stay durable and re-hydrate on demand.
+
+        Rows hydrated by this pass are dropped first, so a maintenance call
+        leaves the cache's composition as it found it rather than silently
+        reshaping which entries are resident.  Only if that is not enough — the
+        cache was already over cap before the pass, e.g. straight after
+        ``max_entries`` was lowered — does it fall back to lowest-confidence
+        first, matching normal eviction order.
+
+        Exit runs on the exception path too: a maintenance surface that raises
+        must not leave the invariant broken behind it.
+        """
+        with self._serialized():
+            pre_existing = set(self._entries)
+        self._merge_durable_entries(allow_over_cap=True)
+        try:
+            yield
+        finally:
+            self._trim_cache_to_cap(pre_existing)
+
+    def _trim_cache_to_cap(self, pre_existing: set[str]) -> None:
+        """Drop cache-only entries until ``_entries`` respects ``max_entries``.
+
+        Companion to :meth:`_durable_view`; see the eviction warning there.
+        """
+        cap = self._max_entries
+        with self._serialized():
+            excess = len(self._entries) - cap
+            if excess <= 0:
+                return
+
+            # Newly hydrated rows first (lowest confidence among them), then any
+            # remaining overflow by lowest confidence.
+            def _order(key: str) -> tuple[int, float]:
+                return (0 if key not in pre_existing else 1, self._entries[key].confidence)
+
+            for key in sorted(self._entries, key=_order)[:excess]:
+                self._entries.pop(key, None)
+        logger.debug("durable_view.cache_trimmed", dropped=excess, cap=cap)
 
     def _merge_durable_entries(
         self, *, limit: int | None = None, allow_over_cap: bool = False
@@ -4341,7 +4406,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 _rs_pin = getattr(_sfc, "ruleset_version", None)
         return prof_name, seed_ver, resolve_safety_ruleset_version(_rs_pin)
 
-    def decay_learnings(self, *, dry_run: bool = False) -> dict[str, Any]:
+    @durable_pass
+    def decay_learnings(self, /, *, dry_run: bool = False) -> dict[str, Any]:
         """Demote learnings whose promotion state no longer holds (TAP-5547).
 
         Three rules, tuned by ``profile.learning_decay``: an approved entry that
@@ -4385,9 +4451,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             }
 
         self._metrics.increment("store.learning.decay")
-        # Include durable overflow: a candidate the cold-start cache never
-        # hydrated is one this sweep could otherwise never demote.
-        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -4449,7 +4512,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             "enabled": True,
         }
 
-    def gc(self, *, dry_run: bool = False) -> Any:  # noqa: ANN401
+    @durable_pass
+    def gc(self, /, *, dry_run: bool = False) -> Any:  # noqa: ANN401
         """Run garbage collection on the store.
 
         Archives stale rows to the ``gc_archive`` Postgres table (migration 006,
@@ -4480,10 +4544,6 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             config=self._get_decay_config(),
             gc_config=self._gc_config,
         )
-        # Include durable overflow beyond the cold-start cache cap.  GC's
-        # archive loop skips keys absent from ``_entries``, so an over-cap row
-        # it cannot hydrate is a row it can never archive (TAP-5633).
-        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
         now = datetime.now(tz=UTC)
@@ -4664,17 +4724,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             return False
         return True
 
-    def list_gc_stale_details(self, *, now: Any = None) -> list[Any]:  # noqa: ANN401
+    @durable_pass
+    def list_gc_stale_details(self, /, *, now: Any = None) -> list[Any]:  # noqa: ANN401
         """Return GC stale candidates with reasons (GitHub #21)."""
         from datetime import UTC, datetime
 
         from tapps_brain.gc import MemoryGarbageCollector
 
-        # Same durable merge as gc() so overflow rows beyond the cold-start
-        # cache limit appear in operator previews (CLI/HTTP stale).  Must stay
-        # over-cap in lockstep with gc(), or the preview under-reports what a
-        # real run would archive.
-        self._merge_durable_entries(allow_over_cap=True)
         gc_collector = MemoryGarbageCollector(
             config=self._get_decay_config(),
             gc_config=self._gc_config,

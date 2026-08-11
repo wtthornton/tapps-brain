@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 
 from tapps_brain._store_base import _MemoryStoreBase
+from tapps_brain._store_durable_view import durable_pass
 from tapps_brain.integrity import (
     INTEGRITY_HASH_VERSION,
     compute_integrity_hash,
@@ -47,7 +48,8 @@ def _hash_field_strs(entry: Any) -> tuple[str, str]:  # noqa: ANN401 — MemoryE
 class IntegrityMixin(_MemoryStoreBase):
     """HMAC integrity verification + v1->v2 rehash shim (TAP-2833)."""
 
-    def verify_integrity(self) -> dict[str, Any]:
+    @durable_pass
+    def verify_integrity(self, /) -> dict[str, Any]:
         """Scan all entries and verify their HMAC integrity hashes.
 
         For each entry that has a stored ``integrity_hash``, recomputes the
@@ -60,9 +62,6 @@ class IntegrityMixin(_MemoryStoreBase):
         """
         self._metrics.increment("store.verify_integrity")
 
-        # Include durable overflow beyond the cold-start cache cap.  Integrity
-        # covers the durable set, not the capped cache view (TAP-5633).
-        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
 
@@ -242,7 +241,8 @@ class IntegrityMixin(_MemoryStoreBase):
             "already_v2": already_v2,
         }
 
-    def resign_integrity(self) -> dict[str, int]:
+    @durable_pass
+    def resign_integrity(self, /) -> dict[str, int]:
         """Re-sign every entry's integrity hash under the CURRENT signing key (TAP-4331).
 
         Operator remediation for a signing-key mismatch — e.g. a database volume
@@ -258,9 +258,6 @@ class IntegrityMixin(_MemoryStoreBase):
         Returns:
             Dict with ``resigned`` and ``skipped_no_change`` counts.
         """
-        # Re-signing must reach every durable row, not just the capped cache
-        # view, or over-cap rows keep a stale hash forever (TAP-5633).
-        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             keys = list(self._entries.keys())
 

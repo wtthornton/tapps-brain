@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from tapps_brain._store_base import _MemoryStoreBase
+from tapps_brain._store_durable_view import durable_pass
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -128,16 +129,14 @@ class RelationsMixin(_MemoryStoreBase):
             entries = list(self._entries.values())
         yield from entries
 
-    def count_orphaned_relations(self) -> int:
+    @durable_pass
+    def count_orphaned_relations(self, /) -> int:
         """Count ``source_entry_keys`` refs that point at missing store entries.
 
         Scans every cached relation's ``source_entry_keys`` list so a single
         relation that names two missing keys contributes 2 (documented
         per-reference semantics).
         """
-        # Reconciliation counter: must see the durable set, not the capped
-        # cache view, or over-cap rows are miscounted as missing (TAP-5633).
-        self._merge_durable_entries(allow_over_cap=True)
         self._rebuild_relations_cache_from_durable()
 
         with self._serialized():
@@ -155,7 +154,8 @@ class RelationsMixin(_MemoryStoreBase):
                             orphaned += 1
             return orphaned
 
-    def count_expired_entries(self, now: datetime | None = None) -> int:
+    @durable_pass
+    def count_expired_entries(self, /, now: datetime | None = None) -> int:
         """Count entries whose validity window has ended.
 
         An entry is expired when ``invalid_at`` (or ``valid_until``) is set and
@@ -164,8 +164,6 @@ class RelationsMixin(_MemoryStoreBase):
         """
         _now = now if now is not None else datetime.now(tz=UTC)
 
-        # Reconciliation counter over the durable set (TAP-5633).
-        self._merge_durable_entries(allow_over_cap=True)
         with self._serialized():
             entries = list(self._entries.values())
 
