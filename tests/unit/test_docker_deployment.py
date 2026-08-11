@@ -7,6 +7,7 @@ existence, mock subprocess calls, and verify model fields.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -421,3 +422,71 @@ class TestBackupHivePasswordSecurity:
             )
             assert result.exit_code != 0
             assert self.SECRET not in result.output, "Password leaked into error output"
+
+
+# ===================================================================
+# TAP-5636: dev-deploy must not race container startup
+# ===================================================================
+
+
+class TestDevDeployReadinessWait:
+    """`scripts/dev-deploy.sh` waits for health before smoking the container.
+
+    It used to recreate `tapps-brain-http` and immediately run
+    `make brain-smoke-live`. On a cold start the probe connected while uvicorn
+    was still binding and died with `ConnectionResetError: [Errno 104]`, failing
+    a deploy that had actually succeeded. A deploy path that cries wolf on
+    success trains the operator to re-run on failure — the habit that lets a
+    real crash-loop through.
+    """
+
+    @pytest.fixture(scope="class")
+    def script(self) -> str:
+        path = _REPO_ROOT / "scripts" / "dev-deploy.sh"
+        assert path.exists(), f"Missing {path}"
+        return path.read_text()
+
+    def test_waits_before_smoking(self, script: str) -> None:
+        """Ordering is the whole fix: the wait must precede the smoke call."""
+        wait_at = script.find("wait_for_brain_healthy\n")
+        smoke_at = script.find("make brain-smoke-live")
+        assert wait_at != -1, "dev-deploy.sh must call wait_for_brain_healthy"
+        assert smoke_at != -1, "dev-deploy.sh must still run the smoke stage"
+        assert wait_at < smoke_at, (
+            "the readiness wait must run BEFORE brain-smoke-live, otherwise the "
+            "race this guards against is unchanged"
+        )
+
+    def test_wait_is_bounded_and_states_its_timeout(self, script: str) -> None:
+        """An unbounded wait converts a crash-loop into a hang."""
+        assert "BRAIN_HEALTH_TIMEOUT" in script
+        assert re.search(r"BRAIN_HEALTH_TIMEOUT:-\d+", script), (
+            "the timeout needs a stated numeric default, not an unbounded loop"
+        )
+
+    def test_timeout_failure_names_the_timeout(self, script: str) -> None:
+        """The point is distinguishing 'not up yet' from 'not coming up'."""
+        assert "did not report healthy within" in script, (
+            "a timeout must fail with a message naming the timeout rather than "
+            "surfacing a raw ConnectionResetError"
+        )
+
+    def test_missing_container_is_distinguished_from_unhealthy(self, script: str) -> None:
+        assert "does not exist" in script, (
+            "a container that was never created is an operator error (run "
+            "hive-deploy), not a readiness timeout — say so instead of waiting"
+        )
+
+    def test_absent_healthcheck_does_not_spin_until_timeout(self, script: str) -> None:
+        """`{{if .State.Health}}` avoids a real cross-version portability trap.
+
+        Rendering `.State.Health.Status` on a container with no healthcheck
+        yields an empty string on some Docker versions and `<no value>` on
+        others. Matching on either string spins until the timeout on the
+        version that returns the other one.
+        """
+        assert "{{if .State.Health}}" in script, (
+            "detect an absent healthcheck with an explicit template guard, not "
+            "by string-matching a version-dependent rendering of a nil field"
+        )
+        assert "defines no healthcheck" in script
