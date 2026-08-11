@@ -14,14 +14,19 @@ data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from tapps_brain.store import MemoryStore
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+#: A maintenance surface under test, invoked as ``call(store)``.
+#: PEP 695 alias so it stays lazy — ``Callable`` is a TYPE_CHECKING-only import.
+type _Pass = Callable[[MemoryStore], Any]
 
 _CAP = 10
 _OVER = 6
@@ -72,7 +77,9 @@ class TestMaintenanceRestoresTheCap:
             pytest.param(lambda s: s.decay_learnings(dry_run=True), id="decay_learnings"),
         ],
     )
-    def test_cache_respects_cap_after_the_pass(self, over_cap_store: MemoryStore, call) -> None:  # noqa: ANN001
+    def test_cache_respects_cap_after_the_pass(
+        self, over_cap_store: MemoryStore, call: _Pass
+    ) -> None:
         assert _durable_count(over_cap_store) == _CAP + _OVER, "fixture must be over cap"
 
         call(over_cap_store)
@@ -90,7 +97,7 @@ class TestMaintenanceRestoresTheCap:
             pytest.param(lambda s: s.list_gc_stale_details(), id="list_gc_stale_details"),
         ],
     )
-    def test_the_pass_costs_no_durable_rows(self, over_cap_store: MemoryStore, call) -> None:  # noqa: ANN001
+    def test_the_pass_costs_no_durable_rows(self, over_cap_store: MemoryStore, call: _Pass) -> None:
         """Restoring the cap must be cache eviction only.
 
         ``_evict_entry_key`` deletes the durable row *and* bumps the removal
@@ -101,17 +108,14 @@ class TestMaintenanceRestoresTheCap:
         before = _durable_count(over_cap_store)
         call(over_cap_store)
         assert _durable_count(over_cap_store) == before, (
-            "the cap was restored by deleting durable rows — a read must not "
-            "destroy data"
+            "the cap was restored by deleting durable rows — a read must not destroy data"
         )
 
 
 class TestSurfacesStillSeeTheFullDurableSet:
     """The trim must not defeat the reason these surfaces merged over cap."""
 
-    def test_verify_integrity_covers_every_durable_row(
-        self, over_cap_store: MemoryStore
-    ) -> None:
+    def test_verify_integrity_covers_every_durable_row(self, over_cap_store: MemoryStore) -> None:
         result = over_cap_store.verify_integrity()
         assert result["total"] == _CAP + _OVER, (
             "integrity must cover the durable set, not the capped cache view — "
