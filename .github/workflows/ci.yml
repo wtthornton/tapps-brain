@@ -127,6 +127,7 @@ jobs:
           tests/integration/test_metrics.py
           tests/integration/test_observability_integration.py
           tests/integration/test_otel_integration.py
+          tests/integration/test_profile_filter.py
           tests/integration/test_profile_integration.py
           tests/integration/test_recall_integration.py
           tests/integration/test_reinforcement_integration.py
