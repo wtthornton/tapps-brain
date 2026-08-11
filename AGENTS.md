@@ -18,7 +18,7 @@ uv sync --group dev           # creates .venv; Python 3.12+ required
 # 2. Start Postgres + pgvector (Docker required)
 make brain-up                 # pulls pgvector/pgvector:pg17, waits for ready
 
-# 3. Apply schema migrations (private, hive, federation)
+# 3. Apply schema migrations (private, hive, federation) + provision dev roles
 make brain-migrate            # idempotent — safe to re-run
 
 # 4. Run the full test suite
@@ -38,7 +38,9 @@ Expected total time: ~5–12 min depending on image pull and hardware.
 | `make brain-down` | Stop dev containers and remove volumes |
 | `make brain-restart` | Restart the Postgres container (keeps data) |
 | `make brain-psql` | Open a psql shell in the running container |
-| `make brain-migrate` | Apply all pending schema migrations (idempotent) |
+| `make brain-migrate` | Apply all pending schema migrations **and** provision the dev roles (idempotent) |
+| `make brain-roles` | Provision `tapps_runtime` / `tapps_readonly` and set the dev runtime password — required by the RLS and tenant-isolation tests. Run by `brain-migrate`; standalone for an already-migrated DB |
+| `make check-dev-dsn` | Assert `TAPPS_DEV_PORT` matches the port the dev DB actually publishes (see the DSN trap below) |
 | `make brain-test` | Full test suite with coverage (≥ 95 %) |
 | `make brain-test-fast` | Tests excluding benchmarks, no coverage, fail-fast (`-x`), parallel (`-n auto`) |
 | `make brain-lint` | Ruff lint + format check |
@@ -85,6 +87,60 @@ make brain-test TAPPS_DEV_DSN="postgres://me:pw@myhost:5432/tapps_brain"
 ```
 
 See [`docs/guides/postgres-dsn.md`](docs/guides/postgres-dsn.md) for the **full env-var contract** (all variables, examples, required (prod/dev)). Template: [`.env.example`](.env.example); Docker deploy template: [`docker/.env.example`](docker/.env.example).
+
+### Two dev-DB traps that look like code bugs (TAP-5846)
+
+Both cost a multi-hour session during the 3.32.2 release. Neither is a regression.
+
+**1. `tapps_runtime` must exist, with a password.** The RLS and tenant-isolation
+tests connect as the non-owner `tapps_runtime` role — that is where row-level
+security is actually enforced — deriving the DSN by string-replacing
+`tapps:tapps@` with `tapps_runtime:tapps_runtime@`. `roles/001_db_roles.sql`
+creates the role with `LOGIN` but deliberately no password, because the password
+is per-environment. `make brain-migrate` now applies that file and sets the dev
+password via `make brain-roles`; before it did neither, so the role did not exist
+at all.
+
+The failure mode is badly disguised: password authentication fails, the pool
+retries until it exhausts its connect attempts, and the surfaced error is
+`psycopg_pool.PoolTimeout` — which reads as a pool bug. If you see PoolTimeout
+across `test_rls_spike.py`, `test_tenant_isolation.py`,
+`test_session_context_persistence.py` or the `test_kg_*` suites, run
+`make brain-roles` before debugging anything else. All 106 of those tests pass
+once the role is provisioned.
+
+**2. `TAPPS_DEV_PORT` must match the port the container publishes.** It defaults
+to `5432`, which is occupied on most dev hosts. Running
+`TAPPS_DEV_PORT=55432 make brain-up` and then a bare `make brain-migrate`
+migrates whatever unrelated database answers on `5432`. `make check-dev-dsn`
+now catches that and prints the correct export line; `brain-migrate` and
+`brain-roles` run it first. Export the variable for the whole shell:
+
+```bash
+export TAPPS_DEV_PORT=55432   # any free port
+make brain-up && make brain-migrate
+```
+
+### A stale dev DB produces spurious capacity failures
+
+`tests/unit/test_concurrent.py::TestConcurrentSaveAtCapacity` asserts that a
+save burst does not push an entry count past `max_entries`. Those assertions
+count rows that are already in the database, so a dev DB carrying rows from
+earlier sessions fails them deterministically with counts overshooting the cap
+(observed: 100 vs 90, and 11 vs 10, five runs of five). The same tests pass
+three runs of three against a freshly created database. The dev DB that produced
+those failures held 61,982 rows across 4,154 `project_id` values accumulated over
+two days.
+
+This is **not** a `MemoryStore` regression. Reset before concluding otherwise:
+
+```bash
+make brain-down     # destructive: removes the dev container AND its volume
+make brain-up && make brain-migrate
+```
+
+If you want to keep the existing dev data, purge just the test tenants instead
+with `make purge-test-tenants`.
 
 ### Key environment variables
 
