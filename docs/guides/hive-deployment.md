@@ -63,7 +63,7 @@ Manual snapshot probe (replace `<token>` with your configured value):
 curl -sS -H "Authorization: Bearer <token>" http://localhost:8080/snapshot | head -c 200
 ```
 
-See also [`docker/README.md`](../docker/README.md) for nginx timeout tuning and structured 504 JSON from `nginx-visual.conf`.
+See also [`docker/README.md`](../../docker/README.md) for nginx timeout tuning and structured 504 JSON from `nginx-visual.conf`.
 
 Full operator runbook (504/auth/empty panels, curl examples, snapshot SLO alerts): [`docs/guides/visual-snapshot.md#visual-dashboard-troubleshooting`](../guides/visual-snapshot.md#visual-dashboard-troubleshooting).
 
@@ -218,7 +218,7 @@ multi-replica restarts.
 > or the migration runner before data arrives (the default partition catches overflow, but
 > queries against it are slower — do not rely on it in production).
 
-The cross-tenant smoke test (see [Smoke tests](#smoke-tests)) should be run after applying
+The cross-tenant smoke test (see [Smoke tests](#verifying-multi-tenancy-cross-tenant-smoke-test)) should be run after applying
 these migrations to confirm RLS isolation on the new tables.
 
 ### Migration: Job
