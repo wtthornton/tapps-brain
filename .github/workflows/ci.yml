@@ -92,46 +92,56 @@ jobs:
         run: uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
       - name: Apply schema migrations
         run: uv run python scripts/apply_all_migrations.py
+      # The RLS and tenant-isolation tests connect as the non-owner
+      # `tapps_runtime` role, because that is the only identity row-level
+      # security is actually enforced against. `apply_all_migrations.py` applies
+      # private/hive/federation schemas and never roles, so without this step
+      # those tests fail on password authentication — surfacing as
+      # `psycopg_pool.PoolTimeout` once the pool exhausts its connect retries,
+      # which reads as a pool bug rather than a missing credential (TAP-5846).
+      #
+      # Same SQL file the production migrate sidecar applies
+      # (docker/migrate-entrypoint.sh), so the role definitions have one home.
+      # The password is a throwaway matching what the tests string-replace into
+      # their DSN; this database is destroyed with the runner.
+      - name: Provision runtime roles
+        run: |
+          psql "$TAPPS_BRAIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f src/tapps_brain/migrations/roles/001_db_roles.sql
+          psql "$TAPPS_BRAIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "ALTER ROLE tapps_runtime WITH LOGIN PASSWORD 'tapps_runtime';"
       # Unit tests — the primary gate.
       # The class of bug v3.20.1 hotfixed (tool catalog ↔ snapshot drift) is
       # covered by the e2e Docker stack in `hive-smoke.yml`; widened triggers
       # there ensure any change to `mcp_server/`, `http/`, or `services/`
       # exercises it.
       - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
-      # Mock-based integration tests (TAP-2803). These exercise the HTTP/MCP
-      # adapter, retrieval, and observability surfaces with mocked backends —
-      # no live Postgres required — so they're fast and deterministic. Gating
-      # them here closes the gap that let the TAP-2727 KG status-code drift sit
-      # on `main`: CI previously ran `tests/unit/` only, so the failing
-      # `test_http_adapter_kg.py` cases never blocked a merge.
+      # Full integration + compat suites (TAP-5459, closing TAP-2803).
       #
-      # The DB-dependent integration files (tenant isolation, RLS, migrations,
-      # postgres backends, etc.) and the compat/openapi-snapshot suites remain
-      # excluded — they have known pre-existing failures tracked in TAP-2803.
-      # Widen this list as those are repaired; keep it explicit so a new
-      # red test can never silently ride in under a directory glob.
-      - name: Integration tests (mock-based, no live Postgres)
+      # This step used to name 19 mock-based files explicitly, excluding every
+      # DB-dependent file (tenant isolation, RLS, migrations, postgres backends)
+      # and the compat/openapi-snapshot suites as "known pre-existing failures".
+      # Those failures are gone. Most were never code failures at all: they were
+      # a dev/CI database with no `tapps_runtime` role, fixed in TAP-5846. The
+      # rest were repaired by intervening work.
+      #
+      # Measured against a correctly provisioned database before widening:
+      # tests/integration/ = 697 passed, 13 skipped, 0 failed across three
+      # consecutive runs in randomised order; tests/compat/ = 57 passed.
+      #
+      # The explicit list existed so a new red test could not silently ride in
+      # under a directory glob. That protection now comes from the directory
+      # being green in the first place — an allowlist that excludes most of the
+      # suite protects nothing, and it is what let TAP-2727's KG status-code
+      # drift, and later a red test_profile_filter.py, sit on `main`.
+      #
+      # Anything genuinely unrunnable here must skip behind an explicit guard
+      # in the test itself, so the reason travels with the test rather than
+      # living in this file.
+      - name: Integration + compat tests (live Postgres)
         run: >-
           uv run pytest -q --tb=short -m "not benchmark"
-          tests/integration/test_client_integration.py
-          tests/integration/test_diagnostics_integration.py
-          tests/integration/test_doc_validation_integration.py
-          tests/integration/test_extraction_integration.py
-          tests/integration/test_feedback_integration.py
-          tests/integration/test_flywheel_integration.py
-          tests/integration/test_graph_integration.py
-          tests/integration/test_http_adapter_kg.py
-          tests/integration/test_http_adapter.py
-          tests/integration/test_markdown_sync_integration.py
-          tests/integration/test_mcp_integration.py
-          tests/integration/test_metrics.py
-          tests/integration/test_observability_integration.py
-          tests/integration/test_otel_integration.py
-          tests/integration/test_profile_filter.py
-          tests/integration/test_profile_integration.py
-          tests/integration/test_recall_integration.py
-          tests/integration/test_reinforcement_integration.py
-          tests/integration/test_retrieval_integration.py
+          tests/integration/ tests/compat/
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)
