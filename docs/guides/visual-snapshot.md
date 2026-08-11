@@ -156,4 +156,4 @@ Example Prometheus alert (p95 build latency > 5s for 5 minutes):
     description: Check brain-http logs and DB latency; nginx proxy_read_timeout is 30s.
 ```
 
-See also: [hive-deployment.md § Visual dashboard](hive-deployment.md#visual-dashboard), [docker/README.md](../docker/README.md).
+See also: [hive-deployment.md § Visual dashboard](hive-deployment.md#visual-dashboard-troubleshooting), [docker/README.md](../../docker/README.md).

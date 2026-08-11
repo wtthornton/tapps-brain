@@ -28,7 +28,7 @@ The Hive is tapps-brain's cross-agent memory layer. Agents share knowledge throu
 - [Python API](#python-api)
 - [Best Practices](#best-practices)
 - [Scope Resolution](#scope-resolution)
-- [Backup & Restore](#backup-restore)
+- [Backup & Restore](#backup--restore)
 - [Quotas](#quotas)
 - [Propagation Denial Logging](#propagation-denial-logging)
 - [Change Notification](#change-notification)
