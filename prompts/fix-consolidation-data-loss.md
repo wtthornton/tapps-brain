@@ -103,16 +103,16 @@ coverage check pasted.
 
 **2. P0 — the pair (ship together).** Fixes 1 and 2 are one code path and each covers
 the other's gap; do not land one alone.
-- Gate the same-topic fast path in [`should_consolidate`](src/tapps_brain/consolidation.py#L471-L479):
+- Gate the same-topic fast path in [`should_consolidate`](../src/tapps_brain/consolidation.py#L471-L479):
   require `is_same_topic(entry, c)` **AND** `compute_similarity(entry, c).combined_score >= threshold`.
 - Add the content-preservation guard: compute
   `len(merged) / sum(len(e.value) for e in sources)`; when `< 0.6`, raise into the
-  **existing** rollback path in [`_persist_consolidated_entry`](src/tapps_brain/auto_consolidation.py#L584)
+  **existing** rollback path in [`_persist_consolidated_entry`](../src/tapps_brain/auto_consolidation.py#L584)
   with reason `merge_would_lose_content`. Do not write a second rollback.
 - Increment a metric on the blocked path so operators can see it.
 - Write the VAL-01 e2e regression test — the exact reported scenario (three ~3.7k
   architectural entries, shared tags, sequential saves).
-- **Watch:** [`test_memory_consolidation.py:429`](tests/unit/test_memory_consolidation.py#L429)
+- **Watch:** [`test_memory_consolidation.py:429`](../tests/unit/test_memory_consolidation.py#L429)
   runs `threshold=0.3` on tag-heavy overlap and sits near the new gate's line. If it
   goes red, verify by hand whether the fixture's combined score is genuinely below
   0.3 before changing anything — if it is, the *fixture* is the thing to make more
@@ -121,21 +121,21 @@ the other's gap; do not land one alone.
 - **Proof:** the four consolidation/similarity test files green with the new tests added.
 
 **3. P1 — `consolidation.exempt_tiers`.**
-- Add the field to [`ConsolidationProfileConfig`](src/tapps_brain/profile.py#L604-L613),
+- Add the field to [`ConsolidationProfileConfig`](../src/tapps_brain/profile.py#L604-L613),
   default `["architectural"]`. Note `model_config = ConfigDict(extra="forbid")` — the
   field must exist before any YAML can set it.
-- Carry it through [`_resolve_consolidation_config`](src/tapps_brain/store.py#L597-L611)
+- Carry it through [`_resolve_consolidation_config`](../src/tapps_brain/store.py#L597-L611)
   onto `ConsolidationConfig` (store.py:366-379, including `to_dict`).
-- Enforce at the save gate ([store.py:1682-1688](src/tapps_brain/store.py#L1682-L1688)) so
+- Enforce at the save gate ([store.py:1682-1688](../src/tapps_brain/store.py#L1682-L1688)) so
   exempt tiers never enter `_maybe_consolidate` at all.
 - **Fulfills:** VAL-06. **Proof:** pytest showing an architectural save does not call
   `_maybe_consolidate`.
 
 **4. P1 — plumb the escape hatches to the bridge.**
-- `skip_consolidation: bool = False` onto [`brain_remember`](src/tapps_brain/mcp_server/tools_brain.py#L32),
+- `skip_consolidation: bool = False` onto [`brain_remember`](../src/tapps_brain/mcp_server/tools_brain.py#L32),
   threaded to `store.save(skip_consolidation=...)` (already supported at store.py:1340).
-- `include_sources: bool = False` onto [`brain_recall`](src/tapps_brain/mcp_server/tools_brain.py#L96),
-  threaded through to [`MemoryRetriever.search`](src/tapps_brain/retrieval.py#L614) — the
+- `include_sources: bool = False` onto [`brain_recall`](../src/tapps_brain/mcp_server/tools_brain.py#L96),
+  threaded through to [`MemoryRetriever.search`](../src/tapps_brain/retrieval.py#L614) — the
   parameter already exists there and is simply not reachable.
 - **Wire chain:** these are new params on *existing* tools, so no profile YAML or
   route-map change. **But** if the REST request models for `/v1/remember` or
@@ -145,7 +145,7 @@ the other's gap; do not land one alone.
 
 **5. P1 — document tools into the `coder` and `agent_brain` profiles.** This is the
 highest-risk chain in the prompt: `ProfileRegistry.validate()`
-([profile_registry.py:232-257](src/tapps_brain/mcp_server/profile_registry.py#L232-L257))
+([profile_registry.py:232-257](../src/tapps_brain/mcp_server/profile_registry.py#L232-L257))
 **fails fast at server startup** on any drift, so a missed link is a boot failure,
 not a test failure. All five links, in one commit:
 1. `src/tapps_brain/mcp_server/mcp_profiles.yaml` — add `document_put`, `document_get`,
@@ -158,7 +158,7 @@ not a test failure. All five links, in one commit:
    asserts `len(coder) == 23` at line 141) — rename and re-pin.
 5. `tests/integration/test_profile_filter.py:140` (`== 23`) and `:156` (`== 24`).
 - **Already done, do not touch:** the REST routes for documents are mapped
-  ([rest_profile_gate.py:69-84](src/tapps_brain/http/rest_profile_gate.py#L69-L84)),
+  ([rest_profile_gate.py:69-84](../src/tapps_brain/http/rest_profile_gate.py#L69-L84)),
   including the `{doc_id}` template collapse. Adding the tools to a profile gates
   those routes automatically. Editing `REST_ROUTE_TO_TOOL` would *introduce* drift.
 - Decide and state whether `document_delete` belongs in `coder` — it is a destructive
@@ -168,7 +168,7 @@ not a test failure. All five links, in one commit:
 - **Fulfills:** VAL-08. **Proof:** both profile test files green + a server boot that
   passes the drift check.
 
-**6. P2 — fix the sentence splitter.** [`_extract_sentences`](src/tapps_brain/consolidation.py#L196-L207)
+**6. P2 — fix the sentence splitter.** [`_extract_sentences`](../src/tapps_brain/consolidation.py#L196-L207)
 splits on `[.!?]+` and lowercases, which is what produced `"learn com docs)"` from
 `learn.microsoft.com`. Stop splitting inside URLs, version numbers, and common
 abbreviations, and stop lowercasing the emitted fragments.
