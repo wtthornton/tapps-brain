@@ -39,10 +39,23 @@ BRAIN_IMAGE   ?= docker-tapps-brain-http
 # DSN used by brain-test, brain-migrate, purge-test-tenants (dev Postgres).
 # Port must track docker-compose.yml ``${TAPPS_DEV_PORT:-5432}:5432`` — a hard-coded
 # 5432 silently targets the wrong container when TAPPS_DEV_PORT is remapped.
+# `check-dev-dsn` enforces that agreement instead of trusting it (TAP-5846):
+# 5432 is occupied on most dev hosts, so `TAPPS_DEV_PORT=55432 make brain-up`
+# followed by a bare `make brain-migrate` would otherwise migrate a stranger's
+# database without a word.
 TAPPS_DEV_PORT ?= 5432
 TAPPS_DEV_DSN ?= postgres://tapps:tapps@localhost:$(TAPPS_DEV_PORT)/tapps_brain_dev
 
-.PHONY: help brain-up brain-down brain-restart brain-migrate brain-test brain-test-fast \
+# Password provisioned for the dev-only `tapps_runtime` role by `brain-roles`.
+# Load-bearing: the RLS/tenant integration tests build their runtime DSN by
+# string-replacing `tapps:tapps@` with `tapps_runtime:tapps_runtime@`
+# (tests/integration/test_tenant_isolation.py, test_session_context_persistence.py,
+# test_kg_predicate_registry_isolation.py), so this must stay in sync with them.
+# Dev only. Production sets TAPPS_BRAIN_RUNTIME_PASSWORD via the migrate sidecar.
+TAPPS_DEV_RUNTIME_PASSWORD ?= tapps_runtime
+
+.PHONY: help brain-up brain-down brain-restart brain-migrate brain-roles check-dev-dsn \
+        brain-test brain-test-fast \
         brain-lint brain-type brain-qa brain-psql brain-healthcheck brain-smoke-live \
         brain-visual-smoke-live brain-diagnostics-live brain-eval purge-test-tenants \
         hive-wheel hive-build hive-deploy hive-reload-http hive-reload dev-deploy \
@@ -93,9 +106,37 @@ brain-restart:  ## Restart the dev Postgres container (keeps volumes)
 brain-psql:  ## Open a psql shell in the running dev Postgres container
 	$(DEV_COMPOSE) exec tapps-brain-db psql -U tapps -d tapps_brain_dev
 
-brain-migrate:  ## Apply all pending schema migrations (private, hive, federation)
+check-dev-dsn:  ## Fail loudly if TAPPS_DEV_PORT does not match the running dev DB
+	@published="$$($(DEV_COMPOSE) port tapps-brain-db 5432 2>/dev/null | sed 's/.*://')"; \
+	if [ -z "$$published" ]; then \
+	  echo "ERROR: the tapps-brain dev Postgres is not running."; \
+	  echo "  Start it first:  TAPPS_DEV_PORT=$(TAPPS_DEV_PORT) make brain-up"; \
+	  exit 1; \
+	fi; \
+	if [ "$$published" != "$(TAPPS_DEV_PORT)" ]; then \
+	  echo "ERROR: TAPPS_DEV_PORT=$(TAPPS_DEV_PORT), but the dev DB publishes $$published."; \
+	  echo "  $(TAPPS_DEV_DSN)"; \
+	  echo "  would silently target whatever else listens on $(TAPPS_DEV_PORT)."; \
+	  echo "  Re-run with:  export TAPPS_DEV_PORT=$$published"; \
+	  exit 1; \
+	fi
+
+brain-roles:  ## Provision tapps_runtime/readonly + the dev password (needed by RLS tests)
+	@$(MAKE) check-dev-dsn
+	@echo "Applying roles/001_db_roles.sql…"
+	@$(DEV_COMPOSE) exec -T tapps-brain-db \
+	  psql -U tapps -d tapps_brain_dev -v ON_ERROR_STOP=1 -q \
+	  < src/tapps_brain/migrations/roles/001_db_roles.sql > /dev/null
+	@$(DEV_COMPOSE) exec -T tapps-brain-db \
+	  psql -U tapps -d tapps_brain_dev -v ON_ERROR_STOP=1 -q \
+	  -c "ALTER ROLE tapps_runtime WITH LOGIN PASSWORD '$(TAPPS_DEV_RUNTIME_PASSWORD)';" > /dev/null
+	@echo "tapps_runtime provisioned. RLS/tenant integration tests can now connect."
+
+brain-migrate:  ## Apply schema migrations (private, hive, federation) + dev roles
+	@$(MAKE) check-dev-dsn
 	TAPPS_BRAIN_DATABASE_URL=$(TAPPS_DEV_DSN) \
 	  uv run python scripts/apply_all_migrations.py
+	@$(MAKE) brain-roles
 
 # ---------------------------------------------------------------------------
 # Testing
