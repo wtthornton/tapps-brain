@@ -83,6 +83,7 @@ def _resolve_sentence_transformer() -> type[Any] | None:
     SentenceTransformer = _SentenceTransformer
     return cast("type[Any]", _SentenceTransformer)
 
+
 _DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 
 # Pinned git revision (commit SHA) for BAAI/bge-small-en-v1.5 on HuggingFace Hub.
