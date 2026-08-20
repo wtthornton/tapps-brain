@@ -54,11 +54,34 @@ def _suppress_huggingface_http_chatter() -> Iterator[None]:
             logging.getLogger(name).setLevel(level)
 
 
-# sentence-transformers is a core dependency.
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:  # pragma: no cover — should not happen with correct install
-    SentenceTransformer = None  # type: ignore[misc]
+# sentence-transformers is a core dependency, but importing it pulls in torch
+# (~900 MB RSS measured 2026-08-19), so the import is deferred until the first
+# provider construction. Merely importing this module — which pytest collection
+# does for every test file that touches embeddings — must stay cheap.
+#
+# The module attribute remains patchable: tests set it to a mock class (used as
+# the constructor) or to None (= dependency missing). _UNRESOLVED means "real
+# import not attempted yet".
+_UNRESOLVED: Any = object()
+SentenceTransformer: Any = _UNRESOLVED
+
+
+def _resolve_sentence_transformer() -> type[Any] | None:
+    """Return the ``SentenceTransformer`` class, importing it on first use.
+
+    Honours a patched module attribute: anything other than ``_UNRESOLVED``
+    (including ``None``) is returned as-is without attempting the import.
+    """
+    global SentenceTransformer
+    if SentenceTransformer is not _UNRESOLVED:
+        return cast("type[Any] | None", SentenceTransformer)
+    try:
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer
+    except ImportError:  # pragma: no cover — should not happen with correct install
+        SentenceTransformer = None
+        return None
+    SentenceTransformer = _SentenceTransformer
+    return cast("type[Any]", _SentenceTransformer)
 
 _DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 
@@ -174,7 +197,8 @@ class SentenceTransformerProvider:
         *,
         revision: str | None = _DEFAULT_MODEL_REVISION,
     ) -> None:
-        if SentenceTransformer is None:
+        st_cls = _resolve_sentence_transformer()
+        if st_cls is None:
             msg = (
                 "sentence-transformers is required but not installed. "
                 "It is a core dependency — reinstall with: pip install tapps-brain"
@@ -198,7 +222,7 @@ class SentenceTransformerProvider:
             st_kwargs["revision"] = revision
 
         with _suppress_huggingface_http_chatter():
-            self._model = SentenceTransformer(model_name, **st_kwargs)
+            self._model = st_cls(model_name, **st_kwargs)
         # Renamed from ``get_sentence_embedding_dimension`` in
         # sentence-transformers 5.4.0; the old name emits a DeprecationWarning
         # and is scheduled for removal in 6.x.  See pyproject.toml for the
