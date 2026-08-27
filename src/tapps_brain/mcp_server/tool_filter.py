@@ -204,6 +204,20 @@ def reset_probe_histogram_counters() -> None:
     _PROBE_HIST_MISS.reset()
 
 
+def record_denied_profile_call(*, profile: str, tool: str) -> None:
+    """Record a ``denied_profile`` outcome on ``mcp_tools_call_total`` (TAP-6696 / VAL-10).
+
+    Shared counter family for both transports: the MCP call-tool interceptor
+    records this outcome inline (see the ``_MCP_TOOLS_CALL_TOTAL[key] = ...``
+    sites above); :class:`tapps_brain.http.middleware.RestProfileGateMiddleware`
+    calls this function so a REST-side denial is visible in ``/metrics`` too,
+    without duplicating the counter or its ``/metrics`` rendering.
+    """
+    with _METRICS_LOCK:
+        key = (profile, tool, "denied_profile")
+        _MCP_TOOLS_CALL_TOTAL[key] = _MCP_TOOLS_CALL_TOTAL.get(key, 0) + 1
+
+
 def get_profile_filter_metrics_snapshot() -> dict[str, Any]:
     """Return a frozen copy of the profile-filter counters for ``/metrics``.
 

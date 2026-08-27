@@ -87,6 +87,7 @@ from tapps_brain.otel_tracer import (
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
+from tapps_brain.temporal_sensitivity import infer_temporal_sensitivity
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
@@ -1486,6 +1487,23 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if limit_error is not None:
             raise ValueError(limit_error)
 
+        # Note: the ``/v1/documents``-naming oversize envelope (TAP-6696 /
+        # VAL-06) is checked by :func:`services.memory_service.memory_save`
+        # *before* it calls this method, not here — this direct low-level API
+        # keeps its pre-existing contract of raising a pydantic
+        # ``ValidationError`` (via ``MemoryEntry``) for a value over the
+        # global per-entry cap, which callers other than the save-service
+        # layer already depend on (tests/unit/test_edge_cases.py).
+
+        # TAP-6696 / VAL-11: default-fill an omitted temporal_sensitivity from
+        # the value's content. Only fires when the caller passed nothing
+        # (None) — an explicit value, including an explicit None re-save,
+        # already looks identical to "omitted" at this layer, so this stays
+        # a best-effort default rather than a guarantee (documented in
+        # infer_temporal_sensitivity's docstring).
+        if temporal_sensitivity is None:
+            temporal_sensitivity = infer_temporal_sensitivity(value)
+
         # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
         # extracted these into the shared prepare step used by save_many too).
         prep = self._prepare_save(
@@ -1499,8 +1517,25 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             conflict_check=conflict_check,
         )
         if not isinstance(prep, _SavePrep):
-            # Short-circuit: an error dict, or a MemoryEntry from a dedup hit /
-            # write-policy decision — return it unchanged.
+            if isinstance(prep, dict) and prep.get("status") == "coalesced":
+                # This direct low-level API keeps its pre-existing contract
+                # (tests/unit/test_memory_store.py): a same-key/same-value
+                # re-save returns the reinforced MemoryEntry, not this
+                # coalesce envelope — services.memory_service.memory_save
+                # reads report["coalesced"] (stamped below) to build the
+                # ``{"status": "coalesced", ...}`` response its own callers
+                # expect instead (TAP-6696 round 3). MemoryStore.save_many
+                # keeps returning the envelope dict directly per-row
+                # (tests/unit/test_save_many.py) — this branch only affects
+                # the single-entry path.
+                if report is not None:
+                    report["coalesced"] = True
+                coalesced_entry = self._entries.get(str(prep["key"]))
+                if coalesced_entry is not None:
+                    return coalesced_entry
+            # Short-circuit: an error dict, a write-policy decision, or (when
+            # the coalesced entry above could not be re-fetched) the envelope
+            # itself — return it unchanged.
             return prep
 
         if report is not None and prep.invalidated_keys:
@@ -1596,6 +1631,44 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if lim.max_tags < MAX_TAGS and tags is not None and len(tags) > lim.max_tags:
             return f"Too many tags (max {lim.max_tags} per profile limit)."
         return None
+
+    def effective_max_value_length(self) -> int:
+        """Effective per-entry ``value`` cap in characters (TAP-6696 / VAL-06).
+
+        ``min(profile.limits.max_value_length, MAX_VALUE_LENGTH)`` — a profile
+        may tighten the cap but, per :meth:`_profile_limit_error`, never loosen
+        it past the model ceiling.
+        """
+        from tapps_brain.models import MAX_VALUE_LENGTH
+
+        lim = getattr(self._profile, "limits", None) if self._profile is not None else None
+        if lim is not None and lim.max_value_length < MAX_VALUE_LENGTH:
+            return int(lim.max_value_length)
+        return MAX_VALUE_LENGTH
+
+    def _value_too_large_error(self, value: str) -> dict[str, Any] | None:
+        """Structured 413-shaped refusal for an over-cap ``value`` (VAL-06).
+
+        Names ``/v1/documents`` instead of a generic pydantic
+        ``ValidationError``. Called by :meth:`_prepare_batch_entry` (ahead of
+        :meth:`_profile_limit_error`) and by
+        :func:`services.memory_service.memory_save` *before* it calls
+        :meth:`save` — not by :meth:`save` itself, which keeps raising
+        ``ValidationError`` for its own direct callers (TAP-6696 round 3).
+        """
+        cap = self.effective_max_value_length()
+        if len(value) <= cap:
+            return None
+        detail = (
+            f"value is {len(value)} characters, exceeding the {cap}-character "
+            "per-entry cap. Use POST /v1/documents for long-form content."
+        )
+        return {
+            "error": "value_too_large",
+            "detail": detail,
+            "message": detail,
+            "max_value_length": cap,
+        }
 
     def _prepare_save(
         self,
@@ -1874,11 +1947,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # "detail" is the canonical envelope key (openapi_contract.py);
             # "message" is kept as a legacy alias for older consumers.
             return {"error": "bad_request", "detail": str(exc), "message": str(exc)}
-        limit_error = self._profile_limit_error(
-            key, _ensure_str_value(item.get("value", "")), item.get("tags")
-        )
-        if limit_error is not None:
-            return {"error": "bad_request", "detail": limit_error, "message": limit_error}
+        batch_value = _ensure_str_value(item.get("value", ""))
+        limit_error = self._profile_limit_error(key, batch_value, item.get("tags"))
+        # Collapsed into one return (vs. two separate early-returns) to stay
+        # under the file's max-return-statements lint threshold (PLR0911).
+        # Profile-limit precedence mirrors save() (TAP-6696 round 3): the
+        # profile dict is checked first so a stricter profile cap is not
+        # preempted by the generic oversize envelope.
+        row_error = (
+            {"error": "bad_request", "detail": limit_error, "message": limit_error}
+            if limit_error is not None
+            else None
+        ) or self._value_too_large_error(batch_value)
+        if row_error is not None:
+            return row_error
 
         prep = self._prepare_save(
             key=key,
@@ -2110,11 +2192,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         key: str,
         value: str,
         dedup: bool,
-    ) -> MemoryEntry | None:
-        """Same-key no-op fast path (GitHub #31, TAP-5615).
+    ) -> dict[str, Any] | None:
+        """Same-key no-op fast path (GitHub #31, TAP-5615; envelope: TAP-6696).
 
-        Returns the reinforced existing entry when *key* already holds this
-        exact value; ``None`` otherwise.
+        Returns a ``{"status": "coalesced", ...}`` envelope when *key* already
+        holds this exact value; ``None`` otherwise.
 
         Scoped to *key* deliberately.  The original implementation matched on
         the normalized value across **every** entry, so a save under a new key
@@ -2123,6 +2205,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         for a key that does not exist.  A distinct key is a distinct memory
         identity; only a re-save of an unchanged value under the *same* key is
         a genuine no-op.
+
+        The hit still calls :meth:`reinforce` (resets the decay clock, bumps
+        ``access_count`` — the existing side effect) but reports it to the
+        caller as ``"coalesced"`` rather than ``"saved"``: no new row was
+        written and nothing changed about the persisted value, so a caller
+        polling for "did this write actually land" must not see two
+        indistinguishable ``"saved"`` responses for one durable write.
         """
         if not dedup:
             return None
@@ -2137,10 +2226,19 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         logger.debug("memory_dedup_same_key_hit", key=key)
         self._metrics.increment("store.save.dedup_skip")
         try:
-            return self.reinforce(key)
+            entry = self.reinforce(key)
         except KeyError:
             # Entry was deleted between check and reinforce; proceed with save.
             return None
+        return {
+            "status": "coalesced",
+            "key": key,
+            "coalesced_into": key,
+            "persisted": False,
+            "tier": str(entry.tier),
+            "confidence": entry.confidence,
+            "memory_group": entry.memory_group,
+        }
 
     def _handle_conflicts(
         self,

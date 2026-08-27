@@ -26,6 +26,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MCP_DIR = PROJECT_ROOT / "src" / "tapps_brain" / "mcp_server"
 OUT_PATH = PROJECT_ROOT / "docs" / "generated" / "mcp-tools-manifest.json"
 
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from tapps_brain.mcp_server.profile_registry import ProfileRegistry  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Core agent tool set — frozen as of STORY-062.3
 #
@@ -155,6 +158,19 @@ def main() -> int:
 
     resources_out = [{"uri": u, "description": resource_map[u]} for u in sorted(resource_map)]
 
+    # TAP-6696 / VAL-10: per-tool MCP profile membership, sourced from the
+    # runtime ProfileRegistry (mcp_profiles.yaml) — not re-derived from the
+    # separate CORE_TOOL_NAMES/OPERATOR_TOOL_NAMES split above, which answers
+    # a different question (what a default vs. --enable-operator-tools
+    # session exposes, STORY-062.4) than "which named profiles (full,
+    # operator, coder, ...) can call this tool" (EPIC-073 / TAP-5542).
+    registry = ProfileRegistry()
+    profile_names = registry.profiles
+    tool_profiles: dict[str, list[str]] = {
+        name: sorted(p for p in profile_names if name in registry.get(p)) for name in tool_map
+    }
+    tools_by_profile = {p: sorted(registry.get(p)) for p in profile_names}
+
     all_tool_names = set(tool_map)
     missing_core = CORE_TOOL_NAMES - all_tool_names
     if missing_core:
@@ -168,8 +184,13 @@ def main() -> int:
     # catalog so docs/tool_count match live tools/list, not the AST union.
     default_names = sorted(all_tool_names - OPERATOR_TOOL_NAMES)
     operator_names = sorted(all_tool_names & OPERATOR_TOOL_NAMES)
-    default_tools_out = [{"name": n, "description": tool_map[n]} for n in default_names]
-    operator_tools_out = [{"name": n, "description": tool_map[n]} for n in operator_names]
+    default_tools_out = [
+        {"name": n, "description": tool_map[n], "profiles": tool_profiles[n]} for n in default_names
+    ]
+    operator_tools_out = [
+        {"name": n, "description": tool_map[n], "profiles": tool_profiles[n]}
+        for n in operator_names
+    ]
     core_tools = sorted((CORE_TOOL_NAMES & all_tool_names) - OPERATOR_TOOL_NAMES)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +205,9 @@ def main() -> int:
         "tools": default_tools_out,
         "operator_tools": operator_tools_out,
         "resources": resources_out,
+        # TAP-6696 / VAL-10: named MCP profiles (mcp_profiles.yaml), additive.
+        "profile_names": sorted(profile_names),
+        "tools_by_profile": tools_by_profile,
     }
     OUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(

@@ -96,6 +96,7 @@ Agent N ──┘     pgvector HNSW + tsvector + LISTEN/NOTIFY)
 | `TAPPS_BRAIN_EXPERT_DOMAINS` | CSV expert domains for auto-publish (e.g. `css,react`) |
 | `TAPPS_BRAIN_AUTO_MIGRATE` | Set to `1` to auto-apply pending *private* schema migrations at `MemoryStore` startup (STORY-066.8). Default `0`. Raises `MigrationDowngradeError` when the live DB schema exceeds the max bundled version (downgrade guard). **Not recommended for multi-host deployments** — use a one-shot migration job instead. |
 | `TAPPS_BRAIN_HIVE_AUTO_MIGRATE` | Auto-run Postgres schema migrations on startup |
+| `TAPPS_BRAIN_STRICT_IDENTITY` | Set to `1` to refuse writes whose `agent_id` resolves to the anonymous placeholders `unknown`/`default` (TAP-6696). Default `0` — zero behavior change until every consumer sends a real logical agent name (Ruling 9). |
 
 **Docker deployment:** `docker/docker-compose.hive.yaml` brings up the unified stack — one `tapps-brain-db` (pgvector/pg17) + one `tapps-brain-http` (serves private memory + Hive + Federation on `/mcp/` + `/v1/*` at :8080) + a one-shot `tapps-brain-migrate` sidecar + optional `tapps-visual` dashboard. Secrets/config live in `docker/.env` (template: `docker/.env.example`). `docker/init-db.sql` bootstraps the `vector` extension on first DB start.
 
