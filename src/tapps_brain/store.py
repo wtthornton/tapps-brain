@@ -2166,11 +2166,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         key: str,
         value: str,
         dedup: bool,
-    ) -> MemoryEntry | None:
-        """Same-key no-op fast path (GitHub #31, TAP-5615).
+    ) -> dict[str, Any] | None:
+        """Same-key no-op fast path (GitHub #31, TAP-5615; envelope: TAP-6696).
 
-        Returns the reinforced existing entry when *key* already holds this
-        exact value; ``None`` otherwise.
+        Returns a ``{"status": "coalesced", ...}`` envelope when *key* already
+        holds this exact value; ``None`` otherwise.
 
         Scoped to *key* deliberately.  The original implementation matched on
         the normalized value across **every** entry, so a save under a new key
@@ -2179,6 +2179,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         for a key that does not exist.  A distinct key is a distinct memory
         identity; only a re-save of an unchanged value under the *same* key is
         a genuine no-op.
+
+        The hit still calls :meth:`reinforce` (resets the decay clock, bumps
+        ``access_count`` — the existing side effect) but reports it to the
+        caller as ``"coalesced"`` rather than ``"saved"``: no new row was
+        written and nothing changed about the persisted value, so a caller
+        polling for "did this write actually land" must not see two
+        indistinguishable ``"saved"`` responses for one durable write.
         """
         if not dedup:
             return None
@@ -2193,10 +2200,19 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         logger.debug("memory_dedup_same_key_hit", key=key)
         self._metrics.increment("store.save.dedup_skip")
         try:
-            return self.reinforce(key)
+            entry = self.reinforce(key)
         except KeyError:
             # Entry was deleted between check and reinforce; proceed with save.
             return None
+        return {
+            "status": "coalesced",
+            "key": key,
+            "coalesced_into": key,
+            "persisted": False,
+            "tier": str(entry.tier),
+            "confidence": entry.confidence,
+            "memory_group": entry.memory_group,
+        }
 
     def _handle_conflicts(
         self,

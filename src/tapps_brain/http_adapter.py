@@ -1389,9 +1389,25 @@ def create_app(
                     detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             if len(raw) > 65_536:
+                # TAP-6696 / VAL-06: a request whose whole JSON body exceeds
+                # the transport cap trips before the value is even decoded,
+                # but the caller still needs the same /v1/documents pointer
+                # the per-entry ``value_too_large`` envelope carries below —
+                # otherwise a large value looks unrejected-for-size from the
+                # response alone (SC-10: additive, does not change the 413
+                # status code or the existing "payload_too_large" error tag).
+                _body_cap_detail = (
+                    f"Request body is {len(raw)} bytes, exceeding the 65536-byte "
+                    "limit. Use POST /v1/documents for long-form content."
+                )
                 raise HTTPException(
                     status_code=413,
-                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": _body_cap_detail,
+                        "message": _body_cap_detail,
+                        "max_body_bytes": 65_536,
+                    },
                 )
             try:
                 body = json.loads(raw.decode("utf-8"))

@@ -111,6 +111,9 @@ class TestSaveManyPartialFailure:
 
 class TestSaveManyShortCircuits:
     def test_dedup_hit_same_key_returns_entry_without_rebatching(self, tmp_path: Path) -> None:
+        """TAP-6696 / VAL-06: a same-key byte-identical row in a batch is a
+        no-op, reported as a ``coalesced`` dict (not a ``MemoryEntry``) since
+        no new row is written."""
         store = MemoryStore(tmp_path)
         store.save(key="orig", value="duplicated content here")
 
@@ -118,9 +121,14 @@ class TestSaveManyShortCircuits:
         # existing entry rather than persisting a second row.
         results = store.save_many([{"key": "orig", "value": "duplicated content here"}])
         assert len(results) == 1
-        assert isinstance(results[0], MemoryEntry)
-        assert results[0].key == "orig"
-        assert results[0].reinforce_count == 1
+        assert isinstance(results[0], dict)
+        assert results[0]["status"] == "coalesced"
+        assert results[0]["key"] == "orig"
+        assert results[0]["coalesced_into"] == "orig"
+        assert results[0]["persisted"] is False
+        entry = store.get("orig")
+        assert entry is not None
+        assert entry.reinforce_count == 1
 
     def test_same_value_under_distinct_key_persists(self, tmp_path: Path) -> None:
         """TAP-5615: a matching value under a different key is a distinct memory.
