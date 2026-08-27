@@ -190,7 +190,8 @@ See [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-exp
 { "query": str, "max_results"?: int = 5, "include_stale"?: bool = false,
   "filter_tier"?: str, "filter_tags"?: [str], "filter_tags_any"?: [str],
   "filter_memory_class"?: str }
-// → { "results": [{key, value, tier, confidence, tags, …}], "query": str }
+// → { "results": [{key, value, tier, confidence, tags, …}], "query": str,
+//     "recall_digest": str, "memory_versions": [{key, version}] }
 
 // POST /v1/forget
 { "key": str }
@@ -209,6 +210,26 @@ See [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-exp
 ```
 
 Single-entry routes cap the request body at 64 KiB. Batch routes cap at 10 MiB.
+
+### Recall-set provenance (TAP-6583)
+
+`/v1/recall` returns two additive fields naming the set it just served:
+
+- `recall_digest` — SHA-256 hex over the **sorted** `(key, version)` pairs in
+  `results`, so two recalls returning the same memories in a different row order
+  agree. `""` when `results` is empty.
+- `memory_versions` — those pairs in returned order. `version` is the first 16
+  hex chars of SHA-256 over the memory's value, so it moves whenever the
+  recalled content moves.
+
+This is a plain content address, deliberately **not** the keyed HMAC in
+`tapps_brain.integrity` — that one answers "was this row tampered with" using a
+per-installation secret and is not reproducible on another machine. The digest
+is a function of the returned set only: a profile that changes *what* comes back
+changes the digest, but the digest is not otherwise keyed by consumer profile.
+
+Both fields default empty, so a consumer written before this release sees a
+byte-for-byte unchanged `results` / `query` payload.
 
 ### Error envelope
 

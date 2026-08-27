@@ -738,6 +738,18 @@ class RecallDiagnostics(BaseModel):
     )
 
 
+class MemoryVersion(BaseModel):
+    """One ``(key, version)`` pair from a recalled memory set (TAP-6583)."""
+
+    key: str = Field(description="Memory key, exactly as injected.")
+    version: str = Field(
+        description=(
+            "Content version of the injected value: the first 16 hex chars of "
+            "its SHA-256. Changes whenever the recalled content changes."
+        ),
+    )
+
+
 class RecallResult(BaseModel):
     """Result of an auto-recall operation.
 
@@ -789,6 +801,23 @@ class RecallResult(BaseModel):
     recall_diagnostics: RecallDiagnostics | None = Field(
         default=None,
         description="Why recall was empty or pipeline stats (agent observability).",
+    )
+    # Recall-set provenance (TAP-6583) — additive-only; both default empty so
+    # every existing caller is byte-for-byte unaffected.
+    recall_digest: str = Field(
+        default="",
+        description=(
+            "SHA-256 hex digest over the sorted (key, version) pairs actually "
+            "injected, computed after budget truncation. Stable across repeated "
+            "recalls against an unchanged store; empty when nothing was injected."
+        ),
+    )
+    memory_versions: list[MemoryVersion] = Field(
+        default_factory=list,
+        description=(
+            "The (key, version) pairs the digest covers, in injected order, so a "
+            "caller can pin the set and later check it back."
+        ),
     )
     # KG fields (STORY-076.3) — additive-only; existing callers are unaffected.
     entities: list[KGEntityView] = Field(

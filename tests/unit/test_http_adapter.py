@@ -2503,6 +2503,49 @@ class TestV1AgentBrainEndpoints:
         assert kwargs["query"] == "auth bug"
         assert kwargs["max_results"] == 3
 
+    def test_recall_serves_recall_digest_and_memory_versions(self) -> None:
+        """TAP-6583: AgentForge reaches brain over HTTP, so the handle must be
+        on the wire — an in-process-only field is invisible to the consumer
+        that needs it.
+        """
+        import hashlib
+        from unittest.mock import patch
+
+        from tapps_brain.recall_digest import compute_recall_digest
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        fake_results = [
+            {"key": "k1", "value": "v1", "tier": "pattern", "confidence": 0.9, "tags": []},
+            {"key": "k2", "value": "v2", "tier": "pattern", "confidence": 0.8, "tags": []},
+        ]
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall",
+                return_value=fake_results,
+            ):
+                resp = client.post("/v1/recall", json={"query": "auth bug"}, headers=self._AUTH)
+        body = resp.json()
+        expected_digest, _ = compute_recall_digest(fake_results)
+        assert body["recall_digest"] == expected_digest
+        assert body["memory_versions"] == [
+            {"key": "k1", "version": hashlib.sha256(b"v1").hexdigest()[:16]},
+            {"key": "k2", "version": hashlib.sha256(b"v2").hexdigest()[:16]},
+        ]
+        # Additive: the pre-change response is byte-for-byte intact.
+        assert body["results"] == fake_results
+        assert body["query"] == "auth bug"
+
+    def test_recall_digest_empty_when_nothing_matched(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch("tapps_brain.services.memory_service.brain_recall", return_value=[]):
+                resp = client.post("/v1/recall", json={"query": "nope"}, headers=self._AUTH)
+        body = resp.json()
+        assert body["recall_digest"] == ""
+        assert body["memory_versions"] == []
+
     def test_recall_missing_query(self) -> None:
         settings = _make_settings(auth_token="tok", store=MagicMock())
         with _client(settings) as client:

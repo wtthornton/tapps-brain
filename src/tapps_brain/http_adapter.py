@@ -163,6 +163,7 @@ from tapps_brain.otel_tracer import (  # noqa: F401
     start_span,
 )
 from tapps_brain.project_registry import ProjectNotRegisteredError as _ProjectNotRegisteredError
+from tapps_brain.recall_digest import compute_recall_digest
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -1982,7 +1983,12 @@ def create_app(
         carries (it has no ``invalid_at``). Setting both must return at least
         what either returns alone.
 
-        Response: ``{ "results": [...], "query": str }``
+        Response: ``{ "results": [...], "query": str, "recall_digest": str,
+        "memory_versions": [{"key": str, "version": str}] }``
+
+        ``recall_digest`` is a SHA-256 over the sorted ``(key, version)`` pairs
+        in ``results`` — a content address for the returned set (TAP-6583).
+        Both fields are additive; ``recall_digest`` is ``""`` when empty.
         """
         project_id = (request.headers.get("x-project-id") or "").strip()
         if not project_id:
@@ -2072,7 +2078,18 @@ def create_app(
             filter_tags_any=filter_tags_any,
             filter_memory_class=body.get("filter_memory_class"),
         )
-        return JSONResponse(status_code=200, content={"results": results, "query": query})
+        # TAP-6583: name the returned set. ``results`` is already capped at
+        # ``max_results``, so this digest covers what the consumer actually gets.
+        recall_digest, memory_versions = compute_recall_digest(results)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "results": results,
+                "query": query,
+                "recall_digest": recall_digest,
+                "memory_versions": [mv.model_dump() for mv in memory_versions],
+            },
+        )
 
     @app.post("/v1/forget", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_forget(request: Request) -> JSONResponse:
