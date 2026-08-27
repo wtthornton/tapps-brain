@@ -315,7 +315,10 @@ class TestBrainRecallSurfacesFailedApproaches:
         dict_entry = {"key": "x", "value": "v", "tier": "pattern", "confidence": 0.5}
         store = self._make_store([dict_entry])
         results = brain_recall(store, "proj", "agent", query="q")
-        assert results[0] == dict_entry
+        # TAP-6696 / VAL-01: every result — including the legacy dict-entry
+        # path — carries a numeric ``score`` on the wire. Original fields are
+        # otherwise untouched.
+        assert results[0] == {**dict_entry, "score": 0.5}
 
 
 # ---------------------------------------------------------------------------

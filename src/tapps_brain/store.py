@@ -1483,13 +1483,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # text that actually persists) and raises TypeError on int/float.
         value = _ensure_str_value(value)
 
-        too_large = self._value_too_large_error(value)
-        if too_large is not None:
-            return too_large
-
         limit_error = self._profile_limit_error(key, value, tags)
         if limit_error is not None:
             raise ValueError(limit_error)
+
+        # Note: the ``/v1/documents``-naming oversize envelope (TAP-6696 /
+        # VAL-06) is checked by :func:`services.memory_service.memory_save`
+        # *before* it calls this method, not here — this direct low-level API
+        # keeps its pre-existing contract of raising a pydantic
+        # ``ValidationError`` (via ``MemoryEntry``) for a value over the
+        # global per-entry cap, which callers other than the save-service
+        # layer already depend on (tests/unit/test_edge_cases.py).
 
         # TAP-6696 / VAL-11: default-fill an omitted temporal_sensitivity from
         # the value's content. Only fires when the caller passed nothing
@@ -1513,8 +1517,25 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             conflict_check=conflict_check,
         )
         if not isinstance(prep, _SavePrep):
-            # Short-circuit: an error dict, or a MemoryEntry from a dedup hit /
-            # write-policy decision — return it unchanged.
+            if isinstance(prep, dict) and prep.get("status") == "coalesced":
+                # This direct low-level API keeps its pre-existing contract
+                # (tests/unit/test_memory_store.py): a same-key/same-value
+                # re-save returns the reinforced MemoryEntry, not this
+                # coalesce envelope — services.memory_service.memory_save
+                # reads report["coalesced"] (stamped below) to build the
+                # ``{"status": "coalesced", ...}`` response its own callers
+                # expect instead (TAP-6696 round 3). MemoryStore.save_many
+                # keeps returning the envelope dict directly per-row
+                # (tests/unit/test_save_many.py) — this branch only affects
+                # the single-entry path.
+                if report is not None:
+                    report["coalesced"] = True
+                coalesced_entry = self._entries.get(str(prep["key"]))
+                if coalesced_entry is not None:
+                    return coalesced_entry
+            # Short-circuit: an error dict, a write-policy decision, or (when
+            # the coalesced entry above could not be re-fetched) the envelope
+            # itself — return it unchanged.
             return prep
 
         if report is not None and prep.invalidated_keys:
@@ -1628,10 +1649,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     def _value_too_large_error(self, value: str) -> dict[str, Any] | None:
         """Structured 413-shaped refusal for an over-cap ``value`` (VAL-06).
 
-        Checked ahead of :meth:`_profile_limit_error` / ``MemoryEntry``
-        validation so an over-cap value gets this envelope (naming
-        ``/v1/documents``) instead of a generic pydantic ``ValidationError``.
-        Shared by :meth:`save` and :meth:`_prepare_batch_entry`.
+        Names ``/v1/documents`` instead of a generic pydantic
+        ``ValidationError``. Called by :meth:`_prepare_batch_entry` (ahead of
+        :meth:`_profile_limit_error`) and by
+        :func:`services.memory_service.memory_save` *before* it calls
+        :meth:`save` — not by :meth:`save` itself, which keeps raising
+        ``ValidationError`` for its own direct callers (TAP-6696 round 3).
         """
         cap = self.effective_max_value_length()
         if len(value) <= cap:
@@ -1928,11 +1951,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         limit_error = self._profile_limit_error(key, batch_value, item.get("tags"))
         # Collapsed into one return (vs. two separate early-returns) to stay
         # under the file's max-return-statements lint threshold (PLR0911).
-        row_error = self._value_too_large_error(batch_value) or (
+        # Profile-limit precedence mirrors save() (TAP-6696 round 3): the
+        # profile dict is checked first so a stricter profile cap is not
+        # preempted by the generic oversize envelope.
+        row_error = (
             {"error": "bad_request", "detail": limit_error, "message": limit_error}
             if limit_error is not None
             else None
-        )
+        ) or self._value_too_large_error(batch_value)
         if row_error is not None:
             return row_error
 

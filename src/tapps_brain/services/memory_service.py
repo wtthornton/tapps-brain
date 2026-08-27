@@ -20,8 +20,10 @@ from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normali
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import LearningStatus, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import start_mcp_tool_span
+from tapps_brain.profile import ScoringConfig
 from tapps_brain.retrieval import MemoryRetriever, _is_consolidated_source
 from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST, validate_iso_timestamp
+from tapps_brain.store import _ensure_str_value
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
@@ -297,7 +299,16 @@ def brain_recall(
         # winners are sorted desc — reusing MemoryRetriever's weights keeps
         # recall and context-injection ranking consistent.
         now = datetime.now(tz=UTC)
-        scoring_config = getattr(getattr(store, "profile", None), "scoring", None)
+        _raw_scoring_config = getattr(getattr(store, "profile", None), "scoring", None)
+        # `store` may be a test double whose unset attributes auto-vivify as
+        # further mocks rather than raising AttributeError, so `getattr(...,
+        # None)` never falls through to its default. Type-check instead of
+        # trusting the getattr chain — a non-``ScoringConfig`` value is
+        # treated the same as "no profile configured" (MemoryRetriever's own
+        # module-default weights).
+        scoring_config = (
+            _raw_scoring_config if isinstance(_raw_scoring_config, ScoringConfig) else None
+        )
         retriever = MemoryRetriever(scoring_config=scoring_config)
         total_entries = len(entries)
         candidates: list[tuple[dict[str, Any], float]] = []
@@ -1084,6 +1095,15 @@ def memory_save(
     if supersede_error is not None:
         return supersede_error
 
+    # TAP-6696 / VAL-06: checked here, before store.save(), rather than
+    # inside it — store.save() is a direct low-level API whose pre-existing
+    # contract raises a pydantic ValidationError for a value over the global
+    # cap (tests/unit/test_edge_cases.py); the friendlier value_too_large
+    # envelope naming /v1/documents belongs to this service layer only.
+    too_large: dict[str, Any] | None = store._value_too_large_error(_ensure_str_value(value))
+    if too_large is not None:
+        return too_large
+
     validated = _validate_and_normalize_save(
         store,
         agent_id,
@@ -1167,6 +1187,14 @@ def _save_result_envelope(
     if requested_key is not None and result.key != requested_key:
         envelope["status"] = "coalesced"
         envelope["key"] = requested_key
+        envelope["coalesced_into"] = result.key
+        envelope["persisted"] = False
+    elif (report or {}).get("coalesced"):
+        # Same-key dedup fast-path (TAP-6696 round 3): MemoryStore.save()
+        # returns the reinforced MemoryEntry (its own direct-caller
+        # contract), so the "no new row was written" signal travels via
+        # *report* instead of the entry itself — see store.py::save().
+        envelope["status"] = "coalesced"
         envelope["coalesced_into"] = result.key
         envelope["persisted"] = False
     invalidated = (report or {}).get("invalidated")
