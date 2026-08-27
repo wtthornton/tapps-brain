@@ -56,7 +56,7 @@ graph TD
 **Per-container state that stays local:**
 
 ```
-/app/data/assistant.db   ← execution log + conversation history (SQLite)
+agentforge-db (Postgres) ← execution log + conversation history
 /app/SOUL.md             ← workspace personality / instructions
 /app/USER.md             ← user preferences
 /app/agents/             ← custom agent definitions
@@ -99,7 +99,7 @@ the non-privileged runtime role (`tapps_runtime`) cannot bypass RLS.
 
 | Artifact | Location (typical) | Managed by |
 |----------|--------------------|------------|
-| Execution log + conversations | `/app/data/assistant.db` (SQLite) | AgentForge ADR-001/ADR-002 |
+| Execution log + conversations | `agentforge-db` (Postgres) | AgentForge TAP-2312 / TAP-2837 |
 | Workspace personality | `/app/SOUL.md` | Per-instance operator |
 | User preferences | `/app/USER.md` | Per-instance user |
 | Custom agent definitions | `/app/agents/` | Per-instance operator |
@@ -107,7 +107,7 @@ the non-privileged runtime role (`tapps_runtime`) cannot bypass RLS.
 
 **These are not in the brain and are not meant to be.** The design split is:
 - Durable, shared, cross-session knowledge → brain (Postgres).
-- Ephemeral, per-project, per-conversation state → container (SQLite + files).
+- Ephemeral, per-project, per-conversation state → container (Postgres + files).
 
 ---
 
