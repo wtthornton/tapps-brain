@@ -663,6 +663,19 @@ class TestMcpToolHandlerExecution:
         assert ing["status"] == "ingested"
         assert "created_keys" in ing
 
+    def test_memory_recall_carries_recall_digest_and_memory_versions(self, mcp_server):
+        """TAP-6583 round 2: the MCP payload must not drop the new fields."""
+        store = mcp_server._tapps_store
+        store.save(key="mcp-digest", value="unique digest phrase xyz", tier="pattern")
+
+        expected = store.recall("digest phrase xyz")
+
+        recall = _tool_fn(mcp_server, "memory_recall")
+        payload = json.loads(recall(query="digest phrase xyz"))
+        assert payload["recall_digest"] == expected.recall_digest
+        assert payload["recall_digest"] != ""
+        assert payload["memory_versions"] == [mv.model_dump() for mv in expected.memory_versions]
+
     def test_memory_recall_empty_store_has_diagnostics(self, tmp_path: Path) -> None:
         from tapps_brain.mcp_server import create_server
 

@@ -219,6 +219,50 @@ def _info_response_schema() -> dict[str, Any]:
     }
 
 
+def _memory_version_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "required": ["key", "version"],
+        "properties": {
+            "key": {"type": "string", "description": "Memory key, exactly as returned."},
+            "version": {
+                "type": "string",
+                "description": "First 16 hex chars of the SHA-256 of the recalled value.",
+            },
+        },
+    }
+
+
+def _recall_response_schema() -> dict[str, Any]:
+    """The TAP-6583 provenance fields on ``/v1/recall``'s 200 response.
+
+    The route hand-builds its ``JSONResponse`` (no ``response_model``), so
+    FastAPI's auto-schema leaves the 200 response empty; this documents the
+    two additive fields explicitly. ``results`` / ``query`` stay documented
+    in the route's docstring, same as every other ``/v1/*`` route here.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "recall_digest": {
+                "type": "string",
+                "pattern": "^([0-9a-f]{64})?$",
+                "description": (
+                    "SHA-256 hex digest over the sorted (key, version) pairs in "
+                    "`results` (TAP-6583). Empty string when nothing matched."
+                ),
+            },
+            "memory_versions": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/MemoryVersion"},
+                "description": (
+                    "The (key, version) pairs `recall_digest` covers, in result order."
+                ),
+            },
+        },
+    }
+
+
 def _mcp_path_definition() -> dict[str, Any]:
     return {
         "post": {
@@ -372,6 +416,8 @@ def build_openapi_spec(app: FastAPI) -> dict[str, Any]:
     schemas = components.setdefault("schemas", {})
     schemas.setdefault("Error", _error_envelope_schema())
     schemas.setdefault("Info", _info_response_schema())
+    schemas.setdefault("MemoryVersion", _memory_version_schema())
+    schemas.setdefault("RecallResponse", _recall_response_schema())
 
     paths = spec.setdefault("paths", {})
     for path, methods in list(paths.items()):
@@ -421,5 +467,20 @@ def build_openapi_spec(app: FastAPI) -> dict[str, Any]:
                 "content",
                 {"application/json": {"schema": {"$ref": "#/components/schemas/Info"}}},
             )
+
+    # /v1/recall hand-builds its JSONResponse (no response_model), so FastAPI
+    # leaves its 200 schema empty (``{}``). Wire the TAP-6583 provenance
+    # fields in explicitly — round 2, MCP payload already carries them.
+    # Assigned directly (not setdefault): FastAPI's auto-schema already
+    # populates "content" with an empty ``schema: {}``, so a setdefault here
+    # would silently no-op, same as the dangling Info schema above.
+    recall_op = paths.get("/v1/recall", {}).get("post")
+    if isinstance(recall_op, dict):
+        ok = recall_op.setdefault("responses", {}).setdefault(
+            "200", {"description": "Successful Response"}
+        )
+        ok["content"] = {
+            "application/json": {"schema": {"$ref": "#/components/schemas/RecallResponse"}}
+        }
 
     return spec

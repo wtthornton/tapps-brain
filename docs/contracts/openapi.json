@@ -124,6 +124,40 @@
         ],
         "type": "object"
       },
+      "MemoryVersion": {
+        "properties": {
+          "key": {
+            "description": "Memory key, exactly as returned.",
+            "type": "string"
+          },
+          "version": {
+            "description": "First 16 hex chars of the SHA-256 of the recalled value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "version"
+        ],
+        "type": "object"
+      },
+      "RecallResponse": {
+        "properties": {
+          "memory_versions": {
+            "description": "The (key, version) pairs `recall_digest` covers, in result order.",
+            "items": {
+              "$ref": "#/components/schemas/MemoryVersion"
+            },
+            "type": "array"
+          },
+          "recall_digest": {
+            "description": "SHA-256 hex digest over the sorted (key, version) pairs in `results` (TAP-6583). Empty string when nothing matched.",
+            "pattern": "^([0-9a-f]{64})?$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -2456,7 +2490,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RecallResponse"
+                }
               }
             },
             "description": "Successful Response"
