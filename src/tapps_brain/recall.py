@@ -37,6 +37,7 @@ from tapps_brain.models import (
     RecallResult,
 )
 from tapps_brain.recall_diagnostics import RECALL_EMPTY_POST_FILTER
+from tapps_brain.recall_digest import compute_recall_digest
 
 if TYPE_CHECKING:
     from tapps_brain._protocols import HiveBackend, KnowledgeGraphBackend
@@ -304,9 +305,17 @@ class RecallOrchestrator:
         ]
         quality_warning = "; ".join(warnings) if warnings else None
 
+        # TAP-6583: name the set that actually reached the prompt. Computed
+        # here rather than inside inject_memories because the Hive merge,
+        # post-filters, and budget truncation above all run afterwards — a
+        # digest taken earlier would describe a candidate pool, not the prompt.
+        recall_digest, memory_versions = compute_recall_digest(memories)
+
         return RecallResult(
             memory_section=memory_section,
             memories=memories,
+            recall_digest=recall_digest,
+            memory_versions=memory_versions,
             token_count=token_count,
             recall_time_ms=round(elapsed_ms, 2),
             truncated=bool(result.get("truncated", False)) or hive_truncated,

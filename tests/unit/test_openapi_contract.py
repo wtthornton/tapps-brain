@@ -135,6 +135,22 @@ def test_error_envelope_schema_present(spec: dict) -> None:
     assert schema["properties"]["error"]["type"] == "string"
 
 
+def test_recall_response_schema_documents_digest_and_versions(spec: dict) -> None:
+    """TAP-6583 round 2: the contract, not just the docstring, names the fields."""
+    op = spec["paths"]["/v1/recall"]["post"]
+    ref = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+    schema = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+    props = schema["properties"]
+    assert props["recall_digest"]["type"] == "string"
+    assert "recall_digest" not in schema.get("required", [])
+
+    versions = props["memory_versions"]
+    assert versions["type"] == "array"
+    version_item = spec["components"]["schemas"][versions["items"]["$ref"].rsplit("/", 1)[-1]]
+    assert set(version_item["properties"]) == {"key", "version"}
+    assert "memory_versions" not in schema.get("required", [])
+
+
 def test_protected_routes_document_401_and_403(spec: dict) -> None:
     op = spec["paths"]["/v1/remember"]["post"]
     assert "401" in op["responses"]

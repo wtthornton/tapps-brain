@@ -1296,8 +1296,9 @@ def memory_recall(
 
     Returns the full :class:`~tapps_brain.models.RecallResult` payload
     (``memory_section``, ``memories``, ``token_count``, ``recall_time_ms``,
-    ``truncated``) plus optional ``recall_diagnostics`` and ``quality_warning``
-    fields when the diagnostics circuit breaker is non-CLOSED.
+    ``truncated``, ``recall_digest``, ``memory_versions``) plus optional
+    ``recall_diagnostics`` and ``quality_warning`` fields when the diagnostics
+    circuit breaker is non-CLOSED.
     """
     result = store.recall(message, memory_group=group)
     payload: dict[str, Any] = {
@@ -1312,6 +1313,10 @@ def memory_recall(
         payload["recall_diagnostics"] = result.recall_diagnostics.model_dump(mode="json")
     if result.quality_warning:
         payload["quality_warning"] = result.quality_warning
+    # TAP-6583 round 2: additive-only, appended last so pre-change callers'
+    # existing keys and their order are byte-for-byte unaffected.
+    payload["recall_digest"] = result.recall_digest
+    payload["memory_versions"] = [mv.model_dump() for mv in result.memory_versions]
     return payload
 
 
