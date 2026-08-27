@@ -1100,7 +1100,12 @@ def memory_save(
     # contract raises a pydantic ValidationError for a value over the global
     # cap (tests/unit/test_edge_cases.py); the friendlier value_too_large
     # envelope naming /v1/documents belongs to this service layer only.
-    too_large: dict[str, Any] | None = store._value_too_large_error(_ensure_str_value(value))
+    # ``store`` may be a test double whose unconfigured methods return a
+    # truthy Mock rather than None, so type-check the result the same way
+    # brain_recall's scoring_config resolution does above
+    # (tests/unit/test_tap747_slug_validation_400.py).
+    _too_large_raw = store._value_too_large_error(_ensure_str_value(value))
+    too_large: dict[str, Any] | None = _too_large_raw if isinstance(_too_large_raw, dict) else None
     if too_large is not None:
         return too_large
 
