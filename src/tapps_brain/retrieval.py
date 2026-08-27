@@ -604,6 +604,35 @@ class MemoryRetriever:
             stale=stale_flag,
         )
 
+    def score_by_rank(
+        self,
+        entry: MemoryEntry,
+        rank_index: int,
+        total_candidates: int,
+        now: datetime,
+    ) -> float:
+        """Composite score for an entry from a pre-ranked candidate list (TAP-6696).
+
+        For callers that already receive entries ordered by an external
+        relevance signal (FTS/KNN) without its raw magnitude exposed —
+        e.g. ``brain_recall``'s ``store.search()`` path — relevance is
+        derived from rank position (1.0 for the top hit, decaying toward
+        0.0 for the last) instead of BM25. Confidence, recency and frequency
+        use the same components and this retriever's configured weights as
+        :meth:`_build_scored_memory_item`, so recall and context injection
+        rank consistently.
+        """
+        relevance = 1.0 - (rank_index / (total_candidates - 1)) if total_candidates > 1 else 1.0
+        recency = self._recency_score(entry, now)
+        frequency = self._frequency_score(entry)
+        composite = (
+            self._w_relevance * relevance
+            + self._w_confidence * entry.confidence
+            + self._w_recency * recency
+            + self._w_frequency * frequency
+        )
+        return round(composite, 4)
+
     def search(
         self,
         query: str,

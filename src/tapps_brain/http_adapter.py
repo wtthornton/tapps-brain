@@ -124,6 +124,7 @@ from tapps_brain.http.middleware import (
     _mcp_auth_error_body,
     _peek_mcp_tool_name,
     _resolve_tenant_headers,
+    strict_identity_refusal,
 )
 
 # probe cache
@@ -1290,7 +1291,13 @@ def create_app(
         Request body (JSON):
           ``{ "key": str, "value": str, "tier"?: str, "source"?: str,
               "tags"?: list[str], "scope"?: str, "confidence"?: float,
-              "agent_scope"?: str, "group"?: str }``
+              "agent_scope"?: str, "group"?: str,
+              "temporal_sensitivity"?: "high"|"medium"|"low" }``
+
+        ``temporal_sensitivity`` (TAP-6696): when omitted, default-filled from
+        *value*'s content — a port/URL/version pin -> ``"high"``, an ADR
+        citation -> ``"low"``, otherwise left as the tier default. An explicit
+        value here is never overridden.
 
         Response (200) — read ``status``, do not assume 200 means persisted:
           - ``{"status": "saved", "key": <the requested key>, ...}`` — durable.
@@ -1321,6 +1328,15 @@ def create_app(
             )
         # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
         _, agent_id, _, _ = _resolve_tenant_headers(request)
+
+        # TAP-6696 / VAL-25-flag: refuse an anonymous write identity when
+        # TAPPS_BRAIN_STRICT_IDENTITY=1 (default off — no behavior change
+        # for existing callers). Checked before store resolution: a refused
+        # call has no reason to pay for it.
+        identity_refusal = strict_identity_refusal(agent_id)
+        if identity_refusal is not None:
+            raise HTTPException(status_code=400, detail=identity_refusal)
+
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard BEFORE the cache check so that
@@ -1429,6 +1445,7 @@ def create_app(
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
+                    temporal_sensitivity=body.get("temporal_sensitivity"),
                 )
             else:
                 # TAP-1099: offload sync DB call to a worker thread so the
@@ -1449,9 +1466,12 @@ def create_app(
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
+                    temporal_sensitivity=body.get("temporal_sensitivity"),
                 )
             if isinstance(result, dict) and "error" in result:
-                status_code = 400
+                # TAP-6696 / VAL-06: an over-cap value is a 413, not a
+                # generic 400 — the envelope's message points to /v1/documents.
+                status_code = 413 if result.get("error") == "value_too_large" else 400
             else:
                 status_code = 200
 

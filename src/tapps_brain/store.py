@@ -87,6 +87,7 @@ from tapps_brain.otel_tracer import (
 )
 from tapps_brain.rate_limiter import RateLimiterConfig, SlidingWindowRateLimiter
 from tapps_brain.relations import RelationEntry, extract_relations
+from tapps_brain.temporal_sensitivity import infer_temporal_sensitivity
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
@@ -1482,9 +1483,22 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         # text that actually persists) and raises TypeError on int/float.
         value = _ensure_str_value(value)
 
+        too_large = self._value_too_large_error(value)
+        if too_large is not None:
+            return too_large
+
         limit_error = self._profile_limit_error(key, value, tags)
         if limit_error is not None:
             raise ValueError(limit_error)
+
+        # TAP-6696 / VAL-11: default-fill an omitted temporal_sensitivity from
+        # the value's content. Only fires when the caller passed nothing
+        # (None) — an explicit value, including an explicit None re-save,
+        # already looks identical to "omitted" at this layer, so this stays
+        # a best-effort default rather than a guarantee (documented in
+        # infer_temporal_sensitivity's docstring).
+        if temporal_sensitivity is None:
+            temporal_sensitivity = infer_temporal_sensitivity(value)
 
         # Phases 1-5 — validate, safety, write-policy, dedup, conflict (TAP-2800
         # extracted these into the shared prepare step used by save_many too).
@@ -1596,6 +1610,42 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         if lim.max_tags < MAX_TAGS and tags is not None and len(tags) > lim.max_tags:
             return f"Too many tags (max {lim.max_tags} per profile limit)."
         return None
+
+    def effective_max_value_length(self) -> int:
+        """Effective per-entry ``value`` cap in characters (TAP-6696 / VAL-06).
+
+        ``min(profile.limits.max_value_length, MAX_VALUE_LENGTH)`` — a profile
+        may tighten the cap but, per :meth:`_profile_limit_error`, never loosen
+        it past the model ceiling.
+        """
+        from tapps_brain.models import MAX_VALUE_LENGTH
+
+        lim = getattr(self._profile, "limits", None) if self._profile is not None else None
+        if lim is not None and lim.max_value_length < MAX_VALUE_LENGTH:
+            return int(lim.max_value_length)
+        return MAX_VALUE_LENGTH
+
+    def _value_too_large_error(self, value: str) -> dict[str, Any] | None:
+        """Structured 413-shaped refusal for an over-cap ``value`` (VAL-06).
+
+        Checked ahead of :meth:`_profile_limit_error` / ``MemoryEntry``
+        validation so an over-cap value gets this envelope (naming
+        ``/v1/documents``) instead of a generic pydantic ``ValidationError``.
+        Shared by :meth:`save` and :meth:`_prepare_batch_entry`.
+        """
+        cap = self.effective_max_value_length()
+        if len(value) <= cap:
+            return None
+        detail = (
+            f"value is {len(value)} characters, exceeding the {cap}-character "
+            "per-entry cap. Use POST /v1/documents for long-form content."
+        )
+        return {
+            "error": "value_too_large",
+            "detail": detail,
+            "message": detail,
+            "max_value_length": cap,
+        }
 
     def _prepare_save(
         self,
@@ -1874,11 +1924,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # "detail" is the canonical envelope key (openapi_contract.py);
             # "message" is kept as a legacy alias for older consumers.
             return {"error": "bad_request", "detail": str(exc), "message": str(exc)}
-        limit_error = self._profile_limit_error(
-            key, _ensure_str_value(item.get("value", "")), item.get("tags")
+        batch_value = _ensure_str_value(item.get("value", ""))
+        limit_error = self._profile_limit_error(key, batch_value, item.get("tags"))
+        # Collapsed into one return (vs. two separate early-returns) to stay
+        # under the file's max-return-statements lint threshold (PLR0911).
+        row_error = self._value_too_large_error(batch_value) or (
+            {"error": "bad_request", "detail": limit_error, "message": limit_error}
+            if limit_error is not None
+            else None
         )
-        if limit_error is not None:
-            return {"error": "bad_request", "detail": limit_error, "message": limit_error}
+        if row_error is not None:
+            return row_error
 
         prep = self._prepare_save(
             key=key,
