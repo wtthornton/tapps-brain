@@ -110,6 +110,28 @@ override-dependencies = [
     "torch>=2.13.0",
 ]
 
+# TAP-6659: the default PyPI torch wheel for linux pulls in the full CUDA
+# toolkit (cuda-bindings + cuda-toolkit[cublas,cudart,cufft,cufile,cupti,
+# curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx] => 15 nvidia-* packages) even
+# though this host (and most CI/deploy targets) has no NVIDIA GPU. Route torch
+# to PyTorch's CPU-only wheel index by default instead. CUDA remains available
+# as a documented, explicit opt-in — see docker/README.md — by pointing this
+# entry at the `pytorch-cuda` index below and re-running `uv lock`.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
 [tool.hatch.build.targets.sdist]
 include = ["src/tapps_brain/", "examples/coding-project-init/"]
 

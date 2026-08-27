@@ -11,6 +11,13 @@ COPY dist/tapps_brain-*.whl /tmp/
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
+# TAP-6659: this stage installs from a pre-built wheel via plain `pip`, which
+# does not read pyproject.toml's [tool.uv.sources]/[tool.uv.index] — those are
+# uv-only config. Pin the CPU-only torch build here too, before installing the
+# wheel, so the sentence-transformers dependency chain doesn't pull the
+# CUDA-bundled PyPI build (15 nvidia-* packages) into a container with no GPU.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.13.0+cpu"
 RUN --mount=type=cache,target=/root/.cache/pip \
     whl=$(ls /tmp/tapps_brain-*.whl) \
     && pip install --no-cache-dir "${whl}[cli,mcp,http,reranker,otel]" "psycopg[binary]"

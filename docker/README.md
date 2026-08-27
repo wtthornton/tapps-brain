@@ -18,6 +18,42 @@ Quick reference for the Docker deployment of tapps-brain. The stack is a **unifi
 | `init-db.sql` | Bootstraps the `vector` extension on first DB start |
 | `.env.example` | Template for `docker/.env` (the four required vars + optional overrides) |
 
+## torch: CPU-only by default (TAP-6659)
+
+`sentence-transformers` (used for the embedding model baked into `Dockerfile.http`)
+pulls in `torch` as a transitive dependency. By default this repo resolves the
+**CPU-only** PyTorch build — no `nvidia-*` / `cuda-*` packages are installed,
+even on Linux, since most deploy targets (including this host) have no NVIDIA
+GPU:
+
+- `pyproject.toml` pins `torch` to the `pytorch-cpu` index
+  (`https://download.pytorch.org/whl/cpu`) via `[tool.uv.sources]`, so
+  `uv lock` / `uv sync` always resolve the CPU build.
+- `Dockerfile.http` installs from a pre-built wheel via plain `pip`, which does
+  not read `[tool.uv.sources]`. It pre-installs the matching CPU torch build
+  (`pip install --index-url https://download.pytorch.org/whl/cpu
+  torch==<version>+cpu`) before installing the wheel, so `sentence-transformers`
+  never triggers a CUDA-bundled install from PyPI.
+
+**CUDA is an explicit, documented opt-in** — there is no `cuda` extra, because
+the package resolution here does not run through `uv` at request time
+(everything ships from a lockfile). To build a CUDA-enabled variant:
+
+1. In `pyproject.toml`, point the `torch` entry under `[tool.uv.sources]` at
+   the pre-defined `pytorch-cuda` index instead of `pytorch-cpu`
+   (`https://download.pytorch.org/whl/cu130` — pick the CUDA line matching
+   your driver/toolkit), then run `uv lock` and `uv sync`.
+2. In `Dockerfile.http`, change the `--index-url` on the torch pre-install step
+   from `.../whl/cpu` to the matching `.../whl/cu1xx` index and update the
+   pinned `torch==<version>+cpu` to the corresponding `+cu1xx` build string
+   uv resolved in step 1.
+
+`Dockerfile.migrate` installs the `[cli]` extra only, which still pulls in
+`sentence-transformers` → `torch` transitively; it is not covered by the
+pip pre-install step above and may still resolve a CUDA-bundled torch build
+from PyPI. Not fixed here (out of scope for TAP-6659 — file a fast-follow if
+`docker-tapps-brain-migrate` image size matters).
+
 ## Before You Deploy
 
 1. **Copy the env template and fill in strong random values**:
