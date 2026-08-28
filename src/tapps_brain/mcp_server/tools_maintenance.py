@@ -65,10 +65,10 @@ def register_maintenance_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN
     def maintenance_decay_learnings(dry_run: bool = False) -> str:
         """Demote unvalidated and contradicted learnings (TAP-5547).
 
-        Demotes an approved learning that has been contradicted, and a candidate
-        that has either decayed below the confidence floor or gone unvalidated
-        past the staleness threshold. Thresholds live in
-        ``profile.learning_decay``.
+        Demotes any learning that has been contradicted -- whatever its
+        ``learning_status`` -- and a candidate that has either decayed below the
+        confidence floor or gone unvalidated past the staleness threshold.
+        Thresholds live in ``profile.learning_decay``.
 
         This is not GC: nothing is archived or deleted, and promotion provenance
         is kept so an audit can still see which approval was withdrawn. What

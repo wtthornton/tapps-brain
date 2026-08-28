@@ -713,9 +713,12 @@ def identify_learning_demotions(
 
     Three rules, in priority order per entry:
 
-    1. An ``approved`` entry that is marked contradicted is demoted. An approval
-       that survives its own contradiction is worse than no gate at all, because
-       consumers trust it specifically *because* it is approved.
+    1. An entry marked contradicted is demoted, **whatever its prior
+       ``learning_status``**. A learning that survives its own contradiction is
+       worse than no gate at all — an approved one because consumers trust it
+       specifically *because* it is approved, a candidate one because nothing
+       else in this function mentions ``contradicted``, so a recent candidate
+       above the confidence floor would otherwise be permanently immune.
     2. A ``candidate`` whose decayed confidence has fallen below the floor is
        demoted — the evidence for it has aged out.
     3. A ``candidate`` nobody promoted within ``candidate_stale_days`` is
@@ -742,17 +745,31 @@ def identify_learning_demotions(
         if status is None or status == LearningStatus.demoted:
             continue
 
-        if status == LearningStatus.approved:
-            if demote_contradicted and getattr(entry, "contradicted", False):
-                detail = getattr(entry, "contradiction_reason", None) or "no reason recorded"
-                demotions.append(
-                    LearningDemotion(
-                        key=entry.key,
-                        from_status=str(status),
-                        reason_code=DEMOTE_REASON_CONTRADICTED,
-                        reason=f"approved learning was contradicted: {detail}",
-                    )
+        # Rule 1 is status-agnostic (TAP-6697 round 2).  It used to sit under
+        # ``if status == approved:``, which then unconditionally ``continue``d --
+        # so on a store where every contradicted row is a ``candidate`` (all
+        # 7,725 of them in the deployed brain as of 2026-08-27) the rule fired
+        # on nothing, and a
+        # contradicted candidate that is recent and above the confidence floor is
+        # immune to rules 2 and 3 as well.  The contract has no status
+        # precondition: a contradicted learning is not injectable regardless of
+        # how much trust it had accumulated.
+        if demote_contradicted and getattr(entry, "contradicted", False):
+            detail = getattr(entry, "contradiction_reason", None) or "no reason recorded"
+            demotions.append(
+                LearningDemotion(
+                    key=entry.key,
+                    from_status=str(status),
+                    reason_code=DEMOTE_REASON_CONTRADICTED,
+                    reason=f"{status} learning was contradicted: {detail}",
                 )
+            )
+            continue
+
+        if status == LearningStatus.approved:
+            # An approved entry that is not contradicted is left alone: rules 2
+            # and 3 judge *candidates* on decay and staleness, and an approval
+            # carries an explicit eval/human signal that neither rule outranks.
             continue
 
         # Remaining case: candidate.

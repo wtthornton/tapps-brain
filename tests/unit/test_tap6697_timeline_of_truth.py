@@ -30,7 +30,7 @@ import pytest
 
 from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain.decay import DecayConfig, identify_decay_refresh
-from tapps_brain.models import MemoryEntry, MemoryStatus, MemoryTier
+from tapps_brain.models import MemoryEntry, MemoryStatus, MemoryTier, _utc_now_iso
 from tapps_brain.store import (
     CLOSE_VALIDITY_AUDIT_ACTION,
     TIER_ESCALATE_AUDIT_ACTION,
@@ -589,3 +589,167 @@ class TestTierEscalationDoesNotTouchTrust:
         )
         assert after.promotion_signal is None
         assert after.promoted_by is None
+
+
+# ---------------------------------------------------------------------------
+# Round-2 regressions — the two defects an independent verifier refuted
+# ---------------------------------------------------------------------------
+
+
+def _live_but_closed(store: MemoryStore, now: datetime) -> list[str]:
+    """Keys satisfying ``invalid_at <= now() AND status = 'active'``.
+
+    The fixture-store equivalent of VAL-05's live-DB probe. Any key here is a row
+    whose two liveness axes disagree: the temporal axis says closed, the status
+    axis says live. The invariant is that this list is always empty, whichever
+    write path closed the row.
+    """
+    from tapps_brain.models import _parse_iso
+
+    offenders: list[str] = []
+    # The in-process mirror of ``private_memories`` — the same set
+    # ``decay_learnings`` sweeps, so the probe sees every row the store holds.
+    for entry in list(store._entries.values()):
+        if entry.invalid_at is None:
+            continue
+        if _parse_iso(entry.invalid_at) > now:
+            continue
+        if entry.status is MemoryStatus.active:
+            offenders.append(entry.key)
+    return offenders
+
+
+class TestSupersedeGoesThroughTheCloser:
+    """VAL-05(b)/(c): ``supersede()`` must not be a second ``invalid_at`` writer.
+
+    ``supersede()`` used to build its own update dict — ``invalid_at`` +
+    ``superseded_by`` + ``updated_at``, no ``status``. A row it closed therefore
+    satisfied ``invalid_at <= now() AND status='active'`` *permanently*, which
+    falsifies VAL-05 clause (c) by construction rather than by race. Routing it
+    through :func:`_close_validity_updates` is what makes "one closer, no
+    exceptions" true.
+    """
+
+    def test_superseded_row_is_not_left_active(self, store: MemoryStore) -> None:
+        # Positive control: the probe must be able to see an offender at all,
+        # or the "== []" assertion below would pass on a blind reader
+        # (corrections-log #1/#3).
+        store.save(key="planted", value="closed by hand, status untouched", tier="pattern")
+        store.update_fields("planted", invalid_at=_utc_now_iso())
+        now = datetime.now(tz=UTC)
+        assert _live_but_closed(store, now) == ["planted"], (
+            "probe cannot detect a known-present offender; the assertion below would be vacuous"
+        )
+        # Repair the plant through the closer so it stops being an offender.
+        store.close_validity("planted", reason="supersession")
+        assert _live_but_closed(store, datetime.now(tz=UTC)) == []
+
+        store.save(key="fact", value="the original claim", tier="pattern")
+        new_entry = store.supersede("fact", "the corrected claim")
+
+        old = store.get("fact")
+        assert old is not None
+        assert old.invalid_at is not None
+        assert old.superseded_by == new_entry.key
+        assert old.status is MemoryStatus.superseded, (
+            "supersede() must stamp status atomically with invalid_at"
+        )
+        assert _live_but_closed(store, datetime.now(tz=UTC)) == []
+
+    def test_supersede_writes_one_close_validity_audit_row(self, store: MemoryStore) -> None:
+        """A closure is provable from ``audit_log`` on this path too."""
+        store.save(key="fact2", value="v1", tier="pattern")
+        store.supersede("fact2", "v2")
+
+        closes = [
+            r for r in _audit_actions(store, "fact2") if r["action"] == CLOSE_VALIDITY_AUDIT_ACTION
+        ]
+        assert len(closes) == 1
+        assert closes[0]["reason"] == "supersession"
+
+
+class TestContradictionDemotionIgnoresPriorStatus:
+    """VAL-04(a): a contradicted row is demoted whatever its prior status.
+
+    The rule used to sit under ``if status == LearningStatus.approved:``, which
+    then unconditionally ``continue``d. Every contradicted row in the live brain
+    is a ``candidate``, so the rule fired on nothing: a contradicted candidate
+    that is recent and above the confidence floor is immune to the other two
+    rules as well. SC-2 and VAL-04(a) both state the contract with no status
+    precondition.
+    """
+
+    def _seed_contradicted_candidate(self, store: MemoryStore, key: str) -> None:
+        """A contradicted candidate immune to the decayed/unvalidated rules."""
+        from tapps_brain.models import LearningStatus
+
+        store.save(key=key, value="a claim later refuted", tier="architectural")
+        store.close_validity(key, reason="contradiction", detail="refuted by TAP-6697")
+        store.update_fields(key, confidence=0.99, updated_at=_utc_now_iso())
+        entry = store.get(key)
+        assert entry is not None
+        assert entry.learning_status is LearningStatus.candidate
+        assert entry.contradicted is True
+
+    def test_contradicted_candidate_is_identified_for_demotion(self, store: MemoryStore) -> None:
+        from tapps_brain.decay import DEMOTE_REASON_CONTRADICTED
+
+        self._seed_contradicted_candidate(store, "cand-contradicted")
+
+        plan = store.decay_learnings(dry_run=True)
+
+        assert "cand-contradicted" in plan["demoted_keys"]
+        assert plan["reason_counts"].get(DEMOTE_REASON_CONTRADICTED) == 1
+
+    def test_contradicted_candidate_is_demoted_and_audited(self, store: MemoryStore) -> None:
+        from tapps_brain.models import LearningStatus
+
+        self._seed_contradicted_candidate(store, "cand-demote-me")
+
+        # Positive control for the audit probe.
+        assert any(r["action"] == "save" for r in _audit_actions(store, "cand-demote-me"))
+
+        store.decay_learnings(dry_run=False)
+
+        after = store.get("cand-demote-me")
+        assert after is not None
+        assert after.learning_status is LearningStatus.demoted
+        demotes = [
+            r for r in _audit_actions(store, "cand-demote-me") if r["action"] == "learning_demote"
+        ]
+        assert len(demotes) == 1
+
+    def test_approved_contradicted_row_still_demotes(self, store: MemoryStore) -> None:
+        """Widening the rule must not lose the case it already covered."""
+        from tapps_brain.models import LearningStatus
+
+        store.save(key="appr", value="an approved claim later refuted", tier="architectural")
+        store.update_fields(
+            "appr",
+            learning_status=LearningStatus.approved,
+            promotion_signal="human",
+            promoted_by="operator",
+            promoted_at=_utc_now_iso(),
+            confidence=0.99,
+        )
+        store.close_validity("appr", reason="contradiction", detail="refuted")
+        store.update_fields("appr", updated_at=_utc_now_iso())
+
+        store.decay_learnings(dry_run=False)
+
+        after = store.get("appr")
+        assert after is not None
+        assert after.learning_status is LearningStatus.demoted
+
+    def test_uncontradicted_recent_candidate_is_left_alone(self, store: MemoryStore) -> None:
+        """The widened rule must not demote everything it walks past."""
+        from tapps_brain.models import LearningStatus
+
+        store.save(key="healthy", value="a fresh, uncontradicted claim", tier="architectural")
+        store.update_fields("healthy", confidence=0.99, updated_at=_utc_now_iso())
+
+        store.decay_learnings(dry_run=False)
+
+        after = store.get("healthy")
+        assert after is not None
+        assert after.learning_status is LearningStatus.candidate

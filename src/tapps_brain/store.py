@@ -4117,13 +4117,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # Derive new key from old key or kwargs
             new_key = kwargs.pop("key", f"{old_key}.v{self._version_count(old_key) + 1}")
 
-            # Invalidate the old entry
+            # Invalidate the old entry.  TAP-6697: through the one closer, not a
+            # hand-rolled update dict — this path used to write ``invalid_at``
+            # and ``superseded_by`` but leave ``status='active'``, so every row
+            # it closed satisfied ``invalid_at <= now() AND status='active'``
+            # permanently (VAL-05 clause (c) falsified by the write itself, not
+            # by a race).  Applied inline rather than via ``close_validity()``
+            # because we already hold the store lock and the persist below is
+            # guarded by a rollback the public method knows nothing about.
             invalidated = old_entry.model_copy(
-                update={
-                    "invalid_at": now,
-                    "superseded_by": new_key,
-                    "updated_at": now,
-                }
+                update=_close_validity_updates(
+                    "supersession",
+                    now,
+                    superseded_by=new_key,
+                )
             )
             self._entries[old_key] = invalidated
 
@@ -4188,6 +4195,21 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
             msg = f"Failed to create superseding entry: {new_entry.get('message', '')}"
             raise ValueError(msg)
+
+        # TAP-6697: one close_validity audit row, same as every other closing
+        # path, so "why is this row not live?" is answerable from audit_log
+        # without knowing which pass killed it (corrections-log #1).
+        self._persistence.append_audit(
+            action=CLOSE_VALIDITY_AUDIT_ACTION,
+            key=old_key,
+            extra={
+                "reason": "supersession",
+                "status": str(MemoryStatus.superseded),
+                "invalid_at": now,
+                "superseded_by": new_key,
+                "detail": "supersede",
+            },
+        )
 
         # Set valid_at on the new entry
         with self._serialized():
@@ -4710,10 +4732,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     def decay_learnings(self, /, *, dry_run: bool = False) -> dict[str, Any]:
         """Demote learnings whose promotion state no longer holds (TAP-5547).
 
-        Three rules, tuned by ``profile.learning_decay``: an approved entry that
-        has been contradicted is demoted; a candidate whose decayed confidence
-        fell below the floor is demoted; a candidate nobody promoted within
-        ``candidate_stale_days`` is demoted.
+        Three rules, tuned by ``profile.learning_decay``: an entry that has been
+        contradicted is demoted whatever its ``learning_status``; a candidate
+        whose decayed confidence fell below the floor is demoted; a candidate
+        nobody promoted within ``candidate_stale_days`` is demoted.
 
         Demotion is not deletion and not archival. The entry keeps its promotion
         provenance so an audit of a bad injection can still see which approval

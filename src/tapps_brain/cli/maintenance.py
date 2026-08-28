@@ -593,9 +593,9 @@ def maintenance_demote_contradicted(
     """Demote learnings whose promotion no longer holds (TAP-5547 rules).
 
     A thin wrapper over ``MemoryStore.decay_learnings`` — the three demotion
-    rules (approved-and-contradicted, candidate below the confidence floor,
-    candidate unvalidated past ``candidate_stale_days``) already live in
-    ``decay.identify_learning_demotions`` and are exercised by the MCP
+    rules (contradicted at any ``learning_status``, candidate below the
+    confidence floor, candidate unvalidated past ``candidate_stale_days``)
+    already live in ``decay.identify_learning_demotions`` and are exercised by the MCP
     ``maintenance_decay_learnings`` tool. This adds the CLI surface only; it
     deliberately contains no demotion logic of its own.
 
