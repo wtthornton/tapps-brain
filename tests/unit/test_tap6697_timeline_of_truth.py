@@ -72,17 +72,25 @@ def _audit_actions(store: MemoryStore, key: str) -> list[dict[str, Any]]:
     Corrections-log #1: mechanism claims ("did the pass run?") are validated
     against the audit log, which records what ran; status columns only record
     what is.
+
+    Goes through the backend's ``query_audit``, not the JSONL file behind
+    ``audit_path``. The two are not interchangeable: the in-memory unit-test
+    backend keeps a JSONL file, while a run with ``TAPPS_BRAIN_DATABASE_URL`` set
+    (CI) writes to the Postgres ``audit_log`` table and has no such file. Reading
+    the file directly made every assertion here vacuously true on the Postgres
+    backend. ``query_audit`` normalises both into ``event_type`` / ``key`` /
+    ``details``; this helper flattens ``details`` up so callers can read
+    ``row["reason"]`` on either backend.
     """
-    path = store._persistence.audit_path
-    if path is None or not Path(path).exists():
-        return []
     rows: list[dict[str, Any]] = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        if rec.get("key") == key:
-            rows.append(rec)
+    for rec in store._persistence.query_audit(key=key, limit=1000):
+        details = rec.get("details") or {}
+        flat: dict[str, Any] = {
+            **(details if isinstance(details, dict) else {}),
+            "action": str(rec.get("event_type", "")),
+            "key": str(rec.get("key", "")),
+        }
+        rows.append(flat)
     return rows
 
 
