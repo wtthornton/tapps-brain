@@ -4,7 +4,7 @@ description: >-
   Review documentation quality using DocsMCP validation tools. Checks drift,
   freshness, completeness, links, and Diataxis balance.
 tools: Read, Glob, Grep, Write, Edit
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 maxTurns: 20
 permissionMode: plan
 memory: project
