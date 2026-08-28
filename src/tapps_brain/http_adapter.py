@@ -242,6 +242,25 @@ def _coerce_float(body: dict[str, Any], field: str, default: float) -> float:
         ) from None
 
 
+def _extract_invocation_id(body: dict[str, Any], request: Request) -> str | None:
+    """VAL-19: recover the caller's invocation identity for the ``run_id``
+    provenance column.
+
+    AgentForge's ``/v1/remember`` calls carry ``body["metadata"]["invocation_id"]``
+    (``backend/api/routes/ingest.py`` + ``backend/memory/brain.py``); other
+    callers may instead set the ``X-Origin-Invocation-Id`` header. Neither was
+    ever read, so every write was unattributable by construction. ``metadata``
+    takes precedence when both are present.
+    """
+    metadata = body.get("metadata")
+    if isinstance(metadata, dict):
+        raw = metadata.get("invocation_id")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    header_val = (request.headers.get("x-origin-invocation-id") or "").strip()
+    return header_val or None
+
+
 def _validate_uuid_field(value: Any, field_name: str) -> str:
     """TAP-2140: validate a request field is a syntactically valid UUID.
 
@@ -1287,12 +1306,21 @@ def create_app(
           - ``X-Project-Id`` (required): project identifier.
           - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
           - ``X-Idempotency-Key`` (optional): idempotency UUID.
+          - ``X-Origin-Invocation-Id`` (optional, VAL-19): invocation identity;
+            stored in ``run_id`` when ``metadata.invocation_id`` is absent.
 
         Request body (JSON):
           ``{ "key": str, "value": str, "tier"?: str, "source"?: str,
               "tags"?: list[str], "scope"?: str, "confidence"?: float,
               "agent_scope"?: str, "group"?: str,
-              "temporal_sensitivity"?: "high"|"medium"|"low" }``
+              "temporal_sensitivity"?: "high"|"medium"|"low",
+              "metadata"?: {"invocation_id"?: str} }``
+
+        ``metadata.invocation_id`` (VAL-19): when present, persisted into the
+        existing ``run_id`` provenance column so a memory row can be joined
+        back to the invocation that wrote it. Falls back to the
+        ``X-Origin-Invocation-Id`` header when ``metadata`` carries none. A
+        request with neither is unchanged (``run_id`` stays unset).
 
         ``temporal_sensitivity`` (TAP-6696): when omitted, default-filled from
         *value*'s content — a port/URL/version pin -> ``"high"``, an ADR
@@ -1443,6 +1471,11 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
+            # VAL-19: the wire's only invocation-identity signal — persisted
+            # into the existing ``run_id`` provenance column (SC-10: additive,
+            # a request carrying neither stays exactly as it behaves today).
+            _run_id = _extract_invocation_id(body, request)
+
             _async_store = _get_async_store_or_none()
             if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 # TAP-826: use async-native path — DB write goes through
@@ -1462,6 +1495,7 @@ def create_app(
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
                     temporal_sensitivity=body.get("temporal_sensitivity"),
+                    run_id=_run_id,
                 )
             else:
                 # TAP-1099: offload sync DB call to a worker thread so the
@@ -1483,6 +1517,7 @@ def create_app(
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
                     temporal_sensitivity=body.get("temporal_sensitivity"),
+                    run_id=_run_id,
                 )
             if isinstance(result, dict) and "error" in result:
                 # TAP-6696 / VAL-06: an over-cap value is a 413, not a

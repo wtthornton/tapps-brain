@@ -1065,6 +1065,7 @@ def memory_save(
     group: str | None = None,
     supersede: str = SUPERSEDE_GLOBAL,
     temporal_sensitivity: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Save a memory entry with full structured validation.
 
@@ -1090,6 +1091,10 @@ def memory_save(
         left alone.  For key-spaces holding *independent facts* — one row per
         distinct thing — where topical similarity between neighbours is
         expected and is not a contradiction.
+
+    ``run_id`` (VAL-19): opaque invocation identity, passed straight through
+    to :meth:`MemoryStore.save` (no validation — it is provenance, not a
+    lookup key).
     """
     supersede_error = _validate_supersede(supersede)
     if supersede_error is not None:
@@ -1131,6 +1136,7 @@ def memory_save(
     try:
         result = store.save(
             **validated,
+            run_id=run_id,
             report=report,
             conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
         )
@@ -2288,6 +2294,7 @@ async def async_memory_save(
     group: str | None = None,
     supersede: str = SUPERSEDE_GLOBAL,
     temporal_sensitivity: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Async-native counterpart of :func:`memory_save`.
 
@@ -2349,6 +2356,7 @@ async def async_memory_save(
             report=report,
             conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
             temporal_sensitivity=temporal_sensitivity,
+            run_id=run_id,
         )
     except _PydanticValidationError as exc:
         errors = exc.errors()
