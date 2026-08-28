@@ -2856,6 +2856,63 @@ class TestRestTenantStoreResolution:
         assert captured == [tenant]
 
 
+class TestRememberOversizeValueNamesDocuments:
+    """TAP-6696 / VAL-06 (round 2): every ``/v1/remember`` size refusal names
+    ``/v1/documents``, whether it trips the per-entry cap (a value a few KB
+    over the 4096-char default, well under the 65536-byte whole-body cap) or
+    the whole-body transport cap (a ~200 KB value, which blows past the
+    whole-body cap before the JSON is even decoded).
+    """
+
+    _HEADERS = {
+        "Authorization": "Bearer tok",
+        "X-Project-Id": "proj-write-gate",
+        "X-Agent-Id": "agent-1",
+    }
+
+    def test_value_a_few_kb_over_per_entry_cap_names_documents(self, tmp_path: Path) -> None:
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        settings = _make_settings(auth_token="tok", store=store)
+        cap = store.effective_max_value_length()
+        # 5 KB of 'x' clears the per-entry cap but stays well under the
+        # 65536-byte whole-body cap, so this must resolve through the
+        # per-entry `value_too_large` path, not the whole-body guard.
+        value = "x" * max(cap + 1, 5 * 1024)
+        assert len(value.encode("utf-8")) < 65_536
+
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember",
+                json={"key": "just-over-cap", "value": value, "tier": "context"},
+                headers=self._HEADERS,
+            )
+            assert resp.status_code == 413, resp.text
+            body = resp.json()
+            assert body["error"] == "value_too_large"
+            assert "/v1/documents" in body["detail"]
+
+    def test_value_around_200kb_over_whole_body_cap_names_documents(self, tmp_path: Path) -> None:
+        from tapps_brain.store import MemoryStore
+
+        store = MemoryStore(tmp_path)
+        settings = _make_settings(auth_token="tok", store=store)
+        value = "z" * (200 * 1024)
+
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/remember",
+                json={"key": "way-over-cap", "value": value, "tier": "context"},
+                headers=self._HEADERS,
+            )
+            assert resp.status_code == 413, resp.text
+            body = resp.json()
+            assert body["error"] == "payload_too_large"
+            assert "/v1/documents" in body["detail"]
+            assert body["max_body_bytes"] == 65_536
+
+
 class TestRememberPersistsEveryAcknowledgedWrite:
     """TAP-5614: a 200 ``{"status": "saved"}`` must mean the key is readable.
 

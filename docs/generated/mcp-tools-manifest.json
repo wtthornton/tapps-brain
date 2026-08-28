@@ -14,7 +14,7 @@
     "src/tapps_brain/mcp_server/tools_research.py",
     "src/tapps_brain/mcp_server/tools_resources.py"
   ],
-  "tool_count": 76,
+  "tool_count": 85,
   "operator_tool_count": 13,
   "resource_count": 8,
   "core_tool_count": 18,
@@ -41,361 +41,846 @@
   "tools": [
     {
       "name": "agent_create",
-      "description": "Create an agent: register in the Hive with a validated profile."
+      "description": "Create an agent: register in the Hive with a validated profile.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "agent_delete",
-      "description": "Delete a registered agent from the Hive."
+      "description": "Delete a registered agent from the Hive.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "agent_list",
-      "description": "List all registered agents in the Hive."
+      "description": "List all registered agents in the Hive.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "agent_register",
-      "description": "Register an agent in the Hive."
+      "description": "Register an agent in the Hive.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_audit_consumers",
-      "description": "Surface declared-but-silent agents for a project (TAP-2093)."
+      "description": "Surface declared-but-silent agents for a project (TAP-2093).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_demote_learning",
+      "description": "Withdraw a learning's approval so it stops being injected (TAP-5542).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_explain_connection",
-      "description": "Find the shortest path between two KG entities."
+      "description": "Find the shortest path between two KG entities.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_export",
-      "description": "Snapshot top-N memories per tier into a Managed Agents folder (TAP-2099)."
+      "description": "Snapshot top-N memories per tier into a Managed Agents folder (TAP-2099).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_forget",
-      "description": "Archive a memory by key (to gc_archive); not permanently deleted."
+      "description": "Archive a memory by key (to gc_archive); not permanently deleted.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_get_neighbors",
-      "description": "Return the neighbourhood graph around one or more KG entities."
+      "description": "Return the neighbourhood graph around one or more KG entities.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_kg_check",
+      "description": "Check whether asserting an edge would violate declared cardinality (TAP-5509).",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_learn_failure",
-      "description": "Record a failed task outcome to avoid repeating mistakes."
+      "description": "Record a failed task outcome to avoid repeating mistakes.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_learn_success",
-      "description": "Record a successful task outcome."
+      "description": "Record a successful task outcome.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_list_predicates",
+      "description": "List the KG predicates declared for this project (TAP-5508).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_mission_state_get",
+      "description": "Read back mission-scoped shared state (TAP-5544).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_mission_state_set",
+      "description": "Park mission-scoped shared state (TAP-5544).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_profile_get",
-      "description": "Read profile-scoped learned data for the current project."
+      "description": "Read profile-scoped learned data for the current project.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_profile_set",
-      "description": "Store profile-scoped learned data for the current project."
+      "description": "Store profile-scoped learned data for the current project.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_promote_learning",
+      "description": "Approve a learning so it becomes eligible for injection (TAP-5542).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_query_events",
-      "description": "Query stored experience events with full payload round-trip."
+      "description": "Query stored experience events with full payload round-trip.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "brain_recall",
-      "description": "Recall memories matching a query."
+      "description": "Recall memories matching a query.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator",
+        "reviewer"
+      ]
+    },
+    {
+      "name": "brain_recall_tool_paths",
+      "description": "Recall approved tool paths for a task type (TAP-5545).",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_record_event",
-      "description": "Record an experience event with optional KG side-effects."
+      "description": "Record an experience event with optional KG side-effects.",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_record_events_batch",
-      "description": "Record many experience events in one MCP round-trip (TAP-1973)."
+      "description": "Record many experience events in one MCP round-trip (TAP-1973).",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_record_feedback",
-      "description": "Record feedback for a KG edge or a private memory entry."
+      "description": "Record feedback for a KG edge or a private memory entry.",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "brain_register_predicate",
+      "description": "Declare what a KG predicate means for this project (TAP-5508).",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_remember",
-      "description": "Save a memory to the agent's brain."
+      "description": "Save a memory to the agent's brain.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_resolve_entity",
-      "description": "Resolve an entity name to its UUID, creating the entity if absent."
+      "description": "Resolve an entity name to its UUID, creating the entity if absent.",
+      "profiles": [
+        "agent_brain",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "brain_status",
-      "description": "Show agent identity, group memberships, store stats, and Hive connectivity."
+      "description": "Show agent identity, group memberships, store stats, and Hive connectivity.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "diagnostics_history",
-      "description": "Return recent persisted diagnostics snapshots."
+      "description": "Return recent persisted diagnostics snapshots.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "diagnostics_report",
-      "description": "Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state."
+      "description": "Run quality diagnostics (EPIC-030): composite score, dimensions, circuit state.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "docs_lookup",
-      "description": "Fetch library documentation from the brain-central doc cache."
+      "description": "Fetch library documentation from the brain-central doc cache.",
+      "profiles": [
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "docs_warm",
-      "description": "Batch pre-fetch library docs into the brain-central cache."
+      "description": "Batch pre-fetch library docs into the brain-central cache.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "document_delete",
-      "description": "Delete a stored document and its chunks."
+      "description": "Delete a stored document and its chunks.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "document_get",
-      "description": "Fetch a stored document's metadata and content by doc_id."
+      "description": "Fetch a stored document's metadata and content by doc_id.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "document_list",
-      "description": "List stored documents (metadata only), optionally filtered by tag."
+      "description": "List stored documents (metadata only), optionally filtered by tag.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "document_put",
-      "description": "Store a document durably (text or base64 bytes) with optional hybrid indexing."
+      "description": "Store a document durably (text or base64 bytes) with optional hybrid indexing.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "document_search",
-      "description": "Hybrid search (tsvector + pgvector, RRF-fused) over indexed document chunks."
+      "description": "Hybrid search (tsvector + pgvector, RRF-fused) over indexed document chunks.",
+      "profiles": [
+        "agent_brain",
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "feedback_gap",
-      "description": "Report a knowledge gap (``gap_reported`` event)."
+      "description": "Report a knowledge gap (``gap_reported`` event).",
+      "profiles": [
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "feedback_issue",
-      "description": "Flag a quality issue with a memory entry (``issue_flagged``)."
+      "description": "Flag a quality issue with a memory entry (``issue_flagged``).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "feedback_query",
-      "description": "Query recorded feedback events with optional filters."
+      "description": "Query recorded feedback events with optional filters.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "feedback_rate",
-      "description": "Rate a recalled memory entry (creates ``recall_rated`` event)."
+      "description": "Rate a recalled memory entry (creates ``recall_rated`` event).",
+      "profiles": [
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "feedback_record",
-      "description": "Record a generic feedback event (built-in or custom type)."
+      "description": "Record a generic feedback event (built-in or custom type).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "flywheel_gaps",
-      "description": "Return top knowledge gaps as JSON."
+      "description": "Return top knowledge gaps as JSON.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "flywheel_process",
-      "description": "Run feedback → confidence pipeline (EPIC-031)."
+      "description": "Run feedback → confidence pipeline (EPIC-031).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "flywheel_report",
-      "description": "Generate quality report (markdown + structured summary)."
+      "description": "Generate quality report (markdown + structured summary).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "hive_propagate",
-      "description": "Manually propagate a local memory to the Hive shared store."
+      "description": "Manually propagate a local memory to the Hive shared store.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "hive_push",
-      "description": "Batch-promote local project memories to the Hive (GitHub #18)."
+      "description": "Batch-promote local project memories to the Hive (GitHub #18).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "hive_search",
-      "description": "Search the shared Hive for memories from other agents."
+      "description": "Search the shared Hive for memories from other agents.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "hive_status",
-      "description": "Return Hive status: namespaces, entry counts, and registered agents."
+      "description": "Return Hive status: namespaces, entry counts, and registered agents.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "hive_wait_write",
-      "description": "Wait until the Hive write revision exceeds *since_revision* or timeout."
+      "description": "Wait until the Hive write revision exceeds *since_revision* or timeout.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "hive_write_revision",
-      "description": "Return the Hive write notification revision (GitHub #12)."
+      "description": "Return the Hive write notification revision (GitHub #12).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
+    },
+    {
+      "name": "maintenance_decay_learnings",
+      "description": "Demote unvalidated and contradicted learnings (TAP-5547).",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_audit",
-      "description": "Query the audit trail for memory events."
+      "description": "Query the audit trail for memory events.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_capture",
-      "description": "Extract and persist new facts from an agent response."
+      "description": "Extract and persist new facts from an agent response.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "memory_delete",
-      "description": "Delete a memory entry by key."
+      "description": "Delete a memory entry by key.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_entries_by_tag",
-      "description": "Return all memory entries that carry a specific tag."
+      "description": "Return all memory entries that carry a specific tag.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_find_related",
-      "description": "Find entries related to a key via BFS traversal of the relation graph."
+      "description": "Find entries related to a key via BFS traversal of the relation graph.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_get",
-      "description": "Retrieve a single memory entry by key."
+      "description": "Retrieve a single memory entry by key.",
+      "profiles": [
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_history",
-      "description": "Show the full version chain for a memory key."
+      "description": "Show the full version chain for a memory key.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_index_session",
-      "description": "Index session chunks for future search."
+      "description": "Index session chunks for future search.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_ingest",
-      "description": "Extract and store durable facts from conversation context."
+      "description": "Extract and store durable facts from conversation context.",
+      "profiles": [
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "memory_list",
-      "description": "List memory entries with optional filters."
+      "description": "List memory entries with optional filters.",
+      "profiles": [
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_list_groups",
-      "description": "List distinct project-local memory group names (GitHub #49)."
+      "description": "List distinct project-local memory group names (GitHub #49).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_list_tags",
-      "description": "List all tags used in the memory store with their usage counts."
+      "description": "List all tags used in the memory store with their usage counts.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_profile_onboarding",
-      "description": "Return Markdown onboarding guidance for the active memory profile (GitHub #45)."
+      "description": "Return Markdown onboarding guidance for the active memory profile (GitHub #45).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_query_relations",
-      "description": "Filter relations by subject, predicate, and/or object_entity."
+      "description": "Filter relations by subject, predicate, and/or object_entity.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_recall",
-      "description": "Run auto-recall for a query and return ranked memories."
+      "description": "Run auto-recall for a query and return ranked memories.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_recall_many",
-      "description": "Run recall against multiple queries in a single call."
+      "description": "Run recall against multiple queries in a single call.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_reinforce",
-      "description": "Reinforce a memory entry, boosting its confidence and resetting decay."
+      "description": "Reinforce a memory entry, boosting its confidence and resetting decay.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_reinforce_many",
-      "description": "Reinforce multiple memory entries in a single call."
+      "description": "Reinforce multiple memory entries in a single call.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_relations",
-      "description": "Return all relations associated with a memory entry key."
+      "description": "Return all relations associated with a memory entry key.",
+      "profiles": [
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_relations_get_batch",
-      "description": "Return relations for multiple memory keys in one call (STORY-048.2)."
+      "description": "Return relations for multiple memory keys in one call (STORY-048.2).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "memory_save",
-      "description": "Save or update a memory entry."
+      "description": "Save or update a memory entry.",
+      "profiles": [
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "memory_save_many",
-      "description": "Save multiple memory entries in a single call."
+      "description": "Save multiple memory entries in a single call.",
+      "profiles": [
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "memory_search",
-      "description": "Search memory entries using full-text search."
+      "description": "Search memory entries using full-text search.",
+      "profiles": [
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_search_sessions",
-      "description": "Search past session summaries."
+      "description": "Search past session summaries.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator",
+        "reviewer"
+      ]
     },
     {
       "name": "memory_supersede",
-      "description": "Create a new version of a memory, superseding the old one."
+      "description": "Create a new version of a memory, superseding the old one.",
+      "profiles": [
+        "full",
+        "operator",
+        "seeder"
+      ]
     },
     {
       "name": "memory_update_tags",
-      "description": "Atomically add and/or remove tags on an existing memory entry."
+      "description": "Atomically add and/or remove tags on an existing memory entry.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "profile_info",
-      "description": "Return the active profile name, layers, and scoring config."
+      "description": "Return the active profile name, layers, and scoring config.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "profile_switch",
-      "description": "Switch to a different built-in memory profile."
+      "description": "Switch to a different built-in memory profile.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "recall_quality_metrics",
-      "description": "Aggregate recall-quality samples over the last *window_seconds* (TAP-2094)."
+      "description": "Aggregate recall-quality samples over the last *window_seconds* (TAP-2094).",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "research_fetch",
-      "description": "Fetch a single URL via Firecrawl with write-through cache."
+      "description": "Fetch a single URL via Firecrawl with write-through cache.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "tapps_brain_session_end",
-      "description": "Record an end-of-session episodic memory entry."
+      "description": "Record an end-of-session episodic memory entry.",
+      "profiles": [
+        "coder",
+        "full",
+        "operator"
+      ]
     },
     {
       "name": "web_research",
-      "description": "Search the web via brain-held providers with write-through cache."
+      "description": "Search the web via brain-held providers with write-through cache.",
+      "profiles": [
+        "full",
+        "operator"
+      ]
     }
   ],
   "operator_tools": [
     {
       "name": "flywheel_evaluate",
-      "description": "Run BEIR-format directory or YAML suite evaluation."
+      "description": "Run BEIR-format directory or YAML suite evaluation.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "flywheel_hive_feedback",
-      "description": "Aggregate / apply Hive cross-project feedback penalties."
+      "description": "Aggregate / apply Hive cross-project feedback penalties.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "maintenance_consolidate",
-      "description": "Trigger memory consolidation to merge similar entries."
+      "description": "Trigger memory consolidation to merge similar entries.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "maintenance_gc",
-      "description": "Run garbage collection to archive stale memories."
+      "description": "Run garbage collection to archive stale memories.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "maintenance_stale",
-      "description": "List GC stale memory candidates with reasons (read-only; GitHub #21)."
+      "description": "List GC stale memory candidates with reasons (read-only; GitHub #21).",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_consolidation_config",
-      "description": "Return the current auto-consolidation configuration."
+      "description": "Return the current auto-consolidation configuration.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_consolidation_config_set",
-      "description": "Update auto-consolidation configuration."
+      "description": "Update auto-consolidation configuration.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_export",
-      "description": "Export memory entries as a versioned tapps-memory or MIF JSON bundle."
+      "description": "Export memory entries as a versioned tapps-memory or MIF JSON bundle.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_gc_config",
-      "description": "Return the current garbage collection configuration."
+      "description": "Return the current garbage collection configuration.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_gc_config_set",
-      "description": "Update garbage collection configuration thresholds."
+      "description": "Update garbage collection configuration thresholds.",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "memory_import",
-      "description": "Import memory entries from a JSON string (envelope, bare array, or MIF)."
+      "description": "Import memory entries from a JSON string (envelope, bare array, or MIF).",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "tapps_brain_health",
-      "description": "Return a structured health report for tapps-brain (issue #15)."
+      "description": "Return a structured health report for tapps-brain (issue #15).",
+      "profiles": [
+        "operator"
+      ]
     },
     {
       "name": "tapps_brain_relay_export",
-      "description": "Build a memory relay JSON payload for cross-node handoff (GitHub #19)."
+      "description": "Build a memory relay JSON payload for cross-node handoff (GitHub #19).",
+      "profiles": [
+        "operator"
+      ]
     }
   ],
   "resources": [
@@ -431,5 +916,280 @@
       "uri": "memory://stats",
       "description": "Store stats: counts, tiers, schema, package/profile, optional profile_seed_version."
     }
-  ]
+  ],
+  "profile_names": [
+    "agent_brain",
+    "coder",
+    "full",
+    "operator",
+    "reviewer",
+    "seeder"
+  ],
+  "tools_by_profile": {
+    "agent_brain": [
+      "brain_audit_consumers",
+      "brain_demote_learning",
+      "brain_explain_connection",
+      "brain_forget",
+      "brain_get_neighbors",
+      "brain_kg_check",
+      "brain_learn_failure",
+      "brain_learn_success",
+      "brain_list_predicates",
+      "brain_mission_state_get",
+      "brain_mission_state_set",
+      "brain_profile_get",
+      "brain_profile_set",
+      "brain_promote_learning",
+      "brain_query_events",
+      "brain_recall",
+      "brain_recall_tool_paths",
+      "brain_record_event",
+      "brain_record_events_batch",
+      "brain_record_feedback",
+      "brain_register_predicate",
+      "brain_remember",
+      "brain_resolve_entity",
+      "brain_status",
+      "document_get",
+      "document_list",
+      "document_put",
+      "document_search"
+    ],
+    "coder": [
+      "brain_explain_connection",
+      "brain_forget",
+      "brain_get_neighbors",
+      "brain_kg_check",
+      "brain_learn_failure",
+      "brain_learn_success",
+      "brain_profile_get",
+      "brain_profile_set",
+      "brain_query_events",
+      "brain_recall",
+      "brain_recall_tool_paths",
+      "brain_record_events_batch",
+      "brain_remember",
+      "brain_status",
+      "document_get",
+      "document_list",
+      "document_put",
+      "document_search",
+      "feedback_gap",
+      "feedback_rate",
+      "hive_search",
+      "memory_capture",
+      "memory_find_related",
+      "memory_index_session",
+      "memory_reinforce",
+      "memory_search_sessions",
+      "tapps_brain_session_end"
+    ],
+    "full": [
+      "agent_create",
+      "agent_delete",
+      "agent_list",
+      "agent_register",
+      "brain_audit_consumers",
+      "brain_demote_learning",
+      "brain_explain_connection",
+      "brain_export",
+      "brain_forget",
+      "brain_get_neighbors",
+      "brain_kg_check",
+      "brain_learn_failure",
+      "brain_learn_success",
+      "brain_list_predicates",
+      "brain_mission_state_get",
+      "brain_mission_state_set",
+      "brain_profile_get",
+      "brain_profile_set",
+      "brain_promote_learning",
+      "brain_query_events",
+      "brain_recall",
+      "brain_recall_tool_paths",
+      "brain_record_event",
+      "brain_record_events_batch",
+      "brain_record_feedback",
+      "brain_register_predicate",
+      "brain_remember",
+      "brain_resolve_entity",
+      "brain_status",
+      "diagnostics_history",
+      "diagnostics_report",
+      "docs_lookup",
+      "docs_warm",
+      "document_delete",
+      "document_get",
+      "document_list",
+      "document_put",
+      "document_search",
+      "feedback_gap",
+      "feedback_issue",
+      "feedback_query",
+      "feedback_rate",
+      "feedback_record",
+      "flywheel_gaps",
+      "flywheel_process",
+      "flywheel_report",
+      "hive_propagate",
+      "hive_push",
+      "hive_search",
+      "hive_status",
+      "hive_wait_write",
+      "hive_write_revision",
+      "memory_audit",
+      "memory_capture",
+      "memory_delete",
+      "memory_entries_by_tag",
+      "memory_find_related",
+      "memory_get",
+      "memory_history",
+      "memory_index_session",
+      "memory_ingest",
+      "memory_list",
+      "memory_list_groups",
+      "memory_list_tags",
+      "memory_profile_onboarding",
+      "memory_query_relations",
+      "memory_recall",
+      "memory_recall_many",
+      "memory_reinforce",
+      "memory_reinforce_many",
+      "memory_relations",
+      "memory_relations_get_batch",
+      "memory_save",
+      "memory_save_many",
+      "memory_search",
+      "memory_search_sessions",
+      "memory_supersede",
+      "memory_update_tags",
+      "profile_info",
+      "profile_switch",
+      "recall_quality_metrics",
+      "research_fetch",
+      "tapps_brain_session_end",
+      "web_research"
+    ],
+    "operator": [
+      "agent_create",
+      "agent_delete",
+      "agent_list",
+      "agent_register",
+      "brain_audit_consumers",
+      "brain_demote_learning",
+      "brain_explain_connection",
+      "brain_export",
+      "brain_forget",
+      "brain_get_neighbors",
+      "brain_kg_check",
+      "brain_learn_failure",
+      "brain_learn_success",
+      "brain_list_predicates",
+      "brain_mission_state_get",
+      "brain_mission_state_set",
+      "brain_profile_get",
+      "brain_profile_set",
+      "brain_promote_learning",
+      "brain_query_events",
+      "brain_recall",
+      "brain_recall_tool_paths",
+      "brain_record_event",
+      "brain_record_events_batch",
+      "brain_record_feedback",
+      "brain_register_predicate",
+      "brain_remember",
+      "brain_resolve_entity",
+      "brain_status",
+      "diagnostics_history",
+      "diagnostics_report",
+      "docs_lookup",
+      "docs_warm",
+      "document_delete",
+      "document_get",
+      "document_list",
+      "document_put",
+      "document_search",
+      "feedback_gap",
+      "feedback_issue",
+      "feedback_query",
+      "feedback_rate",
+      "feedback_record",
+      "flywheel_evaluate",
+      "flywheel_gaps",
+      "flywheel_hive_feedback",
+      "flywheel_process",
+      "flywheel_report",
+      "hive_propagate",
+      "hive_push",
+      "hive_search",
+      "hive_status",
+      "hive_wait_write",
+      "hive_write_revision",
+      "maintenance_consolidate",
+      "maintenance_decay_learnings",
+      "maintenance_gc",
+      "maintenance_stale",
+      "memory_audit",
+      "memory_capture",
+      "memory_consolidation_config",
+      "memory_consolidation_config_set",
+      "memory_delete",
+      "memory_entries_by_tag",
+      "memory_export",
+      "memory_find_related",
+      "memory_gc_config",
+      "memory_gc_config_set",
+      "memory_get",
+      "memory_history",
+      "memory_import",
+      "memory_index_session",
+      "memory_ingest",
+      "memory_list",
+      "memory_list_groups",
+      "memory_list_tags",
+      "memory_profile_onboarding",
+      "memory_query_relations",
+      "memory_recall",
+      "memory_recall_many",
+      "memory_reinforce",
+      "memory_reinforce_many",
+      "memory_relations",
+      "memory_relations_get_batch",
+      "memory_save",
+      "memory_save_many",
+      "memory_search",
+      "memory_search_sessions",
+      "memory_supersede",
+      "memory_update_tags",
+      "profile_info",
+      "profile_switch",
+      "recall_quality_metrics",
+      "research_fetch",
+      "tapps_brain_health",
+      "tapps_brain_relay_export",
+      "tapps_brain_session_end",
+      "web_research"
+    ],
+    "reviewer": [
+      "brain_query_events",
+      "brain_recall",
+      "docs_lookup",
+      "hive_search",
+      "memory_find_related",
+      "memory_get",
+      "memory_list",
+      "memory_relations",
+      "memory_search",
+      "memory_search_sessions"
+    ],
+    "seeder": [
+      "brain_status",
+      "memory_capture",
+      "memory_ingest",
+      "memory_save",
+      "memory_save_many",
+      "memory_supersede"
+    ]
+  }
 }

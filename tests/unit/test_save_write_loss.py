@@ -51,13 +51,17 @@ class TestDedupIsKeyScoped:
             assert entry.value == "echo-probe"
 
     def test_same_key_same_value_is_reinforce_noop(self, tmp_path: Path) -> None:
+        """TAP-6696 / VAL-06: a byte-identical re-save is a no-op, reported
+        as ``coalesced`` (not ``saved``) since no new row is written."""
         store = MemoryStore(tmp_path)
         _save(store, "stable-key", "unchanged content")
 
         envelope = _save(store, "stable-key", "unchanged content")
 
-        assert envelope["status"] == "saved"
+        assert envelope["status"] == "coalesced"
         assert envelope["key"] == "stable-key"
+        assert envelope["coalesced_into"] == "stable-key"
+        assert envelope["persisted"] is False
         entry = store.get("stable-key")
         assert entry is not None
         assert entry.reinforce_count == 1
