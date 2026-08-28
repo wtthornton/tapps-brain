@@ -135,21 +135,18 @@ def brain_remember(
                 # Re-save preserves the historical record's provenance —
                 # save() constructs a fresh MemoryEntry, so omitting tags/
                 # source/scope would silently reset them to defaults.
-                store.save(
-                    key=old_entry.key,
-                    value=old_entry.value,
-                    tier=str(old_entry.tier),
-                    source=old_entry.source.value,
-                    source_agent=old_entry.source_agent,
-                    scope=old_entry.scope.value,
-                    tags=list(old_entry.tags),
-                    branch=old_entry.branch,
-                    agent_scope=old_entry.agent_scope,
-                    status=MemoryStatus.superseded.value,
+                # TAP-6697: one helper closes validity.  The old re-save set
+                # ``status`` but never ``invalid_at``, so an explicitly superseded
+                # row stayed temporally live and was hidden only by
+                # ``superseded_by``.  ``close_validity`` writes both, plus one
+                # audit row — and it is a partial update, so the re-save's
+                # field-by-field provenance copy (which silently reset anything it
+                # forgot to list) is no longer needed.
+                store.close_validity(
+                    old_entry.key,
+                    reason="supersession",
                     superseded_by=key,
-                    skip_consolidation=True,
-                    conflict_check=False,
-                    dedup=False,
+                    detail=f"superseded by {key}",
                 )
             response["superseded"] = supersedes
             return response
@@ -277,6 +274,11 @@ def brain_recall(
             # below), never for arbitrary expired rows (TAP-5783).
             include_historical=include_sources,
             include_contradicted=include_sources or include_contradicted,
+            # TAP-6697: the recall SQL now requires status='active'.  Forward the
+            # caller's opt-in so lifecycle-stale rows still reach the status
+            # filter below — otherwise include_stale=True would silently become a
+            # no-op the moment the predicate tightened.
+            include_stale=include_stale,
         )
         if include_sources:
             # The historical widening above also drags in plain expired rows;

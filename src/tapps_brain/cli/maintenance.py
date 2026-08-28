@@ -1,9 +1,9 @@
 """``maintenance`` sub-app commands.
 
 Includes: consolidate, consolidation-threshold-sweep, save-conflict-candidates,
-consolidation-merge-undo, consolidation-diff, stale, gc, gc-config,
-consolidation-config, migrate, health, verify-integrity, migrate-hive,
-hive-schema-status, backup-hive, restore-hive.
+consolidation-merge-undo, consolidation-diff, stale, gc, gc-config, decay-refresh,
+demote-contradicted, consolidation-config, migrate, health, verify-integrity,
+migrate-hive, hive-schema-status, backup-hive, restore-hive.
 """
 
 from __future__ import annotations
@@ -500,6 +500,130 @@ def maintenance_gc(
                 f"({result.archive_bytes} bytes to archive), "
                 f"{result.remaining_count} remaining"
             )
+    finally:
+        store.close()
+
+
+@maintenance_app.command("decay-refresh")
+def maintenance_decay_refresh(
+    project_dir: ProjectDir = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview without writing (default).")
+    ] = True,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Write the closures/archivals. Never point this at production without a backup.",
+        ),
+    ] = False,
+    report: Annotated[
+        str | None,
+        typer.Option("--report", help="Write the JSON result to this path."),
+    ] = None,
+    sample_size: Annotated[
+        int, typer.Option("--sample-size", min=0, help="Keys to list per bucket.")
+    ] = 10,
+    as_json: JsonFlag = False,
+) -> None:
+    """Scheduled decay refresh: close decayed rows, archive floor-crossers (ADR-014).
+
+    Lazy read-path decay is unchanged; this persists what it computes. Rows below
+    ``stale_threshold`` get ``invalid_at`` + ``status='stale'`` via
+    ``close_validity``; rows at the tier confidence floor are archived to
+    ``gc_archive`` with ``archive_reason='age'`` and removed from the live table.
+
+    ``--dry-run`` is the default: ``--apply`` must be asked for explicitly, and
+    the report it writes names the ``gc_archive`` rows that back an undo.
+    """
+    import json as _json
+
+    effective_dry_run = not apply if apply else dry_run
+    store = _get_store(project_dir)
+    try:
+        data = store.refresh_decay(dry_run=effective_dry_run, sample_size=sample_size)
+        if effective_dry_run:
+            # Name the undo path in the same breath as the numbers, so an
+            # operator reading a dry run already knows what --apply is
+            # recoverable from (SC-6: every destructive pass is undoable).
+            data["undo_path"] = (
+                "gc_archive rows with payload->>'archive_reason' = 'age' "
+                "(maintenance stale/list-archive); closed rows keep their payload "
+                "in private_memories and revive on a later save"
+            )
+        if report:
+            with open(report, "w", encoding="utf-8") as fh:
+                _json.dump(data, fh, indent=2, sort_keys=True)
+        if as_json:
+            _output(data, as_json=True)
+        elif effective_dry_run:
+            typer.echo(
+                f"would_close={data['would_close']} would_archive={data['would_archive']} "
+                f"rows_before={data['rows_before']}"
+            )
+            for key in data["close_sample"]:
+                typer.echo(f"  close   - {key}")
+            for key in data["archive_sample"]:
+                typer.echo(f"  archive - {key}")
+        else:
+            typer.echo(
+                f"closed={data['closed']} archived={data['archived']} "
+                f"rows_before={data['rows_before']} rows_after={data['rows_after']} "
+                f"archived_delta={data['archived_delta']}"
+            )
+        if report:
+            typer.echo(f"report written to {report}")
+    finally:
+        store.close()
+
+
+@maintenance_app.command("demote-contradicted")
+def maintenance_demote_contradicted(
+    project_dir: ProjectDir = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview without writing (default).")
+    ] = True,
+    apply: Annotated[bool, typer.Option("--apply", help="Write the demotions.")] = False,
+    report: Annotated[
+        str | None,
+        typer.Option("--report", help="Write the JSON result to this path."),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Demote learnings whose promotion no longer holds (TAP-5547 rules).
+
+    A thin wrapper over ``MemoryStore.decay_learnings`` — the three demotion
+    rules (contradicted at any ``learning_status``, candidate below the
+    confidence floor, candidate unvalidated past ``candidate_stale_days``)
+    already live in ``decay.identify_learning_demotions`` and are exercised by the MCP
+    ``maintenance_decay_learnings`` tool. This adds the CLI surface only; it
+    deliberately contains no demotion logic of its own.
+
+    Demotion never touches the trust-axis CHECK constraints: ``promotion_signal``
+    stays ``eval``/``human`` only, and nothing here can move a row *into*
+    ``approved``.
+    """
+    import json as _json
+
+    effective_dry_run = not apply if apply else dry_run
+    store = _get_store(project_dir)
+    try:
+        data = store.decay_learnings(dry_run=effective_dry_run)
+        if report:
+            with open(report, "w", encoding="utf-8") as fh:
+                _json.dump(data, fh, indent=2, sort_keys=True)
+        if as_json:
+            _output(data, as_json=True)
+        elif not data["enabled"]:
+            typer.echo("learning decay disabled by profile (learning_decay.enabled=false)")
+        elif effective_dry_run:
+            typer.echo(f"would_demote={len(data['demoted_keys'])} reasons={data['reason_counts']}")
+            for key in data["demoted_keys"]:
+                typer.echo(f"  - {key}")
+        else:
+            typer.echo(f"demoted={data['demoted_count']} reasons={data['reason_counts']}")
+        if report:
+            typer.echo(f"report written to {report}")
     finally:
         store.close()
 

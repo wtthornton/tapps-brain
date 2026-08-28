@@ -41,6 +41,7 @@
 - [ADR-011: First-Class Knowledge Graph Schema in PostgreSQL (EPIC-074)](planning/adr/ADR-011-kg-schema-postgres.md) — Accepted (2026-05-06) *(updated 2026-05-11)*
 - [ADR-012: Evidence is required for KG edges (EPIC-074)](planning/adr/ADR-012-evidence-required-edges.md) — Accepted (2026-05-07) *(updated 2026-05-11)*
 - [ADR-013: KG tables inherit the MemoryEntry lifecycle (EPIC-074)](planning/adr/ADR-013-kg-inherits-memory-lifecycle.md) — Accepted (2026-05-07) *(updated 2026-05-11)*
+- [ADR-014: Scheduled decay refresh alongside lazy decay (TAP-6697)](planning/adr/ADR-014-scheduled-decay-refresh.md) — Accepted (2026-08-27)
 - [Design note: multi-scope memory (#49)](planning/design-issue-49-multi-scope-memory.md) — Epic **#49** (multi-group memory scopes: Hive, named groups, personal) needs a clear *(updated 2026-05-11)*
 - [Agent memory systems — 2026 knowledge base](research/memory-systems-2026.md) — The agent-memory field in 2025–2026 has split along three axes that were open *(updated 2026-05-11)*
 ## Configuration

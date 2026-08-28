@@ -396,7 +396,10 @@ def build_or_tsquery(query: str) -> str | None:
 # superseded_by / valid_until.  Those rows must not consume FTS/KNN top-K.
 # Unlike text ``valid_until``, ``invalid_at`` is a real timestamptz column —
 # never compare it to '' (raises InvalidDatetimeFormat and 500s recall).
-_LIVE_ROW_PREDICATE_SQL = (
+#: The temporal half of the live-row predicate, *without* the lifecycle-status
+#: clause.  Used by callers that explicitly asked for stale/superseded rows
+#: (``include_stale``) and therefore still need the temporal exclusions.
+_LIVE_ROW_TEMPORAL_PREDICATE_SQL = (
     " AND superseded_by IS NULL"
     " AND ("
     "valid_until IS NULL OR valid_until = ''"
@@ -405,6 +408,32 @@ _LIVE_ROW_PREDICATE_SQL = (
     ")"
     " AND (invalid_at IS NULL OR invalid_at > now())"
 )
+
+#: TAP-6697: lifecycle status is the *second* axis of liveness.  Before this,
+#: a contradicted or superseded row was excluded only if some *other* column
+#: (``invalid_at``, ``superseded_by``) had also been written -- so whether a
+#: dead row stayed out of top-K depended on which code path killed it.  ``status``
+#: is ``NOT NULL DEFAULT 'active'`` (migration 027) and indexed
+#: (``idx_private_memories_status``), so the clause is cheap and total: no row
+#: can be NULL here, and no backfill is required.
+_LIVE_ROW_STATUS_ACTIVE_SQL = " AND status = 'active'"
+
+_LIVE_ROW_PREDICATE_SQL = _LIVE_ROW_TEMPORAL_PREDICATE_SQL + _LIVE_ROW_STATUS_ACTIVE_SQL
+
+
+def _live_row_predicate(*, include_stale: bool) -> str:
+    """Return the live-row predicate, optionally without the status clause.
+
+    *include_stale* mirrors ``brain_recall``'s / ``MemoryRetriever.search``'s
+    flag of the same name: those callers want ``stale`` / ``superseded`` /
+    ``archived`` rows to reach the Python filter that decides what to surface.
+    Dropping only the status clause (rather than the whole predicate, as
+    ``include_expired`` does) keeps the temporal exclusions in force, so
+    ``include_stale`` cannot accidentally resurrect expired rows.
+    """
+    return _LIVE_ROW_TEMPORAL_PREDICATE_SQL if include_stale else _LIVE_ROW_PREDICATE_SQL
+
+
 _SEARCH_FILTER_MEMORY_GROUP_SQL = " AND memory_group = %s"
 _SEARCH_FILTER_MEMORY_CLASS_SQL = " AND memory_class = %s"
 #: Point-in-time window matching :meth:`MemoryEntry.is_temporally_valid`.
@@ -438,6 +467,7 @@ def build_search_sql(
     as_of: str | None,
     include_expired: bool = False,
     match_any: bool = False,
+    include_stale: bool = False,
 ) -> tuple[str, list[Any]]:
     """Compose the FTS search SQL + the variable-portion params.
 
@@ -462,6 +492,11 @@ def build_search_sql(
     point-in-time query resolves temporal validity through the bi-temporal
     ``valid_at``/``invalid_at`` window, and a superseded row is *expected* for
     the timestamp at which it was valid.
+
+    *include_stale* (TAP-6697): when ``True``, the ``status = 'active'`` clause is
+    dropped from the live-row predicate so lifecycle-stale rows still reach the
+    Python filter.  The temporal exclusions stay in force -- this flag widens one
+    axis only, unlike *include_expired* which stands the whole predicate down.
 
     *match_any* (TAP-5677): when ``True``, the base SELECT uses ``to_tsquery``
     so the caller can bind a pre-sanitized OR token string from
@@ -499,7 +534,7 @@ def build_search_sql(
     # *expected* to be returned for the timestamp at which it was still valid,
     # so the live-row predicate must stand down.
     if not include_expired and as_of is None:
-        sql += _LIVE_ROW_PREDICATE_SQL
+        sql += _live_row_predicate(include_stale=include_stale)
 
     sql += _SEARCH_ORDER_LIMIT_SQL
     return sql, params
@@ -523,7 +558,7 @@ KNN_SEARCH_SQL = _KNN_SEARCH_HEAD_SQL + _LIVE_ROW_PREDICATE_SQL + _KNN_SEARCH_TA
 
 
 def build_knn_search_sql(
-    *, include_expired: bool = False, as_of: str | None = None
+    *, include_expired: bool = False, as_of: str | None = None, include_stale: bool = False
 ) -> tuple[str, list[Any]]:
     """Compose the KNN recall SQL + mid-params (TAP-4586 + point-in-time).
 
@@ -540,6 +575,9 @@ def build_knn_search_sql(
     stands down — same contract as :func:`build_search_sql` — so versions
     valid at that timestamp can rank even if they are superseded now.
     *mid_params* is then ``[as_of, as_of, as_of, as_of]``.
+
+    *include_stale* (TAP-6697): drops only the ``status = 'active'`` clause, so
+    lifecycle-stale rows reach the Python filter while expired rows stay out.
     """
     sql = _KNN_SEARCH_HEAD_SQL
     mid_params: list[Any] = []
@@ -547,7 +585,7 @@ def build_knn_search_sql(
         sql += _SEARCH_FILTER_AS_OF_SQL
         mid_params.extend([as_of, as_of, as_of, as_of])
     if not include_expired and as_of is None:
-        sql += _LIVE_ROW_PREDICATE_SQL
+        sql += _live_row_predicate(include_stale=include_stale)
     sql += _KNN_SEARCH_TAIL_SQL
     return sql, mid_params
 

@@ -384,6 +384,7 @@ class PrivateBackend(Protocol):
         as_of: str | None = None,
         memory_class: str | None = None,
         include_expired: bool = False,
+        include_stale: bool = False,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -398,6 +399,11 @@ class PrivateBackend(Protocol):
                 excludes expired (``valid_until`` in the past) and superseded
                 (``superseded_by`` set) rows so they cannot occupy a top-K slot.
                 Pass ``True`` for historical/``include_superseded`` recall.
+            include_stale: TAP-6697 — when ``False`` (default), the recall SQL
+                also requires ``status = 'active'``, so rows closed by
+                ``MemoryStore.close_validity`` cannot occupy a top-K slot. Pass
+                ``True`` from the ``include_stale`` recall path; the temporal
+                exclusions above stay in force either way.
             as_of: ISO-8601 timestamp for bi-temporal point-in-time filtering.
                 When set, the SQL query adds::
 
@@ -441,6 +447,7 @@ class PrivateBackend(Protocol):
         *,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]: ...
 
     def vector_row_count(self) -> int: ...
@@ -471,7 +478,7 @@ class PrivateBackend(Protocol):
 
     # -- GC archive (migration 006) ------------------------------------------
 
-    def archive_entry(self, entry: MemoryEntry) -> int:
+    def archive_entry(self, entry: MemoryEntry, *, reason: str | None = None) -> int:
         """Archive a single entry (GC-evicted).
 
         Writes the entry to the ``gc_archive`` table introduced in migration 006.
@@ -480,6 +487,12 @@ class PrivateBackend(Protocol):
 
         Best-effort: implementations should log and return 0 on failure rather
         than raising, so GC is never blocked by an archive write error.
+
+        *reason* (TAP-6697) is stamped into the payload JSONB as
+        ``archive_reason``.  ``gc_archive`` has no dedicated reason column
+        (migration 006) and adding one would not be additive for readers that
+        ``SELECT *``; the payload already carries the full entry snapshot, so an
+        extra key there is free and queryable via ``payload->>'archive_reason'``.
         """
         ...
 
