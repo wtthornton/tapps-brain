@@ -101,6 +101,13 @@ class MemoryStatus(StrEnum):
     stale = "stale"  # known to be wrong/outdated; replacement not yet written
     superseded = "superseded"  # replaced by another entry (superseded_by points to it)
     archived = "archived"  # GC-archived
+    # TAP-6697: lost a save-time conflict or a consolidation merge.  Distinct from
+    # ``superseded``: a superseded row was *replaced* by a named successor, a
+    # contradicted row was *refuted*.  Both are closed by ``close_validity()`` and
+    # both fail the live-row predicate; only the reason differs.  The independent
+    # ``MemoryEntry.contradicted`` boolean is kept in step and is what
+    # ``undo_save_conflict`` / ``undo_consolidation_merge`` still key off.
+    contradicted = "contradicted"
 
 
 class LearningStatus(StrEnum):
@@ -246,15 +253,25 @@ class MemoryEntry(BaseModel):
 
     # Temporal validity window (GitHub #29, task 040.3)
     # Alias fields that mirror valid_at/invalid_at but use human-friendly ISO-8601 strings.
+    #
+    # DEPRECATED as of TAP-6697 (Ruling 5): read-only, superseded by
+    # ``valid_at``/``invalid_at``.  No tapps-brain code path originates a write to
+    # either field any more -- ``close_validity()``, the decay refresh and the
+    # demotion sweep all write ``invalid_at``.  The fields are NOT dropped: the
+    # columns keep their existing data, the model still round-trips a
+    # caller-supplied value, and ``is_temporally_valid`` still honours them, so an
+    # older client that sets them is not silently broken (additive-only, SC-10).
     valid_from: str = Field(
         default="",
         description=(
+            "DEPRECATED (TAP-6697, read-only): superseded by ``valid_at``. "
             "ISO-8601 UTC: when this fact begins to be valid (inclusive). Empty means 'always'."
         ),
     )
     valid_until: str = Field(
         default="",
         description=(
+            "DEPRECATED (TAP-6697, read-only): superseded by ``invalid_at``. "
             "ISO-8601 UTC: when this fact stops being valid (exclusive). Empty means 'forever'."
         ),
     )

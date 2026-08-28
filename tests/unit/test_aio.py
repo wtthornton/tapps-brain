@@ -426,7 +426,9 @@ class TestAsyncNativeSecondaryWriteParity:
         assert nbytes > 0
         real.archive_entry.assert_not_called()
         _s, _d, _dr, _r, _a, archives = capture.flush()
-        assert archives == [entry]
+        # TAP-6697: the queue carries (entry, archive_reason) so the reason
+        # survives the sync->async hand-off instead of being dropped at capture.
+        assert archives == [(entry, None)]
 
     @pytest.mark.asyncio
     async def test_flush_raises_and_skips_delete_when_archive_returns_zero(
@@ -451,10 +453,22 @@ class TestAsyncNativeSecondaryWriteParity:
             with pytest.raises(RuntimeError, match="durable archive failed"):
                 await astore._flush_capture(capture)
 
-            backend.archive_entry.assert_awaited_once_with(entry)
+            backend.archive_entry.assert_awaited_once_with(entry, reason=None)
             backend.delete.assert_not_awaited()
         finally:
             await sync_store.close()
+
+    def test_archive_reason_survives_the_capture_queue(self) -> None:
+        """TAP-6697: decay-refresh's archive_reason must reach the async backend."""
+        from unittest.mock import MagicMock
+
+        from tapps_brain.aio import _CapturePersistenceBackend
+
+        capture = _CapturePersistenceBackend(MagicMock())
+        entry = MemoryEntry(key="aged-out", value="old")
+        assert capture.archive_entry(entry, reason="age") > 0
+        _s, _d, _dr, _r, _a, archives = capture.flush()
+        assert archives == [(entry, "age")]
 
     @pytest.mark.asyncio
     async def test_flush_deletes_only_after_successful_archive(self, tmp_path: Path) -> None:
@@ -476,7 +490,7 @@ class TestAsyncNativeSecondaryWriteParity:
 
             await astore._flush_capture(capture)
 
-            backend.archive_entry.assert_awaited_once_with(entry)
+            backend.archive_entry.assert_awaited_once_with(entry, reason=None)
             backend.delete.assert_awaited_once_with("stale")
         finally:
             await sync_store.close()

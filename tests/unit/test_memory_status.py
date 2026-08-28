@@ -197,6 +197,7 @@ class _MockStore:
 
     def __init__(self, entries: list[MemoryEntry]) -> None:
         self._entries_map = {e.key: e for e in entries}
+        self.close_validity_calls: list[dict[str, Any]] = []
 
     def search(self, query: str, **_kwargs: Any) -> list[MemoryEntry]:
         return list(self._entries_map.values())
@@ -220,6 +221,34 @@ class _MockStore:
         )
         self._entries_map[entry.key] = entry
         return entry
+
+    def close_validity(
+        self,
+        key: str,
+        *,
+        reason: str,
+        superseded_by: str | None = None,
+        detail: str | None = None,
+    ) -> MemoryEntry | None:
+        """TAP-6697: mirror MemoryStore.close_validity's observable effect."""
+        from tapps_brain.models import _utc_now_iso
+        from tapps_brain.store import _close_validity_updates
+
+        entry = self._entries_map.get(key)
+        if entry is None:
+            return None
+        updates = _close_validity_updates(
+            reason,
+            _utc_now_iso(),
+            superseded_by=superseded_by,
+            contradiction_reason=detail,
+        )
+        self.close_validity_calls.append(
+            {"key": key, "reason": reason, "superseded_by": superseded_by, "detail": detail}
+        )
+        updated = entry.model_copy(update=updates)
+        self._entries_map[key] = updated
+        return updated
 
     def delete(self, key: str) -> bool:
         return self._entries_map.pop(key, None) is not None
@@ -446,13 +475,19 @@ class TestSupersessionWorkflow:
             supersedes="old-key",
         )
 
-        # Find the save call for the old entry
-        save_for_old = next(
-            (c for c in store.save_calls if c.get("key") == "old-key"),
+        # TAP-6697: supersession no longer re-saves the old row — it closes its
+        # validity interval through the single close_validity helper, which now
+        # also writes invalid_at (the re-save never did).
+        close_for_old = next(
+            (c for c in store.close_validity_calls if c["key"] == "old-key"),
             None,
         )
-        assert save_for_old is not None
-        assert save_for_old["status"] == "superseded"
+        assert close_for_old is not None
+        assert close_for_old["reason"] == "supersession"
+        old_row = store.get("old-key")
+        assert old_row is not None
+        assert old_row.status is MemoryStatus.superseded
+        assert old_row.invalid_at is not None
 
     def test_supersedes_sets_superseded_by_on_old(self) -> None:
         from tapps_brain.agent_brain import _content_key
@@ -471,12 +506,15 @@ class TestSupersessionWorkflow:
             supersedes="old-key",
         )
 
-        save_for_old = next(
-            (c for c in store.save_calls if c.get("key") == "old-key"),
+        close_for_old = next(
+            (c for c in store.close_validity_calls if c["key"] == "old-key"),
             None,
         )
-        assert save_for_old is not None
-        assert save_for_old.get("superseded_by") == new_key
+        assert close_for_old is not None
+        assert close_for_old["superseded_by"] == new_key
+        old_row = store.get("old-key")
+        assert old_row is not None
+        assert old_row.superseded_by == new_key
 
     def test_supersedes_response_contains_superseded_key(self) -> None:
         old_entry = make_entry(key="old-key", value="old guidance")

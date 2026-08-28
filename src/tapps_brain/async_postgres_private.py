@@ -238,6 +238,7 @@ class AsyncPostgresPrivateBackend:
         as_of: str | None = None,
         memory_class: str | None = None,
         include_expired: bool = False,
+        include_stale: bool = False,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -255,6 +256,7 @@ class AsyncPostgresPrivateBackend:
             memory_class=memory_class,
             as_of=as_of,
             include_expired=include_expired,
+            include_stale=include_stale,
         )
         params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
 
@@ -283,6 +285,7 @@ class AsyncPostgresPrivateBackend:
         *,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -299,7 +302,7 @@ class AsyncPostgresPrivateBackend:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         knn_sql, mid_params = _sql.build_knn_search_sql(
-            include_expired=include_expired, as_of=as_of
+            include_expired=include_expired, as_of=as_of, include_stale=include_stale
         )
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -644,14 +647,19 @@ class AsyncPostgresPrivateBackend:
     # GC archive
     # ------------------------------------------------------------------
 
-    async def archive_entry(self, entry: MemoryEntry) -> int:
+    async def archive_entry(self, entry: MemoryEntry, *, reason: str | None = None) -> int:
         """INSERT a GC-evicted entry into ``gc_archive`` and return byte_count.
 
         Best-effort: logs and returns 0 on failure — GC must not be blocked
         by an archive write error.
+
+        *reason* (TAP-6697) is stamped into the payload as ``archive_reason``;
+        parity with :meth:`PostgresPrivateBackend.archive_entry`.
         """
         try:
             payload_dict = entry.model_dump()
+            if reason is not None:
+                payload_dict["archive_reason"] = reason
             payload_json = json.dumps(payload_dict, default=str)
             byte_count = len(payload_json.encode("utf-8"))
             async with self._scoped_conn() as conn, conn.cursor() as cur:
