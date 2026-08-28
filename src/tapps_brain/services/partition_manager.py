@@ -43,7 +43,8 @@ def _current_month(conn: Any) -> date:
     with conn.cursor() as cur:
         cur.execute("SELECT date_trunc('month', now())::date")
         row = cur.fetchone()
-    return row[0]
+    result: date = row[0]
+    return result
 
 
 def list_monthly_partitions(conn: Any) -> list[dict[str, Any]]:
@@ -85,7 +86,8 @@ def newest_partition_horizon(conn: Any) -> date | None:
     partitions = list_monthly_partitions(conn)
     if not partitions:
         return None
-    return partitions[-1]["month_end"]
+    result: date = partitions[-1]["month_end"]
+    return result
 
 
 def default_partition_row_count(conn: Any) -> int:
