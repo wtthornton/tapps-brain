@@ -70,7 +70,7 @@ except ImportError as exc:  # pragma: no cover — http extra not installed
     ) from exc
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
     from tapps_brain.store import MemoryStore
 
@@ -133,6 +133,7 @@ from tapps_brain.http.probe_cache import (  # noqa: F401
     _get_hive_pool_stats,
     _probe_db,
     _probe_experience_schema,
+    _probe_retention_slos,
 )
 
 # profile resolver singleton
@@ -389,6 +390,59 @@ def _resolve_wrapped_default_store(store: Any) -> Any:
     return store
 
 
+def _maintenance_manager_active(dsn: str) -> bool:
+    """Best-effort probe: has ``tapps-brain-maintenance`` written a recent heartbeat?
+
+    Opens a short-lived, standalone connection (not the shared pool) — this
+    runs once at startup, not on a request hot path.  Any failure (DB
+    unreachable at boot, heartbeat table not yet migrated) is treated as
+    "no manager" rather than raised, matching ``append_audit``'s best-effort
+    stance elsewhere in this file's failure modes.
+    """
+    if not dsn:
+        return False
+    try:
+        import psycopg
+
+        from tapps_brain.services.maintenance_heartbeat import has_recent_heartbeat
+
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            return has_recent_heartbeat(conn)
+    except Exception as exc:
+        logger.warning("http_adapter.retention_manager_probe_failed", error=str(exc))
+        return False
+
+
+def _maybe_warn_retention_manager(
+    cfg: Any,
+    *,
+    manager_active_probe: Callable[[str], bool] = _maintenance_manager_active,
+) -> None:
+    """TAP-6698: warn once if retention is configured but nothing enforces it.
+
+    Split from :func:`_maintenance_manager_active` so the decision logic is
+    unit-testable without a live Postgres connection — tests inject a fake
+    ``manager_active_probe`` instead of standing up a database.
+    """
+    from tapps_brain.services.maintenance_heartbeat import should_warn_missing_manager
+
+    retention_env = os.environ.get("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", "")
+    if not retention_env.strip():
+        return
+    manager_active = manager_active_probe(cfg.dsn or "")
+    if should_warn_missing_manager(retention_env, manager_active=manager_active):
+        logger.warning(
+            "http_adapter.retention_no_manager",
+            detail=(
+                "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS is set but no "
+                "tapps-brain-maintenance heartbeat was found — experience_events "
+                "partitions will not be pre-created or pruned. Deploy the "
+                "tapps-brain-maintenance compose service or unset "
+                "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS. See TAP-6698."
+            ),
+        )
+
+
 def create_app(
     *,
     store: MemoryStore | None = None,
@@ -449,6 +503,8 @@ def create_app(
                 "See TAP-547."
             ),
         )
+
+    _maybe_warn_retention_manager(cfg)
 
     # Defer MCP server build so stdio-only environments can import this
     # module without paying for it.
@@ -839,6 +895,18 @@ def create_app(
             content["experience_writable"] = experience_ok
             content["experience_detail"] = experience_detail
             content["ok"] = content["ok"] and experience_ok
+
+            retention_result = _probe_retention_slos(cfg.dsn)
+            content["retention_ok"] = retention_result["retention_ok"]
+            # On success this is the per-SLO checks dict; on a probe failure
+            # (no DSN, unreachable DB, query error) "checks" is empty and the
+            # real reason lives under "detail" instead — surface whichever is
+            # present so a 503 here is diagnosable without server logs, same
+            # as experience_detail above.
+            content["retention_detail"] = retention_result.get("checks") or retention_result.get(
+                "detail", ""
+            )
+            content["ok"] = content["ok"] and retention_result["retention_ok"]
         return JSONResponse(status_code=200 if content["ok"] else 503, content=content)
 
     @app.get("/ready")
