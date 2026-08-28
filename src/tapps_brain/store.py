@@ -118,6 +118,86 @@ def _ensure_str_value(value: object) -> str:
 _MAX_ENTRIES_DEFAULT = 5000
 
 
+#: TAP-6697 (KB-3.2, "timeline of truth"): the reasons a row's validity interval
+#: can be closed, and the lifecycle ``status`` each one records.  Before this map
+#: existed the three call sites disagreed -- consolidation wrote ``invalid_at`` but
+#: left ``status='active'``, explicit supersession wrote ``status`` but no
+#: ``invalid_at``, and save-time conflict detection wrote neither ``status`` nor
+#: ``superseded_by`` -- so "why is this row not live?" had three different answers
+#: depending on which pass killed it.
+_CLOSE_VALIDITY_STATUS: dict[str, MemoryStatus] = {
+    # Refuted by a newer conflicting write, or folded into a consolidation merge.
+    "contradiction": MemoryStatus.contradicted,
+    "consolidation": MemoryStatus.contradicted,
+    # Replaced by a named successor (``superseded_by`` points at it).
+    "supersession": MemoryStatus.superseded,
+    # Decayed past the stale threshold by the scheduled decay refresh (KB-3.3).
+    "age": MemoryStatus.stale,
+}
+
+#: Audit action written by :meth:`MemoryStore.close_validity`.  One name for all
+#: reasons: the reason travels in ``extra["reason"]`` so an audit query can count
+#: closures without knowing the reason vocabulary in advance (corrections-log #1 --
+#: prove a maintenance pass ran from ``audit_log``, never from ``status``).
+CLOSE_VALIDITY_AUDIT_ACTION = "close_validity"
+
+#: Ruling 13 (TAP-6697): audit action for a *tier* escalation (context -> pattern
+#: -> architectural, driven by access counts).  Renamed from ``"promote"``, which
+#: collided with the gated-learning trust axis (``learning_promote`` /
+#: ``learning_demote``).  Pre-rename rows keep ``action="promote"`` and are never
+#: rewritten, so an audit query spanning the rename must accept both.
+TIER_ESCALATE_AUDIT_ACTION = "tier_escalate"
+
+
+def _close_validity_updates(
+    reason: str,
+    now: str,
+    *,
+    superseded_by: str | None = None,
+    contradiction_reason: str | None = None,
+) -> dict[str, Any]:
+    """Return the field updates that close a row's validity interval.
+
+    Shared by :meth:`MemoryStore.close_validity` and the save-time conflict path,
+    which must apply the same fields while already holding the store lock.
+
+    ``contradicted`` is set in step with ``status='contradicted'`` because the
+    boolean is a separate column that ``undo_save_conflict`` and
+    ``undo_consolidation_merge`` still key off, and every existing reader
+    (retrieval filters, GC's ``contradicted_threshold``) reads the boolean.
+    Writing only one of the two would split the contradiction signal in half.
+
+    Raises:
+        ValueError: *reason* is not a member of :data:`_CLOSE_VALIDITY_STATUS`.
+    """
+    status = _CLOSE_VALIDITY_STATUS.get(reason)
+    if status is None:
+        msg = (
+            f"unknown close_validity reason {reason!r}; "
+            f"expected one of {sorted(_CLOSE_VALIDITY_STATUS)}"
+        )
+        raise ValueError(msg)
+    updates: dict[str, Any] = {
+        "invalid_at": now,
+        "status": status,
+        "updated_at": now,
+    }
+    if superseded_by is not None:
+        updates["superseded_by"] = superseded_by
+    if status is MemoryStatus.contradicted:
+        updates["contradicted"] = True
+        if contradiction_reason is not None:
+            updates["contradiction_reason"] = contradiction_reason
+    elif status is MemoryStatus.stale:
+        # Migration 027 columns: what flagged the row, and when.  Populated only
+        # for the age path -- a contradiction already records its "why" in
+        # ``contradiction_reason``, and duplicating it here would give two
+        # columns that drift.
+        updates["stale_reason"] = contradiction_reason or reason
+        updates["stale_date"] = now
+    return updates
+
+
 def _resolve_status(
     explicit: str | None,
     existing: MemoryEntry | None,
@@ -2300,13 +2380,16 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 current = self._entries.get(conflict_key)
                 if current is not None and current.invalid_at is None:
                     previous = current
+                    # TAP-6697: same field set the public close_validity() writes.
+                    # Applied inline (not via the method) because we are already
+                    # inside the store lock and the persist below is guarded by a
+                    # rollback that close_validity does not know about.
                     invalidated = current.model_copy(
-                        update={
-                            "invalid_at": plan.now,
-                            "updated_at": plan.now,
-                            "contradicted": True,
-                            "contradiction_reason": reason,
-                        }
+                        update=_close_validity_updates(
+                            "contradiction",
+                            plan.now,
+                            contradiction_reason=reason,
+                        )
                     )
                     self._entries[conflict_key] = invalidated
             if invalidated is not None and previous is not None:
@@ -2326,6 +2409,22 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     # Do not advertise a shared conflict timestamp when any
                     # invalidation failed to persist — abort the conflict plan.
                     return None, [], []
+
+        # TAP-6697: one close_validity audit row per persisted invalidation, so a
+        # closure is provable from audit_log regardless of which path wrote it
+        # (corrections-log #1: never infer "did it run?" from status columns).
+        for conflict_key in invalidated_keys:
+            self._persistence.append_audit(
+                action=CLOSE_VALIDITY_AUDIT_ACTION,
+                key=conflict_key,
+                extra={
+                    "reason": "contradiction",
+                    "status": str(MemoryStatus.contradicted),
+                    "invalid_at": plan.now,
+                    "superseded_by": None,
+                    "detail": "save_conflict",
+                },
+            )
 
         # Score per invalidated key, from the audit payload the plan already
         # computed.  Restricted to keys whose invalidation persisted above.
@@ -2510,6 +2609,18 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             preserved["superseded_by"] = None
             preserved["contradicted"] = False
             preserved["contradiction_reason"] = None
+            # TAP-6697: the lifecycle status is part of the same closing bound.
+            # Leaving it at 'stale'/'superseded'/'contradicted' while clearing
+            # invalid_at would revive the row for the temporal predicate but keep
+            # it invisible to the status clause — the write-loss symptom TAP-5616
+            # fixed, re-entering through the door TAP-6697 opened.
+            preserved["revived"] = True
+        # TAP-6697: a revived row starts a fresh lifecycle — the previous
+        # closing bound's status and its stale_* annotations belong to the
+        # version that was closed, not to this one.
+        revived = bool(preserved.get("revived"))
+        prior_stale_reason = None if revived or existing is None else existing.stale_reason
+        prior_stale_date = None if revived or existing is None else existing.stale_date
         effective_temporal = (
             temporal_sensitivity
             if temporal_sensitivity is not None
@@ -2560,13 +2671,13 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             memory_group=mg_for_entry,
             temporal_sensitivity=effective_temporal,
             failed_approaches=effective_failed,
-            status=_resolve_status(status, existing),
-            stale_reason=stale_reason
-            if stale_reason is not None
-            else (existing.stale_reason if existing else None),
-            stale_date=stale_date
-            if stale_date is not None
-            else (existing.stale_date if existing else None),
+            status=(
+                MemoryStatus.active
+                if revived and status is None
+                else _resolve_status(status, existing)
+            ),
+            stale_reason=(stale_reason if stale_reason is not None else prior_stale_reason),
+            stale_date=stale_date if stale_date is not None else prior_stale_date,
             **_resolve_promotion_fields(existing, value),
         )
 
@@ -3133,6 +3244,80 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         return updated
 
     # ------------------------------------------------------------------
+    # Timeline of truth (TAP-6697, KB-3.2)
+    # ------------------------------------------------------------------
+
+    def close_validity(
+        self,
+        key: str,
+        *,
+        reason: str,
+        superseded_by: str | None = None,
+        detail: str | None = None,
+    ) -> MemoryEntry | None:
+        """Close a row's validity interval atomically (TAP-6697).
+
+        Writes ``invalid_at``, the lifecycle ``status`` implied by *reason*, and
+        (when given) ``superseded_by`` in a single ``update_fields`` call, then
+        appends exactly one :data:`CLOSE_VALIDITY_AUDIT_ACTION` audit row. The
+        one-helper rule exists because the three pre-existing call sites each
+        wrote a *different subset* of those columns, so a row's liveness was
+        readable from a different column depending on how it died.
+
+        This does **not** archive or delete: a closed row stays in
+        ``private_memories``, keeps its provenance, and can be revived by a later
+        legitimate save (``_construct_memory_entry``'s revival reset, TAP-5616,
+        clears ``invalid_at``/``status`` when a new ``valid_at`` postdates the
+        closing bound). Nothing here treats ``invalid_at`` as permanent.
+
+        Args:
+            key: Memory key to close.
+            reason: One of ``contradiction``, ``consolidation``, ``supersession``,
+                ``age`` — see :data:`_CLOSE_VALIDITY_STATUS`.
+            superseded_by: Key of the successor row, when there is one.
+            detail: Free-text explanation. Stored as ``contradiction_reason`` for
+                the contradiction/consolidation reasons and ``stale_reason`` for
+                ``age``; also copied into the audit row.
+
+        Returns:
+            The updated entry, or ``None`` when *key* does not exist.
+
+        Raises:
+            ValueError: *reason* is not a known close reason.
+        """
+        now = _utc_now_iso()
+        updates = _close_validity_updates(
+            reason,
+            now,
+            superseded_by=superseded_by,
+            contradiction_reason=detail,
+        )
+        updated = self.update_fields(key, **updates)
+        if updated is None:
+            return None
+
+        self._metrics.increment("store.close_validity")
+        self._persistence.append_audit(
+            action=CLOSE_VALIDITY_AUDIT_ACTION,
+            key=key,
+            extra={
+                "reason": reason,
+                "status": str(updates["status"]),
+                "invalid_at": now,
+                "superseded_by": superseded_by,
+                "detail": detail,
+            },
+        )
+        logger.info(
+            "close_validity",
+            key=key,
+            reason=reason,
+            status=str(updates["status"]),
+            superseded_by=superseded_by,
+        )
+        return updated
+
+    # ------------------------------------------------------------------
     # Gated learning (TAP-5542)
     # ------------------------------------------------------------------
 
@@ -3199,6 +3384,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             key,
             contradicted=False,
             contradiction_reason=None,
+            # TAP-6697: close_validity() wrote status='contradicted' alongside the
+            # boolean, so the undo must reopen both or the restored row stays
+            # invisible to the live-row predicate's status clause.
+            status=MemoryStatus.active,
             # Recovery is a metadata event — keep the entry's own timestamp.
             updated_at=entry.updated_at,
         )
@@ -3385,6 +3574,7 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         *,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]:
         """Approximate-nearest-neighbour search via pgvector HNSW.
 
@@ -3394,9 +3584,17 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         *as_of* applies the FTS-equivalent bi-temporal window and stands the
         live-row predicate down for point-in-time hybrid recall.
+
+        TAP-6697: *include_stale* drops only the ``status = 'active'`` clause,
+        so a caller that asked for lifecycle-stale rows still gets them without
+        also reopening the temporal exclusions.
         """
         return self._persistence.knn_search(
-            query_embedding, k, include_expired=include_expired, as_of=as_of
+            query_embedding,
+            k,
+            include_expired=include_expired,
+            as_of=as_of,
+            include_stale=include_stale,
         )
 
     @property
@@ -3554,8 +3752,12 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                         self._entries[key] = updated
                 raise
             self._drop_if_concurrently_removed(key)
+            # Ruling 13 (TAP-6697): renamed from "promote" so the tier axis cannot
+            # be confused with the trust axis (learning promote/demote).  This
+            # event has never touched learning_status and still does not.  Rows
+            # written before the rename keep action="promote" — never rewritten.
             self._persistence.append_audit(
-                action="promote",
+                action=TIER_ESCALATE_AUDIT_ACTION,
                 key=key,
                 extra={
                     "from_tier": old_tier,
@@ -3915,13 +4117,20 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             # Derive new key from old key or kwargs
             new_key = kwargs.pop("key", f"{old_key}.v{self._version_count(old_key) + 1}")
 
-            # Invalidate the old entry
+            # Invalidate the old entry.  TAP-6697: through the one closer, not a
+            # hand-rolled update dict — this path used to write ``invalid_at``
+            # and ``superseded_by`` but leave ``status='active'``, so every row
+            # it closed satisfied ``invalid_at <= now() AND status='active'``
+            # permanently (VAL-05 clause (c) falsified by the write itself, not
+            # by a race).  Applied inline rather than via ``close_validity()``
+            # because we already hold the store lock and the persist below is
+            # guarded by a rollback the public method knows nothing about.
             invalidated = old_entry.model_copy(
-                update={
-                    "invalid_at": now,
-                    "superseded_by": new_key,
-                    "updated_at": now,
-                }
+                update=_close_validity_updates(
+                    "supersession",
+                    now,
+                    superseded_by=new_key,
+                )
             )
             self._entries[old_key] = invalidated
 
@@ -3986,6 +4195,21 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                 logger.warning("supersede_rollback_failed", old_key=old_key, exc_info=True)
             msg = f"Failed to create superseding entry: {new_entry.get('message', '')}"
             raise ValueError(msg)
+
+        # TAP-6697: one close_validity audit row, same as every other closing
+        # path, so "why is this row not live?" is answerable from audit_log
+        # without knowing which pass killed it (corrections-log #1).
+        self._persistence.append_audit(
+            action=CLOSE_VALIDITY_AUDIT_ACTION,
+            key=old_key,
+            extra={
+                "reason": "supersession",
+                "status": str(MemoryStatus.superseded),
+                "invalid_at": now,
+                "superseded_by": new_key,
+                "detail": "supersede",
+            },
+        )
 
         # Set valid_at on the new entry
         with self._serialized():
@@ -4508,10 +4732,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
     def decay_learnings(self, /, *, dry_run: bool = False) -> dict[str, Any]:
         """Demote learnings whose promotion state no longer holds (TAP-5547).
 
-        Three rules, tuned by ``profile.learning_decay``: an approved entry that
-        has been contradicted is demoted; a candidate whose decayed confidence
-        fell below the floor is demoted; a candidate nobody promoted within
-        ``candidate_stale_days`` is demoted.
+        Three rules, tuned by ``profile.learning_decay``: an entry that has been
+        contradicted is demoted whatever its ``learning_status``; a candidate
+        whose decayed confidence fell below the floor is demoted; a candidate
+        nobody promoted within ``candidate_stale_days`` is demoted.
 
         Demotion is not deletion and not archival. The entry keeps its promotion
         provenance so an audit of a bad injection can still see which approval
@@ -4609,6 +4833,133 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             "dry_run": False,
             "enabled": True,
         }
+
+    @durable_pass
+    def refresh_decay(
+        self,
+        /,
+        *,
+        dry_run: bool = False,
+        sample_size: int = 10,
+    ) -> dict[str, Any]:
+        """Scheduled decay refresh: write down what lazy read-path decay computes.
+
+        ADR-014 (supersedes ADR-002's "lazy only" ruling).  Lazy decay is
+        unchanged — this pass persists the conclusion so a long-dead row stops
+        consuming top-K budget and stops being resurrected by a query with no
+        better candidate.
+
+        Per live row (``status='active'``, no closing bound, no ``superseded_by``):
+
+        * effective confidence at or below the tier's confidence floor →
+          ``archive_entry(reason="age")`` then delete from the live table, reusing
+          GC's archive-then-delete gate (delete only what archived successfully).
+        * otherwise below ``stale_threshold`` →
+          :meth:`close_validity` with ``reason="age"``.
+
+        The archive reason is ``"age"``, deliberately *not* GC's
+        ``"floor_retention"``.  They are different passes with different triggers:
+        GC's floor sweep is on-demand and applies a retention grace period plus
+        contradicted/session rules; this one is the scheduled decay curve alone.
+        Sharing a reason code would make the two indistinguishable in
+        ``gc_archive``, which is exactly the audit question the code exists to
+        answer.
+
+        Args:
+            dry_run: Identify without writing.  Returns the same key set the
+                apply pass would touch.
+            sample_size: How many keys to include in the ``*_sample`` lists.
+
+        Returns:
+            ``{"would_close"/"closed", "would_archive"/"archived",
+            "close_sample", "archive_sample", "rows_before", "rows_after",
+            "archived_delta", "archive_bytes", "dry_run"}``.
+        """
+        from datetime import UTC, datetime
+
+        from tapps_brain.decay import identify_decay_refresh
+
+        now = datetime.now(tz=UTC)
+        with self._serialized():
+            entries = list(self._entries.values())
+        rows_before = len(entries)
+
+        actions = identify_decay_refresh(
+            entries,
+            self._get_decay_config(),
+            now=now,
+            floor_retention_days=float(self._gc_config.floor_retention_days),
+        )
+        close_keys = [a.key for a in actions if a.action == "close"]
+        archive_keys = [a.key for a in actions if a.action == "archive"]
+
+        result: dict[str, Any] = {
+            "dry_run": dry_run,
+            "rows_before": rows_before,
+            "close_sample": close_keys[:sample_size],
+            "archive_sample": archive_keys[:sample_size],
+        }
+        if dry_run:
+            result["would_close"] = len(close_keys)
+            result["would_archive"] = len(archive_keys)
+            result["rows_after"] = rows_before
+            result["archived_delta"] = 0
+            result["archive_bytes"] = 0
+            return result
+
+        self._metrics.increment("store.decay_refresh")
+        archived_keys, archive_bytes = self._archive_and_delete(archive_keys, reason="age")
+
+        closed = 0
+        for key in close_keys:
+            if self.close_validity(key, reason="age", detail="decayed below stale_threshold"):
+                closed += 1
+
+        with self._serialized():
+            rows_after = len(self._entries)
+
+        self._metrics.increment("store.decay_refresh.closed", closed)
+        self._metrics.increment("store.decay_refresh.archived", len(archived_keys))
+        result["closed"] = closed
+        result["archived"] = len(archived_keys)
+        result["archive_bytes"] = archive_bytes
+        result["rows_after"] = rows_after
+        result["archived_delta"] = len(archived_keys)
+        result["archive_sample"] = archived_keys[:sample_size]
+        return result
+
+    def _archive_and_delete(self, keys: list[str], *, reason: str) -> tuple[list[str], int]:
+        """Archive each key then delete it, skipping anything that changed.
+
+        The lost-update guard and the archive-before-delete gate are the same
+        ones :meth:`gc` uses: re-read the current row, skip it if a save landed
+        since the candidate scan, and delete only what ``archive_entry``
+        confirmed (it returns 0 on failure, and deleting those would destroy
+        data silently).
+
+        Returns ``(archived_keys, archive_bytes)``.
+        """
+        archived_keys: list[str] = []
+        archive_bytes = 0
+        for key in keys:
+            with self._serialized():
+                current = self._entries.get(key)
+            if current is None:
+                continue
+            nbytes = self._persistence.archive_entry(current, reason=reason)
+            if nbytes > 0:
+                archived_keys.append(key)
+                archive_bytes += nbytes
+            else:
+                logger.warning(
+                    "archive_failed_skip_delete",
+                    key=key,
+                    reason=reason,
+                    hint="entry left in store until archive succeeds",
+                )
+        for key in archived_keys:
+            self.delete(key)
+        return archived_keys, archive_bytes
 
     @durable_pass
     def gc(self, /, *, dry_run: bool = False) -> Any:  # noqa: ANN401

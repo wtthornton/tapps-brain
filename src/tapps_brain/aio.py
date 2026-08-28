@@ -217,7 +217,7 @@ class _CapturePersistenceBackend:
         if callable(fn):
             fn(key, value)
 
-    def archive_entry(self, entry: Any) -> int:
+    def archive_entry(self, entry: Any, *, reason: str | None = None) -> int:
         """Queue a GC archive write for async flush (do not hit sync Postgres).
 
         Returns a JSON size *estimate* so ``MemoryStore.gc`` can queue
@@ -234,7 +234,7 @@ class _CapturePersistenceBackend:
         if nbytes <= 0:
             return 0
         with self._lock:
-            self._archives.append(entry)
+            self._archives.append((entry, reason))
         return nbytes
 
     def list_archive(self, **kwargs: Any) -> list[Any]:
@@ -579,6 +579,10 @@ class AsyncMemoryStore:
     async def _flush_durable_archives(self, archives: list[Any]) -> None:
         """Persist queued GC archives; raise if any durable write returns 0.
 
+        *archives* holds ``(entry, reason)`` pairs as queued by
+        :meth:`_CaptureBackend.archive_entry`, so the TAP-6697 archive reason
+        survives the async hand-off instead of being dropped at the queue.
+
         Capture only estimates nbytes so ``MemoryStore.gc`` can schedule
         deletes.  The async ``archive_entry`` return is authoritative
         (same gate as sync ``store.py``).  Callers must not delete until
@@ -586,12 +590,12 @@ class AsyncMemoryStore:
         """
         if self._async_backend is None:  # pragma: no cover
             raise RuntimeError("aio: _async_backend not initialised before archive flush")
-        for archived in archives:
+        for archived, reason in archives:
             key = str(getattr(archived, "key", "") or "")
             arch = getattr(self._async_backend, "archive_entry", None)
             nbytes = 0
             if callable(arch):
-                maybe_arch = arch(archived)
+                maybe_arch = arch(archived, reason=reason)
                 if inspect.isawaitable(maybe_arch):
                     nbytes = int(await maybe_arch)
                 elif maybe_arch is not None:

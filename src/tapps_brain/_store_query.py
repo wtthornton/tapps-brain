@@ -380,6 +380,7 @@ class QueryMixin(_MemoryStoreBase):
         max_group_results: int = 20,
         memory_class: str | None = None,
         include_contradicted: bool = False,
+        include_stale: bool = False,
     ) -> list[MemoryEntry]:
         """Search via the Postgres FTS backend, with optional post-filters.
 
@@ -393,6 +394,10 @@ class QueryMixin(_MemoryStoreBase):
                 When set, only entries valid at that time are returned.
                 When ``None`` (default), temporally invalid entries are excluded
                 using the current time.
+            include_stale: TAP-6697 — when True, the ``status = 'active'``
+                clause is dropped from the recall SQL so lifecycle-stale rows
+                reach the caller's own status filter.  Temporal exclusions and
+                ``superseded_by`` stay in force.
             include_historical: When True, include expired/superseded entries
                 (GitHub #29, task 040.3). When False (default), entries whose
                 ``invalid_at`` or ``valid_until`` is in the past are excluded.
@@ -435,6 +440,11 @@ class QueryMixin(_MemoryStoreBase):
                 # they do not consume the top-K budget.  When the caller wants
                 # historical rows, fetch them too and let the Python filter decide.
                 include_expired=include_historical,
+                # TAP-6697: the live-row SQL predicate now requires
+                # status='active'.  Without forwarding the caller's opt-in, a
+                # lifecycle-stale row would be dropped in SQL and never reach the
+                # Python include_stale filter that is supposed to decide.
+                include_stale=include_stale,
             )
 
             # TAP-5677 stage 3: lexical stages (AND, then the backend's OR
@@ -444,7 +454,10 @@ class QueryMixin(_MemoryStoreBase):
             # never resurface rows a precision filter excluded.
             if not results and since is None and until is None and memory_class is None:
                 results = self._knn_fallback_entries(
-                    query, include_expired=include_historical, as_of=as_of
+                    query,
+                    include_expired=include_historical,
+                    as_of=as_of,
+                    include_stale=include_stale,
                 )
 
             results = self._apply_search_filters(
@@ -480,6 +493,7 @@ class QueryMixin(_MemoryStoreBase):
         *,
         include_expired: bool,
         as_of: str | None,
+        include_stale: bool = False,
     ) -> list[MemoryEntry]:
         """Semantic fallback for lexically unmatched queries (TAP-5677).
 
@@ -513,6 +527,7 @@ class QueryMixin(_MemoryStoreBase):
                 _KNN_FALLBACK_K,
                 include_expired=include_expired,
                 as_of=as_of,
+                include_stale=include_stale,
             )
         except Exception:
             logger.warning("search.knn_fallback.knn_failed", exc_info=True)

@@ -279,6 +279,7 @@ class InMemoryPrivateBackend:
         *,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]:
         return []  # tests that exercise vector recall must use a real backend
 
@@ -312,12 +313,14 @@ class InMemoryPrivateBackend:
             except OSError:
                 pass  # best-effort — must not raise on hot path
 
-    def archive_entry(self, entry: Any) -> int:
+    def archive_entry(self, entry: Any, *, reason: str | None = None) -> int:
         """Best-effort in-memory GC archive (unit-test only)."""
         import json as _json
 
         try:
             payload = entry.model_dump()
+            if reason is not None:
+                payload["archive_reason"] = reason
             line = _json.dumps(payload, default=str)
             byte_count = len(line.encode("utf-8"))
             with self._lock:
