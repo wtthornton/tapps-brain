@@ -7,6 +7,10 @@ Covers deliverable 1 (the compose service's scheduling loop) and VAL-02:
   rather than silently write while claiming to preview (see the module
   docstring in ``services/maintenance_cycle.py``).
 * Every pass writes one ``audit_log`` row.
+* One apply-mode cycle advances the ``flywheel_meta`` cursor for **every**
+  tenant with feedback events, not only the one the container serves — the
+  cursor pass is cross-tenant (``flywheel_all_tenants``), which is what VAL-02
+  actually asserts.
 * An apply-mode cycle against a fixture seeded with duplicate rows produces
   the ``consolidation_merge`` / ``trigger='periodic_scan'`` audit shape KB-3.4
   and the recon anchors describe as already correct upstream — this lane's
@@ -103,6 +107,139 @@ class TestDryRunCycleNeverWrites:
 
         run_maintenance_cycle(project_root=project_root, dsn=cycle_fixture_dsn, dry_run=True)
         assert has_recent_heartbeat(conn) is True
+
+
+class TestFlywheelCursorIsCrossTenant:
+    """VAL-02: every ``flywheel_meta`` cursor must be <= 48h behind its tenant.
+
+    The cycle's flywheel pass used to run only for the tenant the container
+    serves (``_run_single_tenant_passes``), so one apply cycle advanced exactly
+    one cursor. On the deployed brain that left 100 of 128 tenants violating —
+    99 of them with no cursor row at all, and only 32 cursor rows for 128
+    tenant groups.
+
+    Two seeded tenants, neither of which is the served tenant, are the smallest
+    fixture that can tell "advances every tenant" apart from "advances the one
+    it serves". The positive control comes first: SLO 4 must *fail* on this
+    fixture before the cycle runs, otherwise the post-cycle assertion is
+    vacuous.
+    """
+
+    @staticmethod
+    def _seed_tenant(conn, project_id: str, agent_id: str) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO feedback_events "
+                "(project_id, agent_id, id, event_type, timestamp) "
+                "VALUES (%s, %s, %s, 'implicit_positive', now())",
+                (project_id, agent_id, str(uuid.uuid4())),
+            )
+        conn.commit()
+
+    @staticmethod
+    def _cursor_rows(conn, project_ids: list[str]) -> dict[str, object]:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT project_id, updated_at FROM flywheel_meta "
+                "WHERE key = 'feedback_cursor' AND project_id = ANY(%s)",
+                (project_ids,),
+            )
+            return {str(r[0]): r[1] for r in cur.fetchall()}
+
+    def test_one_apply_cycle_advances_the_cursor_for_every_tenant(
+        self, project_root, cycle_fixture_dsn, conn
+    ) -> None:
+        from tapps_brain.services import retention_slo
+
+        marker = uuid.uuid4().hex[:8]
+        tenants = [(f"vf-{marker}-a", "agent-a"), (f"vf-{marker}-b", "agent-b")]
+        project_ids = [pid for pid, _ in tenants]
+        for project_id, agent_id in tenants:
+            self._seed_tenant(conn, project_id, agent_id)
+        try:
+            # Positive control: the clause is measurable on this fixture.
+            before = retention_slo.check_flywheel_lag(conn)
+            assert before["ok"] is False
+            violating_before = {
+                v["project_id"] for v in before["violations"] if v["project_id"] in project_ids
+            }
+            assert violating_before == set(project_ids), before
+            assert self._cursor_rows(conn, project_ids) == {}
+
+            run_maintenance_cycle(project_root=project_root, dsn=cycle_fixture_dsn, dry_run=False)
+
+            after = self._cursor_rows(conn, project_ids)
+            assert set(after) == set(project_ids), (
+                f"cursor advanced for {sorted(after)} but not {sorted(project_ids)} — "
+                "the pass is still single-tenant"
+            )
+            still_violating = {
+                v["project_id"]
+                for v in retention_slo.check_flywheel_lag(conn)["violations"]
+                if v["project_id"] in project_ids
+            }
+            assert still_violating == set()
+        finally:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM feedback_events WHERE project_id = ANY(%s)", (project_ids,)
+                )
+                cur.execute("DELETE FROM flywheel_meta WHERE project_id = ANY(%s)", (project_ids,))
+            conn.commit()
+
+    def test_the_pass_reports_the_tenant_population_it_served(
+        self, project_root, cycle_fixture_dsn, conn
+    ) -> None:
+        marker = uuid.uuid4().hex[:8]
+        tenants = [(f"vr-{marker}-a", "agent-a"), (f"vr-{marker}-b", "agent-b")]
+        project_ids = [pid for pid, _ in tenants]
+        for project_id, agent_id in tenants:
+            self._seed_tenant(conn, project_id, agent_id)
+        try:
+            result = run_maintenance_cycle(
+                project_root=project_root, dsn=cycle_fixture_dsn, dry_run=False
+            )
+            flywheel = result["passes"]["flywheel_all_tenants"]
+            served = {a["project_id"] for a in flywheel["advanced"]}
+            assert set(project_ids) <= served
+            assert flywheel["tenants_total"] >= 2
+            assert flywheel["tenants_failed"] == 0, flywheel["failures"]
+        finally:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM feedback_events WHERE project_id = ANY(%s)", (project_ids,)
+                )
+                cur.execute("DELETE FROM flywheel_meta WHERE project_id = ANY(%s)", (project_ids,))
+            conn.commit()
+
+    def test_dry_run_skips_the_cross_tenant_pass_rather_than_faking_a_preview(
+        self, project_root, cycle_fixture_dsn
+    ) -> None:
+        """SC-6: ``process_feedback`` applies confidence deltas and has no
+        dry-run mode, so a "preview" that called it would write."""
+        result = run_maintenance_cycle(
+            project_root=project_root, dsn=cycle_fixture_dsn, dry_run=True
+        )
+        assert result["passes"]["flywheel_all_tenants"] == {
+            "skipped": True,
+            "reason": "no dry-run mode upstream",
+        }
+
+    def test_dry_run_writes_no_cursor_row_for_a_seeded_tenant(
+        self, project_root, cycle_fixture_dsn, conn
+    ) -> None:
+        """The skip must be a real skip, asserted against the DB, not the summary."""
+        marker = uuid.uuid4().hex[:8]
+        project_id = f"vd-{marker}"
+        self._seed_tenant(conn, project_id, "agent-a")
+        try:
+            run_maintenance_cycle(project_root=project_root, dsn=cycle_fixture_dsn, dry_run=True)
+            assert self._cursor_rows(conn, [project_id]) == {}
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM feedback_events WHERE project_id = %s", (project_id,))
+                cur.execute("DELETE FROM flywheel_meta WHERE project_id = %s", (project_id,))
+            conn.commit()
 
 
 class TestApplyModeConsolidation:

@@ -906,6 +906,11 @@ def create_app(
             content["retention_detail"] = retention_result.get("checks") or retention_result.get(
                 "detail", ""
             )
+            # TAP-6698: an SLO that cannot fail as deployed (SLO 5 with no
+            # retention window configured) must say so rather than reporting an
+            # indistinguishable pass — otherwise retention_ok reads as five
+            # checks agreeing when only four of them can move it.
+            content["retention_not_applicable"] = retention_result.get("not_applicable", [])
             content["ok"] = content["ok"] and retention_result["retention_ok"]
         return JSONResponse(status_code=200 if content["ok"] else 503, content=content)
 

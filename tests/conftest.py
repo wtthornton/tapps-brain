@@ -40,6 +40,29 @@ _HAS_MCP = importlib.util.find_spec("mcp") is not None
 _HAS_SENTENCE_TRANSFORMERS = importlib.util.find_spec("sentence_transformers") is not None
 
 
+def pytest_configure(config):
+    """Refuse to run against a deployed brain (TAP-6698, VAL-09).
+
+    ``_inject_in_memory_private_backend`` below deliberately steps aside when
+    ``TAPPS_BRAIN_DATABASE_URL`` is set, so with a live DSN in the environment
+    the integration suite constructs real ``MemoryStore``s against production
+    and writes rows to it.  That is not hypothetical: it is how ten
+    ``identity`` / ``long-term`` / ``short-term`` rows from
+    ``tests/integration/test_profile_integration.py`` reached the deployed
+    ``private_memories`` on 2026-08-07.  See ``tests/_live_dsn_guard.py`` for
+    the full trace and for why the check is keyed on the database name.
+
+    Aborting the session is deliberate: silently substituting an in-memory
+    backend would leave Postgres integration tests passing without Postgres.
+    """
+    from tests._live_dsn_guard import live_dsn_refusal
+
+    for var in ("TAPPS_BRAIN_DATABASE_URL", "TAPPS_TEST_POSTGRES_DSN", "TAPPS_BRAIN_HIVE_DSN"):
+        refusal = live_dsn_refusal(os.environ.get(var, ""), source=var)
+        if refusal:
+            raise pytest.UsageError(refusal)
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip tests marked requires_cli / requires_mcp / requires_postgres when deps are missing.
 

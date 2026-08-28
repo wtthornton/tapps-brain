@@ -10,6 +10,8 @@ from the deployed ``tapps-brain-db`` and tears it down after the session.
 
 Never points at ``tapps-brain-db`` — SC-6/guardrails forbid apply-mode writes
 against the live deployed brain from this lane, and these tests write rows.
+That is enforced, not merely asserted: ``resolve_fixture_dsn`` refuses a DSN
+naming a deployed-brain database (``tests/_live_dsn_guard.py``, TAP-6698).
 """
 
 from __future__ import annotations
@@ -97,8 +99,18 @@ def resolve_fixture_dsn() -> str:
     (see ``tests/test_retention_slo.py`` / ``tests/test_maintenance_cycle.py``)
     so this stays a plain, directly-testable function.
     """
-    dsn = os.environ.get("TAPPS_BRAIN_DATABASE_URL") or os.environ.get("TAPPS_TEST_POSTGRES_DSN")
-    if dsn:
+    from tests._live_dsn_guard import live_dsn_refusal
+
+    for var in ("TAPPS_BRAIN_DATABASE_URL", "TAPPS_TEST_POSTGRES_DSN"):
+        dsn = os.environ.get(var)
+        if not dsn:
+            continue
+        # This module's docstring promises it never points at the deployed
+        # brain; before TAP-6698 that promise was only a comment, and these
+        # tests write rows. Enforce it (tests/_live_dsn_guard.py).
+        refusal = live_dsn_refusal(dsn, source=var)
+        if refusal:
+            pytest.fail(refusal)
         return dsn
     if not _docker_available():
         pytest.fail(

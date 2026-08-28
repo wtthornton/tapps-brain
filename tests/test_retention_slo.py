@@ -7,7 +7,16 @@ Five assertions, each mirrored by ``/healthz?deep=1``'s ``retention_ok`` field
 2. The newest ``experience_events`` partition is >= 3 months ahead of ``now()``.
 3. ``experience_events_default`` holds 0 rows.
 4. No ``flywheel_meta`` feedback cursor is > 48h behind ``feedback_events``.
-5. A configured retention window with no active manager is a violation.
+5. A configured retention window with no active manager is a violation —
+   conditional by design, so it reports ``applicable: False`` when no window is
+   configured rather than an indistinguishable pass (VAL-09 defect 4).
+
+Each enumerating check reports a **true total** alongside its bounded sample:
+``violating_total`` counts the whole filtered population while ``violations``
+stays capped at ``_MAX_SAMPLE``. SLO 1 additionally LEFT-joins the tier
+half-life table so a row carrying a tier nothing defines is surfaced with
+``reason='unrecognised_tier'`` instead of being dropped by an inner join
+(VAL-09 defects 1 and 2).
 
 Method lesson from the lane's own corrections log: an assertion that reports
 "0 violations" is worthless unless the same probe is shown catching a real
@@ -94,6 +103,139 @@ class TestSLO1NoOverdueActiveRows:
             _delete_memory(conn, key=key)
 
 
+class TestSLO1SurfacesUnrecognisedTiers:
+    """VAL-09: the check must not be blind to the rows most likely malformed.
+
+    ``private_memories.tier`` is free text and also carries EPIC-010 profile
+    layer names, so a row can hold a tier the half-life table does not list.
+    The check used to ``JOIN`` that table, which dropped those rows before the
+    age predicate ever saw them — the deployed brain holds ten of them
+    (``identity`` / ``long-term`` / ``short-term``, written 2026-08-07) and
+    SLO 1 reported ``ok`` at every age.
+
+    The give-away is that age cannot be the trigger: these tests insert a
+    *brand-new* row, which no age-based assertion could ever flag, and require
+    it to be reported anyway.
+    """
+
+    def test_a_fresh_row_with_an_unrecognised_tier_is_reported(self, conn) -> None:
+        key = f"slo1-unknown-tier-{uuid.uuid4().hex[:8]}"
+        _insert_memory(conn, key=key, tier="identity")
+        try:
+            result = retention_slo.check_no_overdue_active_rows(conn)
+            assert result["ok"] is False
+            hit = next((v for v in result["violations"] if v["key"] == key), None)
+            assert hit is not None, "an unrecognised tier was dropped, not surfaced"
+            assert hit["reason"] == "unrecognised_tier"
+            assert hit["tier"] == "identity"
+            assert hit["half_life_days"] is None
+            assert result["unrecognised_tier_total"] >= 1
+        finally:
+            _delete_memory(conn, key=key)
+
+    def test_an_overdue_row_is_still_reported_as_overdue(self, conn) -> None:
+        """Correct-negative: widening the join must not relabel real overdue rows."""
+        key = f"slo1-overdue-reason-{uuid.uuid4().hex[:8]}"
+        old_ts = datetime.now(UTC) - timedelta(days=40)
+        _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
+        try:
+            result = retention_slo.check_no_overdue_active_rows(conn)
+            hit = next(v for v in result["violations"] if v["key"] == key)
+            assert hit["reason"] == "overdue"
+            assert hit["half_life_days"] == 14.0
+        finally:
+            _delete_memory(conn, key=key)
+
+    def test_a_fresh_row_with_a_known_tier_is_still_not_a_violation(self, conn) -> None:
+        """The LEFT JOIN must not turn every fresh row into a violation."""
+        key = f"slo1-fresh-known-{uuid.uuid4().hex[:8]}"
+        _insert_memory(conn, key=key, tier="architectural")
+        try:
+            result = retention_slo.check_no_overdue_active_rows(conn)
+            assert not any(v["key"] == key for v in result["violations"])
+        finally:
+            _delete_memory(conn, key=key)
+
+
+class TestSLO1ReportsTheTrueViolationCount:
+    """VAL-09 defect 2: the sample cap must not become the reported number.
+
+    ``_MAX_SAMPLE`` bounds the enumerated rows, which is right — a health probe
+    must not stream thousands of rows.  Reporting *only* that bounded list is
+    what made a live breach of 5,603 rows read as 20.  ``ok`` was already sound
+    (the LIMIT applies to the already-filtered set, so zero matches still means
+    zero); the count was not.
+    """
+
+    def test_violating_total_exceeds_the_sample_cap(self, conn) -> None:
+        overshoot = retention_slo._MAX_SAMPLE + 5
+        baseline = retention_slo.check_no_overdue_active_rows(conn)["violating_total"]
+        old_ts = datetime.now(UTC) - timedelta(days=40)
+        prefix = f"slo1-bulk-{uuid.uuid4().hex[:8]}"
+        keys = [f"{prefix}-{i}" for i in range(overshoot)]
+        for key in keys:
+            _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
+        try:
+            result = retention_slo.check_no_overdue_active_rows(conn)
+            assert result["violating_total"] == baseline + overshoot
+            assert len(result["violations"]) == retention_slo._MAX_SAMPLE
+            assert result["sample_truncated"] is True
+            assert result["ok"] is False
+        finally:
+            for key in keys:
+                _delete_memory(conn, key=key)
+
+    def test_no_truncation_flag_when_the_sample_is_complete(self, conn) -> None:
+        key = f"slo1-single-{uuid.uuid4().hex[:8]}"
+        old_ts = datetime.now(UTC) - timedelta(days=40)
+        _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
+        try:
+            result = retention_slo.check_no_overdue_active_rows(conn)
+            assert result["violating_total"] == len(result["violations"])
+            assert result["sample_truncated"] is False
+        finally:
+            _delete_memory(conn, key=key)
+
+    def test_a_clean_population_reports_zero_not_an_empty_sample(self, conn) -> None:
+        result = retention_slo.check_no_overdue_active_rows(conn)
+        assert result["violating_total"] == 0
+        assert result["ok"] is True
+        assert result["sample_truncated"] is False
+
+
+class TestSLO4ReportsTheTrueViolationCount:
+    """Same cap, same fix, on the flywheel-lag check (``:121`` before the fix)."""
+
+    def test_violating_total_exceeds_the_sample_cap(self, conn) -> None:
+        overshoot = retention_slo._MAX_SAMPLE + 5
+        baseline = retention_slo.check_flywheel_lag(conn)["violating_total"]
+        prefix = f"slo4-bulk-{uuid.uuid4().hex[:8]}"
+        newest = datetime.now(UTC)
+        with conn.cursor() as cur:
+            for i in range(overshoot):
+                cur.execute(
+                    "INSERT INTO feedback_events "
+                    "(project_id, agent_id, id, event_type, timestamp) "
+                    "VALUES (%s, %s, %s, 'implicit_positive', %s)",
+                    (f"{prefix}-{i}", "slo4-bulk-agent", str(uuid.uuid4()), newest),
+                )
+        conn.commit()
+        try:
+            result = retention_slo.check_flywheel_lag(conn)
+            assert result["violating_total"] == baseline + overshoot
+            assert result["missing_cursor_total"] >= overshoot
+            assert len(result["violations"]) == retention_slo._MAX_SAMPLE
+            assert result["sample_truncated"] is True
+            assert all(v["reason"] == "no_cursor_row" for v in result["violations"])
+        finally:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM feedback_events WHERE project_id LIKE %s",
+                    (f"{prefix}-%",),
+                )
+            conn.commit()
+
+
 class TestSLO2PartitionHorizon:
     def test_horizon_holds_on_the_migrated_fixture(self, conn) -> None:
         """Migration 020 pre-creates partitions well past now()+3 months already."""
@@ -138,7 +280,13 @@ class TestSLO4FlywheelLag:
 
     def test_passes_on_a_fresh_fixture(self, conn) -> None:
         result = retention_slo.check_flywheel_lag(conn)
-        assert result == {"ok": True, "violations": []}
+        assert result == {
+            "ok": True,
+            "violating_total": 0,
+            "missing_cursor_total": 0,
+            "sample_truncated": False,
+            "violations": [],
+        }
 
 
 class TestSLO5RetentionManagerActive:
@@ -169,6 +317,27 @@ class TestSLO5RetentionManagerActive:
         assert result["ok"] is True
         assert result["retention_env_set"] is False
 
+    def test_unset_retention_reports_itself_as_not_applicable(self, conn) -> None:
+        """VAL-09 defect 4: an SLO that cannot fail must not look like a pass.
+
+        ``TAPPS_BRAIN_EVENTS_RETENTION_MONTHS`` is unset on the deployed
+        ``tapps-brain-http``, so this check short-circuits without touching the
+        DB and only four of the five SLOs can move ``retention_ok``. That is
+        correct by design — no retention window configured means no retention
+        promise to break — but it was reported as an ordinary pass, which is
+        what made the asymmetry invisible. No failure mode is added here: the
+        verdict is still ``ok``.
+        """
+        result = retention_slo.check_retention_manager_active(conn, retention_env="")
+        assert result["ok"] is True
+        assert result["applicable"] is False
+        assert "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS" in result["reason"]
+
+    def test_a_configured_retention_window_is_applicable(self, conn) -> None:
+        """Correct-negative: with a window set, the check really does run."""
+        result = retention_slo.check_retention_manager_active(conn, retention_env="12")
+        assert result["applicable"] is True
+
     def test_violation_when_env_set_and_no_heartbeat(self, conn) -> None:
         result = retention_slo.check_retention_manager_active(conn, retention_env="12")
         assert result["ok"] is False
@@ -186,6 +355,16 @@ class TestEvaluateRetentionSlos:
     def test_aggregate_is_ok_on_a_clean_fixture(self, conn) -> None:
         result = retention_slo.evaluate_retention_slos(conn, retention_env="")
         assert result["retention_ok"] is True, result["checks"]
+
+    def test_aggregate_names_the_checks_that_passed_vacuously(self, conn) -> None:
+        result = retention_slo.evaluate_retention_slos(conn, retention_env="")
+        assert result["not_applicable"] == ["retention_manager_active"]
+
+    def test_nothing_is_inapplicable_once_retention_is_configured(self, conn) -> None:
+        record_heartbeat(conn, details={"trigger": "test"})
+        conn.commit()
+        result = retention_slo.evaluate_retention_slos(conn, retention_env="12")
+        assert result["not_applicable"] == []
 
 
 class TestVal07PartitionDropFixtureProof:

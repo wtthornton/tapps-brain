@@ -237,6 +237,38 @@ def _get_half_life(tier: MemoryTier | str, config: DecayConfig) -> int:
     raise ValueError(msg)
 
 
+def tier_is_resolvable(tier: MemoryTier | str, config: DecayConfig) -> bool:
+    """Return whether :func:`_get_half_life` can resolve *tier* without raising.
+
+    TAP-6698 (VAL-09).  ``private_memories.tier`` is a free-text column: a
+    profile layer name (EPIC-010) is as valid a value as a
+    :class:`~tapps_brain.models.MemoryTier` member, but nothing records *which*
+    profile defines it.  A row written under a profile whose layers are not in
+    the reading process's ``DecayConfig`` — an in-process profile that was
+    never persisted to ``project_profiles``, or a tenant read by a
+    differently-profiled process — therefore carries a tier the decay engine
+    cannot price.
+
+    ``_get_half_life`` raises on those, which is the right contract for a
+    single lookup but the wrong shape for a batch pass: one unpriceable row
+    aborted the whole tenant's scheduled decay refresh.  This predicate lets
+    batch callers *partition* their input and report the remainder instead of
+    either crashing or silently dropping it.  It performs exactly the lookups
+    ``_get_half_life`` performs and adds no fallback of its own — a tier this
+    returns ``True`` for is one ``_get_half_life`` returns a number for.
+    """
+    tier_str = tier.value if isinstance(tier, MemoryTier) else str(tier)
+    if tier_str in config.layer_half_lives:
+        return True
+    if isinstance(tier, MemoryTier):
+        return True
+    try:
+        MemoryTier(tier_str)
+    except ValueError:
+        return False
+    return True
+
+
 def _get_ceiling(source: MemorySource | str, config: DecayConfig) -> float:
     """Return the confidence ceiling for a given source type.
 
@@ -612,6 +644,11 @@ def identify_decay_refresh(
        a stale-then-archive ordering would strand them forever.
     2. **close** — effective confidence is below ``config.stale_threshold``.
 
+    Rows whose ``tier`` the supplied *config* cannot price (neither a
+    :class:`~tapps_brain.models.MemoryTier` member nor a layer of the active
+    profile — see :func:`tier_is_resolvable`) are excluded and logged; they are
+    reported by the caller rather than crashing the pass (TAP-6698, VAL-09).
+
     Only rows that are currently live are considered: ``status='active'`` with
     no closing bound.  Re-running the pass is therefore idempotent — a row it
     closed last night is no longer ``active`` and is skipped.  Rows carrying a
@@ -642,6 +679,24 @@ def identify_decay_refresh(
         if getattr(entry, "status", None) not in (None, MemoryStatus.active):
             continue
         if entry.invalid_at is not None or entry.superseded_by is not None:
+            continue
+        if not tier_is_resolvable(entry.tier, config):
+            # TAP-6698 (VAL-09): a row whose tier this config cannot price has
+            # no decay curve, so there is no honest close/archive verdict to
+            # emit for it — but it must not abort the pass for every other row
+            # either (``calculate_decayed_confidence`` would raise here).
+            # Callers surface the remainder: ``MemoryStore.refresh_decay``
+            # partitions on the same predicate and reports the count and a
+            # sample as ``unresolved_tier_rows`` / ``unresolved_tier_sample``,
+            # and ``retention_slo.check_no_overdue_active_rows`` flags the
+            # rows independently. Skipping silently is what this branch
+            # deliberately does *not* do.
+            logger.warning(
+                "decay_refresh_unresolvable_tier",
+                key=entry.key,
+                tier=str(entry.tier),
+                hint="tier is neither a MemoryTier member nor a layer of the active profile",
+            )
             continue
 
         effective = calculate_decayed_confidence(entry, config, now=now)
