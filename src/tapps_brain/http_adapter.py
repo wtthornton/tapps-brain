@@ -124,6 +124,7 @@ from tapps_brain.http.middleware import (
     _mcp_auth_error_body,
     _peek_mcp_tool_name,
     _resolve_tenant_headers,
+    strict_identity_refusal,
 )
 
 # probe cache
@@ -239,6 +240,25 @@ def _coerce_float(body: dict[str, Any], field: str, default: float) -> float:
             status_code=400,
             detail={"error": "bad_request", "detail": f"'{field}' must be a number."},
         ) from None
+
+
+def _extract_invocation_id(body: dict[str, Any], request: Request) -> str | None:
+    """VAL-19: recover the caller's invocation identity for the ``run_id``
+    provenance column.
+
+    AgentForge's ``/v1/remember`` calls carry ``body["metadata"]["invocation_id"]``
+    (``backend/api/routes/ingest.py`` + ``backend/memory/brain.py``); other
+    callers may instead set the ``X-Origin-Invocation-Id`` header. Neither was
+    ever read, so every write was unattributable by construction. ``metadata``
+    takes precedence when both are present.
+    """
+    metadata = body.get("metadata")
+    if isinstance(metadata, dict):
+        raw = metadata.get("invocation_id")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    header_val = (request.headers.get("x-origin-invocation-id") or "").strip()
+    return header_val or None
 
 
 def _validate_uuid_field(value: Any, field_name: str) -> str:
@@ -1286,11 +1306,26 @@ def create_app(
           - ``X-Project-Id`` (required): project identifier.
           - ``X-Agent-Id`` (optional, default ``"unknown"``): agent identifier.
           - ``X-Idempotency-Key`` (optional): idempotency UUID.
+          - ``X-Origin-Invocation-Id`` (optional, VAL-19): invocation identity;
+            stored in ``run_id`` when ``metadata.invocation_id`` is absent.
 
         Request body (JSON):
           ``{ "key": str, "value": str, "tier"?: str, "source"?: str,
               "tags"?: list[str], "scope"?: str, "confidence"?: float,
-              "agent_scope"?: str, "group"?: str }``
+              "agent_scope"?: str, "group"?: str,
+              "temporal_sensitivity"?: "high"|"medium"|"low",
+              "metadata"?: {"invocation_id"?: str} }``
+
+        ``metadata.invocation_id`` (VAL-19): when present, persisted into the
+        existing ``run_id`` provenance column so a memory row can be joined
+        back to the invocation that wrote it. Falls back to the
+        ``X-Origin-Invocation-Id`` header when ``metadata`` carries none. A
+        request with neither is unchanged (``run_id`` stays unset).
+
+        ``temporal_sensitivity`` (TAP-6696): when omitted, default-filled from
+        *value*'s content — a port/URL/version pin -> ``"high"``, an ADR
+        citation -> ``"low"``, otherwise left as the tier default. An explicit
+        value here is never overridden.
 
         Response (200) — read ``status``, do not assume 200 means persisted:
           - ``{"status": "saved", "key": <the requested key>, ...}`` — durable.
@@ -1321,6 +1356,15 @@ def create_app(
             )
         # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
         _, agent_id, _, _ = _resolve_tenant_headers(request)
+
+        # TAP-6696 / VAL-25-flag: refuse an anonymous write identity when
+        # TAPPS_BRAIN_STRICT_IDENTITY=1 (default off — no behavior change
+        # for existing callers). Checked before store resolution: a refused
+        # call has no reason to pay for it.
+        identity_refusal = strict_identity_refusal(agent_id)
+        if identity_refusal is not None:
+            raise HTTPException(status_code=400, detail=identity_refusal)
+
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard BEFORE the cache check so that
@@ -1373,9 +1417,25 @@ def create_app(
                     detail={"error": "bad_request", "detail": "Empty request body."},
                 )
             if len(raw) > 65_536:
+                # TAP-6696 / VAL-06: a request whose whole JSON body exceeds
+                # the transport cap trips before the value is even decoded,
+                # but the caller still needs the same /v1/documents pointer
+                # the per-entry ``value_too_large`` envelope carries below —
+                # otherwise a large value looks unrejected-for-size from the
+                # response alone (SC-10: additive, does not change the 413
+                # status code or the existing "payload_too_large" error tag).
+                _body_cap_detail = (
+                    f"Request body is {len(raw)} bytes, exceeding the 65536-byte "
+                    "limit. Use POST /v1/documents for long-form content."
+                )
                 raise HTTPException(
                     status_code=413,
-                    detail={"error": "payload_too_large", "detail": "Max 65536 bytes."},
+                    detail={
+                        "error": "payload_too_large",
+                        "detail": _body_cap_detail,
+                        "message": _body_cap_detail,
+                        "max_body_bytes": 65_536,
+                    },
                 )
             try:
                 body = json.loads(raw.decode("utf-8"))
@@ -1411,6 +1471,11 @@ def create_app(
 
             from tapps_brain.services import memory_service as _ms
 
+            # VAL-19: the wire's only invocation-identity signal — persisted
+            # into the existing ``run_id`` provenance column (SC-10: additive,
+            # a request carrying neither stays exactly as it behaves today).
+            _run_id = _extract_invocation_id(body, request)
+
             _async_store = _get_async_store_or_none()
             if _async_store is not None and _async_store_covers_tenant(project_id, agent_id):
                 # TAP-826: use async-native path — DB write goes through
@@ -1429,6 +1494,8 @@ def create_app(
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
+                    temporal_sensitivity=body.get("temporal_sensitivity"),
+                    run_id=_run_id,
                 )
             else:
                 # TAP-1099: offload sync DB call to a worker thread so the
@@ -1449,9 +1516,13 @@ def create_app(
                     agent_scope=body.get("agent_scope", "private"),
                     group=body.get("group"),
                     supersede=body.get("supersede", "global"),
+                    temporal_sensitivity=body.get("temporal_sensitivity"),
+                    run_id=_run_id,
                 )
             if isinstance(result, dict) and "error" in result:
-                status_code = 400
+                # TAP-6696 / VAL-06: an over-cap value is a 413, not a
+                # generic 400 — the envelope's message points to /v1/documents.
+                status_code = 413 if result.get("error") == "value_too_large" else 400
             else:
                 status_code = 200
 

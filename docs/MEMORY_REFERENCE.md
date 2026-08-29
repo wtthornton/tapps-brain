@@ -53,7 +53,7 @@ Promotion is not permanent. `maintenance_decay_learnings` (MCP, operator-only) d
 
 | Rule | Reason code | Default threshold |
 |------|-------------|-------------------|
-| An `approved` entry has been marked contradicted | `contradicted` | `demote_contradicted_approved: true` |
+| An entry has been marked contradicted (any `learning_status`) | `contradicted` | `demote_contradicted_approved: true` |
 | A `candidate`'s decayed confidence fell below the floor | `decayed` | `candidate_confidence_floor: 0.25` |
 | A `candidate` went unvalidated too long | `unvalidated` | `candidate_stale_days: 90` |
 

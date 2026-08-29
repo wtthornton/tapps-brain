@@ -20,8 +20,10 @@ from tapps_brain.agent_scope import agent_scope_valid_values_for_errors, normali
 from tapps_brain.memory_group import MEMORY_GROUP_UNSET
 from tapps_brain.models import LearningStatus, MemoryStatus, MemoryTier, tier_str
 from tapps_brain.otel_tracer import start_mcp_tool_span
-from tapps_brain.retrieval import _is_consolidated_source
+from tapps_brain.profile import ScoringConfig
+from tapps_brain.retrieval import MemoryRetriever, _is_consolidated_source
 from tapps_brain.services._common import _MAX_CONFIDENCE_BOOST, validate_iso_timestamp
+from tapps_brain.store import _ensure_str_value
 from tapps_brain.tier_normalize import normalize_save_tier
 
 logger = structlog.get_logger(__name__)
@@ -133,21 +135,18 @@ def brain_remember(
                 # Re-save preserves the historical record's provenance —
                 # save() constructs a fresh MemoryEntry, so omitting tags/
                 # source/scope would silently reset them to defaults.
-                store.save(
-                    key=old_entry.key,
-                    value=old_entry.value,
-                    tier=str(old_entry.tier),
-                    source=old_entry.source.value,
-                    source_agent=old_entry.source_agent,
-                    scope=old_entry.scope.value,
-                    tags=list(old_entry.tags),
-                    branch=old_entry.branch,
-                    agent_scope=old_entry.agent_scope,
-                    status=MemoryStatus.superseded.value,
+                # TAP-6697: one helper closes validity.  The old re-save set
+                # ``status`` but never ``invalid_at``, so an explicitly superseded
+                # row stayed temporally live and was hidden only by
+                # ``superseded_by``.  ``close_validity`` writes both, plus one
+                # audit row — and it is a partial update, so the re-save's
+                # field-by-field provenance copy (which silently reset anything it
+                # forgot to list) is no longer needed.
+                store.close_validity(
+                    old_entry.key,
+                    reason="supersession",
                     superseded_by=key,
-                    skip_consolidation=True,
-                    conflict_check=False,
-                    dedup=False,
+                    detail=f"superseded by {key}",
                 )
             response["superseded"] = supersedes
             return response
@@ -275,6 +274,11 @@ def brain_recall(
             # below), never for arbitrary expired rows (TAP-5783).
             include_historical=include_sources,
             include_contradicted=include_sources or include_contradicted,
+            # TAP-6697: the recall SQL now requires status='active'.  Forward the
+            # caller's opt-in so lifecycle-stale rows still reach the status
+            # filter below — otherwise include_stale=True would silently become a
+            # no-op the moment the predicate tightened.
+            include_stale=include_stale,
         )
         if include_sources:
             # The historical widening above also drags in plain expired rows;
@@ -290,40 +294,63 @@ def brain_recall(
         # Apply ALL-tags filter in Python (store.search tags= uses OR semantics)
         if filter_tags:
             entries = [e for e in entries if all(t in e.tags for t in filter_tags)]
-        results: list[Any] = []
-        for entry in entries:
-            if len(results) >= max_results:
-                break
+
+        # TAP-6696 / VAL-01: rank by a numeric composite score instead of the
+        # raw search order. Every candidate is scored (not just the first
+        # ``max_results``) so the top-scored entries win the cut, then the
+        # winners are sorted desc — reusing MemoryRetriever's weights keeps
+        # recall and context-injection ranking consistent.
+        now = datetime.now(tz=UTC)
+        _raw_scoring_config = getattr(getattr(store, "profile", None), "scoring", None)
+        # `store` may be a test double whose unset attributes auto-vivify as
+        # further mocks rather than raising AttributeError, so `getattr(...,
+        # None)` never falls through to its default. Type-check instead of
+        # trusting the getattr chain — a non-``ScoringConfig`` value is
+        # treated the same as "no profile configured" (MemoryRetriever's own
+        # module-default weights).
+        scoring_config = (
+            _raw_scoring_config if isinstance(_raw_scoring_config, ScoringConfig) else None
+        )
+        retriever = MemoryRetriever(scoring_config=scoring_config)
+        total_entries = len(entries)
+        candidates: list[tuple[dict[str, Any], float]] = []
+        for rank_index, entry in enumerate(entries):
+            item: dict[str, Any]
             if isinstance(entry, dict):
                 # Plain-dict path (legacy): no status field available; include by default.
-                results.append(entry)
-            else:
-                if not include_stale:
-                    entry_status = getattr(entry, "status", MemoryStatus.active)
-                    if entry_status in _excluded_statuses:
-                        continue
-                item: dict[str, Any] = {
-                    "key": entry.key,
-                    "value": entry.value,
-                    "tier": str(entry.tier),
-                    "confidence": entry.confidence,
-                    "tags": list(entry.tags) if entry.tags else [],
-                }
-                if getattr(entry, "memory_class", None) is not None:
-                    item["memory_class"] = entry.memory_class
-                failed = getattr(entry, "failed_approaches", None)
-                if failed:
-                    item["failed_approaches"] = list(failed)
-                # Surface stale/superseded status when include_stale=True so
-                # diagnostic callers can see why an entry was normally filtered out.
+                item = dict(entry)
+                item["score"] = round(float(item.get("confidence", 0.5)), 4)
+                candidates.append((item, item["score"]))
+                continue
+            if not include_stale:
                 entry_status = getattr(entry, "status", MemoryStatus.active)
-                if entry_status != MemoryStatus.active:
-                    item["status"] = str(entry_status)
-                    stale_reason = getattr(entry, "stale_reason", None)
-                    if stale_reason:
-                        item["stale_reason"] = stale_reason
-                results.append(item)
-        return results
+                if entry_status in _excluded_statuses:
+                    continue
+            item = {
+                "key": entry.key,
+                "value": entry.value,
+                "tier": str(entry.tier),
+                "confidence": entry.confidence,
+                "tags": list(entry.tags) if entry.tags else [],
+            }
+            if getattr(entry, "memory_class", None) is not None:
+                item["memory_class"] = entry.memory_class
+            failed = getattr(entry, "failed_approaches", None)
+            if failed:
+                item["failed_approaches"] = list(failed)
+            # Surface stale/superseded status when include_stale=True so
+            # diagnostic callers can see why an entry was normally filtered out.
+            entry_status = getattr(entry, "status", MemoryStatus.active)
+            if entry_status != MemoryStatus.active:
+                item["status"] = str(entry_status)
+                stale_reason = getattr(entry, "stale_reason", None)
+                if stale_reason:
+                    item["stale_reason"] = stale_reason
+            item["score"] = retriever.score_by_rank(entry, rank_index, total_entries, now)
+            candidates.append((item, item["score"]))
+
+        candidates.sort(key=lambda pair: pair[1], reverse=True)
+        return [item for item, _ in candidates[:max_results]]
 
 
 def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
@@ -939,6 +966,7 @@ def _validate_and_normalize_save(
     agent_scope: str,
     source_agent: str,
     group: str | None,
+    temporal_sensitivity: str | None = None,
 ) -> dict[str, Any]:
     """Validate + normalize save inputs, shared by :func:`memory_save` and
     :func:`memory_save_many` (TAP-2800).
@@ -999,6 +1027,7 @@ def _validate_and_normalize_save(
         "agent_scope": agent_scope,
         "source_agent": resolved_agent,
         "memory_group": memory_group_arg,
+        "temporal_sensitivity": temporal_sensitivity,
     }
 
 
@@ -1037,6 +1066,8 @@ def memory_save(
     source_agent: str = "",
     group: str | None = None,
     supersede: str = SUPERSEDE_GLOBAL,
+    temporal_sensitivity: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Save a memory entry with full structured validation.
 
@@ -1045,6 +1076,11 @@ def memory_save(
     ``{"status": "saved", "key", "tier", "confidence", "memory_group"}``
     on success, or ``{"error": "bad_request", "detail": ...}`` when the
     underlying pydantic model rejects the payload (TAP-747).
+
+    ``temporal_sensitivity`` (``"high"``/``"medium"``/``"low"``, TAP-6696):
+    when omitted, :meth:`~tapps_brain.store.MemoryStore.save` default-fills
+    it from *value*'s content (a port/URL/version pin -> ``"high"``, an ADR
+    citation -> ``"low"``); an explicit value here is never overridden.
 
     *supersede* selects how far a save may invalidate its neighbours:
 
@@ -1057,10 +1093,28 @@ def memory_save(
         left alone.  For key-spaces holding *independent facts* — one row per
         distinct thing — where topical similarity between neighbours is
         expected and is not a contradiction.
+
+    ``run_id`` (VAL-19): opaque invocation identity, passed straight through
+    to :meth:`MemoryStore.save` (no validation — it is provenance, not a
+    lookup key).
     """
     supersede_error = _validate_supersede(supersede)
     if supersede_error is not None:
         return supersede_error
+
+    # TAP-6696 / VAL-06: checked here, before store.save(), rather than
+    # inside it — store.save() is a direct low-level API whose pre-existing
+    # contract raises a pydantic ValidationError for a value over the global
+    # cap (tests/unit/test_edge_cases.py); the friendlier value_too_large
+    # envelope naming /v1/documents belongs to this service layer only.
+    # ``store`` may be a test double whose unconfigured methods return a
+    # truthy Mock rather than None, so type-check the result the same way
+    # brain_recall's scoring_config resolution does above
+    # (tests/unit/test_tap747_slug_validation_400.py).
+    _too_large_raw = store._value_too_large_error(_ensure_str_value(value))
+    too_large: dict[str, Any] | None = _too_large_raw if isinstance(_too_large_raw, dict) else None
+    if too_large is not None:
+        return too_large
 
     validated = _validate_and_normalize_save(
         store,
@@ -1075,6 +1129,7 @@ def memory_save(
         agent_scope=agent_scope,
         source_agent=source_agent,
         group=group,
+        temporal_sensitivity=temporal_sensitivity,
     )
     if "error" in validated:
         return validated
@@ -1083,6 +1138,7 @@ def memory_save(
     try:
         result = store.save(
             **validated,
+            run_id=run_id,
             report=report,
             conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
         )
@@ -1144,6 +1200,14 @@ def _save_result_envelope(
     if requested_key is not None and result.key != requested_key:
         envelope["status"] = "coalesced"
         envelope["key"] = requested_key
+        envelope["coalesced_into"] = result.key
+        envelope["persisted"] = False
+    elif (report or {}).get("coalesced"):
+        # Same-key dedup fast-path (TAP-6696 round 3): MemoryStore.save()
+        # returns the reinforced MemoryEntry (its own direct-caller
+        # contract), so the "no new row was written" signal travels via
+        # *report* instead of the entry itself — see store.py::save().
+        envelope["status"] = "coalesced"
         envelope["coalesced_into"] = result.key
         envelope["persisted"] = False
     invalidated = (report or {}).get("invalidated")
@@ -2231,6 +2295,8 @@ async def async_memory_save(
     source_agent: str = "",
     group: str | None = None,
     supersede: str = SUPERSEDE_GLOBAL,
+    temporal_sensitivity: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Async-native counterpart of :func:`memory_save`.
 
@@ -2291,6 +2357,8 @@ async def async_memory_save(
             memory_group=memory_group_arg,
             report=report,
             conflict_check=(supersede != SUPERSEDE_KEY_SCOPED),
+            temporal_sensitivity=temporal_sensitivity,
+            run_id=run_id,
         )
     except _PydanticValidationError as exc:
         errors = exc.errors()

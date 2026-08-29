@@ -374,6 +374,7 @@ class PostgresPrivateBackend:
         as_of: str | None = None,
         memory_class: str | None = None,
         include_expired: bool = False,
+        include_stale: bool = False,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -416,6 +417,7 @@ class PostgresPrivateBackend:
             memory_class=memory_class,
             as_of=as_of,
             include_expired=include_expired,
+            include_stale=include_stale,
         )
         params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
 
@@ -439,6 +441,7 @@ class PostgresPrivateBackend:
                     memory_class=memory_class,
                     as_of=as_of,
                     include_expired=include_expired,
+                    include_stale=include_stale,
                     match_any=True,
                 )
                 or_params: list[Any] = [
@@ -472,6 +475,7 @@ class PostgresPrivateBackend:
         *,
         include_expired: bool = False,
         as_of: str | None = None,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -495,7 +499,7 @@ class PostgresPrivateBackend:
 
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         knn_sql, mid_params = _sql.build_knn_search_sql(
-            include_expired=include_expired, as_of=as_of
+            include_expired=include_expired, as_of=as_of, include_stale=include_stale
         )
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -977,7 +981,7 @@ class PostgresPrivateBackend:
     # GC archive (migration 006, STORY-066.3)
     # ------------------------------------------------------------------
 
-    def archive_entry(self, entry: MemoryEntry) -> int:
+    def archive_entry(self, entry: MemoryEntry, *, reason: str | None = None) -> int:
         """INSERT a GC-evicted entry into ``gc_archive`` and return byte_count.
 
         The payload is the full ``MemoryEntry.model_dump()`` serialised to JSON.
@@ -986,9 +990,17 @@ class PostgresPrivateBackend:
 
         Best-effort: logs and returns 0 on failure — GC must not be blocked by
         an archive write error.
+
+        *reason* (TAP-6697) is stamped into the payload JSONB as
+        ``archive_reason``.  ``gc_archive`` has no dedicated reason column
+        (migration 006) and adding one would not be additive for readers that
+        ``SELECT *``; the payload already carries the full entry snapshot, so an
+        extra key there is free and queryable via ``payload->>'archive_reason'``.
         """
         try:
             payload_dict = entry.model_dump()
+            if reason is not None:
+                payload_dict["archive_reason"] = reason
             payload_json = json.dumps(payload_dict, default=str)
             byte_count = len(payload_json.encode("utf-8"))
             with self._scoped_conn() as conn, conn.cursor() as cur:

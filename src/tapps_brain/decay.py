@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 import structlog
 from pydantic import BaseModel, Field, field_validator
 
-from tapps_brain.models import MemoryEntry, MemorySource, MemoryTier
+from tapps_brain.models import MemoryEntry, MemorySource, MemoryStatus, MemoryTier
 from tapps_brain.profile import MemoryProfile
 
 logger = structlog.get_logger(__name__)
@@ -566,6 +566,129 @@ DEMOTE_REASON_DECAYED = "decayed"
 DEMOTE_REASON_CONTRADICTED = "contradicted"
 
 
+class DecayRefreshAction(BaseModel):
+    """One row the scheduled decay refresh judges no longer live (TAP-6697).
+
+    ``action`` is ``"close"`` (decayed past the stale threshold — the row stays
+    in ``private_memories`` with ``status='stale'`` and a closed validity
+    interval) or ``"archive"`` (decayed to the tier's confidence floor — the row
+    moves to ``gc_archive`` and leaves the live table).
+    """
+
+    key: str
+    action: str
+    tier: str
+    effective_confidence: float
+    stored_confidence: float
+    days_at_floor: float | None = None
+
+
+def identify_decay_refresh(
+    entries: list[MemoryEntry],
+    config: DecayConfig,
+    *,
+    now: datetime | None = None,
+    floor_retention_days: float = 0.0,
+) -> list[DecayRefreshAction]:
+    """Return the rows a scheduled decay refresh should close or archive.
+
+    Pure and deterministic — it decides, it does not write.  Same split as
+    :func:`identify_learning_demotions`: the dry-run report and the apply pass
+    consume the *same* list, so a dry run cannot describe a different set of
+    rows than the apply would touch.
+
+    KB-3.3: lazy read-path decay is unchanged.  This is the scheduled half —
+    it writes down what the read path has been recomputing on every recall, so
+    a row that decayed below the threshold years ago stops costing top-K budget
+    and stops being resurrected by a query with no other candidates.
+
+    Rules, in priority order per entry:
+
+    1. **archive** — effective confidence is at or below the tier's confidence
+       floor and it has been there for *floor_retention_days*.  Floor is checked
+       *first* so a row deep below the floor is archived outright rather than
+       marked stale on this pass and archived on some later one; GC deliberately
+       never auto-archives ``status='stale'`` rows (they await human review), so
+       a stale-then-archive ordering would strand them forever.
+    2. **close** — effective confidence is below ``config.stale_threshold``.
+
+    Only rows that are currently live are considered: ``status='active'`` with
+    no closing bound.  Re-running the pass is therefore idempotent — a row it
+    closed last night is no longer ``active`` and is skipped.  Rows carrying a
+    ``superseded_by`` link are skipped for the same reason GC skips them: the
+    supersession chain has to stay inspectable for ``undo_consolidation_merge``.
+
+    Note ``calculate_decayed_confidence`` clamps its result to
+    ``[floor, ceiling]``, so "below the floor" can only ever be observed as
+    "equal to the floor" — the comparison is ``<=``, matching
+    :meth:`MemoryGarbageCollector._archive_reasons`.
+
+    Args:
+        entries: Candidate rows (the caller's full live set).
+        config: Decay configuration — tier half-lives, floors, stale threshold.
+        now: Evaluation time; defaults to ``datetime.now(UTC)``.
+        floor_retention_days: Grace period a row must spend at the floor before
+            it is archived.  Defaults to ``0.0`` (archive as soon as the floor is
+            reached); pass ``GCConfig.floor_retention_days`` to match GC.
+
+    Returns:
+        One :class:`DecayRefreshAction` per row needing work, input order.
+    """
+    if now is None:
+        now = datetime.now(tz=UTC)
+
+    actions: list[DecayRefreshAction] = []
+    for entry in entries:
+        if getattr(entry, "status", None) not in (None, MemoryStatus.active):
+            continue
+        if entry.invalid_at is not None or entry.superseded_by is not None:
+            continue
+
+        effective = calculate_decayed_confidence(entry, config, now=now)
+        floor = _get_confidence_floor(entry.tier, config)
+        tier_str = entry.tier.value if isinstance(entry.tier, MemoryTier) else str(entry.tier)
+
+        if effective <= floor:
+            days_at_floor = _days_at_floor_for(entry, config, now)
+            if days_at_floor >= floor_retention_days:
+                actions.append(
+                    DecayRefreshAction(
+                        key=entry.key,
+                        action="archive",
+                        tier=tier_str,
+                        effective_confidence=float(effective),
+                        stored_confidence=float(entry.confidence),
+                        days_at_floor=days_at_floor,
+                    )
+                )
+                continue
+
+        if effective < config.stale_threshold:
+            actions.append(
+                DecayRefreshAction(
+                    key=entry.key,
+                    action="close",
+                    tier=tier_str,
+                    effective_confidence=float(effective),
+                    stored_confidence=float(entry.confidence),
+                )
+            )
+    return actions
+
+
+def _days_at_floor_for(entry: MemoryEntry, config: DecayConfig, now: datetime) -> float:
+    """Days *entry* has spent at its confidence floor.
+
+    Delegates to :meth:`MemoryGarbageCollector._days_at_floor` so the refresh and
+    GC invert the identical decay curve (per-entry stability, temporal-sensitivity
+    multiplier, importance-tag boosts, active decay model).  Reimplementing the
+    inversion here is how the two passes would drift apart.
+    """
+    from tapps_brain.gc import MemoryGarbageCollector
+
+    return float(MemoryGarbageCollector(config=config)._days_at_floor(entry, now))
+
+
 class LearningDemotion(BaseModel):
     """One entry the decay sweep judges no longer injectable."""
 
@@ -590,9 +713,12 @@ def identify_learning_demotions(
 
     Three rules, in priority order per entry:
 
-    1. An ``approved`` entry that is marked contradicted is demoted. An approval
-       that survives its own contradiction is worse than no gate at all, because
-       consumers trust it specifically *because* it is approved.
+    1. An entry marked contradicted is demoted, **whatever its prior
+       ``learning_status``**. A learning that survives its own contradiction is
+       worse than no gate at all — an approved one because consumers trust it
+       specifically *because* it is approved, a candidate one because nothing
+       else in this function mentions ``contradicted``, so a recent candidate
+       above the confidence floor would otherwise be permanently immune.
     2. A ``candidate`` whose decayed confidence has fallen below the floor is
        demoted — the evidence for it has aged out.
     3. A ``candidate`` nobody promoted within ``candidate_stale_days`` is
@@ -619,17 +745,31 @@ def identify_learning_demotions(
         if status is None or status == LearningStatus.demoted:
             continue
 
-        if status == LearningStatus.approved:
-            if demote_contradicted and getattr(entry, "contradicted", False):
-                detail = getattr(entry, "contradiction_reason", None) or "no reason recorded"
-                demotions.append(
-                    LearningDemotion(
-                        key=entry.key,
-                        from_status=str(status),
-                        reason_code=DEMOTE_REASON_CONTRADICTED,
-                        reason=f"approved learning was contradicted: {detail}",
-                    )
+        # Rule 1 is status-agnostic (TAP-6697 round 2).  It used to sit under
+        # ``if status == approved:``, which then unconditionally ``continue``d --
+        # so on a store where every contradicted row is a ``candidate`` (all
+        # 7,725 of them in the deployed brain as of 2026-08-27) the rule fired
+        # on nothing, and a
+        # contradicted candidate that is recent and above the confidence floor is
+        # immune to rules 2 and 3 as well.  The contract has no status
+        # precondition: a contradicted learning is not injectable regardless of
+        # how much trust it had accumulated.
+        if demote_contradicted and getattr(entry, "contradicted", False):
+            detail = getattr(entry, "contradiction_reason", None) or "no reason recorded"
+            demotions.append(
+                LearningDemotion(
+                    key=entry.key,
+                    from_status=str(status),
+                    reason_code=DEMOTE_REASON_CONTRADICTED,
+                    reason=f"{status} learning was contradicted: {detail}",
                 )
+            )
+            continue
+
+        if status == LearningStatus.approved:
+            # An approved entry that is not contradicted is left alone: rules 2
+            # and 3 judge *candidates* on decay and staleness, and an approval
+            # carries an explicit eval/human signal that neither rule outranks.
             continue
 
         # Remaining case: candidate.

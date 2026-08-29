@@ -30,6 +30,7 @@ from tapps_brain.consolidation import (
 from tapps_brain.models import (
     ConsolidatedEntry,
     MemoryEntry,
+    MemoryStatus,
     _utc_now_iso,
 )
 from tapps_brain.rate_limiter import batch_exempt_scope
@@ -363,6 +364,9 @@ def undo_consolidation_merge(  # noqa: PLR0911
                     "contradiction_reason": None,
                     "invalid_at": None,
                     "superseded_by": None,
+                    # TAP-6697: undo the status write close_validity made, or the
+                    # restored source is invisible to the live-row predicate.
+                    "status": MemoryStatus.active,
                     "updated_at": now,
                 }
             )
@@ -743,7 +747,6 @@ def _persist_consolidated_entry(
         if merged_relations:
             store.save_relations(consolidated.key, merged_relations)
 
-        now = _utc_now_iso()
         for key in source_keys:
             if key != consolidated.key:
                 if source_snapshots is not None:
@@ -765,13 +768,15 @@ def _persist_consolidated_entry(
                             f"to avoid superseding the fresh write"
                         )
                         raise RuntimeError(msg)
-                updated = store.update_fields(
+                # TAP-6697: one helper closes validity.  Before this the merge
+                # wrote invalid_at + contradicted but left status='active', so a
+                # consolidated source was live on the status axis and dead on the
+                # temporal one (corrections-log #3).
+                updated = store.close_validity(
                     key,
-                    contradicted=True,
-                    contradiction_reason=f"consolidated into {consolidated.key}",
-                    # EPIC-004: set temporal fields for bi-temporal versioning
-                    invalid_at=now,
+                    reason="consolidation",
                     superseded_by=consolidated.key,
+                    detail=f"consolidated into {consolidated.key}",
                 )
                 if updated is None:
                     msg = (
@@ -806,6 +811,9 @@ def _persist_consolidated_entry(
                             contradiction_reason=None,
                             invalid_at=None,
                             superseded_by=None,
+                            # TAP-6697: close_validity set status too; reopen it
+                            # or the rolled-back source stays out of recall.
+                            status=MemoryStatus.active,
                         )
                     except Exception:
                         logger.warning(

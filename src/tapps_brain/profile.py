@@ -662,9 +662,14 @@ class LearningDecayConfig(BaseModel):
     demote_contradicted_approved: bool = Field(
         default=True,
         description=(
-            "Demote an approved learning once it is marked contradicted. An "
-            "approval that survives its own contradiction is worse than no gate, "
-            "because consumers trust it."
+            "Demote a learning once it is marked contradicted, whatever its prior "
+            "learning_status. A learning that survives its own contradiction is "
+            "worse than no gate: an approved one because consumers trust it, a "
+            "candidate one because no other decay rule inspects `contradicted`, so "
+            "a recent, high-confidence contradicted candidate would never be "
+            "demoted at all. The field name keeps its `_approved` suffix for "
+            "config compatibility (existing profile YAML sets it by that name); "
+            "its meaning is the whole contradiction rule, not just the approved arm."
         ),
     )
 

@@ -115,6 +115,34 @@ def _resolve_tenant_headers(request: Request) -> tuple[str, str, str | None, str
     return project_id, agent_id, scope, group
 
 
+# Anonymous placeholders Ruling 9 forbids under strict identity: the implicit
+# ``_resolve_tenant_headers`` default ("unknown") and the literal string a
+# caller might send when it has no real identity wired up yet ("default").
+_ANONYMOUS_AGENT_IDS = frozenset({"unknown", "default"})
+
+
+def strict_identity_refusal(agent_id: str) -> dict[str, Any] | None:
+    """Refusal envelope for a write under ``TAPPS_BRAIN_STRICT_IDENTITY=1`` (VAL-25-flag).
+
+    Returns ``None`` (no refusal) when the flag is off — the default — or
+    when *agent_id* is a real logical name. Callers wrap a non-``None``
+    result in a 400 response; this function does no I/O and raises nothing,
+    so it is safe to call unconditionally at the top of a write handler.
+    """
+    from tapps_brain.http.settings import is_strict_identity_enabled
+
+    if not is_strict_identity_enabled():
+        return None
+    if agent_id not in _ANONYMOUS_AGENT_IDS:
+        return None
+    detail = (
+        "TAPPS_BRAIN_STRICT_IDENTITY is enabled: writes must resolve to a real "
+        "agent identity, not 'unknown' or 'default'. Set X-Agent-Id (or the "
+        "higher-precedence X-Tapps-Agent) to a stable logical name."
+    )
+    return {"error": "identity_required", "detail": detail, "message": detail, "agent_id": agent_id}
+
+
 async def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | None:
     """Verify the bearer token for ``/mcp`` requests.
 
@@ -411,6 +439,12 @@ class RestProfileGateMiddleware(BaseHTTPMiddleware):
                 agent_id=agent_id,
                 suggested_profile=suggested,
             )
+            # TAP-6696 / VAL-10: same denied_profile outcome the MCP call-tool
+            # interceptor records, so a REST-triggered denial shows up in
+            # /metrics too (previously this branch only logged, never metriced).
+            from tapps_brain.mcp_server.tool_filter import record_denied_profile_call
+
+            record_denied_profile_call(profile=resolved_profile, tool=tool)
             return JSONResponse(
                 status_code=403,
                 content=out_of_profile_response_body(

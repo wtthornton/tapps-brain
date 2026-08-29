@@ -306,6 +306,7 @@ def _build_temporal_kwargs(
     time_field: str,
     as_of: str | None,
     include_superseded: bool,
+    include_stale: bool = False,
 ) -> dict[str, Any]:
     """Assemble the temporal kwargs forwarded to candidate retrieval."""
     kw: dict[str, Any] = {}
@@ -319,6 +320,11 @@ def _build_temporal_kwargs(
         kw["as_of"] = as_of
     if include_superseded:
         kw["include_superseded"] = True
+    if include_stale:
+        # TAP-6697: the recall SQL now requires status='active'.  A caller that
+        # asked for lifecycle-stale rows must reach the Python status filter,
+        # so the opt-in has to travel all the way down to the SQL builder.
+        kw["include_stale"] = True
     return kw
 
 
@@ -604,6 +610,35 @@ class MemoryRetriever:
             stale=stale_flag,
         )
 
+    def score_by_rank(
+        self,
+        entry: MemoryEntry,
+        rank_index: int,
+        total_candidates: int,
+        now: datetime,
+    ) -> float:
+        """Composite score for an entry from a pre-ranked candidate list (TAP-6696).
+
+        For callers that already receive entries ordered by an external
+        relevance signal (FTS/KNN) without its raw magnitude exposed —
+        e.g. ``brain_recall``'s ``store.search()`` path — relevance is
+        derived from rank position (1.0 for the top hit, decaying toward
+        0.0 for the last) instead of BM25. Confidence, recency and frequency
+        use the same components and this retriever's configured weights as
+        :meth:`_build_scored_memory_item`, so recall and context injection
+        rank consistently.
+        """
+        relevance = 1.0 - (rank_index / (total_candidates - 1)) if total_candidates > 1 else 1.0
+        recency = self._recency_score(entry, now)
+        frequency = self._frequency_score(entry)
+        composite = (
+            self._w_relevance * relevance
+            + self._w_confidence * entry.confidence
+            + self._w_recency * recency
+            + self._w_frequency * frequency
+        )
+        return round(composite, 4)
+
     def search(
         self,
         query: str,
@@ -695,6 +730,7 @@ class MemoryRetriever:
             time_field=time_field,
             as_of=as_of,
             include_superseded=include_superseded,
+            include_stale=include_stale,
         )
 
         # Include contradicted entries if explicitly requested OR if include_sources=True
@@ -1111,6 +1147,7 @@ class MemoryRetriever:
         as_of: str | None = None,
         include_superseded: bool = False,
         include_contradicted: bool = False,
+        include_stale: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Retrieve candidate entries and compute BM25 relevance scores.
 
@@ -1135,6 +1172,7 @@ class MemoryRetriever:
                 as_of=as_of,
                 include_historical=include_superseded,
                 include_contradicted=include_contradicted,
+                include_stale=include_stale,
             )
             if fts_results:
                 results = self._bm25_score_entries(query, fts_results, store)
@@ -1171,6 +1209,7 @@ class MemoryRetriever:
         as_of: str | None = None,
         include_superseded: bool = False,
         include_contradicted: bool = False,
+        include_stale: bool = False,
     ) -> list[tuple[MemoryEntry, float]]:
         """Epic 65.8: Run BM25 + vector search in parallel, merge with RRF.
 
@@ -1232,6 +1271,7 @@ class MemoryRetriever:
             include_expired=include_superseded,
             as_of=as_of,
             include_contradicted=include_contradicted,
+            include_stale=include_stale,
         )
         vector_keys = [k for k, _ in vector_results]
 
@@ -1292,6 +1332,7 @@ class MemoryRetriever:
         include_expired: bool = False,
         as_of: str | None = None,
         include_contradicted: bool = False,
+        include_stale: bool = False,
     ) -> list[tuple[str, float]]:
         """Epic 65.8: Embed query, cosine similarity with entry embeddings.
 
@@ -1329,7 +1370,13 @@ class MemoryRetriever:
         # Do not gate on list_all() — cold/empty cache can still have vectors in DB.
         if len(q) == _PGVECTOR_DIM:
             try:
-                knn = store.knn_search(q, limit, include_expired=include_expired, as_of=as_of)
+                knn = store.knn_search(
+                    q,
+                    limit,
+                    include_expired=include_expired,
+                    as_of=as_of,
+                    include_stale=include_stale,
+                )
             except Exception as e:
                 logger.warning("vector_search_knn_failed", error=str(e), exc_info=True)
                 # Surface degradation so health/injection do not treat this as

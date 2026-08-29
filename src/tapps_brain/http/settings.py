@@ -216,6 +216,20 @@ def is_strict_mode() -> bool:
     return os.environ.get("TAPPS_BRAIN_STRICT", "").strip() == "1"
 
 
+def is_strict_identity_enabled() -> bool:
+    """True when ``TAPPS_BRAIN_STRICT_IDENTITY=1`` (TAP-6696 / VAL-25-flag).
+
+    Default OFF — zero behavior change for existing callers. When on, writes
+    resolving ``agent_id`` to the anonymous placeholders ``"unknown"`` /
+    ``"default"`` are refused (Ruling 9: agent identity must be a logical
+    name — ``AgentConfig.name`` / ``CLAUDE_AGENT_ID`` / repo slug — never a
+    per-checkout hash or the unset default). Read once per call (not cached)
+    so a deployed brain can be retuned without a restart, matching
+    :func:`is_strict_mode`'s convention.
+    """
+    return os.environ.get("TAPPS_BRAIN_STRICT_IDENTITY", "").strip() == "1"
+
+
 def get_settings() -> _Settings:
     """Return the process-wide :class:`_Settings` singleton."""
     return _settings
