@@ -308,8 +308,36 @@ class TestPostgresHiveBackendGroups:
         backend, _, _, mock_cursor = _make_backend()
         mock_cursor.fetchone.return_value = None
 
-        result = backend.add_group_member("no-group", "agent-1")
+        result = backend.add_group_member("no-group", "agent-1", "proj-a")
         assert result is False
+
+    def test_add_group_member_returns_false_when_project_id_empty(self) -> None:
+        backend, _, _, _ = _make_backend()
+
+        result = backend.add_group_member("some-group", "agent-1", "")
+        assert result is False
+
+    def test_get_agent_groups_filters_on_project_id(self) -> None:
+        """TAP-6695: the SQL must bind (agent_id, project_id), not agent_id alone."""
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.fetchall.return_value = [("grp1",)]
+
+        result = backend.get_agent_groups("agent-1", "proj-a")
+        assert result == ["grp1"]
+
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "agent_id = %s AND project_id = %s" in sql
+        assert params == ("agent-1", "proj-a")
+
+    def test_get_agent_groups_empty_project_id_short_circuits(self) -> None:
+        """A falsy project_id must return [] without touching the database —
+        this is the guard that keeps the migration's fail-closed backfill
+        sentinel (project_id = '') from ever being matched by a caller that
+        forgot to resolve a real project_id."""
+        backend, _, _, mock_cursor = _make_backend()
+
+        assert backend.get_agent_groups("agent-1", "") == []
+        mock_cursor.execute.assert_not_called()
 
     def test_list_groups_returns_list(self) -> None:
         backend, _, _, mock_cursor = _make_backend()

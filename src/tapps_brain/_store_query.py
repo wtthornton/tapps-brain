@@ -386,9 +386,17 @@ class QueryMixin(_MemoryStoreBase):
         Returns ``None`` when there is no Hive backend, when the lookup fails, or
         when the agent belongs to no group — every one of which leaves recall
         executing exactly the SQL it executes today.
+
+        TAP-6695: membership is additionally scoped to ``self._project_id`` —
+        server-side state resolved at ``MemoryStore`` construction from env /
+        project root, never a request-supplied value (a membership widened on
+        a self-asserted project would just move the same authorisation hole).
+        A store with no resolved project_id gets no group widening at all.
         """
         hive = self._hive_store
         if hive is None:
+            return None
+        if not self._project_id:
             return None
         get_agent_groups = getattr(hive, "get_agent_groups", None)
         if not callable(get_agent_groups):
@@ -397,7 +405,7 @@ class QueryMixin(_MemoryStoreBase):
             # ``_hive_agent_id`` (not ``_agent_id``, which is ``None`` for an
             # unnamed server) is the identity Hive membership is keyed on — same
             # source ``recall.py`` already uses to resolve group namespaces.
-            groups = [str(g) for g in get_agent_groups(self._hive_agent_id) if g]
+            groups = [str(g) for g in get_agent_groups(self._hive_agent_id, self._project_id) if g]
         except Exception:
             # A group lookup that fails must not fail recall; it degrades to the
             # pre-TAP-6695 behaviour (own rows only), which is the safe direction.

@@ -868,14 +868,19 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
 
         Fail-closed: groups that cannot be joined are dropped from
         ``self._groups`` so later scope checks do not assume membership.
+        Membership is registered under ``self._project_id`` (TAP-6695) — a
+        store with no resolved project_id cannot register a membership row
+        that would ever be found again (``get_agent_groups`` requires a real
+        project_id), so auto-join is skipped entirely rather than writing an
+        inert row.
         """
-        if self._hive_store is None or not self._agent_id:
+        if self._hive_store is None or not self._agent_id or not self._project_id:
             return
         joined: list[str] = []
         for group_name in self._groups:
             try:
                 self._hive_store.create_group(group_name)
-                self._hive_store.add_group_member(group_name, self._agent_id)
+                self._hive_store.add_group_member(group_name, self._agent_id, self._project_id)
                 joined.append(group_name)
             except Exception:
                 logger.warning(

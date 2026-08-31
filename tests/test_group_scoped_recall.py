@@ -37,6 +37,7 @@ from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain._store_query import QueryMixin
 from tapps_brain.models import MemoryEntry
 from tapps_brain.postgres_connection import PostgresConnectionManager
+from tapps_brain.postgres_hive import PostgresHiveBackend
 from tapps_brain.postgres_private import PostgresPrivateBackend
 from tests._pg_fixture import ensure_rls_role, resolve_fixture_dsn
 
@@ -46,6 +47,7 @@ _WRITER = "tap6695-writer"
 _SIBLING = "tap6695-in-group-sibling"
 _OUTSIDER = "tap6695-out-of-group"
 _QUERY = "phosphorescent kingfisher telemetry"
+_PROJECT_A = "tap6695-stub-project-a"
 
 
 _RLS_ROLE = "tap6695_recall_probe"
@@ -222,28 +224,114 @@ class TestThreeWayDiscrimination:
         assert widened.key == shared_row
 
 
+class TestGroupMembershipIsProjectScoped:
+    """TAP-6695 differential: ``hive_group_members`` membership must not cross
+    projects. Before the fix, ``get_agent_groups(agent_id)`` was keyed on
+    ``agent_id`` alone — an agent registered as a group member under one
+    project gained group-scoped recall in *every* project it held rows under
+    (the production shape: ``default`` was a member of ``nlt-store-fleet``
+    and held rows in 177 different projects). This exercises the real
+    ``PostgresHiveBackend`` (``add_group_member`` / ``get_agent_groups``)
+    against the throwaway fixture container, not a stub.
+    """
+
+    _GROUP = "tap6695-tenancy-guild"
+    _GROUP_TAGS = [f"{_sql.GROUP_SCOPE_TAG_PREFIX}{_GROUP}"]
+    _MEMBER = "tap6695-tenancy-member"
+
+    @pytest.fixture()
+    def hive(self, cm: PostgresConnectionManager) -> PostgresHiveBackend:
+        return PostgresHiveBackend(cm)
+
+    @pytest.fixture()
+    def project_b(self) -> str:
+        return f"tap6695-projb-{uuid.uuid4().hex[:10]}"
+
+    @pytest.fixture()
+    def membership(self, hive: PostgresHiveBackend, project_id: str) -> None:
+        """Register ``_MEMBER`` in ``_GROUP`` for project A ONLY — never project B."""
+        hive.create_group(self._GROUP)
+        added = hive.add_group_member(self._GROUP, self._MEMBER, project_id)
+        assert added is True
+
+    def test_positive_control_member_recalls_the_shared_row_in_project_a(
+        self, cm, hive, project_id, membership
+    ) -> None:
+        """Show FIRST that membership genuinely widens recall in project A —
+        an absence proven later (project B) is only meaningful next to this."""
+        groups = hive.get_agent_groups(self._MEMBER, project_id)
+        assert groups == [self._GROUP]
+        stub = _StubStore(hive=hive, project_id=project_id, agent_id=self._MEMBER)
+        assert stub._recall_group_tags() == self._GROUP_TAGS
+
+        _backend(cm, project_id, _WRITER).save(
+            _entry(f"tenancy-shared-{uuid.uuid4().hex[:8]}", tags=[*self._GROUP_TAGS, "critical"])
+        )
+        hits = _backend(cm, project_id, self._MEMBER).search(_QUERY, group_tags=self._GROUP_TAGS)
+        assert len(hits) == 1
+
+    def test_membership_registered_for_project_a_grants_no_groups_in_project_b(
+        self, hive, project_id, project_b, membership
+    ) -> None:
+        """The exact TAP-6695 defect, on the membership lookup itself: the same
+        ``agent_id`` (playing the role production's ``default`` identity
+        plays) queries a DIFFERENT project it was never registered under —
+        ``get_agent_groups`` must return no groups there."""
+        assert hive.get_agent_groups(self._MEMBER, project_b) == []
+        stub = _StubStore(hive=hive, project_id=project_b, agent_id=self._MEMBER)
+        assert stub._recall_group_tags() is None
+
+    def test_same_agent_does_not_recall_a_project_b_row_shared_to_the_same_group(
+        self, cm, hive, project_id, project_b, membership
+    ) -> None:
+        """End-to-end: a row genuinely shared to ``_GROUP`` in project B exists
+        and is tagged correctly — ``_MEMBER`` still cannot recall it, because
+        its project-A-only membership derives no group tags in project B."""
+        key = f"tenancy-shared-b-{uuid.uuid4().hex[:8]}"
+        _backend(cm, project_b, _WRITER).save(_entry(key, tags=[*self._GROUP_TAGS, "critical"]))
+
+        stub = _StubStore(hive=hive, project_id=project_b, agent_id=self._MEMBER)
+        group_tags = stub._recall_group_tags()
+        assert group_tags is None
+
+        hits = _backend(cm, project_b, self._MEMBER).search(_QUERY, group_tags=group_tags)
+        assert key not in {e.key for e in hits}
+        assert hits == []
+
+
 class TestMembershipComesFromTheServer:
     """Where the group list may come from — and where it may not."""
 
     def test_membership_is_read_from_the_hive_registry(self) -> None:
         class _Hive:
             def __init__(self) -> None:
-                self.asked_for: list[str] = []
+                self.asked_for: list[tuple[str, str]] = []
 
-            def get_agent_groups(self, agent_id: str) -> list[str]:
-                self.asked_for.append(agent_id)
+            def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
+                self.asked_for.append((agent_id, project_id))
                 return [_GROUP]
 
         store = _StubStore(hive=_Hive())
         assert store._recall_group_tags() == _GROUP_TAGS
-        assert store._hive_store.asked_for == [_SIBLING]
+        assert store._hive_store.asked_for == [(_SIBLING, _PROJECT_A)]
 
     def test_no_hive_backend_means_no_widening(self) -> None:
         assert _StubStore(hive=None)._recall_group_tags() is None
 
+    def test_no_project_id_means_no_widening(self) -> None:
+        """TAP-6695: an unresolved project_id must not fall through to a
+        membership lookup at all — there is no project to scope it to."""
+
+        class _Hive:
+            def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
+                raise AssertionError("must not be called without a project_id")
+
+        assert _StubStore(hive=_Hive(), project_id=None)._recall_group_tags() is None
+        assert _StubStore(hive=_Hive(), project_id="")._recall_group_tags() is None
+
     def test_agent_in_no_group_gets_no_widening(self) -> None:
         class _Hive:
-            def get_agent_groups(self, agent_id: str) -> list[str]:
+            def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
                 return []
 
         assert _StubStore(hive=_Hive())._recall_group_tags() is None
@@ -252,7 +340,7 @@ class TestMembershipComesFromTheServer:
         """A registry outage must narrow recall, never widen it."""
 
         class _Hive:
-            def get_agent_groups(self, agent_id: str) -> list[str]:
+            def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
                 raise RuntimeError("registry down")
 
         assert _StubStore(hive=_Hive())._recall_group_tags() is None
@@ -274,7 +362,7 @@ class TestMembershipComesFromTheServer:
         try:
 
             class _Hive:
-                def get_agent_groups(self, agent_id: str) -> list[str]:
+                def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
                     return []
 
             assert _StubStore(hive=_Hive())._recall_group_tags() is None
@@ -292,15 +380,24 @@ class _StubStore:
 
     _recall_group_tags = QueryMixin._recall_group_tags
 
-    def __init__(self, *, hive: object) -> None:
+    def __init__(
+        self,
+        *,
+        hive: object,
+        project_id: str | None = _PROJECT_A,
+        agent_id: str = _SIBLING,
+    ) -> None:
         self._hive_store = hive
-        self._hive_agent_id = _SIBLING
+        self._hive_agent_id = agent_id
+        self._project_id = project_id
 
 
 def _cleanup(dsn: str) -> None:
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM private_memories WHERE project_id LIKE 'tap6695-%'")
+            cur.execute("DELETE FROM hive_group_members WHERE agent_id LIKE 'tap6695-%'")
+            cur.execute("DELETE FROM hive_groups WHERE name LIKE 'tap6695-%'")
         conn.commit()
 
 

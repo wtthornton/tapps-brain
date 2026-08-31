@@ -478,7 +478,21 @@ class PostgresHiveBackend:
         created_at = str(row[0]) if row is not None else now
         return {"name": name, "description": description, "created_at": created_at}
 
-    def add_group_member(self, group_name: str, agent_id: str, role: str = "member") -> bool:
+    def add_group_member(
+        self, group_name: str, agent_id: str, project_id: str, role: str = "member"
+    ) -> bool:
+        """Register *agent_id* as a member of *group_name* for *project_id* (TAP-6695).
+
+        Membership is per-project: the same ``agent_id`` can hold independent
+        rows across several projects (e.g. a shared fleet identity onboarded
+        per-repo). A falsy ``project_id`` is refused rather than silently
+        written as the migration's fail-closed sentinel row (see
+        ``migrations/hive/004_group_membership_tenancy.sql``) — the only rows
+        that carry that sentinel must come from the backfill, never from this
+        API.
+        """
+        if not project_id:
+            return False
         now = datetime.now(tz=UTC).isoformat()
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT name FROM hive_groups WHERE name = %s", (group_name,))
@@ -486,11 +500,13 @@ class PostgresHiveBackend:
                 return False
             cur.execute(
                 """
-                    INSERT INTO hive_group_members (group_name, agent_id, role, joined_at)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (group_name, agent_id) DO UPDATE SET role = EXCLUDED.role
+                    INSERT INTO hive_group_members
+                        (group_name, agent_id, project_id, role, joined_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (group_name, agent_id, project_id)
+                        DO UPDATE SET role = EXCLUDED.role
                     """,
-                (group_name, agent_id, role, now),
+                (group_name, agent_id, project_id, role, now),
             )
         return True
 
@@ -520,11 +536,22 @@ class PostgresHiveBackend:
             col_names = [desc[0] for desc in cur.description]
             return [dict(zip(col_names, r, strict=False)) for r in rows]
 
-    def get_agent_groups(self, agent_id: str) -> list[str]:
+    def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]:
+        """Groups *agent_id* belongs to **under *project_id***  (TAP-6695).
+
+        A falsy ``project_id`` returns ``[]`` without touching the database —
+        this is the fail-closed guard that keeps the migration's backfill
+        sentinel (``project_id = ''`` on pre-existing rows, see
+        ``migrations/hive/004_group_membership_tenancy.sql``) from ever being
+        matched by a caller that forgot to resolve a real project_id.
+        """
+        if not project_id:
+            return []
         with self._cm.get_connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT group_name FROM hive_group_members WHERE agent_id = %s ORDER BY group_name",
-                (agent_id,),
+                "SELECT group_name FROM hive_group_members "
+                "WHERE agent_id = %s AND project_id = %s ORDER BY group_name",
+                (agent_id, project_id),
             )
             return [row[0] for row in cur.fetchall()]
 
@@ -541,11 +568,18 @@ class PostgresHiveBackend:
         query: str,
         agent_id: str,
         agent_namespace: str | None = None,
+        project_id: str = "",
         **kwargs: Any,  # noqa: ANN401
     ) -> list[dict[str, Any]]:
-        """Search across agent's own namespace + group namespaces + universal."""
+        """Search across agent's own namespace + group namespaces + universal.
+
+        ``project_id`` defaults to ``""`` (no project context), which makes
+        :meth:`get_agent_groups` return ``[]`` (TAP-6695) — a caller that omits
+        it gets the pre-tenancy own-namespace-only behaviour, never a widened
+        one.
+        """
         own_ns = agent_namespace or agent_id
-        group_names = self.get_agent_groups(agent_id)
+        group_names = self.get_agent_groups(agent_id, project_id)
         namespaces = list({own_ns, *group_names, "universal"})
         return self.search(query, namespaces=namespaces, **kwargs)
 

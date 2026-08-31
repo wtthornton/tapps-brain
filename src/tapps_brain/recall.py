@@ -400,8 +400,12 @@ class RecallOrchestrator:
 
         # Universal + profile namespace + Hive membership group namespaces (GitHub #52).
         namespaces = ["universal", self._hive_agent_profile]
+        # TAP-6695: membership is project-scoped — a falsy project_id (no
+        # resolved project context) makes get_agent_groups return [] rather
+        # than matching the migration's fail-closed backfill sentinel.
+        project_id = getattr(self._store, "_project_id", None) or ""
         try:
-            extra_groups = self._hive_store.get_agent_groups(self._hive_agent_id)
+            extra_groups = self._hive_store.get_agent_groups(self._hive_agent_id, project_id)
         except Exception:
             logger.warning("hive_recall_agent_groups_failed", exc_info=True)
             extra_groups = []

@@ -77,10 +77,10 @@ class TestDeclarativeGroups:
         assert hive.create_group.call_count == 2
         hive.create_group.assert_any_call("dev-pipeline")
         hive.create_group.assert_any_call("qa-team")
-        # Should have added agent to both groups
+        # Should have added agent to both groups, scoped to the store's project (TAP-6695)
         assert hive.add_group_member.call_count == 2
-        hive.add_group_member.assert_any_call("dev-pipeline", "test-agent")
-        hive.add_group_member.assert_any_call("qa-team", "test-agent")
+        hive.add_group_member.assert_any_call("dev-pipeline", "test-agent", "test")
+        hive.add_group_member.assert_any_call("qa-team", "test-agent", "test")
 
     def test_group_auto_join_skipped_without_hive(self, tmp_path: Path) -> None:
         """Groups are stored but no auto-join happens without a hive_store."""
@@ -91,6 +91,26 @@ class TestDeclarativeGroups:
         """Groups + hive but no agent_id: auto-join is skipped."""
         hive = _make_hive_mock()
         store = _make_store(tmp_path, groups=["dev-pipeline"], hive_store=hive)
+        assert store.groups == ["dev-pipeline"]
+        hive.create_group.assert_not_called()
+
+    def test_group_auto_join_skipped_without_project_id(self, tmp_path: Path) -> None:
+        """TAP-6695: no resolved project_id means auto-join is skipped — a
+        membership row registered without one could never be found again
+        (``get_agent_groups`` requires a real, non-empty project_id)."""
+        from tests.conftest import InMemoryPrivateBackend
+
+        hive = _make_hive_mock()
+        backend = InMemoryPrivateBackend(project_id="", agent_id="test-agent")
+        store = MemoryStore(
+            tmp_path,
+            embedding_provider=None,
+            groups=["dev-pipeline"],
+            hive_store=hive,
+            agent_id="test-agent",
+            auto_register=False,
+            private_backend=backend,
+        )
         assert store.groups == ["dev-pipeline"]
         hive.create_group.assert_not_called()
 
