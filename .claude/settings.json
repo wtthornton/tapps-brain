@@ -288,8 +288,6 @@
   "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
-      "mcp__tapps-mcp",
-      "mcp__tapps-mcp__*",
       "mcp__nlt-code-quality",
       "mcp__nlt-code-quality__*",
       "mcp__nlt-platform-admin",
@@ -332,7 +330,8 @@
       "Read(.env.test)",
       "Read(.env.smoke-backup.*)",
       "Read(.env.*backup*)",
-      "Read(.env.bak*)"
+      "Read(.env.bak*)",
+      "Read(.env.*)"
     ],
     "ask": [
       "Read(.env.*)"

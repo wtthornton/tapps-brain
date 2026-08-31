@@ -4,7 +4,7 @@ description: >-
   Review UI/UX and frontend changes using domain playbooks and TAPPS quality
   gates. Use for React, CSS, accessibility, or layout work.
 tools: Read, Glob, Grep, Write, Edit
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 maxTurns: 20
 permissionMode: acceptEdits
 memory: project

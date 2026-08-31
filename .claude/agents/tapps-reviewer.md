@@ -4,7 +4,7 @@ description: >-
   Use proactively to review code quality, run security scans, and enforce
   quality gates after editing Python files.
 tools: Read, Glob, Grep, Write, Edit
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 maxTurns: 20
 permissionMode: acceptEdits
 memory: project
