@@ -84,7 +84,13 @@ def hive_search(
             if getattr(store, "profile", None) is not None:
                 profile_ns = getattr(store.profile, "name", None)
             own_ns = profile_ns or hive_agent_id
-            allowed = {own_ns, hive_agent_id, "universal", *hive.get_agent_groups(hive_agent_id)}
+            # TAP-6695: membership is project-scoped.
+            allowed = {
+                own_ns,
+                hive_agent_id,
+                "universal",
+                *hive.get_agent_groups(hive_agent_id, project_id),
+            }
             if namespace is not None:
                 ns = namespace.strip()
                 # Group entries are persisted under the bare group name; the
@@ -106,7 +112,7 @@ def hive_search(
                 results = hive.search(query, namespaces=[bare], limit=20)
             else:
                 results = hive.search_with_groups(
-                    query, hive_agent_id, agent_namespace=own_ns, limit=20
+                    query, hive_agent_id, agent_namespace=own_ns, project_id=project_id, limit=20
                 )
         finally:
             if should_close:

@@ -203,10 +203,15 @@ class AsyncPostgresPrivateBackend:
                         return results
         return results
 
-    async def load_one(self, key: str) -> MemoryEntry | None:
+    async def load_one(
+        self, key: str, *, group_tags: list[str] | None = None
+    ) -> MemoryEntry | None:
         """Load a single entry by key (async parity with sync ``load_one``)."""
         async with self._scoped_conn() as conn, conn.cursor() as cur:
-            await cur.execute(_sql.LOAD_ONE_SQL, (self._project_id, self._agent_id, key))
+            await cur.execute(
+                _sql.build_load_one_sql(group_tags),
+                (*_sql.scope_params(self._project_id, self._agent_id, group_tags), key),
+            )
             row = await cur.fetchone()
             if row is None:
                 return None
@@ -239,11 +244,23 @@ class AsyncPostgresPrivateBackend:
         memory_class: str | None = None,
         include_expired: bool = False,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
         Behavioral parity with :meth:`PostgresPrivateBackend.search`.  All
         filter composition flows through :func:`_sql.build_search_sql`.
+
+        Args:
+            group_tags: TAP-6695 (Ruling 16) — ``scope:group:<name>`` tags naming the
+                Hive groups the *requesting* agent belongs to.  Rows carrying one
+                of them are admitted alongside the agent's own rows **in SQL**,
+                before any Python tag post-filter runs: a post-filter over an
+                already-agent-scoped candidate set can only narrow the pool, never
+                widen it, which is why tagging alone could never make group recall
+                work.  ``None``/empty — an agent in no groups — executes the exact
+                query that shipped.  Membership must come from the server-side
+                registry (``hive_group_members``), never from the request.
         """
         if not query.strip():
             return []
@@ -257,8 +274,10 @@ class AsyncPostgresPrivateBackend:
             as_of=as_of,
             include_expired=include_expired,
             include_stale=include_stale,
+            group_tags=group_tags,
         )
-        params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
+        scope = _sql.scope_params(self._project_id, self._agent_id, group_tags)
+        params: list[Any] = [query, *scope, query, *extra_params]
 
         async with self._scoped_conn() as conn, conn.cursor() as cur:
             await cur.execute(sql, params)
@@ -286,6 +305,7 @@ class AsyncPostgresPrivateBackend:
         include_expired: bool = False,
         as_of: str | None = None,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -302,7 +322,10 @@ class AsyncPostgresPrivateBackend:
             return []
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         knn_sql, mid_params = _sql.build_knn_search_sql(
-            include_expired=include_expired, as_of=as_of, include_stale=include_stale
+            include_expired=include_expired,
+            as_of=as_of,
+            include_stale=include_stale,
+            group_tags=group_tags,
         )
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -311,7 +334,12 @@ class AsyncPostgresPrivateBackend:
                 await cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 await cur.execute(
                     knn_sql,
-                    (vec_str, self._project_id, self._agent_id, *mid_params, k),
+                    (
+                        vec_str,
+                        *_sql.scope_params(self._project_id, self._agent_id, group_tags),
+                        *mid_params,
+                        k,
+                    ),
                 )
                 rows = await cur.fetchall()
             # Clear the degraded latch on success — the flag reflects the most

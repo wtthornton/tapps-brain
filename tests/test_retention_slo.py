@@ -39,6 +39,8 @@ from tests._pg_fixture import resolve_fixture_dsn
 
 _PROJECT_ID = "tap-6698-slo-fixture"
 _AGENT_ID = "slo-fixture-agent"
+#: ``project_profiles.profile`` is JSONB; only ``project_id`` is read by the scan.
+_PROFILE_JSON = '{"name": "repo-brain"}'
 
 
 @pytest.fixture(scope="session")
@@ -50,6 +52,34 @@ def retention_fixture_dsn() -> str:
 def conn(retention_fixture_dsn: str):
     with psycopg.connect(retention_fixture_dsn) as c:
         yield c
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _register_fixture_project(retention_fixture_dsn: str):
+    """Make ``_PROJECT_ID`` discoverable by SLO 1's per-tenant scan (TAP-6698).
+
+    Since Ruling 15, ``check_no_overdue_active_rows`` enumerates tenants from
+    ``project_profiles`` and the non-RLS tenanted tables and scans each one under
+    ``SET LOCAL app.project_id`` — ``private_memories`` has fail-closed RLS with
+    no admin bypass, so there is no "all tenants" query to run instead.  These
+    tests write rows with raw SQL, which leaves no audit trail, so without a
+    registry row the fixture tenant would be invisible to the very check under
+    test.  Registering it keeps these assertions end-to-end (they exercise
+    discovery too) rather than pinning them to an explicit tenant list.
+    """
+    with psycopg.connect(retention_fixture_dsn) as c:
+        with c.cursor() as cur:
+            cur.execute(
+                "INSERT INTO project_profiles (project_id, profile) "
+                "VALUES (%s, %s::jsonb) ON CONFLICT (project_id) DO NOTHING",
+                (_PROJECT_ID, _PROFILE_JSON),
+            )
+        c.commit()
+    yield
+    with psycopg.connect(retention_fixture_dsn) as c:
+        with c.cursor() as cur:
+            cur.execute("DELETE FROM project_profiles WHERE project_id = %s", (_PROJECT_ID,))
+        c.commit()
 
 
 def _insert_memory(conn, *, key: str, tier: str, updated_at: datetime | None = None) -> None:

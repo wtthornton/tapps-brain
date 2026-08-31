@@ -200,7 +200,9 @@ class HiveBackend(Protocol):
 
     def create_group(self, name: str, description: str = "") -> dict[str, Any]: ...
 
-    def add_group_member(self, group_name: str, agent_id: str, role: str = "member") -> bool: ...
+    def add_group_member(
+        self, group_name: str, agent_id: str, project_id: str, role: str = "member"
+    ) -> bool: ...
 
     def remove_group_member(self, group_name: str, agent_id: str) -> bool: ...
 
@@ -208,7 +210,7 @@ class HiveBackend(Protocol):
 
     def get_group_members(self, group_name: str) -> list[dict[str, Any]]: ...
 
-    def get_agent_groups(self, agent_id: str) -> list[str]: ...
+    def get_agent_groups(self, agent_id: str, project_id: str) -> list[str]: ...
 
     def agent_is_group_member(self, group_name: str, agent_id: str) -> bool: ...
 
@@ -217,6 +219,7 @@ class HiveBackend(Protocol):
         query: str,
         agent_id: str,
         agent_namespace: str | None = None,
+        project_id: str = "",
         **kwargs: Any,
     ) -> list[dict[str, Any]]: ...
 
@@ -385,6 +388,7 @@ class PrivateBackend(Protocol):
         memory_class: str | None = None,
         include_expired: bool = False,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -419,6 +423,10 @@ class PrivateBackend(Protocol):
             memory_class: TAP-733 — when set, restrict results to entries with this
                 semantic class (``"incident"``, ``"guidance"``, ``"decision"``,
                 ``"convention"``).  Pushed into SQL WHERE for efficient pre-filtering.
+            group_tags: TAP-6695 — ``scope:group:<name>`` tags for the Hive groups
+                the requesting agent belongs to.  Rows carrying one of them are
+                admitted alongside the agent's own rows in SQL.  ``None``/empty
+                leaves the candidate set exactly as it is without this argument.
         """
         ...
 
@@ -448,6 +456,7 @@ class PrivateBackend(Protocol):
         include_expired: bool = False,
         as_of: str | None = None,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[tuple[str, float]]: ...
 
     def vector_row_count(self) -> int: ...

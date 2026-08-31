@@ -144,14 +144,18 @@ class TestHiveBackendConformance:
         groups = hive_backend.list_groups()
         assert any(g["name"] == "grp1" for g in groups)
 
-        added = hive_backend.add_group_member("grp1", "agent-a")
+        added = hive_backend.add_group_member("grp1", "agent-a", "proj-a")
         assert added is True
 
         members = hive_backend.get_group_members("grp1")
         assert any(m["agent_id"] == "agent-a" for m in members)
 
-        agent_groups = hive_backend.get_agent_groups("agent-a")
+        agent_groups = hive_backend.get_agent_groups("agent-a", "proj-a")
         assert "grp1" in agent_groups
+
+        # TAP-6695: membership is project-scoped — the same agent queried
+        # under a different project sees no groups.
+        assert hive_backend.get_agent_groups("agent-a", "proj-b") == []
 
         assert hive_backend.agent_is_group_member("grp1", "agent-a") is True
         assert hive_backend.agent_is_group_member("grp1", "agent-b") is False
@@ -160,7 +164,11 @@ class TestHiveBackendConformance:
         assert removed is True
 
     def test_add_member_to_nonexistent_group_returns_false(self, hive_backend: Any) -> None:
-        assert hive_backend.add_group_member("no-such-group", "agent-1") is False
+        assert hive_backend.add_group_member("no-such-group", "agent-1", "proj-a") is False
+
+    def test_add_group_member_refuses_empty_project_id(self, hive_backend: Any) -> None:
+        hive_backend.create_group("grp-empty-proj")
+        assert hive_backend.add_group_member("grp-empty-proj", "agent-1", "") is False
 
     def test_feedback_events(self, hive_backend: Any) -> None:
         hive_backend.record_feedback_event(
@@ -199,7 +207,7 @@ class TestHiveBackendConformance:
 
     def test_search_with_groups(self, hive_backend: Any) -> None:
         hive_backend.save(key="grp-search", value="group searchable content", namespace="universal")
-        results = hive_backend.search_with_groups("searchable", "agent-1")
+        results = hive_backend.search_with_groups("searchable", "agent-1", project_id="proj-a")
         assert isinstance(results, list)
 
 

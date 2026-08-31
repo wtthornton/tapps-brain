@@ -11,10 +11,11 @@ from __future__ import annotations
 import re
 import time
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 
 import structlog
 
+from tapps_brain import _postgres_private_sql as _sql
 from tapps_brain._store_base import _MemoryStoreBase
 from tapps_brain.metrics import MetricsTimer
 from tapps_brain.models import MemoryEntry, _utc_now_iso
@@ -364,6 +365,58 @@ class QueryMixin(_MemoryStoreBase):
                     exc_info=True,
                 )
 
+    def _recall_group_tags(self) -> list[str] | None:
+        """``scope:group:<name>`` tags for the groups this agent actually belongs to.
+
+        TAP-6695 (Ruling 16).  Group sharing could not work by tagging alone:
+        ``/v1/recall`` scopes candidates by ``(project_id, agent_id)`` in SQL and
+        applies ``filter_tags`` in Python afterwards, so a ``scope:group:<name>``
+        tag could only ever narrow an already-agent-scoped pool.  The widening has
+        to happen in the recall predicate — and it may only widen for groups the
+        requester genuinely belongs to.
+
+        **Membership is read from ``hive_group_members``**, the server-side Hive
+        registry written by ``HiveBackend.add_group_member``.  Deliberately *not*
+        from the request: ``REQUEST_GROUP`` (the ``X-Tapps-Group`` header) and
+        ``TAPPS_BRAIN_GROUPS`` are caller-supplied and process-level respectively,
+        and widening recall on a self-asserted group would be an authorisation
+        hole, not a feature.  No cache: the lookup is a single indexed read, and
+        caching it would put a staleness window on a membership revocation.
+
+        Returns ``None`` when there is no Hive backend, when the lookup fails, or
+        when the agent belongs to no group — every one of which leaves recall
+        executing exactly the SQL it executes today.
+
+        TAP-6695: membership is additionally scoped to ``self._project_id`` —
+        server-side state resolved at ``MemoryStore`` construction from env /
+        project root, never a request-supplied value (a membership widened on
+        a self-asserted project would just move the same authorisation hole).
+        A store with no resolved project_id gets no group widening at all.
+        """
+        hive = self._hive_store
+        if hive is None:
+            return None
+        if not self._project_id:
+            return None
+        get_agent_groups = getattr(hive, "get_agent_groups", None)
+        if not callable(get_agent_groups):
+            return None
+        try:
+            # ``_hive_agent_id`` (not ``_agent_id``, which is ``None`` for an
+            # unnamed server) is the identity Hive membership is keyed on — same
+            # source ``recall.py`` already uses to resolve group namespaces.
+            groups = [str(g) for g in get_agent_groups(self._hive_agent_id, self._project_id) if g]
+        except Exception:
+            # A group lookup that fails must not fail recall; it degrades to the
+            # pre-TAP-6695 behaviour (own rows only), which is the safe direction.
+            logger.warning(
+                "recall.group_membership_lookup_failed",
+                agent_id=self._hive_agent_id,
+                exc_info=True,
+            )
+            return None
+        return _sql.group_scope_tags(groups) or None
+
     def search(
         self,
         query: str,
@@ -428,6 +481,12 @@ class QueryMixin(_MemoryStoreBase):
                 since = self._parse_relative_time(since)
             if until is not None:
                 until = self._parse_relative_time(until)
+            group_tags = self._recall_group_tags()
+            # Additive only (SC-10): with no group membership the kwarg is not
+            # passed at all, so the backend call is byte-identical to the
+            # pre-TAP-6695 one — including for backends and test doubles whose
+            # signatures predate it.
+            group_kw: dict[str, Any] = {"group_tags": group_tags} if group_tags else {}
             results = self._persistence.search(
                 query,
                 memory_group=memory_group,
@@ -445,6 +504,8 @@ class QueryMixin(_MemoryStoreBase):
                 # lifecycle-stale row would be dropped in SQL and never reach the
                 # Python include_stale filter that is supposed to decide.
                 include_stale=include_stale,
+                # TAP-6695: admit rows shared to a group this agent belongs to.
+                **group_kw,
             )
 
             # TAP-5677 stage 3: lexical stages (AND, then the backend's OR
@@ -458,6 +519,7 @@ class QueryMixin(_MemoryStoreBase):
                     include_expired=include_historical,
                     as_of=as_of,
                     include_stale=include_stale,
+                    group_tags=group_tags,
                 )
 
             results = self._apply_search_filters(
@@ -494,6 +556,7 @@ class QueryMixin(_MemoryStoreBase):
         include_expired: bool,
         as_of: str | None,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Semantic fallback for lexically unmatched queries (TAP-5677).
 
@@ -522,19 +585,23 @@ class QueryMixin(_MemoryStoreBase):
         if not embedding:
             return []
         try:
+            group_kw: dict[str, Any] = {"group_tags": group_tags} if group_tags else {}
             pairs = knn(
                 list(embedding),
                 _KNN_FALLBACK_K,
                 include_expired=include_expired,
                 as_of=as_of,
                 include_stale=include_stale,
+                **group_kw,
             )
         except Exception:
             logger.warning("search.knn_fallback.knn_failed", exc_info=True)
             return []
         entries: list[MemoryEntry] = []
         for key, _distance in pairs:
-            entry = cast("MemoryEntry | None", load_one(key))
+            # Same widening on the hydration read — a group-shared key admitted
+            # by KNN would otherwise be dropped here and the fix left inert.
+            entry = cast("MemoryEntry | None", load_one(key, **group_kw))
             if entry is not None:
                 entries.append(entry)
         if entries:

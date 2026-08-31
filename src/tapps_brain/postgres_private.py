@@ -335,14 +335,17 @@ class PostgresPrivateBackend:
                         return results
         return results
 
-    def load_one(self, key: str) -> MemoryEntry | None:
+    def load_one(self, key: str, *, group_tags: list[str] | None = None) -> MemoryEntry | None:
         """Load a single entry by key for this ``(project_id, agent_id)`` scope.
 
         Used to hydrate the write-through cache when rows were written outside
         ``MemoryStore.save`` (e.g. experience-event upserts).
         """
         with self._scoped_conn() as conn, conn.cursor() as cur:
-            cur.execute(_sql.LOAD_ONE_SQL, (self._project_id, self._agent_id, key))
+            cur.execute(
+                _sql.build_load_one_sql(group_tags),
+                (*_sql.scope_params(self._project_id, self._agent_id, group_tags), key),
+            )
             row = cur.fetchone()
             if row is None:
                 return None
@@ -375,6 +378,7 @@ class PostgresPrivateBackend:
         memory_class: str | None = None,
         include_expired: bool = False,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -405,6 +409,15 @@ class PostgresPrivateBackend:
                 migration 001 (``migrations/private/001_initial.sql``).
             memory_class: TAP-733 — when set, restrict results to entries with this
                 semantic class value.  Pushed into SQL WHERE for DB-level filtering.
+            group_tags: TAP-6695 (Ruling 16) — ``scope:group:<name>`` tags naming the
+                Hive groups the *requesting* agent belongs to.  Rows carrying one
+                of them are admitted alongside the agent's own rows **in SQL**,
+                before any Python tag post-filter runs: a post-filter over an
+                already-agent-scoped candidate set can only narrow the pool, never
+                widen it, which is why tagging alone could never make group recall
+                work.  ``None``/empty — an agent in no groups — executes the exact
+                query that shipped.  Membership must come from the server-side
+                registry (``hive_group_members``), never from the request.
         """
         if not query.strip():
             return []
@@ -418,8 +431,10 @@ class PostgresPrivateBackend:
             as_of=as_of,
             include_expired=include_expired,
             include_stale=include_stale,
+            group_tags=group_tags,
         )
-        params: list[Any] = [query, self._project_id, self._agent_id, query, *extra_params]
+        scope = _sql.scope_params(self._project_id, self._agent_id, group_tags)
+        params: list[Any] = [query, *scope, query, *extra_params]
 
         with self._scoped_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
@@ -443,14 +458,9 @@ class PostgresPrivateBackend:
                     include_expired=include_expired,
                     include_stale=include_stale,
                     match_any=True,
+                    group_tags=group_tags,
                 )
-                or_params: list[Any] = [
-                    or_query,
-                    self._project_id,
-                    self._agent_id,
-                    or_query,
-                    *extra_params,
-                ]
+                or_params: list[Any] = [or_query, *scope, or_query, *extra_params]
                 cur.execute(or_sql, or_params)
                 rows = cur.fetchall()
                 if not rows:
@@ -476,6 +486,7 @@ class PostgresPrivateBackend:
         include_expired: bool = False,
         as_of: str | None = None,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -499,7 +510,10 @@ class PostgresPrivateBackend:
 
         vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
         knn_sql, mid_params = _sql.build_knn_search_sql(
-            include_expired=include_expired, as_of=as_of, include_stale=include_stale
+            include_expired=include_expired,
+            as_of=as_of,
+            include_stale=include_stale,
+            group_tags=group_tags,
         )
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:
@@ -510,7 +524,12 @@ class PostgresPrivateBackend:
                 cur.execute(f"SET LOCAL hnsw.ef_search = {self._hnsw_ef_search:d}")
                 cur.execute(
                     knn_sql,
-                    (vec_str, self._project_id, self._agent_id, *mid_params, k),
+                    (
+                        vec_str,
+                        *_sql.scope_params(self._project_id, self._agent_id, group_tags),
+                        *mid_params,
+                        k,
+                    ),
                 )
                 rows = cur.fetchall()
             # A successful query clears the degraded latch: the flag reflects
