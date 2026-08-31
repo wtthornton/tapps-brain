@@ -139,6 +139,39 @@ def _probe_experience_schema(dsn: str | None) -> tuple[bool, str]:
     return result
 
 
+_RETENTION_SLO_PROBE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _probe_retention_slos(dsn: str | None) -> dict[str, Any]:
+    """TAP-6698: deep readiness probe for the five retention SLOs (KB-3.6).
+
+    Same shape and cache TTL as :func:`_probe_experience_schema` — this is the
+    ``retention_ok`` field on ``/healthz?deep=1``, backed by the same checks
+    ``tests/test_retention_slo.py`` runs as pytest nodes (never two
+    definitions of "retention is healthy" to drift apart). Never raises.
+    """
+    if not dsn:
+        return {"retention_ok": False, "checks": {}, "detail": "no DSN configured"}
+    now = time.monotonic()
+    cached = _RETENTION_SLO_PROBE_CACHE.get(dsn)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    try:
+        import os
+
+        import psycopg
+
+        from tapps_brain.services.retention_slo import evaluate_retention_slos
+
+        retention_env = os.environ.get("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", "")
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            result = evaluate_retention_slos(conn, retention_env=retention_env)
+    except Exception as exc:
+        result = {"retention_ok": False, "checks": {}, "detail": f"retention probe failed: {exc}"}
+    _RETENTION_SLO_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    return result
+
+
 def _get_hive_pool_stats(store: Any) -> dict[str, Any] | None:  # noqa: ANN401
     """Return pool stats dict from a store's hive connection manager, or None."""
     if store is None:

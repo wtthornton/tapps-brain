@@ -43,7 +43,7 @@ import uuid as _uuid_mod
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tapps_brain import _postgres_kg_sql as _kg_sql
 from tapps_brain._postgres_private_sql import embedding_to_pgvector
@@ -306,6 +306,35 @@ class MemorySpec(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Memory confidence.")
     tags: list[str] = Field(default_factory=list, description="Classification tags (max 10).")
     agent_scope: str = Field(default="private", description="Hive propagation scope.")
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _normalize_tier(cls, v: object) -> str:
+        """Resolve *v* to a tier the decay engine can price (TAP-6698, VAL-09).
+
+        This spec is written by a **raw INSERT** that bypasses
+        ``MemoryStore.save`` — and therefore bypasses the
+        ``normalize_save_tier`` call at ``store.py:1792`` that every other
+        write path goes through.  ``MemoryEntry``'s own validator deliberately
+        passes unrecognised strings through as possible EPIC-010 profile layer
+        names, which is correct *there* (the store knows its profile) and wrong
+        here: this path has no profile at all, so a layer name written through
+        it is one no reader can ever resolve — ``decay._get_half_life`` raises
+        on it and ``retention_slo`` has to report it as a defect.
+
+        Applying the same alias table the store path applies (with no profile,
+        so ``long-term`` → ``architectural``, ``short-term`` → ``pattern``, and
+        anything genuinely unknown → ``pattern``) means both writers obey one
+        documented rule and this path can only ever emit a priceable tier.
+        """
+        from tapps_brain.tier_normalize import normalize_save_tier
+
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return normalize_save_tier(None, None)
+        if not isinstance(v, str):
+            msg = f"tier must be a string, got {type(v).__name__!r}"
+            raise ValueError(msg)
+        return normalize_save_tier(v, None)
 
     @model_validator(mode="after")
     def _mirror_memory_entry_constraints(self) -> MemorySpec:

@@ -4865,6 +4865,14 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         ``gc_archive``, which is exactly the audit question the code exists to
         answer.
 
+        Rows whose tier the active :class:`~tapps_brain.decay.DecayConfig`
+        cannot price are not decayable and are excluded from both verdicts;
+        they are counted in ``unresolved_tier_rows`` and listed (up to
+        *sample_size*) in ``unresolved_tier_sample`` so the pass reports them
+        instead of crashing on them (TAP-6698, VAL-09).  A non-zero count is a
+        data defect: ``retention_slo.check_no_overdue_active_rows`` flags the
+        same rows.
+
         Args:
             dry_run: Identify without writing.  Returns the same key set the
                 apply pass would touch.
@@ -4873,20 +4881,30 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         Returns:
             ``{"would_close"/"closed", "would_archive"/"archived",
             "close_sample", "archive_sample", "rows_before", "rows_after",
-            "archived_delta", "archive_bytes", "dry_run"}``.
+            "archived_delta", "archive_bytes", "unresolved_tier_rows",
+            "unresolved_tier_sample", "dry_run"}``.
         """
         from datetime import UTC, datetime
 
-        from tapps_brain.decay import identify_decay_refresh
+        from tapps_brain.decay import identify_decay_refresh, tier_is_resolvable
 
         now = datetime.now(tz=UTC)
         with self._serialized():
             entries = list(self._entries.values())
         rows_before = len(entries)
 
+        decay_config = self._get_decay_config()
+        # TAP-6698 (VAL-09): partition on the same predicate
+        # ``identify_decay_refresh`` uses, so the rows it cannot price are
+        # *reported* here rather than disappearing between the two.
+        unresolved = [
+            {"key": e.key, "tier": str(e.tier)}
+            for e in entries
+            if not tier_is_resolvable(e.tier, decay_config)
+        ]
         actions = identify_decay_refresh(
             entries,
-            self._get_decay_config(),
+            decay_config,
             now=now,
             floor_retention_days=float(self._gc_config.floor_retention_days),
         )
@@ -4898,6 +4916,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             "rows_before": rows_before,
             "close_sample": close_keys[:sample_size],
             "archive_sample": archive_keys[:sample_size],
+            "unresolved_tier_rows": len(unresolved),
+            "unresolved_tier_sample": unresolved[:sample_size],
         }
         if dry_run:
             result["would_close"] = len(close_keys)

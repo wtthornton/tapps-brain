@@ -200,6 +200,48 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # TAP-6698 — background maintenance loop: periodic consolidation scan,
+  # decay refresh, demotion of contradicted learnings, GC of expired entries,
+  # flywheel cursor advance, experience_events partition pre-create + drop
+  # (Ruling 6 — no pg_partman), and a dry-run-only namespace reaper. Reuses
+  # the tapps-brain-http image (Ruling 14) with a `command:` override instead
+  # of a dedicated build — same reference shape as the one-shot
+  # tapps-brain-migrate sidecar above, but looping instead of running once.
+  tapps-brain-maintenance:
+    image: docker-tapps-brain-http:${BRAIN_VERSION:-latest}
+    container_name: tapps-brain-maintenance
+    command: ["python", "-m", "tapps_brain.maintenance_daemon"]
+    environment:
+      TAPPS_BRAIN_DATABASE_URL: "postgres://tapps_runtime:${TAPPS_BRAIN_RUNTIME_PASSWORD}@tapps-brain-db:5432/tapps_brain"
+      # Same serve tenant as tapps-brain-http — the single-tenant passes
+      # (consolidation, decay refresh, demote-contradicted, GC, flywheel)
+      # must operate on the tenant the brain actually serves, not cwd `/`.
+      TAPPS_BRAIN_SERVE_ROOT: "${TAPPS_BRAIN_SERVE_ROOT:-/var/lib/tapps-brain}"
+      TAPPS_BRAIN_PROJECT_DIR: "${TAPPS_BRAIN_PROJECT_DIR:-/var/lib/tapps-brain}"
+      TAPPS_BRAIN_MAINTENANCE_INTERVAL_MINUTES: "${TAPPS_BRAIN_MAINTENANCE_INTERVAL_MINUTES:-60}"
+      # Dry-run is opt-in (set to 1); default is the real, applying loop —
+      # every pass still writes its own audit_log row either way.
+      TAPPS_BRAIN_MAINTENANCE_DRY_RUN: "${TAPPS_BRAIN_MAINTENANCE_DRY_RUN:-0}"
+      TAPPS_BRAIN_MAINTENANCE_PORT: "${TAPPS_BRAIN_MAINTENANCE_PORT:-8095}"
+      TAPPS_BRAIN_EVENTS_RETENTION_MONTHS: "${TAPPS_BRAIN_EVENTS_RETENTION_MONTHS:-12}"
+      # Embedding config must mirror tapps-brain-http: MemoryStore init loads
+      # the same provider, and a mismatch here would fail every cycle.
+      TAPPS_BRAIN_EMBEDDING_REQUIRED: "${TAPPS_BRAIN_EMBEDDING_REQUIRED:-1}"
+      TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE: "${TAPPS_BRAIN_EMBEDDING_MODEL_OFFLINE:-1}"
+      HF_HOME: /opt/tapps-brain/hf-cache
+    depends_on:
+      tapps-brain-db:
+        condition: service_healthy
+      tapps-brain-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:${TAPPS_BRAIN_MAINTENANCE_PORT:-8095}/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
   tapps-visual:
     image: docker-tapps-visual:${BRAIN_VERSION:-latest}
     container_name: tapps-visual

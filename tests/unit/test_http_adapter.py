@@ -527,6 +527,61 @@ class TestHealthzEndpoint:
         assert body["brain_version"] == settings.version
 
 
+class TestHealthzDeepRetention:
+    """TAP-6698: ``?deep=1`` adds ``retention_ok``/``retention_detail``,
+    additive alongside ``experience_writable`` — never touches the non-deep
+    shape (asserted separately by ``TestHealthzEndpoint`` above, which never
+    passes ``?deep=1``).
+    """
+
+    def test_deep_adds_retention_ok_true_and_checks_detail(self) -> None:
+        probe_result = {"retention_ok": True, "checks": {"slo1": {"ok": True}}}
+        with (
+            patch("tapps_brain.http_adapter._probe_retention_slos", return_value=probe_result),
+            _client(_make_settings()) as c,
+        ):
+            body = c.get("/healthz?deep=1").json()
+        assert body["retention_ok"] is True
+        assert body["retention_detail"] == {"slo1": {"ok": True}}
+
+    def test_deep_false_drags_ok_false(self) -> None:
+        probe_result = {"retention_ok": False, "checks": {"slo1": {"ok": False}}}
+        with (
+            patch("tapps_brain.http_adapter._probe_retention_slos", return_value=probe_result),
+            patch("tapps_brain.http_adapter._probe_experience_schema", return_value=(True, "ok")),
+            patch("tapps_brain.http_adapter._probe_db", return_value=(True, 33, "ready")),
+            _client(_make_settings(dsn="postgres://mockhost/testdb")) as c,
+        ):
+            resp = c.get("/healthz?deep=1")
+        body = resp.json()
+        assert body["retention_ok"] is False
+        assert body["ok"] is False
+        assert resp.status_code == 503
+
+    def test_deep_surfaces_the_failure_reason_when_checks_is_empty(self) -> None:
+        """Regression: a probe failure (no checks, only a ``detail`` message)
+        must not silently collapse to an empty ``retention_detail`` — that
+        was the bug an independent review caught before this landed.
+        """
+        probe_result = {
+            "retention_ok": False,
+            "checks": {},
+            "detail": "retention probe failed: connection refused",
+        }
+        with (
+            patch("tapps_brain.http_adapter._probe_retention_slos", return_value=probe_result),
+            _client(_make_settings()) as c,
+        ):
+            body = c.get("/healthz?deep=1").json()
+        assert body["retention_detail"] == "retention probe failed: connection refused"
+
+    def test_non_deep_healthz_unaffected(self) -> None:
+        with _client(_make_settings()) as c:
+            body = c.get("/healthz").json()
+        assert "retention_ok" not in body
+        assert "retention_detail" not in body
+
+
 # ---------------------------------------------------------------------------
 # /metrics endpoint
 # ---------------------------------------------------------------------------
@@ -774,6 +829,113 @@ class TestMetricsTokenGate:
                 create_app(mcp_server=_mcp_dummy)
             names = {e.get("event") for e in events}
             assert "http_adapter.metrics_unauthenticated" not in names
+        finally:
+            structlog.configure(**saved)
+
+
+# ---------------------------------------------------------------------------
+# TAP-6698: retention-manager startup warning (VAL-08)
+# ---------------------------------------------------------------------------
+
+
+class TestRetentionManagerWarning:
+    """``_maybe_warn_retention_manager`` — TAPPS_BRAIN_EVENTS_RETENTION_MONTHS
+    set with no maintenance-service heartbeat must log one warning naming the
+    env var; set with a heartbeat, or unset entirely, must stay silent.
+
+    Split into a hermetic unit test of the pure decision path (injected
+    ``manager_active_probe``, no DB) plus one end-to-end ``create_app()`` test
+    that exercises the real default probe against an absent DSN — the
+    realistic "no manager reachable" shape a fresh deploy hits before
+    ``tapps-brain-maintenance`` writes its first heartbeat.
+    """
+
+    def test_warns_when_env_set_and_manager_inactive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import structlog
+        from structlog.testing import capture_logs
+
+        from tapps_brain.http_adapter import _maybe_warn_retention_manager
+
+        monkeypatch.setenv("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", "12")
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with capture_logs() as events:
+                _maybe_warn_retention_manager(
+                    _make_settings(), manager_active_probe=lambda dsn: False
+                )
+            names = {e.get("event") for e in events}
+            assert "http_adapter.retention_no_manager" in names
+        finally:
+            structlog.configure(**saved)
+
+    def test_silent_when_env_set_and_manager_active(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import structlog
+        from structlog.testing import capture_logs
+
+        from tapps_brain.http_adapter import _maybe_warn_retention_manager
+
+        monkeypatch.setenv("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", "12")
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with capture_logs() as events:
+                _maybe_warn_retention_manager(
+                    _make_settings(), manager_active_probe=lambda dsn: True
+                )
+            names = {e.get("event") for e in events}
+            assert "http_adapter.retention_no_manager" not in names
+        finally:
+            structlog.configure(**saved)
+
+    def test_silent_when_env_unset_regardless_of_manager(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import structlog
+        from structlog.testing import capture_logs
+
+        from tapps_brain.http_adapter import _maybe_warn_retention_manager
+
+        monkeypatch.delenv("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", raising=False)
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            with capture_logs() as events:
+                _maybe_warn_retention_manager(
+                    _make_settings(), manager_active_probe=lambda dsn: False
+                )
+            names = {e.get("event") for e in events}
+            assert "http_adapter.retention_no_manager" not in names
+        finally:
+            structlog.configure(**saved)
+
+    def test_create_app_warns_with_real_probe_and_no_dsn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: create_app() wiring, real default probe, no DSN configured.
+
+        No DSN reachable is exactly the state a fresh deploy is in before
+        ``tapps-brain-maintenance`` ever writes a heartbeat — the default
+        probe must treat that as "no manager" (never raise, never hang).
+        """
+        import structlog
+        from structlog.testing import capture_logs
+
+        monkeypatch.setenv("TAPPS_BRAIN_EVENTS_RETENTION_MONTHS", "12")
+        saved = structlog.get_config()
+        structlog.reset_defaults()
+        try:
+            settings = _make_settings()  # dsn=None by default
+            _mcp_dummy = MagicMock()
+            _mcp_dummy.session_manager = None
+            with (
+                patch.object(_mod, "_settings", settings),
+                patch.object(_mod, "get_settings", return_value=settings),
+                capture_logs() as events,
+            ):
+                create_app(mcp_server=_mcp_dummy)
+            names = {e.get("event") for e in events}
+            assert "http_adapter.retention_no_manager" in names
         finally:
             structlog.configure(**saved)
 
