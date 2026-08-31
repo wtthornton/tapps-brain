@@ -139,16 +139,32 @@ def _probe_experience_schema(dsn: str | None) -> tuple[bool, str]:
     return result
 
 
+#: TAP-6698 (Ruling 15): SLO 1 now scans ``private_memories`` one tenant at a
+#: time — ``private_memories`` has FORCED, fail-closed RLS and the runtime role
+#: does not bypass it, so a single unscoped query saw an empty table.  That
+#: turns one query into O(tenants): ~3,350 tenant ids and ~1.1 s measured live.
+#: Re-running that behind the 2 s generic probe TTL would put a second of
+#: Postgres work under every ``/healthz?deep=1`` (including the Docker health
+#: check).  Retention drift is a day-scale quantity, so the retention verdict is
+#: cached for a minute instead — the probe stays honest and ``/healthz`` stays
+#: fast.  Deliberately a separate constant: the other probes are cheap and their
+#: freshness matters more.
+_RETENTION_SLO_PROBE_CACHE_TTL: float = 60.0
+
 _RETENTION_SLO_PROBE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _probe_retention_slos(dsn: str | None) -> dict[str, Any]:
     """TAP-6698: deep readiness probe for the five retention SLOs (KB-3.6).
 
-    Same shape and cache TTL as :func:`_probe_experience_schema` — this is the
+    Same shape as :func:`_probe_experience_schema` — this is the
     ``retention_ok`` field on ``/healthz?deep=1``, backed by the same checks
     ``tests/test_retention_slo.py`` runs as pytest nodes (never two
     definitions of "retention is healthy" to drift apart). Never raises.
+
+    Cached for :data:`_RETENTION_SLO_PROBE_CACHE_TTL` (longer than the generic
+    probe TTL) because SLO 1's per-tenant RLS scan is O(tenants) — see that
+    constant.
     """
     if not dsn:
         return {"retention_ok": False, "checks": {}, "detail": "no DSN configured"}
@@ -168,7 +184,10 @@ def _probe_retention_slos(dsn: str | None) -> dict[str, Any]:
             result = evaluate_retention_slos(conn, retention_env=retention_env)
     except Exception as exc:
         result = {"retention_ok": False, "checks": {}, "detail": f"retention probe failed: {exc}"}
-    _RETENTION_SLO_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    _RETENTION_SLO_PROBE_CACHE[dsn] = (
+        time.monotonic() + _RETENTION_SLO_PROBE_CACHE_TTL,
+        result,
+    )
     return result
 
 

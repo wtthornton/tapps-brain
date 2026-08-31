@@ -385,6 +385,7 @@ class PrivateBackend(Protocol):
         memory_class: str | None = None,
         include_expired: bool = False,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -419,6 +420,10 @@ class PrivateBackend(Protocol):
             memory_class: TAP-733 — when set, restrict results to entries with this
                 semantic class (``"incident"``, ``"guidance"``, ``"decision"``,
                 ``"convention"``).  Pushed into SQL WHERE for efficient pre-filtering.
+            group_tags: TAP-6695 — ``scope:group:<name>`` tags for the Hive groups
+                the requesting agent belongs to.  Rows carrying one of them are
+                admitted alongside the agent's own rows in SQL.  ``None``/empty
+                leaves the candidate set exactly as it is without this argument.
         """
         ...
 
@@ -448,6 +453,7 @@ class PrivateBackend(Protocol):
         include_expired: bool = False,
         as_of: str | None = None,
         include_stale: bool = False,
+        group_tags: list[str] | None = None,
     ) -> list[tuple[str, float]]: ...
 
     def vector_row_count(self) -> int: ...

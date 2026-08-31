@@ -315,6 +315,24 @@ LOAD_ONE_SQL = (
     " WHERE project_id = %s AND agent_id = %s AND key = %s LIMIT 1"
 )
 
+
+def build_load_one_sql(group_tags: list[str] | None = None) -> str:
+    """``LOAD_ONE_SQL``, optionally widened to group-shared rows (TAP-6695).
+
+    Needed because the KNN recall fallback resolves each hit by key through
+    ``load_one``: widening only the KNN predicate would admit a group-shared key
+    and then drop it on the follow-up read, leaving the fix inert on that path.
+    Callers that are *not* reading for recall (save, update, delete) pass nothing
+    and keep the strict single-agent lookup.
+    """
+    if not group_tags:
+        return LOAD_ONE_SQL
+    return (
+        f"SELECT {ENTRY_COLUMNS_SQL} FROM private_memories"
+        f" WHERE {_scope_predicate(group_tags=group_tags)} AND key = %s LIMIT 1"
+    )
+
+
 DELETE_BY_KEY_SQL = (
     "DELETE FROM private_memories WHERE project_id = %s AND agent_id = %s AND key = %s"
 )
@@ -325,18 +343,66 @@ DELETE_BY_KEY_SQL = (
 # ---------------------------------------------------------------------------
 
 
-def _search_base_sql(tsquery_fn: str) -> str:
+#: TAP-6695 (Ruling 16) — tag prefix marking a row as shared to a Hive group.
+#: A row tagged ``scope:group:dev-pipeline`` is readable by every agent that
+#: ``hive_group_members`` says belongs to ``dev-pipeline``.
+GROUP_SCOPE_TAG_PREFIX = "scope:group:"
+
+
+def group_scope_tags(group_names: list[str] | None) -> list[str]:
+    """Map Hive group names to the tags that share a row with them."""
+    return [f"{GROUP_SCOPE_TAG_PREFIX}{name}" for name in group_names or []]
+
+
+def _scope_predicate(*, group_tags: list[str] | None) -> str:
+    """The tenant/agent scoping clause for every recall query (TAP-6695).
+
+    Without *group_tags* this is byte-for-byte the clause that shipped:
+    ``project_id = %s AND agent_id = %s``.  That identity matters — SC-10 says
+    the change is additive only, so an agent that belongs to no group must
+    execute exactly the query it executes today, not a widened one that happens
+    to select the same rows.
+
+    With *group_tags* the **agent** half widens to admit rows explicitly tagged
+    for a group the requesting agent belongs to.  Three properties hold:
+
+    * ``project_id`` is untouched — tenant isolation is exactly as strict.
+    * Widening is by explicit tag, so an untagged row of another agent stays
+      invisible; the pool grows only by rows their author chose to share.
+    * ``tags`` is JSONB with a GIN index (``idx_priv_tags_gin``, migration 001)
+      and ``?|`` is a ``jsonb_ops`` operator, so the widened branch is indexed
+      rather than a scan.
+
+    The extra bind sits immediately after ``agent_id`` so callers keep composing
+    their parameter head positionally; :func:`scope_params` builds it.
+    """
+    if not group_tags:
+        return "project_id = %s AND agent_id = %s"
+    return "project_id = %s AND (agent_id = %s OR tags ?| %s::text[])"
+
+
+def scope_params(project_id: str, agent_id: str, group_tags: list[str] | None) -> list[Any]:
+    """Bind values for :func:`_scope_predicate`, in clause order."""
+    if not group_tags:
+        return [project_id, agent_id]
+    return [project_id, agent_id, list(group_tags)]
+
+
+def _search_base_sql(tsquery_fn: str, *, group_tags: list[str] | None = None) -> str:
     """Base FTS SELECT with *tsquery_fn* in the rank and WHERE positions.
 
     *tsquery_fn* is interpolated (not bound) because Postgres cannot
     parameterise function names; callers pass one of two module-literal
     values, never user input.
+
+    *group_tags* widens the agent half of the scope clause — see
+    :func:`_scope_predicate`.
     """
     return (
         f"SELECT {ENTRY_COLUMNS_SQL}, "
         f"ts_rank(search_vector, {tsquery_fn}('english', %s)) AS _rank "
         "FROM private_memories "
-        "WHERE project_id = %s AND agent_id = %s "
+        f"WHERE {_scope_predicate(group_tags=group_tags)} "
         f"  AND search_vector @@ {tsquery_fn}('english', %s)"
     )
 
@@ -468,13 +534,14 @@ def build_search_sql(
     include_expired: bool = False,
     match_any: bool = False,
     include_stale: bool = False,
+    group_tags: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
     """Compose the FTS search SQL + the variable-portion params.
 
-    Returns ``(sql, extra_params)``.  Caller must prepend the fixed
-    ``[query, project_id, agent_id, query]`` head to ``extra_params``
-    before executing — those four parameters are the same in every
-    invocation and stay caller-side.
+    Returns ``(sql, extra_params)``.  Caller must prepend the fixed head
+    ``[query, *scope_params(project_id, agent_id, group_tags), query]`` to
+    ``extra_params`` before executing — that head is the same in every
+    invocation and stays caller-side.
 
     *time_field* is interpolated with an f-string (not ``%s``) because
     Postgres prepared statements cannot parameterise column names.  The
@@ -498,6 +565,13 @@ def build_search_sql(
     Python filter.  The temporal exclusions stay in force -- this flag widens one
     axis only, unlike *include_expired* which stands the whole predicate down.
 
+    *group_tags* (TAP-6695, Ruling 16): when non-empty, rows carrying one of
+    these ``scope:group:<name>`` tags are admitted alongside the requesting
+    agent's own rows, so a group-shared memory reaches the caller *before* any
+    Python-side tag post-filter runs.  ``None``/empty produces the exact SQL
+    that shipped — the widening is additive only.  Adds one bound parameter,
+    positioned by :func:`scope_params`, never in *extra_params*.
+
     *match_any* (TAP-5677): when ``True``, the base SELECT uses ``to_tsquery``
     so the caller can bind a pre-sanitized OR token string from
     :func:`build_or_tsquery` in the two query positions.  Filter snippets and
@@ -510,7 +584,12 @@ def build_search_sql(
         msg = f"time_field must be one of {sorted(VALID_TIME_FIELDS)}, got {time_field!r}"
         raise ValueError(msg)
 
-    sql = _SEARCH_BASE_MATCH_ANY_SQL if match_any else _SEARCH_BASE_SQL
+    if group_tags:
+        sql = _search_base_sql(
+            "to_tsquery" if match_any else "plainto_tsquery", group_tags=group_tags
+        )
+    else:
+        sql = _SEARCH_BASE_MATCH_ANY_SQL if match_any else _SEARCH_BASE_SQL
     params: list[Any] = []
 
     if memory_group is not None:
@@ -544,11 +623,17 @@ def build_search_sql(
 # Vector similarity
 # ---------------------------------------------------------------------------
 
-_KNN_SEARCH_HEAD_SQL = (
-    "SELECT key, embedding <=> %s::vector AS distance "
-    "FROM private_memories "
-    "WHERE project_id = %s AND agent_id = %s AND embedding IS NOT NULL"
-)
+
+def _knn_search_head_sql(group_tags: list[str] | None = None) -> str:
+    """KNN SELECT head with the (optionally group-widened) scope clause."""
+    return (
+        "SELECT key, embedding <=> %s::vector AS distance "
+        "FROM private_memories "
+        f"WHERE {_scope_predicate(group_tags=group_tags)} AND embedding IS NOT NULL"
+    )
+
+
+_KNN_SEARCH_HEAD_SQL = _knn_search_head_sql()
 _KNN_SEARCH_TAIL_SQL = " ORDER BY distance LIMIT %s"
 
 #: TAP-4586: KNN recall SQL with the live-row predicate baked in (the default
@@ -558,12 +643,20 @@ KNN_SEARCH_SQL = _KNN_SEARCH_HEAD_SQL + _LIVE_ROW_PREDICATE_SQL + _KNN_SEARCH_TA
 
 
 def build_knn_search_sql(
-    *, include_expired: bool = False, as_of: str | None = None, include_stale: bool = False
+    *,
+    include_expired: bool = False,
+    as_of: str | None = None,
+    include_stale: bool = False,
+    group_tags: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
     """Compose the KNN recall SQL + mid-params (TAP-4586 + point-in-time).
 
     Returns ``(sql, mid_params)``.  Caller binds
-    ``(vec, project_id, agent_id, *mid_params, k)``.
+    ``(vec, *scope_params(project_id, agent_id, group_tags), *mid_params, k)``.
+
+    *group_tags* (TAP-6695, Ruling 16) widens the agent half of the scope clause
+    exactly as in :func:`build_search_sql`; ``None``/empty leaves the shipped SQL
+    unchanged.
 
     When *include_expired* is ``False`` (default) and *as_of* is unset, the
     live-row predicate is pushed into the WHERE so expired/superseded rows do
@@ -579,7 +672,7 @@ def build_knn_search_sql(
     *include_stale* (TAP-6697): drops only the ``status = 'active'`` clause, so
     lifecycle-stale rows reach the Python filter while expired rows stay out.
     """
-    sql = _KNN_SEARCH_HEAD_SQL
+    sql = _knn_search_head_sql(group_tags) if group_tags else _KNN_SEARCH_HEAD_SQL
     mid_params: list[Any] = []
     if as_of is not None:
         sql += _SEARCH_FILTER_AS_OF_SQL

@@ -20,6 +20,7 @@ import os
 import socket
 import subprocess
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
@@ -127,3 +128,45 @@ def resolve_fixture_dsn() -> str:
 
     atexit.register(_teardown)
     return started_dsn
+
+
+def ensure_rls_role(owner_dsn: str, *, role: str, password: str, writable: bool = False) -> str:
+    """Return a DSN for a role that row-level security actually applies to.
+
+    The fixture database's own user is a superuser, and a superuser bypasses
+    every RLS policy — so a test that connects with it is not exercising
+    isolation at all.  That is precisely how the SLO-1 blind spot survived a
+    green suite (TAP-6698, Ruling 15), and why
+    ``PostgresConnectionManager._assert_non_privileged_role`` refuses to pool a
+    privileged connection in the first place.
+
+    Creates (idempotently) a plain ``LOGIN`` role with no ``SUPERUSER`` and no
+    ``BYPASSRLS`` — the shape ``tapps_runtime`` has in the deployed cluster —
+    and grants it read (or read/write, with *writable*) on the public schema.
+
+    Only ever safe against the disposable fixture container: callers reach this
+    through :func:`resolve_fixture_dsn`, which refuses a deployed-brain DSN
+    (``tests/_live_dsn_guard.py``).
+    """
+    import psycopg
+    from psycopg import sql
+
+    ident = sql.Identifier(role)
+    with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
+        if cur.fetchone() is None:
+            cur.execute(
+                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(ident, sql.Literal(password))
+            )
+        cur.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(ident))
+        privileges = "SELECT, INSERT, UPDATE, DELETE" if writable else "SELECT"
+        cur.execute(
+            sql.SQL("GRANT " + privileges + " ON ALL TABLES IN SCHEMA public TO {}").format(ident)
+        )
+        if writable:
+            cur.execute(
+                sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {}").format(ident)
+            )
+    parts = urlsplit(owner_dsn)
+    netloc = f"{role}:{password}@{parts.hostname}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
