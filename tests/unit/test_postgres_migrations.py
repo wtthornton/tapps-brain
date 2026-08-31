@@ -72,6 +72,21 @@ class TestSchemaStatus:
         assert status.pending_migrations == []
 
 
+def _hive_migration_sql(version: int) -> str:
+    """Return the SQL of the hive migration numbered *version*.
+
+    Indexing ``discover_hive_migrations()`` positionally (as the 001 tests do)
+    silently reads the wrong file the moment a migration is inserted, so
+    version-specific assertions look their file up by number.
+    """
+    from tapps_brain.postgres_migrations import discover_hive_migrations
+
+    for found, _fname, sql in discover_hive_migrations():
+        if found == version:
+            return sql
+    raise AssertionError(f"hive migration {version:03d} not found")
+
+
 class TestHiveMigrationContent:
     """Verify the SQL content of hive migrations contains expected objects."""
 
@@ -119,6 +134,37 @@ class TestHiveMigrationContent:
         assert "hive_memories_notify" in sql
         assert "pg_notify" in sql
         assert "hive_memories_changed" in sql
+
+    def test_005_adds_run_id_column_and_lookup_index(self) -> None:
+        """TAP-6815: the hive provenance column and the join index it exists for."""
+        from tapps_brain.postgres_migrations import discover_hive_migrations
+
+        sql = _hive_migration_sql(5)
+
+        assert "ADD COLUMN IF NOT EXISTS run_id TEXT" in sql
+        assert "idx_hive_memories_run_id" in sql
+        assert "VALUES (5," in sql
+        # Discovery must actually pick the file up — an unregistered migration
+        # never reaches the one-shot migrate sidecar.
+        assert 5 in {version for version, _, _ in discover_hive_migrations()}
+
+    def test_005_does_not_backfill_existing_rows(self) -> None:
+        """The provenance of pre-existing hive rows is unrecoverable, so it stays NULL.
+
+        1,452 of the 4,429 rows live at the time of this migration have no
+        same-key private counterpart; deriving a ``run_id`` for the rest by
+        same-key join would be a guess. A guess here manufactures exactly the
+        false provenance the column exists to prevent, so the migration must
+        touch no existing row. This test is the guard against a later "helpful"
+        backfill being appended to the file.
+        """
+        sql = _hive_migration_sql(5).upper()
+
+        assert "UPDATE HIVE_MEMORIES" not in sql
+        assert "INSERT INTO HIVE_MEMORIES" not in sql
+        # DEFAULT on the new column would backfill every row at ALTER time.
+        assert "RUN_ID TEXT DEFAULT" not in sql
+        assert "RUN_ID TEXT NOT NULL" not in sql
 
 
 class TestFederationMigrationContent:

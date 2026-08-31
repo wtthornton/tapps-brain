@@ -3200,6 +3200,11 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
                     private_tiers=private,
                     memory_group=entry.memory_group,
                     embedding=entry.embedding,
+                    # TAP-6815: carry the private row's invocation identity onto
+                    # the Hive copy. ``entry.run_id`` is None for any save made
+                    # outside an invocation, and stays None — nothing here
+                    # supplies a fallback.
+                    run_id=entry.run_id,
                 )
         except Exception:
             logger.warning("hive_propagation_failed", key=entry.key, exc_info=True)

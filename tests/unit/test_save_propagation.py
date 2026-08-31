@@ -411,3 +411,77 @@ class TestPublishToExpertsExceptionSwallowed:
         )
 
         hive.save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run_id provenance forwarding (TAP-6815)
+# ---------------------------------------------------------------------------
+
+
+class TestRunIdProvenanceForwarding:
+    """The fan-out helpers must carry ``entry.run_id`` onto the Hive write.
+
+    ``brain_remember(share=True)`` derives the bare ``agent_scope="group"``,
+    which ``PropagationEngine`` defers — so these helpers, not the engine, write
+    the hive copy of a shared remember. Before TAP-6815 the id was dropped at
+    ``PostgresHiveBackend.save``'s signature and the copy was unattributable.
+    """
+
+    def test_group_save_forwards_run_id(self) -> None:
+        hive = _hive()
+        entry = _entry(agent_scope="group")
+        entry.run_id = "inv-abc123"
+
+        propagate_group_save(
+            entry=entry,
+            agent_scope="group",
+            groups=["team-a"],
+            hive_store=hive,
+        )
+
+        assert hive.save.call_args.kwargs["run_id"] == "inv-abc123"
+
+    def test_group_save_without_run_id_sends_none(self) -> None:
+        """Absent stays absent — no default, no inherited id."""
+        hive = _hive()
+        entry = _entry(agent_scope="group")
+
+        propagate_group_save(
+            entry=entry,
+            agent_scope="group",
+            groups=["team-a"],
+            hive_store=hive,
+        )
+
+        assert hive.save.call_args.kwargs["run_id"] is None
+
+    def test_expert_publish_forwards_run_id(self) -> None:
+        hive = _hive()
+        entry = _entry(agent_scope="private", tier=MemoryTier.architectural)
+        entry.run_id = "inv-def456"
+
+        publish_to_experts(
+            entry=entry,
+            tier="architectural",
+            agent_scope="private",
+            expert_domains=["css"],
+            hive_store=hive,
+            auto_publish=True,
+        )
+
+        assert hive.save.call_args.kwargs["run_id"] == "inv-def456"
+
+    def test_expert_publish_without_run_id_sends_none(self) -> None:
+        hive = _hive()
+        entry = _entry(agent_scope="private", tier=MemoryTier.architectural)
+
+        publish_to_experts(
+            entry=entry,
+            tier="architectural",
+            agent_scope="private",
+            expert_domains=["css"],
+            hive_store=hive,
+            auto_publish=True,
+        )
+
+        assert hive.save.call_args.kwargs["run_id"] is None

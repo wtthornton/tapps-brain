@@ -176,6 +176,7 @@ class HiveBackend(Protocol):
         conflict_policy: Any = "supersede",
         memory_group: str | None = None,
         embedding: list[float] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any] | None: ...
 
     def get(self, key: str, namespace: str = "universal") -> dict[str, Any] | None: ...
