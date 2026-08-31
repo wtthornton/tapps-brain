@@ -333,6 +333,7 @@ class PropagationEngine:
         dry_run: bool = False,
         memory_group: str | None = None,
         embedding: list[float] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         """Propagate a memory entry to the Hive if appropriate.
 
@@ -343,6 +344,12 @@ class PropagationEngine:
         *bypass_profile_hive_rules*: when True, ignore *private_tiers* and
         *auto_propagate_tiers* so explicit *agent_scope* from the caller wins
         (used for CLI/MCP batch push — GitHub #18).
+
+        *run_id* (TAP-6815): the invocation identity the private row already
+        carries, forwarded onto the Hive copy so the fan-out row is joinable
+        back to the invocation that wrote it.  Passed through verbatim — the
+        engine never derives, defaults or inherits one, so a propagation made
+        outside an invocation leaves ``hive_memories.run_id`` NULL.
         """
         requested_scope = agent_scope
         effective_scope, rule_applied = _apply_hive_profile_scope_rules(
@@ -409,6 +416,7 @@ class PropagationEngine:
             tags=tags,
             memory_group=memory_group,
             embedding=embedding,
+            run_id=run_id,
         )
 
         logger.info(

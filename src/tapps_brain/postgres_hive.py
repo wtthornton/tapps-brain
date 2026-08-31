@@ -61,6 +61,7 @@ class PostgresHiveBackend:
         conflict_policy: str = "supersede",
         memory_group: str | None = None,
         embedding: list[float] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Save a memory entry to PostgreSQL.
 
@@ -75,6 +76,13 @@ class PostgresHiveBackend:
         ``embedding`` is the dense vector (already computed by the caller's
         embedding provider) persisted to the ``embedding`` column so Hive
         semantic recall has signal — ``None`` leaves the column NULL.
+
+        ``run_id`` (TAP-6815) is the caller's invocation identity, persisted to
+        the ``hive_memories.run_id`` provenance column (hive migration 005) so
+        a fan-out copy is joinable back to the invocation that wrote it — the
+        same value ``private_memories.run_id`` already carries.  It is passed
+        straight through and never derived: ``None`` leaves the column NULL,
+        which is the honest answer for a write made outside any invocation.
         """
         now = datetime.now(tz=UTC).isoformat()
         tags_json = json.dumps(tags or [])
@@ -118,6 +126,7 @@ class PostgresHiveBackend:
                         now=now,
                         memory_group=memory_group,
                         embedding=embedding,
+                        run_id=run_id,
                     )
 
             # Normal write or overwrite.
@@ -140,6 +149,7 @@ class PostgresHiveBackend:
                 conflict_policy=policy,
                 memory_group=memory_group,
                 embedding=embedding,
+                run_id=run_id,
             )
 
     def _resolve_conflict(
@@ -210,6 +220,7 @@ class PostgresHiveBackend:
         now: str,
         memory_group: str | None,
         embedding: list[float] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         """Mark the live tip invalid and write a new versioned key.
 
@@ -242,6 +253,7 @@ class PostgresHiveBackend:
             conflict_policy="supersede",
             memory_group=memory_group,
             embedding=embedding,
+            run_id=run_id,
         )
 
     def _write_entry(
@@ -264,6 +276,7 @@ class PostgresHiveBackend:
         conflict_policy: str,
         memory_group: str | None,
         embedding: list[float] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         """Perform the actual INSERT ... ON CONFLICT DO UPDATE."""
         # psycopg has no vector adapter here; pass the textual [v1,v2,...] form
@@ -274,10 +287,10 @@ class PostgresHiveBackend:
             INSERT INTO hive_memories
                 (namespace, key, value, source_agent, tier, confidence, source,
                  tags, valid_at, invalid_at, superseded_by, memory_group,
-                 conflict_policy, created_at, updated_at, embedding)
+                 conflict_policy, created_at, updated_at, embedding, run_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s,
                     %s::jsonb, %s, %s, %s, %s,
-                    %s, %s, %s, %s::vector)
+                    %s, %s, %s, %s::vector, %s)
             ON CONFLICT (namespace, key) DO UPDATE SET
                 value = EXCLUDED.value,
                 source_agent = EXCLUDED.source_agent,
@@ -291,7 +304,15 @@ class PostgresHiveBackend:
                 memory_group = EXCLUDED.memory_group,
                 conflict_policy = EXCLUDED.conflict_policy,
                 updated_at = EXCLUDED.updated_at,
-                embedding = COALESCE(EXCLUDED.embedding, hive_memories.embedding)
+                embedding = COALESCE(EXCLUDED.embedding, hive_memories.embedding),
+                -- TAP-6815: assignment, NOT COALESCE. The row now holds the
+                -- overwriting caller's content, so it must hold the overwriting
+                -- caller's provenance -- keeping the prior invocation's id when
+                -- this write has none would attribute new content to an
+                -- invocation that never produced it. ``embedding`` above
+                -- COALESCEs because a vector is a derived artifact of the value,
+                -- not a claim about who wrote it.
+                run_id = EXCLUDED.run_id
             """,
             (
                 namespace,
@@ -310,6 +331,7 @@ class PostgresHiveBackend:
                 created_at,
                 now,
                 emb_literal,
+                run_id,
             ),
         )
 
@@ -336,6 +358,7 @@ class PostgresHiveBackend:
             "invalid_at": invalid_at,
             "superseded_by": superseded_by,
             "memory_group": memory_group,
+            "run_id": run_id,
         }
 
     def get(

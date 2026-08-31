@@ -3,6 +3,13 @@
 Extracted from ``MemoryStore.save`` (TAP-602).  Hive-side exceptions are
 logged as warnings and never re-raised — the save has already succeeded
 locally and propagation is best-effort.
+
+Both helpers forward ``entry.run_id`` to the Hive write (TAP-6815).  This is
+the path a ``brain_remember(share=True)`` call takes: ``share=True`` derives
+the bare ``agent_scope="group"``, which :class:`PropagationEngine` explicitly
+defers ("deferred_to_group_fanout"), so :func:`propagate_group_save` — not the
+engine — is what actually writes the hive copy of a shared remember.  The
+value is copied, never synthesised: an entry with no ``run_id`` writes NULL.
 """
 
 from __future__ import annotations
@@ -63,6 +70,7 @@ def propagate_group_save(
                 source_agent=entry.source_agent,
                 tags=entry.tags,
                 embedding=entry.embedding,
+                run_id=entry.run_id,
             )
         except Exception:
             logger.warning(
@@ -113,6 +121,7 @@ def publish_to_experts(
             source_agent=entry.source_agent,
             tags=all_tags,
             embedding=entry.embedding,
+            run_id=entry.run_id,
         )
     except Exception:
         logger.warning(
