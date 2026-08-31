@@ -209,6 +209,16 @@ def _run_cross_tenant_passes(
                 passes["partition_drop"] = partition_manager.drop_old_partitions(
                     conn, retention_months=retention_months, dry_run=dry_run
                 )
+            else:
+                # An unconfigured retention window is a legitimate operator
+                # choice (SLO 5 makes the same call for the health probe) —
+                # but it must be a visible, self-describing skip rather than
+                # simply absent, or the pass silently never runs and nothing
+                # says so (TAP-6698 VAL-07).
+                passes["partition_drop"] = {
+                    "skipped": True,
+                    "reason": "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS not configured",
+                }
             # Always dry-run: live apply for the reaper is a later wave (Ruling 14).
             passes["namespace_reaper"] = namespace_reaper.scan_reapable(
                 conn, age_days=single_entry_age_days

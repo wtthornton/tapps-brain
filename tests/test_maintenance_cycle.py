@@ -20,6 +20,7 @@ Covers deliverable 1 (the compose service's scheduling loop) and VAL-02:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 import psycopg
 import pytest
@@ -326,3 +327,77 @@ class TestApplyModeConsolidation:
             f"expected >=1 periodic_scan consolidation_merge row for {project_id}/{agent_id}, "
             f"got {count} — consolidation result was {result['passes']['consolidation']}"
         )
+
+
+class TestVal07RetentionEnvDrivesPartitionDrop:
+    """VAL-07: an empty ``retention_env`` silently disabled the drop pass —
+
+    ``_run_cross_tenant_passes`` never set ``partition_drop`` at all when
+    ``_parse_retention_months`` returned ``None``, so the pass vanished from
+    the cycle result instead of reporting that it was skipped. The shipped
+    compose default was also empty (``docker/docker-compose.hive.yaml``),
+    meaning the default deployment shape was exactly the one nothing
+    reported. Both halves are covered here: the pass actually drops an aged
+    partition when retention is configured (the shipped default, post-fix,
+    is ``"12"``), and it reports itself — rather than disappearing — when
+    retention is left unconfigured.
+    """
+
+    def test_configured_retention_drops_an_aged_partition_by_effect(
+        self, project_root, cycle_fixture_dsn, conn
+    ) -> None:
+        from psycopg import sql
+
+        old_month_start = datetime(2019, 1, 1).date()
+        old_month_end = datetime(2019, 2, 1).date()
+        partition_name = "experience_events_y2019m01"
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    "CREATE TABLE IF NOT EXISTS {name} PARTITION OF experience_events "
+                    "FOR VALUES FROM ({start}) TO ({end})"
+                ).format(
+                    name=sql.Identifier(partition_name),
+                    start=sql.Literal(old_month_start),
+                    end=sql.Literal(old_month_end),
+                )
+            )
+        conn.commit()
+        try:
+            result = run_maintenance_cycle(
+                project_root=project_root,
+                dsn=cycle_fixture_dsn,
+                dry_run=False,
+                retention_env="12",
+            )
+            assert partition_name in result["passes"]["partition_drop"]["dropped"]
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT inhrelid::regclass::text FROM pg_inherits "
+                    "WHERE inhparent = 'experience_events'::regclass"
+                )
+                remaining = {r[0] for r in cur.fetchall()}
+            assert partition_name not in remaining
+        finally:
+            with conn.cursor() as cur:
+                cur.execute(f"DROP TABLE IF EXISTS {partition_name}")
+            conn.commit()
+
+    def test_unconfigured_retention_reports_the_skip_instead_of_omitting_it(
+        self, project_root, cycle_fixture_dsn
+    ) -> None:
+        result = run_maintenance_cycle(
+            project_root=project_root,
+            dsn=cycle_fixture_dsn,
+            dry_run=False,
+            retention_env="",
+        )
+        assert "partition_drop" in result["passes"], (
+            "partition_drop must be present and self-describing when retention "
+            "is unconfigured, not absent from the cycle result"
+        )
+        assert result["passes"]["partition_drop"] == {
+            "skipped": True,
+            "reason": "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS not configured",
+        }
