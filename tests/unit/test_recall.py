@@ -629,4 +629,4 @@ class TestRecallHiveGroupNamespaces:
         ns = hive.search.call_args.kwargs["namespaces"]
         assert ns[:2] == ["universal", "repo-brain"]
         assert "squad-a" in ns and "squad-b" in ns
-        hive.get_agent_groups.assert_called_once_with("agent-99", "test")
+        hive.get_agent_groups.assert_called_once_with("agent-99", store._project_id)

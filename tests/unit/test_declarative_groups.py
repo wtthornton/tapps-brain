@@ -67,7 +67,7 @@ class TestDeclarativeGroups:
 
     def test_group_auto_join_on_construction(self, tmp_path: Path) -> None:
         hive = _make_hive_mock()
-        _make_store(
+        store = _make_store(
             tmp_path,
             groups=["dev-pipeline", "qa-team"],
             hive_store=hive,
@@ -79,8 +79,8 @@ class TestDeclarativeGroups:
         hive.create_group.assert_any_call("qa-team")
         # Should have added agent to both groups, scoped to the store's project (TAP-6695)
         assert hive.add_group_member.call_count == 2
-        hive.add_group_member.assert_any_call("dev-pipeline", "test-agent", "test")
-        hive.add_group_member.assert_any_call("qa-team", "test-agent", "test")
+        hive.add_group_member.assert_any_call("dev-pipeline", "test-agent", store._project_id)
+        hive.add_group_member.assert_any_call("qa-team", "test-agent", store._project_id)
 
     def test_group_auto_join_skipped_without_hive(self, tmp_path: Path) -> None:
         """Groups are stored but no auto-join happens without a hive_store."""
