@@ -379,6 +379,7 @@ class PostgresPrivateBackend:
         include_expired: bool = False,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -418,6 +419,11 @@ class PostgresPrivateBackend:
                 work.  ``None``/empty — an agent in no groups — executes the exact
                 query that shipped.  Membership must come from the server-side
                 registry (``hive_group_members``), never from the request.
+            learning_status: TAP-6826 — when non-empty, restrict results to rows
+                whose ``learning_status`` is one of these values.  Pushed into the
+                SQL WHERE clause, never applied afterwards: the query is capped at
+                100 rows by rank, so a post-filter would silently return fewer
+                promoted rows than asked for whenever unpromoted rows outrank them.
         """
         if not query.strip():
             return []
@@ -432,6 +438,7 @@ class PostgresPrivateBackend:
             include_expired=include_expired,
             include_stale=include_stale,
             group_tags=group_tags,
+            learning_status=learning_status,
         )
         scope = _sql.scope_params(self._project_id, self._agent_id, group_tags)
         params: list[Any] = [query, *scope, query, *extra_params]
@@ -459,6 +466,7 @@ class PostgresPrivateBackend:
                     include_stale=include_stale,
                     match_any=True,
                     group_tags=group_tags,
+                    learning_status=learning_status,
                 )
                 or_params: list[Any] = [or_query, *scope, or_query, *extra_params]
                 cur.execute(or_sql, or_params)
@@ -487,6 +495,7 @@ class PostgresPrivateBackend:
         as_of: str | None = None,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -504,6 +513,10 @@ class PostgresPrivateBackend:
         *as_of* applies the same bi-temporal window as FTS search and stands
         the live-row predicate down so point-in-time hybrid recall can rank
         versions that were valid then.
+
+        *learning_status* (TAP-6826) applies the same promotion-state pre-filter
+        as :meth:`search`, so the semantic path cannot resurface a row the
+        lexical path excluded.
         """
         if not query_embedding:
             return []
@@ -514,6 +527,7 @@ class PostgresPrivateBackend:
             as_of=as_of,
             include_stale=include_stale,
             group_tags=group_tags,
+            learning_status=learning_status,
         )
         try:
             with self._scoped_conn() as conn, conn.cursor() as cur:

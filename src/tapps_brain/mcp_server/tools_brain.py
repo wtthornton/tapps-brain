@@ -104,6 +104,7 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         agent_id: str = "",
         include_sources: bool = False,
         include_contradicted: bool = False,
+        filter_learning_status: str = "",
     ) -> str:
         """Recall memories matching a query.
 
@@ -118,6 +119,12 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
         save-time conflict against a newer write. Off by default; useful for
         auditing what was invalidated before running
         ``maintenance save-conflict-undo``.
+
+        Pass ``filter_learning_status`` to restrict results to a promotion state
+        — ``"approved"`` for gated learnings only, or a comma-separated set such
+        as ``"approved,candidate"``. Filtering happens in SQL before the top-K
+        cut, so a filtered recall still returns up to ``max_results`` rows.
+        Every result carries ``learning_status`` whether or not you filter.
         """
         eff_aid = _rpc(agent_id, default=_server_aid)
         s = _resolve(agent_id)
@@ -130,6 +137,10 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
                 max_results=max_results,
                 include_sources=include_sources,
                 include_contradicted=include_contradicted,
+                filter_learning_status=[
+                    part.strip() for part in filter_learning_status.split(",") if part.strip()
+                ]
+                or None,
             ),
             default=str,
         )

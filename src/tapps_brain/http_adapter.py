@@ -2117,7 +2117,16 @@ def create_app(
           ``{ "query": str, "max_results"?: int=5, "include_stale"?: bool=false,
               "include_sources"?: bool=false, "include_contradicted"?: bool=false,
               "filter_tier"?: str, "filter_tags"?: [str],
-              "filter_tags_any"?: [str], "filter_memory_class"?: str }``
+              "filter_tags_any"?: [str], "filter_memory_class"?: str,
+              "filter_learning_status"?: str | [str] }``
+
+        ``filter_learning_status`` (TAP-6826) restricts results to the named
+        promotion state(s) — ``"candidate"``, ``"approved"``, ``"demoted"`` — in
+        SQL, before the top-K cut, so a filtered recall still returns up to
+        ``max_results`` rows. Omitting it filters nothing. Every result item
+        carries ``learning_status`` either way, so a consumer can report
+        promotion state without a second call. An unknown status is a 400, not
+        a silent empty result.
 
         ``include_sources`` and ``include_contradicted`` are not aliases and
         widen different filters. ``include_sources`` widens the *temporal*
@@ -2204,6 +2213,30 @@ def create_app(
                     },
                 )
 
+        filter_learning_status = body.get("filter_learning_status")
+        if filter_learning_status is not None and not (
+            isinstance(filter_learning_status, str)
+            or (
+                isinstance(filter_learning_status, list)
+                and all(isinstance(v, str) for v in filter_learning_status)
+            )
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "detail": "filter_learning_status must be a string or an array of strings.",
+                },
+            )
+        try:
+            filter_learning_status = _ms.normalize_learning_status_filter(filter_learning_status)
+        except ValueError as exc:
+            # A status the enum does not define must not degrade to "no rows" —
+            # that is indistinguishable from "nothing is promoted" (TAP-6826).
+            raise HTTPException(
+                status_code=400, detail={"error": "bad_request", "detail": str(exc)}
+            ) from exc
+
         # TAP-1099: offload sync recall (BM25 + vector + decay + Hive merge) to
         # a worker thread so the FastAPI event loop keeps serving concurrent
         # requests instead of blocking on a single in-flight DB round-trip.
@@ -2221,6 +2254,7 @@ def create_app(
             filter_tags=filter_tags,
             filter_tags_any=filter_tags_any,
             filter_memory_class=body.get("filter_memory_class"),
+            filter_learning_status=filter_learning_status,
         )
         # TAP-6583: name the returned set. ``results`` is already capped at
         # ``max_results``, so this digest covers what the consumer actually gets.

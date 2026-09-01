@@ -216,6 +216,45 @@ def _is_historical_non_source(entry: Any) -> bool:
     return not _is_consolidated_source(entry)
 
 
+def normalize_learning_status_filter(value: str | list[str] | None) -> list[str] | None:
+    """Coerce ``filter_learning_status`` to a validated list of enum values (TAP-6826).
+
+    The argument is **list-shaped** rather than a single status or a
+    ``promoted_only`` boolean.  :class:`~tapps_brain.models.LearningStatus`
+    carries three values -- ``candidate``, ``approved``, ``demoted`` -- and the
+    useful queries are already sets: "approved only" for injection, but also
+    "candidate + demoted" for an audit of what is *not* being injected.  A
+    boolean could express exactly one of those and would additionally hard-code
+    "promoted == approved" into the wire format, so widening the enum later
+    would be a breaking change rather than a new list element.  A bare string
+    still works -- it is normalised to a one-element list -- so the ergonomic
+    single-status case costs the caller nothing.
+
+    Returns ``None`` for ``None``/empty so callers can keep the unfiltered path
+    byte-identical.
+
+    Raises:
+        ValueError: if any value is not a ``LearningStatus`` member.
+    """
+    if value is None:
+        return None
+    raw = [value] if isinstance(value, str) else list(value)
+    statuses = [str(v).strip() for v in raw if str(v).strip()]
+    if not statuses:
+        return None
+    valid = {s.value for s in LearningStatus}
+    unknown = [s for s in statuses if s not in valid]
+    if unknown:
+        msg = (
+            f"filter_learning_status contains unknown value(s) {unknown!r}; "
+            f"valid values are {sorted(valid)}"
+        )
+        raise ValueError(msg)
+    # Deduplicate while preserving caller order — the value is bound into an
+    # ``= ANY(...)`` array, where repeats are pure noise.
+    return list(dict.fromkeys(statuses))
+
+
 def brain_recall(
     store: Any,
     project_id: str,
@@ -230,6 +269,7 @@ def brain_recall(
     filter_tags: list[str] | None = None,
     filter_tags_any: list[str] | None = None,
     filter_memory_class: str | None = None,
+    filter_learning_status: str | list[str] | None = None,
 ) -> list[Any]:
     """Recall memories matching a query with optional structured pre-filters (TAP-733).
 
@@ -258,10 +298,35 @@ def brain_recall(
         filter_tags_any: ANY one of these tags must be present.
         filter_memory_class: Restrict to entries with this semantic class
             (``"incident"``, ``"guidance"``, ``"decision"``, ``"convention"``).
+        filter_learning_status: TAP-6826 — restrict to entries whose promotion
+            state is one of the named ``LearningStatus`` values (``"candidate"``,
+            ``"approved"``, ``"demoted"``). Accepts a single status or a list;
+            see :func:`normalize_learning_status_filter` for why the shape is a
+            list. Applied **in SQL**, before the top-K cut, so a filtered recall
+            still returns up to ``max_results`` rows even when unpromoted rows
+            outrank promoted ones. ``None`` (default) filters nothing and issues
+            exactly the query that shipped.
+
+            Every returned item carries ``learning_status`` regardless of this
+            filter, so a caller assembling a prompt block can report promotion
+            state without a second round-trip.
+
+    Raises:
+        ValueError: if *filter_learning_status* names a status the enum does
+            not define — a silent no-op there would look exactly like "no
+            promoted learnings exist".
     """
     _excluded_statuses = {MemoryStatus.stale, MemoryStatus.superseded, MemoryStatus.archived}
+    _learning_statuses = normalize_learning_status_filter(filter_learning_status)
 
     with start_mcp_tool_span("brain_recall"):
+        # Additive-only, like the store's own ``group_tags`` plumbing: an
+        # unfiltered recall must issue the exact call it issued before TAP-6826,
+        # including against the test doubles and older stores this service is
+        # routinely handed.
+        status_kw: dict[str, Any] = (
+            {"learning_status": _learning_statuses} if _learning_statuses else {}
+        )
         entries = store.search(
             query,
             tier=filter_tier,
@@ -279,6 +344,8 @@ def brain_recall(
             # filter below — otherwise include_stale=True would silently become a
             # no-op the moment the predicate tightened.
             include_stale=include_stale,
+            # TAP-6826: promotion-state pre-filter, applied in SQL.
+            **status_kw,
         )
         if include_sources:
             # The historical widening above also drags in plain expired rows;
@@ -333,6 +400,13 @@ def brain_recall(
                 "confidence": entry.confidence,
                 "tags": list(entry.tags) if entry.tags else [],
             }
+            # TAP-6826: promotion state is reported unconditionally — a consumer
+            # building a "learned pitfalls" block cannot tell a promoted learning
+            # from an unpromoted candidate otherwise, and emitting the field only
+            # for non-candidates would make its absence ambiguous.
+            entry_learning_status = getattr(entry, "learning_status", None)
+            if entry_learning_status is not None:
+                item["learning_status"] = str(entry_learning_status)
             if getattr(entry, "memory_class", None) is not None:
                 item["memory_class"] = entry.memory_class
             failed = getattr(entry, "failed_approaches", None)
