@@ -2735,6 +2735,82 @@ class TestV1AgentBrainEndpoints:
             )
         assert resp.status_code == 400
 
+    def test_recall_forwards_filter_learning_status(self) -> None:
+        """TAP-6826: AgentForge is HTTP-only, so the filter must be on the wire.
+
+        ``learning_status`` was already on the model and already selected by the
+        recall SQL, but no REST caller could ask for it — which is why the
+        ``## Learned pitfalls`` block was assembled from any keyword-relevant
+        row regardless of promotion state.
+        """
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                resp = client.post(
+                    "/v1/recall",
+                    json={"query": "x", "filter_learning_status": ["approved", "demoted"]},
+                    headers=self._AUTH,
+                )
+        assert resp.status_code == 200
+        assert mocked.call_args.kwargs["filter_learning_status"] == ["approved", "demoted"]
+
+    def test_recall_accepts_a_bare_learning_status_string(self) -> None:
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                client.post(
+                    "/v1/recall",
+                    json={"query": "x", "filter_learning_status": "approved"},
+                    headers=self._AUTH,
+                )
+        assert mocked.call_args.kwargs["filter_learning_status"] == ["approved"]
+
+    def test_recall_omits_the_filter_when_the_body_does_not_carry_it(self) -> None:
+        """Backwards compatibility: an existing caller filters nothing."""
+        from unittest.mock import patch
+
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            with patch(
+                "tapps_brain.services.memory_service.brain_recall", return_value=[]
+            ) as mocked:
+                client.post("/v1/recall", json={"query": "x"}, headers=self._AUTH)
+        assert mocked.call_args.kwargs["filter_learning_status"] is None
+
+    def test_recall_rejects_an_unknown_learning_status(self) -> None:
+        """A typo must be a 400, never a silent empty result.
+
+        Zero rows is exactly what "nothing is promoted" looks like, so a
+        tolerant parse here would recreate the ambiguity TAP-6826 removes.
+        """
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall",
+                json={"query": "x", "filter_learning_status": "aproved"},
+                headers=self._AUTH,
+            )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "bad_request"
+
+    def test_recall_rejects_a_non_string_learning_status(self) -> None:
+        settings = _make_settings(auth_token="tok", store=MagicMock())
+        with _client(settings) as client:
+            resp = client.post(
+                "/v1/recall",
+                json={"query": "x", "filter_learning_status": [1, 2]},
+                headers=self._AUTH,
+            )
+        assert resp.status_code == 400
+
     def test_recall_forwards_include_sources(self) -> None:
         """TAP-5814: the route must read include_sources from the body.
 

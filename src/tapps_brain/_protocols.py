@@ -390,6 +390,7 @@ class PrivateBackend(Protocol):
         include_expired: bool = False,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Search entries using full-text matching.
 
@@ -428,6 +429,13 @@ class PrivateBackend(Protocol):
                 the requesting agent belongs to.  Rows carrying one of them are
                 admitted alongside the agent's own rows in SQL.  ``None``/empty
                 leaves the candidate set exactly as it is without this argument.
+            learning_status: TAP-6826 — when non-empty, restrict results to rows
+                whose promotion state is one of these ``LearningStatus`` values.
+                Pushed into SQL WHERE, never applied afterwards: the recall query
+                is capped at 100 rows by rank, so a post-filter would return fewer
+                promoted rows than asked for whenever unpromoted rows outrank
+                them — which reads as "no promoted learnings exist".
+                ``None``/empty leaves the candidate set exactly as it is.
         """
         ...
 

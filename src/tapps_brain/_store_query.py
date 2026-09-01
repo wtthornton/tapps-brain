@@ -434,6 +434,7 @@ class QueryMixin(_MemoryStoreBase):
         memory_class: str | None = None,
         include_contradicted: bool = False,
         include_stale: bool = False,
+        learning_status: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Search via the Postgres FTS backend, with optional post-filters.
 
@@ -468,6 +469,13 @@ class QueryMixin(_MemoryStoreBase):
                 by save-time conflict detection. When False (default), contradicted
                 entries are excluded. Matches the default behavior of
                 ``MemoryRetriever.search`` (TAP-5783).
+            learning_status: TAP-6826 — when non-empty, restrict results to rows
+                whose promotion state is one of these
+                :class:`~tapps_brain.models.LearningStatus` values.  Pushed into
+                the SQL WHERE clause (both the FTS pass and the KNN fallback), not
+                applied after the top-K cut: a post-filter would return fewer rows
+                than ``max_results`` whenever unpromoted rows outrank promoted
+                ones, which reads as "no promoted learnings exist".
         """
         self._metrics.increment("store.search")
         rm_increment_recall_total()
@@ -487,6 +495,12 @@ class QueryMixin(_MemoryStoreBase):
             # pre-TAP-6695 one — including for backends and test doubles whose
             # signatures predate it.
             group_kw: dict[str, Any] = {"group_tags": group_tags} if group_tags else {}
+            # Same additive-only discipline as ``group_kw``: an unfiltered recall
+            # must issue the exact call it issues today, including against
+            # backends and test doubles whose signatures predate TAP-6826.
+            status_kw: dict[str, Any] = (
+                {"learning_status": list(learning_status)} if learning_status else {}
+            )
             results = self._persistence.search(
                 query,
                 memory_group=memory_group,
@@ -506,13 +520,17 @@ class QueryMixin(_MemoryStoreBase):
                 include_stale=include_stale,
                 # TAP-6695: admit rows shared to a group this agent belongs to.
                 **group_kw,
+                # TAP-6826: promotion-state pre-filter.
+                **status_kw,
             )
 
             # TAP-5677 stage 3: lexical stages (AND, then the backend's OR
             # retry) found nothing — fall back to vector KNN when available.
             # Stands down for since/until/memory_class queries: those filters
             # live in the FTS SQL only, and a speculative semantic match must
-            # never resurface rows a precision filter excluded.
+            # never resurface rows a precision filter excluded.  ``learning_status``
+            # (TAP-6826) is the exception: it *is* expressible in the KNN SQL, so
+            # it is forwarded and the fallback stays available.
             if not results and since is None and until is None and memory_class is None:
                 results = self._knn_fallback_entries(
                     query,
@@ -520,6 +538,7 @@ class QueryMixin(_MemoryStoreBase):
                     as_of=as_of,
                     include_stale=include_stale,
                     group_tags=group_tags,
+                    learning_status=learning_status,
                 )
 
             results = self._apply_search_filters(
@@ -557,6 +576,7 @@ class QueryMixin(_MemoryStoreBase):
         as_of: str | None,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Semantic fallback for lexically unmatched queries (TAP-5677).
 
@@ -567,6 +587,11 @@ class QueryMixin(_MemoryStoreBase):
         embedding/KNN fails — returns ``[]`` so search degrades to its
         previous empty-result behaviour rather than raising.  Failures are
         logged; ``knn_search`` degradation flags stay the backend's concern.
+
+        *learning_status* (TAP-6826) is forwarded into the KNN SQL rather than
+        standing the fallback down: a promotion-state filter that silently
+        disabled semantic recall would make "filtered" and "no such rows" look
+        the same to the caller — the exact confusion this filter exists to end.
         """
         knn = getattr(self._persistence, "knn_search", None)
         load_one = getattr(self._persistence, "load_one", None)
@@ -586,6 +611,9 @@ class QueryMixin(_MemoryStoreBase):
             return []
         try:
             group_kw: dict[str, Any] = {"group_tags": group_tags} if group_tags else {}
+            status_kw: dict[str, Any] = (
+                {"learning_status": list(learning_status)} if learning_status else {}
+            )
             pairs = knn(
                 list(embedding),
                 _KNN_FALLBACK_K,
@@ -593,6 +621,7 @@ class QueryMixin(_MemoryStoreBase):
                 as_of=as_of,
                 include_stale=include_stale,
                 **group_kw,
+                **status_kw,
             )
         except Exception:
             logger.warning("search.knn_fallback.knn_failed", exc_info=True)

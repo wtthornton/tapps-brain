@@ -245,6 +245,7 @@ class AsyncPostgresPrivateBackend:
         include_expired: bool = False,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[MemoryEntry]:
         """Full-text search via ``search_vector @@ plainto_tsquery``.
 
@@ -261,6 +262,8 @@ class AsyncPostgresPrivateBackend:
                 work.  ``None``/empty — an agent in no groups — executes the exact
                 query that shipped.  Membership must come from the server-side
                 registry (``hive_group_members``), never from the request.
+            learning_status: TAP-6826 — promotion-state pre-filter, pushed into
+                the SQL WHERE clause exactly as in the sync backend.
         """
         if not query.strip():
             return []
@@ -275,6 +278,7 @@ class AsyncPostgresPrivateBackend:
             include_expired=include_expired,
             include_stale=include_stale,
             group_tags=group_tags,
+            learning_status=learning_status,
         )
         scope = _sql.scope_params(self._project_id, self._agent_id, group_tags)
         params: list[Any] = [query, *scope, query, *extra_params]
@@ -306,6 +310,7 @@ class AsyncPostgresPrivateBackend:
         as_of: str | None = None,
         include_stale: bool = False,
         group_tags: list[str] | None = None,
+        learning_status: list[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Approximate nearest-neighbour search via pgvector cosine distance.
 
@@ -316,7 +321,8 @@ class AsyncPostgresPrivateBackend:
         other queries on the same pooled connection.
 
         *as_of* mirrors FTS point-in-time filtering (live-row predicate stands
-        down; bi-temporal window applies).
+        down; bi-temporal window applies).  *learning_status* (TAP-6826) applies
+        the promotion-state pre-filter.
         """
         if not query_embedding:
             return []
@@ -326,6 +332,7 @@ class AsyncPostgresPrivateBackend:
             as_of=as_of,
             include_stale=include_stale,
             group_tags=group_tags,
+            learning_status=learning_status,
         )
         try:
             async with self._scoped_conn() as conn, conn.cursor() as cur:

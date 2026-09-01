@@ -502,6 +502,13 @@ def _live_row_predicate(*, include_stale: bool) -> str:
 
 _SEARCH_FILTER_MEMORY_GROUP_SQL = " AND memory_group = %s"
 _SEARCH_FILTER_MEMORY_CLASS_SQL = " AND memory_class = %s"
+#: TAP-6826: promotion-state pre-filter.  ``= ANY(%s::text[])`` rather than a
+#: run of ``OR``s so one bind carries a set of any size, and so the argument
+#: shape (a list) maps to the SQL without the caller assembling placeholders.
+#: Backed by ``idx_private_memories_learning_status`` (migration 030), which
+#: leads on ``(project_id, agent_id, learning_status)`` -- the same columns the
+#: scope predicate already binds.
+_SEARCH_FILTER_LEARNING_STATUS_SQL = " AND learning_status = ANY(%s::text[])"
 #: Point-in-time window matching :meth:`MemoryEntry.is_temporally_valid`.
 #: Binds the same ``as_of`` timestamptz four times: valid_at, invalid_at,
 #: valid_from, valid_until.  Text alias columns use ``pg_input_is_valid`` so a
@@ -535,6 +542,7 @@ def build_search_sql(
     match_any: bool = False,
     include_stale: bool = False,
     group_tags: list[str] | None = None,
+    learning_status: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
     """Compose the FTS search SQL + the variable-portion params.
 
@@ -572,6 +580,15 @@ def build_search_sql(
     that shipped — the widening is additive only.  Adds one bound parameter,
     positioned by :func:`scope_params`, never in *extra_params*.
 
+    *learning_status* (TAP-6826): when non-empty, restrict the candidate set to
+    rows whose promotion state is one of the named :class:`~tapps_brain.models.
+    LearningStatus` values.  It is a **pre**-filter for the same reason
+    *include_expired* is: ``_SEARCH_ORDER_LIMIT_SQL`` caps the query at 100 rows
+    by rank, so a Python post-filter applied after that cut would silently
+    return fewer rows than asked for whenever unpromoted rows outrank promoted
+    ones -- indistinguishable from "no promoted learnings exist".  ``None`` /
+    empty adds neither clause nor bind, so the shipped SQL is unchanged.
+
     *match_any* (TAP-5677): when ``True``, the base SELECT uses ``to_tsquery``
     so the caller can bind a pre-sanitized OR token string from
     :func:`build_or_tsquery` in the two query positions.  Filter snippets and
@@ -604,6 +621,9 @@ def build_search_sql(
     if memory_class is not None:
         sql += _SEARCH_FILTER_MEMORY_CLASS_SQL
         params.append(memory_class)
+    if learning_status:
+        sql += _SEARCH_FILTER_LEARNING_STATUS_SQL
+        params.append(list(learning_status))
     if as_of is not None:
         sql += _SEARCH_FILTER_AS_OF_SQL
         params.extend([as_of, as_of, as_of, as_of])
@@ -648,6 +668,7 @@ def build_knn_search_sql(
     as_of: str | None = None,
     include_stale: bool = False,
     group_tags: list[str] | None = None,
+    learning_status: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
     """Compose the KNN recall SQL + mid-params (TAP-4586 + point-in-time).
 
@@ -671,9 +692,16 @@ def build_knn_search_sql(
 
     *include_stale* (TAP-6697): drops only the ``status = 'active'`` clause, so
     lifecycle-stale rows reach the Python filter while expired rows stay out.
+
+    *learning_status* (TAP-6826): same promotion-state pre-filter as
+    :func:`build_search_sql`, applied here too so the semantic fallback cannot
+    resurface rows the lexical pass excluded.  Its bind leads *mid_params*.
     """
     sql = _knn_search_head_sql(group_tags) if group_tags else _KNN_SEARCH_HEAD_SQL
     mid_params: list[Any] = []
+    if learning_status:
+        sql += _SEARCH_FILTER_LEARNING_STATUS_SQL
+        mid_params.append(list(learning_status))
     if as_of is not None:
         sql += _SEARCH_FILTER_AS_OF_SQL
         mid_params.extend([as_of, as_of, as_of, as_of])

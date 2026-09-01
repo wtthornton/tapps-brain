@@ -36,9 +36,10 @@ Save a memory to the agent's brain.
 
 ### `brain_recall`
 Recall memories matching a query.
-- Args: `query*`, `max_results` (default 5), `agent_id`.
+- Args: `query*`, `max_results` (default 5), `agent_id`, `filter_learning_status` (comma-separated `candidate`/`approved`/`demoted`).
 - **When I use it:** **session start** (with the user's opening topic) and **before any non-trivial decision**. Primary read path.
 - **Pre-filters via the MCP tool are intentionally narrow.** The underlying service (`memory_service.brain_recall`) supports `filter_tier`, `filter_tags` (ALL), `filter_tags_any` (OR), `filter_memory_class`, `include_stale` — but the MCP wrapper does not expose them yet. When I need those, reach for `memory_search` (time + scope + tier filters) or `memory_entries_by_tag`.
+- **Promotion state (TAP-6826).** Every result carries `learning_status`, so a prompt block built from recall can say whether a learning was gated. `filter_learning_status="approved"` restricts to gated learnings; the filter runs in SQL before the top-K cut, so it still returns up to `max_results` rows even when candidates outrank approved rows.
 - **Empty result?** The MCP wrapper returns a plain list. To get a diagnostics envelope (why nothing came back: store empty, below threshold, scope filtered, RAG-blocked, circuit-breaker open), call `memory_recall` once with the same query — it returns a `RecallResult` with an `empty_reason` enum.
 
 ### `brain_forget`

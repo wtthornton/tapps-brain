@@ -189,9 +189,10 @@ See [`knowledge-graph.md`](knowledge-graph.md), [`kg-experience-flow.md`](kg-exp
 // POST /v1/recall
 { "query": str, "max_results"?: int = 5, "include_stale"?: bool = false,
   "filter_tier"?: str, "filter_tags"?: [str], "filter_tags_any"?: [str],
-  "filter_memory_class"?: str }
-// → { "results": [{key, value, tier, confidence, tags, …}], "query": str,
-//     "recall_digest": str, "memory_versions": [{key, version}] }
+  "filter_memory_class"?: str,
+  "filter_learning_status"?: str | ["candidate"|"approved"|"demoted"] }
+// → { "results": [{key, value, tier, confidence, tags, learning_status, …}],
+//     "query": str, "recall_digest": str, "memory_versions": [{key, version}] }
 
 // POST /v1/forget
 { "key": str }
