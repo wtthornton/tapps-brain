@@ -8,8 +8,60 @@ description: >-
   manifesto. Use when the user says continue, pick up where we left off, resume,
   or start a new session on an existing task (optional TAP-#### argument).
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__plugin_linear_linear__get_issue Bash Read
-argument-hint: "[optional Linear issue id e.g. TAP-1234]"
+argument-hint: "[slot] [optional Linear issue id e.g. TAP-1234]"
 ---
+<!-- BEGIN: tapps-skill tapps-continue-session v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+Start work in a fresh context window by assembling structured state — not a user paste.
+
+1. **Session bootstrap.**
+   - **Preferred:** Call `mcp__nlt-build__tapps_session_start()`. If `data.compaction_rehydration` is present, summarize it in one sentence.
+   - **CLI fallback** (MCP unavailable): Run `uv run tapps-mcp doctor --quick` and read `.tapps-mcp.yaml` for project context (quality preset, brain URL, engagement). Proceed without blocking.
+- **Usage gaps:** `usage_gaps.recurring_validation_skips` is 7-day rolling fleet telemetry — not proof this call failed. Still run validate + checklist at epic boundaries in execution repos.
+
+2. **Choose the handoff, then load it.** A repo can hold several: the shared `.tapps-mcp/session-handoff.md` plus one per slot under `.tapps-mcp/handoffs/`. Enumerate before reading — `uv run tapps-mcp handoff list` prints every one, newest first, with its slot, program, **Updated** and age.
+   - **A slot argument was given** (`/tapps-continue-session <slot>`) → load that one: `.tapps-mcp/handoffs/<slot>.md`. Say so if it does not exist; do not silently fall back to the shared file.
+   - **Exactly one fresh handoff** → load it and continue.
+   - **More than one** → **list the slots and ask which to resume — never silently pick one.** Print slot, program, **Updated** and age for each, then stop and wait. Picking for the user is how one program resumes another program's state without either noticing. Recency is not consent: the newest handoff is frequently the *other* program's.
+   - Then read the chosen file — primary source.
+   - Else best-effort CLI (no `tapps_memory` MCP — removed v3.12.0): `uv run tapps-mcp memory get --key session-handoff` (slotted: `--key session-handoff.<slot>`; brain offline or auth missing → skip).
+   - Optional supplements (only if present): `docs/NEXT_SESSION_PROMPT.md`, `docs/TAPPS_HANDOFF.md` (**Next:** section).
+   - **P0 fallback:** If **Next (P0)** is empty but **Open** has bullets, promote the first Open item as provisional P0 and flag it in the continue block.
+   - **Memory context (optional):** `uv run tapps-mcp memory recall --recall-key session-handoff --query "<P0 text or Linear id>"` pins the handoff mirror then adds semantic hits (HTTP-safe). Alternative: `uv run tapps-mcp memory search --query "..."`. Skip silently when brain auth is unavailable.
+
+3. **Ground-truth gate (run before emitting anything).** The handoff is a claim about the past, not evidence. Age is the weak signal — a handoff goes wrong the moment work lands after it was written, which is usually minutes, not days. Run all three checks and carry a verdict per claim:
+
+   - **Commit drift.** `git log -1 --format=%h`, compared against the handoff **Git:** sha. On a mismatch, name what landed: `git log --oneline <handoff-sha>..HEAD`. A different sha means the file predates real work — treat **every Open item as unverified** until re-probed. *One benign case:* when the only commit in that range is the one that committed the handoff itself, the sha is stale by construction (the file records HEAD at write time, then becomes part of the next commit) — say so and move on. Any other commit in the range is real drift.
+   - **P0 status.** Re-read the **Linear P0:** id from the tracker (`get_issue`), never from the handoff text. Flag it when the issue is already **Done** or **Canceled**. Treat a Done status as a **claim in both directions**: report it, and never conclude from it alone either that the work exists or that it does not — issues get auto-closed by a commit reference with no code behind them, and finished work sits under issues nobody moved.
+   - **Named PR / branch.** For every PR the handoff names, `gh pr view <N> --json state,mergedAt` before offering it as a next action. A merged PR presented as "needs review" is the most common stale-handoff failure.
+
+   **On any mismatch, correct `.tapps-mcp/session-handoff.md` before proceeding** — rewrite the wrong lines, then continue from the corrected file. Never leave a known-wrong artifact for the next session to inherit.
+
+   **Why this outranks age.** The 7-day age warning never fires on the failure that actually happens — a handoff wrong within the hour. It matters more as orchestration loops recycle context at sub-goal boundaries: once a run clears its context the handoff is the only channel between runs, and no surviving context is left to contradict it.
+
+4. **Linear context.**
+   - If the user passed `TAP-####` (argument or in handoff **Linear P0**), call `mcp__plugin_linear_linear__get_issue(id=...)`.
+   - For backlog/triage without a known id, invoke the `linear-read` skill instead of raw `list_issues` (do not call `list_issues` directly — cache gate).
+
+5. **Emit continue block (~15 lines max).** Present:
+   - **P0** — next action + Linear link if available (note if promoted from Open)
+   - **Drift** — lead here whenever step 3 found a mismatch: the sha diff, the commits landed since, any already-Done P0 or already-merged PR. It outranks every other line in this block.
+   - **Done / Open / Blockers** — compressed from handoff, each item tagged **verified**, **corrected**, or **unverified** from step 3. Never restate an Open item as fact when step 3 did not confirm it.
+   - **Cumulative** (when present) — sub-goal, attempt vs cap, budget spent, refuted strategies, resume line
+   - **Verify first** — commands from handoff
+   - **Success criterion**
+   - **Host reset** — Claude Code: operator may `/clear` then continue; Cursor: **new chat** then re-invoke this skill
+   - **Stale warning** if handoff **Updated** is >7 days old or missing — the weaker signal; report it *below* the drift line, never in place of it
+
+6. **Re-verify live state** when **Cumulative** is present — handoff is a pointer, not proof (orchestration §7 / cold-start companion). Step 3 covers sha, P0 status, and named PRs; also re-read any *metric* the handoff quotes (test count, score, coverage) from its newest artifact rather than inheriting the prose.
+
+7. **Proceed on P0.** Ask only if P0 is ambiguous; otherwise start using normal TAPPS workflow (`tapps_quick_check` after Python edits). Do **not** ask the user to re-paste prior context when handoff files exist.
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 82% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 Start work in a fresh context window by assembling structured state — not a user paste.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.78
-# tapps-mcp-hook-content-sha: ce07282e
+# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-content-sha: 48c17deb
 # TappsMCP Stop hook — TAP-1326 / TAP-1327
 # Phase 1 (always when transcript exists): scan tool calls, write loop-metrics.jsonl
 #   + write .tapps-mcp/.completion-gate-violations.jsonl when files were edited
@@ -24,10 +24,10 @@ fi
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 GATE_REPORT=""
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  GATE_REPORT=$("$PYBIN" - <<PYEOF 2>/dev/null
+  GATE_REPORT=$(TAPPS_STOP_TRANSCRIPT="$TRANSCRIPT" TAPPS_STOP_PROJECT_DIR="$PROJECT_DIR" "$PYBIN" - <<PYEOF 2>/dev/null
 import json,os,time
-transcript='$TRANSCRIPT'
-project_dir='$PROJECT_DIR'
+transcript=os.environ.get('TAPPS_STOP_TRANSCRIPT','')
+project_dir=os.environ.get('TAPPS_STOP_PROJECT_DIR','.')
 gate_tools={'tapps_quick_check','tapps_validate_changed','tapps_quality_gate',
             'mcp__tapps-mcp__tapps_quick_check','mcp__tapps-mcp__tapps_validate_changed',
             'mcp__tapps-mcp__tapps_quality_gate','mcp__tapps-quality__tapps_quick_check',
@@ -67,12 +67,22 @@ except Exception:
     pass
 seen=set()
 edits=[p for p in edited_from_transcript if not (p in seen or seen.add(p))]
-needs_gate=any(p.endswith(('.cjs', '.go', '.js', '.jsx', '.mjs', '.py', '.pyi', '.rs', '.ts', '.tsx')) for p in edits)
+# TAP-7014: only files inside the project root can trip the completion gate —
+# a throwaway file written to /tmp or a scratchpad can never satisfy a repo gate run.
+proj_abs=os.path.abspath(project_dir)
+def _in_project(p):
+    try:
+        ap=os.path.abspath(p)
+    except Exception:
+        return False
+    return ap == proj_abs or ap.startswith(proj_abs + os.sep)
+gate_edits=[p for p in edits if _in_project(p)]
+needs_gate=any(p.endswith(('.cjs', '.go', '.js', '.jsx', '.mjs', '.py', '.pyi', '.rs', '.ts', '.tsx')) for p in gate_edits)
 miss=[]
 gate_skipped=[]
 if needs_gate and not gate_called:
-    miss.append('QUALITY_GATE_SKIP:'+','.join(edits[:8]))
-    gate_skipped=edits
+    miss.append('QUALITY_GATE_SKIP:'+','.join(gate_edits[:8]))
+    gate_skipped=gate_edits
 # CHECKLIST_MISSING fires only when files were edited (was unconditional pre-uplift).
 if needs_gate and not checklist_called:
     miss.append('CHECKLIST_MISSING')
@@ -96,18 +106,37 @@ try:
 except Exception:
     pass
 # Warn-mode completion-gate violation log (only on miss). Mirrors .cache-gate-violations.jsonl.
+# TAP-7015: skip the append when (files, reasons) is unchanged from the last logged row —
+# `edits` accumulates over the whole transcript, so an unresolved state was being re-logged
+# on every subsequent Stop, roughly doubling downstream 24h-violation counts.
 if miss:
     try:
         violations_path=os.path.join(metrics_dir,'.completion-gate-violations.jsonl')
         if os.path.exists(violations_path) and os.path.getsize(violations_path) > 10*1024*1024:
             os.replace(violations_path, violations_path + '.1')
-        with open(violations_path,'a') as fh:
-            fh.write(json.dumps({
-                'ts': int(time.time()),
-                'mode': 'warn',
-                'reasons': miss,
-                'files_edited': edits[:16],
-            }) + '\n')
+        current_files=gate_edits[:16]
+        last_sig=None
+        if os.path.exists(violations_path):
+            try:
+                last_line=None
+                with open(violations_path) as fh:
+                    for line in fh:
+                        if line.strip():
+                            last_line=line
+                if last_line:
+                    last_row=json.loads(last_line)
+                    last_sig=(last_row.get('files_edited'), last_row.get('reasons'))
+            except Exception:
+                last_sig=None
+        current_sig=(current_files, miss)
+        if current_sig != last_sig:
+            with open(violations_path,'a') as fh:
+                fh.write(json.dumps({
+                    'ts': int(time.time()),
+                    'mode': 'warn',
+                    'reasons': miss,
+                    'files_edited': current_files,
+                }) + '\n')
     except Exception:
         pass
 print('|'.join(miss))

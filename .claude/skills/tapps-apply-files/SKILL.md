@@ -8,6 +8,52 @@ description: >-
   because the server runs in Docker and cannot write files directly.
 allowed-tools: ""
 ---
+<!-- BEGIN: tapps-skill tapps-apply-files v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+When a TappsMCP or DocsMCP tool returns `content_return: true` with a `file_manifest`,
+the server could not write files (Docker / read-only filesystem).  Apply the files:
+
+1. Read `file_manifest.agent_instructions.persona` — adopt that role
+2. If `backup_recommended` is true, warn the user that existing files may be overwritten
+3. Sort files by `priority` (lowest first) — config files before content files
+4. For each file in `file_manifest.files[]`:
+   - **mode "create"**: Use the Write tool.  Create parent directories as needed.
+   - **mode "overwrite"**: Use the Write tool to replace the file entirely.
+   - **mode "merge"**: Read the existing file first, then apply the `content` as a
+     replacement for the managed section.  The content is the pre-computed merge result;
+     write it with the Write tool (the merge was already done server-side).
+5. Write the `content` field **verbatim** — do not modify, reformat, or add comments
+6. Follow `agent_instructions.verification_steps` after all files are written
+7. Communicate any `agent_instructions.warnings` to the user
+
+**Response structure:**
+```
+{
+  "content_return": true,
+  "file_manifest": {
+    "mode": "content_return",
+    "reason": "...",
+    "summary": "...",
+    "file_count": N,
+    "files": [
+      {"path": "relative/path", "content": "...", "mode": "create|overwrite|merge",
+       "encoding": "utf-8", "description": "...", "priority": 5}
+    ],
+    "agent_instructions": {
+      "persona": "...",
+      "tool_preference": "...",
+      "verification_steps": ["..."],
+      "warnings": ["..."]
+    }
+  }
+}
+```
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 When a TappsMCP or DocsMCP tool returns `content_return: true` with a `file_manifest`,

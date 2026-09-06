@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/cold-start-and-verify.md v3.12.78 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/cold-start-and-verify.md v3.12.83 -->
 # Cold-start preflight & verification depth
 
 Consult while *filling* the prompt template — not while deciding the shape of the
@@ -119,9 +119,10 @@ On any mismatch, **correct the handoff before clearing**. A known-wrong handoff 
 by a fresh context is worse than no handoff: it reads as evidence.
 
 **One runner per handoff file.** Two loops writing `.tapps-mcp/session-handoff.md`
-overwrite each other with no error — the second save wipes the first run's state and the
-first run rehydrates the other's. Check for a concurrent lane before chaining `claude -p`
-invocations; give overlapping runs separate handoff paths.
+overwrite each other — the second save wipes the first run's state and the first run
+rehydrates the other's. Check for a concurrent lane before chaining `claude -p`
+invocations (`uv run tapps-mcp handoff list`); give overlapping runs separate slots —
+`slot="<program>"` on the save, `/tapps-continue-session <slot>` on the resume.
 
 **Declared-checkpoint block** (interactive lane — print verbatim, then stop):
 

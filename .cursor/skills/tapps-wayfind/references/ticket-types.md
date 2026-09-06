@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset tapps-wayfind/references/ticket-types.md v3.12.78 -->
+<!-- BEGIN: tapps-skill-asset tapps-wayfind/references/ticket-types.md v3.12.83 -->
 # Wayfind ticket types
 
 Every ticket is **HITL** (human in the loop) or **AFK** (agent alone). HITL only
