@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.78
-# tapps-mcp-hook-content-sha: 697a6642
+# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-content-sha: 674f4e66
 # TappsMCP PreToolUse hook — Linear write gate (TAP-981)
 # Blocks mcp__plugin_linear_linear__save_issue if no recent
 # docs_validate_linear_issue sentinel (within 30 minutes). Bypass with
@@ -9,7 +9,15 @@ INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 if [ -z "$PYBIN" ]; then
   # TAP-1785: enforcement gate fails closed when python is unavailable.
-  ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+ROOT="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$ROOT" ]; then
+  _common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$_common" ]; then
+    ROOT="$(cd "$_common/.." && pwd)"
+  else
+    ROOT="$PWD"
+  fi
+fi
   mkdir -p "$ROOT/.tapps-mcp" 2>/dev/null
   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"hook\":\"tapps-pre-linear-write\",\"reason\":\"no_python\"}" \
     >> "$ROOT/.tapps-mcp/.bypass-log.jsonl" 2>/dev/null
@@ -43,7 +51,15 @@ if [ "$UPDATE_ONLY" = "1" ]; then
   exit 0
 fi
 if [ "${TAPPS_LINEAR_SKIP_VALIDATE:-0}" = "1" ]; then
-  ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+ROOT="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$ROOT" ]; then
+  _common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$_common" ]; then
+    ROOT="$(cd "$_common/.." && pwd)"
+  else
+    ROOT="$PWD"
+  fi
+fi
   mkdir -p "$ROOT/.tapps-mcp" 2>/dev/null
   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"bypass\":\"TAPPS_LINEAR_SKIP_VALIDATE\"}" \
     >> "$ROOT/.tapps-mcp/.bypass-log.jsonl" 2>/dev/null

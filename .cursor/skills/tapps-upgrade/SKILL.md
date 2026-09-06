@@ -11,6 +11,38 @@ mcp_tools:
   - tapps_doctor
   - tapps_checklist
 ---
+<!-- BEGIN: tapps-skill tapps-upgrade v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+Upgrade tapps-mcp / docs-mcp end-to-end. The user's request is standing authorization — do NOT pause mid-flow.
+
+**Pick install source from prompt:**
+
+- Local checkout: `uv tool install --reinstall --from <path>/packages/tapps-mcp tapps-mcp` (and same for `docs-mcp`).
+- Git tag: `uv tool install --reinstall "git+https://github.com/wtthornton/tapps-mcp.git@vX.Y.Z#subdirectory=packages/tapps-mcp" tapps-mcp`.
+
+If unspecified, ask once.
+
+**Steps:**
+
+1. Reinstall both CLIs. Verify with `uv tool list | grep -E '(tapps-mcp|docs-mcp)'`.
+2. Restart MCP servers (exit + reopen Cursor, or reconnect). Stop on first invocation; resume after restart.
+3. `tapps_session_start(quick=false, force=true)`. Confirm `server.version` matches and `install_drift.drift_detected == false`.
+4. `tapps-mcp upgrade --dry-run`. Review diff + `mcp_bundle` / `mcp_bundle_note` (custom trimmed sets preserved). Pause if a customized canonical section will be overwritten.
+5. `tapps-mcp upgrade` (writes timestamped backup to `.tapps-mcp/backups/<ts>/`).
+6. `tapps-mcp doctor` AND `tapps_checklist(task_type="upgrade")`. Stop on failure. Doctor shows eager (Claude) vs listed (Cursor).
+7. One-line summary: versions, files refreshed, bundle, doctor + checklist status, backup path.
+
+**Bundle opt-down:** `tapps-mcp mcp-bundle set developer|minimal|…` then reload MCP.
+
+**Rollback:** `tapps-mcp rollback` (only if step 5/6 reveals a regression).
+
+**Do NOT:** publish to PyPI/npm; bump tapps-mcp repo versions; touch tapps-brain; add `tapps-brain` as a top-level `.mcp.json` entry.
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 Upgrade tapps-mcp / docs-mcp end-to-end. The user's request is standing authorization — do NOT pause mid-flow.

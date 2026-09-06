@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.78
-# tapps-mcp-hook-content-sha: 993e0bea
+# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-content-sha: 12bc53fe
 # TappsMCP PostToolUse hook (Edit/Write) — TAP-1326 / TAP-1330
 # Detects new external imports requiring tapps_lookup_docs. Advisory only;
 # the Stop hook enforces the completion gate.
@@ -100,7 +100,7 @@ if [ "$SKILL_GUARD" = "1" ]; then
   echo "$FILE: this edit landed inside the BEGIN/END managed block — tapps_upgrade regenerates that region and the edit will be lost. Move project-specific content below the END marker instead." >&2
 fi
 case "$FILE" in
-  *.py|*.pyi|*.ts|*.tsx|*.js|*.jsx|*.go|*.rs)
+  *.cjs|*.go|*.js|*.jsx|*.mjs|*.py|*.pyi|*.rs|*.ts|*.tsx)
     echo "Edited: $FILE — run tapps_quick_check after this edit." >&2
     if [ -n "$LIBS" ]; then
       echo "Imports detected ($LIBS) — call tapps_lookup_docs(library=..., topic=...) **before editing** code that uses those APIs (TAP-1330). Retrospective lookups at finish-task do not excuse skipped pre-edit lookups." >&2
