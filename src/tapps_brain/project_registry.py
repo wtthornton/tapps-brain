@@ -366,3 +366,14 @@ def _strict_mode_enabled() -> bool:
     """Read ``TAPPS_BRAIN_STRICT_PROJECTS`` at call time (not import time)
     so tests and admin tools can toggle it per-process."""
     return os.environ.get("TAPPS_BRAIN_STRICT_PROJECTS", "0") == "1"
+
+
+def is_strict_projects_enabled() -> bool:
+    """Public alias of :func:`_strict_mode_enabled` (TAP-7243).
+
+    The HTTP tenant gate (``http/middleware.py::resolve_tenant_or_refuse``)
+    needs the same ``TAPPS_BRAIN_STRICT_PROJECTS`` reading this module
+    already does for registry resolution — one flag, read the same way, so
+    the two layers can never disagree about whether strict mode is on.
+    """
+    return _strict_mode_enabled()
