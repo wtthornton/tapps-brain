@@ -93,6 +93,48 @@ From this repo against the live stack: `make brain-smoke-live`.
 
 ---
 
+## Tenant-scope enforcement (TAP-7243)
+
+Two independent, off-by-default flags on the `tapps-brain-http` container refuse a
+data-plane request **before any store is touched** when it would otherwise land in a
+literal placeholder or an unregistered tenant:
+
+| Flag | Axis | Refuses when the resolved id is... |
+|------|------|-------------------------------------|
+| `TAPPS_BRAIN_STRICT_PROJECTS=1` | `X-Project-Id` | absent, one of the literals `default` / `repo-brain` / `api` / `main` (container-profile ids, not real tenants), or not a registered row in `project_profiles` |
+| `TAPPS_BRAIN_STRICT_AGENT_ID=1` | `X-Agent-Id` (or the higher-precedence `X-Tapps-Agent`) | absent, or the literal `unknown` |
+
+Both flags are read at request time (no restart needed to toggle) and apply to every
+`/v1/*` write route plus the global-scope reads `/v1/recall` and `/v1/kg/neighbors` — a
+recall/neighbors call with no project is a global read the tenant contract forbids.
+**With both flags unset, behaviour is byte-identical to pre-TAP-7243** — this is a
+deploy-time opt-in, not a default.
+
+Registration status (`approved` true/false) is **not** part of this gate — a project
+registered via lax-mode auto-registration (`approved=false`) still resolves fine under
+`TAPPS_BRAIN_STRICT_PROJECTS=1`; only an *absent* row is refused. Approve a row with
+`tapps-brain project approve <slug>` for other reasons (e.g. admin visibility), not to
+satisfy this gate.
+
+**One envelope for both axes** — `HTTP 400`:
+
+```json
+{
+  "ok": false,
+  "code": "tenant_project_literal",
+  "category": "user_input",
+  "retryable": false,
+  "remediation": "'default' is a placeholder/container-profile id, not a tenant project. Set X-Project-Id to your project's registered, approved id.",
+  "gate": "tenant_scope"
+}
+```
+
+`code` is one of: `tenant_project_missing`, `tenant_project_literal`,
+`tenant_project_unregistered`, `tenant_agent_missing`, `tenant_agent_literal`. Match on
+`code`, never on `remediation` prose.
+
+---
+
 ## Failure remediation
 
 | Symptom | Fix |
@@ -103,6 +145,8 @@ From this repo against the live stack: `make brain-smoke-live`.
 | version below floor | Upgrade brain image (`make dev-deploy` in tapps-brain repo) |
 | project not registered | `tapps-brain project register <slug>` |
 | duplicate MCP servers | Remove direct `tapps-brain` from `.mcp.json`; run `tapps_upgrade` |
+| `400 tenant_project_missing` / `tenant_project_literal` / `tenant_project_unregistered` | Set `X-Project-Id` to your project's real, registered slug — see [Tenant-scope enforcement](#tenant-scope-enforcement-tap-7243) |
+| `400 tenant_agent_missing` / `tenant_agent_literal` | Set `X-Agent-Id` (or `X-Tapps-Agent`) to a stable logical agent name, not `unknown` |
 
 Full matrix: [MEMORY_REFERENCE.md](../MEMORY_REFERENCE.md#troubleshooting-matrix).
 

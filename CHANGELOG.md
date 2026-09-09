@@ -12,6 +12,20 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ## [Unreleased]
 
+### Added
+
+- **Tenant-scope refusal gate for `/v1/*` data-plane routes (ADR-010)** — two independent,
+  off-by-default flags, `TAPPS_BRAIN_STRICT_PROJECTS=1` and `TAPPS_BRAIN_STRICT_AGENT_ID=1`,
+  refuse a write or global-scope read (`/v1/recall`, `/v1/kg/neighbors`) before any store is
+  touched when the resolved project is absent, a literal placeholder (`default` /
+  `repo-brain` / `api` / `main`) or unregistered, or the resolved agent is absent or the
+  literal `unknown`. One envelope shape for both axes — `HTTP 400`
+  `{"ok": false, "code": "<tenant_project_missing|tenant_project_literal|tenant_project_unregistered|tenant_agent_missing|tenant_agent_literal>", "category": "user_input", "retryable": false, "remediation": "...", "gate": "tenant_scope"}`
+  — replacing the previous split between a data-plane 404 and the global exception
+  handler's 403 for an unregistered project. Read at call time (no restart to toggle); with
+  both flags unset, behaviour is byte-identical to previous releases. See
+  `docs/operations/CONSUMER-REPO-BRAIN-WIRING.md` § Tenant-scope enforcement.
+
 ## [3.32.2] — 2026-08-08
 
 ### Fixed
