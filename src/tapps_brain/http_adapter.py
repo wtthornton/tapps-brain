@@ -123,7 +123,7 @@ from tapps_brain.http.middleware import (
     RestProfileGateMiddleware,
     _mcp_auth_error_body,
     _peek_mcp_tool_name,
-    _resolve_tenant_headers,
+    resolve_tenant_or_refuse,
     strict_identity_refusal,
 )
 
@@ -1208,13 +1208,20 @@ def create_app(
                 },
             ) from exc
         except ProjectNotRegisteredError as exc:
+            # TAP-7243: ProjectRegistry.resolve() only raises this under
+            # TAPPS_BRAIN_STRICT_PROJECTS=1 (project_registry.py), so this
+            # branch is itself flag-gated — no extra check needed here.  One
+            # envelope shape for the whole tenant gate, replacing the old
+            # data-plane 404 (this branch) vs the global handler's 403.
+            from tapps_brain.errors import tenant_refusal_body
+
             raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "project_not_registered",
-                    "detail": f"Project {exc.project_id!r} is not registered.",
-                    "project_id": exc.project_id,
-                },
+                status_code=400,
+                detail=tenant_refusal_body(
+                    "tenant_project_unregistered",
+                    f"Project {exc.project_id!r} is not registered. Register it with "
+                    "`tapps-brain project register` or set X-Project-Id to a registered id.",
+                ),
             ) from exc
 
     def _async_store_covers_tenant(project_id: str, agent_id: str) -> bool:
@@ -1421,14 +1428,9 @@ def create_app(
         independent facts, where no neighbour should win, pass
         ``"supersede": "key-scoped"`` on the save instead.
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
 
         # TAP-6696 / VAL-25-flag: refuse an anonymous write identity when
         # TAPPS_BRAIN_STRICT_IDENTITY=1 (default off — no behavior change
@@ -1640,14 +1642,9 @@ def create_app(
         Request body (JSON):
           ``{ "key": str, "confidence_boost"?: float }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         # TAP-629: acquire per-key guard before cache check (see _v1_remember).
@@ -1791,14 +1788,9 @@ def create_app(
         Response:
           ``{ "results": [...], "saved_count": int, "error_count": int }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -1915,14 +1907,9 @@ def create_app(
         Response:
           ``{ "results": [...], "query_count": int }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -1987,14 +1974,9 @@ def create_app(
         Response:
           ``{ "results": [...], "reinforced_count": int, "error_count": int }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
@@ -2143,14 +2125,9 @@ def create_app(
         in ``results`` — a content address for the returned set (TAP-6583).
         Both fields are additive; ``recall_digest`` is ``""`` when empty.
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -2289,14 +2266,9 @@ def create_app(
 
         Response: ``{ "forgotten": bool, "key": str, "reason"?: str }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
@@ -2423,14 +2395,9 @@ def create_app(
 
         Response: ``{ "learned": true, "key": str }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
@@ -2573,14 +2540,9 @@ def create_app(
 
         Response: ``{ "learned": true, "key": str }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         ikey, istore = _get_ikey_and_istore(request)
@@ -2748,14 +2710,9 @@ def create_app(
         Response: ``{ "event_id": str, "memory_key": str|null,
         "entity_ids": [str], "edge_ids": [str], "evidence_ids": [str] }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
@@ -2938,14 +2895,9 @@ def create_app(
           ``{ "results": [...], "count": int }`` with one result per event in
           input order.
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
 
         from tapps_brain.idempotency import IdempotencyUnavailableError
 
@@ -3243,15 +3195,6 @@ def create_app(
     # Document plane routes (TAP-4998 / TAP-5003)
     # ------------------------------------------------------------------
 
-    def _require_project_id(request: Request) -> str:
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        return project_id
-
     def _document_response(result: dict[str, Any]) -> JSONResponse:
         error = result.get("error") if isinstance(result, dict) else None
         if error is not None:
@@ -3277,8 +3220,9 @@ def create_app(
         Content above ``documents.max_doc_bytes`` (default 2 MiB) is rejected
         with 413 ``document_too_large``.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request, max_bytes=_DOCUMENTS_MAX_BODY_BYTES)
 
@@ -3315,8 +3259,9 @@ def create_app(
         limit: int = Query(100, ge=1, le=500),
     ) -> JSONResponse:
         """List document metadata for the project (newest first)."""
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.services import document_service as _docs_svc
@@ -3337,8 +3282,9 @@ def create_app(
 
         Request body (JSON): ``{ "query": str, "limit"?: int = 10 }``
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3361,8 +3307,9 @@ def create_app(
         meta_only: int = Query(0, description="1 to omit content from the response."),
     ) -> JSONResponse:
         """Fetch one document's metadata and (unless ``meta_only=1``) its content."""
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.services import document_service as _docs_svc
@@ -3380,8 +3327,9 @@ def create_app(
     @app.delete("/v1/documents/{doc_id}", dependencies=[Depends(require_data_plane_auth)])
     async def _v1_documents_delete(request: Request, doc_id: str) -> JSONResponse:
         """Delete a document; its chunks cascade."""
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         from tapps_brain.services import document_service as _docs_svc
@@ -3429,8 +3377,9 @@ def create_app(
         promote. Returns 404 when the key is unknown and 409 when the entry is
         already approved.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3455,8 +3404,9 @@ def create_app(
         Request body (JSON): ``{ "key": str, "reason": str }``.  Both are
         required — a demotion nobody explained cannot be audited later.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3484,8 +3434,9 @@ def create_app(
         empty ``tool_paths`` list rather than a 404 or a downgrade to
         candidates.  ``demoted`` entries are never returned.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3531,8 +3482,9 @@ def create_app(
         State is isolated per mission: two missions under one ``project_id``
         cannot read each other.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3560,8 +3512,9 @@ def create_app(
         rather than a `404` — "this mission has not parked its contract yet" is
         a normal answer for a worker picking up a mission, not a failure.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
         body = await _parse_json_object_body(request)
 
@@ -3594,12 +3547,12 @@ def create_app(
 
         Response: ``{ "neighbors": [{...}], "entity_ids": [str] }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
+        # TAP-7243: neighbors is a global-scope read same as /v1/recall —
+        # refused on the same tenant predicate before the KG connection
+        # manager is touched.
+        project_id, _agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
 
         try:
             raw = await request.body()
@@ -3867,14 +3820,9 @@ def create_app(
 
         Response: ``{ "recorded": true, "edge_id": str, "feedback_type": str }``
         """
-        project_id = (request.headers.get("x-project-id") or "").strip()
-        if not project_id:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
-            )
-        # X-Tapps-Agent wins over X-Agent-Id (same precedence as MCP / middleware).
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         store = _get_tenant_store_or_503(project_id, agent_id)
 
         try:
@@ -4002,8 +3950,9 @@ def create_app(
 
         Introduced in TAP-5508.
         """
-        project_id = _require_project_id(request)
-        _, agent_id, _, _ = _resolve_tenant_headers(request)
+        project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         body = await _parse_json_object_body(request)
 
         raw_max = body.get("max_count")
@@ -4045,8 +3994,9 @@ def create_app(
 
         Introduced in TAP-5508.
         """
-        project_id = _require_project_id(request)
-        _resolve_tenant_headers(request)
+        project_id, _agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
 
         cm = _get_kg_cm_or_503()
         from tapps_brain.services import kg_service as _kg_svc
@@ -4075,8 +4025,9 @@ def create_app(
 
         Introduced in TAP-5509.
         """
-        project_id = _require_project_id(request)
-        _resolve_tenant_headers(request)
+        project_id, _agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
+        if _tenant_exc is not None:
+            raise _tenant_exc
         body = await _parse_json_object_body(request)
 
         cm = _get_kg_cm_or_503()

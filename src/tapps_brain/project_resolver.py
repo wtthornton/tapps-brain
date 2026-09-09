@@ -29,6 +29,21 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 DEFAULT_PROJECT_ID = "default"
+
+# TAP-7255: literal/placeholder project ids that TAPPS_BRAIN_STRICT_PROJECTS
+# refuses even when registered (TAP-7243). ``default`` is the substituted
+# sentinel above; ``repo-brain``, ``api``, and ``main`` are container-profile
+# ids that exist in the registry as unapproved rows (source="auto"), not
+# real tenants — see the decision record on TAP-7256.
+STRICT_REFUSED_PROJECT_LITERALS = frozenset({DEFAULT_PROJECT_ID, "repo-brain", "api", "main"})
+
+# TAP-7255: the anonymous agent placeholder TAPPS_BRAIN_STRICT_AGENT_ID
+# refuses (mirrors _ANONYMOUS_AGENT_IDS in http/middleware.py, which also
+# includes "default" for the pre-existing TAPPS_BRAIN_STRICT_IDENTITY gate;
+# the tenant gate's agent axis only ever sees "unknown" as a literal because
+# "default" is not a substituted agent_id anywhere in this codebase).
+STRICT_REFUSED_AGENT_LITERALS = frozenset({"unknown"})
+
 HEADER_NAME = "X-Tapps-Project"
 # HTTP / OpenAPI canonical tenant header (ADR-010 evolution). Accepted as an
 # alias of ``HEADER_NAME`` so callers that only set ``X-Project-Id`` still
