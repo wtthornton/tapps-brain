@@ -133,6 +133,13 @@ satisfy this gate.
 `tenant_project_unregistered`, `tenant_agent_missing`, `tenant_agent_literal`. Match on
 `code`, never on `remediation` prose.
 
+**Deploy wiring** — both flags reach the `tapps-brain-http` container only through the
+`environment:` allowlist in `docker/docker-compose.hive.yaml` (there is no `env_file:`
+passthrough). Set `TAPPS_BRAIN_STRICT_PROJECTS=1` / `TAPPS_BRAIN_STRICT_AGENT_ID=1` in
+`docker/.env` — appending them anywhere else (shell export, a different `.env`) does not
+reach the container. Default `0` in both the compose file and `docker/.env.example`
+preserves pre-TAP-7243 behaviour.
+
 ---
 
 ## Failure remediation
