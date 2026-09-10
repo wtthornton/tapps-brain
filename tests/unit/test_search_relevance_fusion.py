@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -123,3 +124,29 @@ class TestScoreByRankMagnitude:
 
         # Rank-position formula: relevance 1.0 vs 0.0, everything else equal.
         assert score_top > score_bottom
+
+
+class TestBrainRecallToleratesUnspeccedStoreDouble:
+    """TAP-7338 follow-up: an unspecced MagicMock store must not poison scoring.
+
+    ``MagicMock()`` with no ``spec`` auto-vivifies any attribute access,
+    including ``last_search_relevance`` — so ``getattr(store,
+    "last_search_relevance", None)`` never falls through to ``None``. Before
+    the isinstance(..., dict) guard in ``memory_service.brain_recall``, that
+    auto-vivified MagicMock was treated as the relevance map, `.get(key)`
+    returned another MagicMock, and ``score_by_rank`` raised ``TypeError:
+    '<' not supported between instances of 'MagicMock' and 'float'``.
+    """
+
+    def test_recall_scores_results_without_raising(self) -> None:
+        from tapps_brain.models import MemoryEntry
+        from tapps_brain.services.memory_service import brain_recall
+
+        store = MagicMock()
+        entry = MemoryEntry(key="key-a", value="some fact")
+        store.search.return_value = [entry]
+
+        results = brain_recall(store, "proj", "agent", query="something")
+
+        assert len(results) == 1
+        assert isinstance(results[0]["score"], float)

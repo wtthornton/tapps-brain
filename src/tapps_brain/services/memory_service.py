@@ -385,7 +385,14 @@ def brain_recall(
         # _store_query.py::search / store.last_search_relevance. Absent for
         # test doubles and older PrivateBackend implementations, which keep
         # the exact pre-TAP-7338 rank-position scoring below.
-        relevance_by_key: dict[str, float] = getattr(store, "last_search_relevance", None) or {}
+        # Type-check rather than trust getattr/or-fallback: an unspecced
+        # MagicMock auto-vivifies `last_search_relevance` into a further
+        # mock rather than raising AttributeError or returning None, so
+        # `getattr(..., None) or {}` never falls through to `{}`.
+        _raw_relevance_map = getattr(store, "last_search_relevance", None)
+        relevance_by_key: dict[str, float] = (
+            _raw_relevance_map if isinstance(_raw_relevance_map, dict) else {}
+        )
         candidates: list[tuple[dict[str, Any], float]] = []
         for rank_index, entry in enumerate(entries):
             item: dict[str, Any]

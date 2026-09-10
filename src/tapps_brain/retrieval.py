@@ -640,7 +640,14 @@ class MemoryRetriever:
         retriever's configured weights as :meth:`_build_scored_memory_item`,
         so recall and context injection rank consistently.
         """
-        if relevance_raw is not None:
+        # TAP-7338 follow-up: `relevance_raw` ultimately comes from a store
+        # attribute (`last_search_relevance`) that callers only trust after
+        # an isinstance(..., dict) check, but a non-numeric value slipping
+        # through a dict entry should degrade to the rank-position formula
+        # rather than raise a TypeError deep inside recall — a value that is
+        # neither a number nor absent is a caller bug worth being resilient
+        # to here, not worth crashing production recall over.
+        if isinstance(relevance_raw, int | float) and not isinstance(relevance_raw, bool):
             relevance = max(0.0, min(1.0, relevance_raw))
         elif total_candidates > 1:
             relevance = 1.0 - (rank_index / (total_candidates - 1))
