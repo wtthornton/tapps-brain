@@ -154,6 +154,130 @@ class TestTransportSecurity:
             server._tapps_store.close()
 
 
+# Core (non-operator) tool surface for the default server. Compared against
+# mcp_profiles.yaml's 'full' profile in test_core_literal_matches_full_profile
+# so this literal cannot silently drift from the source of truth.
+_CORE_TOOL_NAMES = {
+    # Core memory tools
+    "memory_save",
+    "memory_get",
+    "memory_delete",
+    "memory_search",
+    "memory_list",
+    "memory_list_groups",
+    "memory_recall",
+    "memory_reinforce",
+    "memory_ingest",
+    "memory_supersede",
+    "memory_history",
+    # Session and capture tools
+    "memory_index_session",
+    "memory_search_sessions",
+    "memory_capture",
+    # Session-end tool
+    "tapps_brain_session_end",
+    # Profile tools
+    "profile_info",
+    "memory_profile_onboarding",
+    "profile_switch",
+    # Hive tools
+    "hive_status",
+    "hive_search",
+    "hive_propagate",
+    "hive_push",
+    "hive_write_revision",
+    "hive_wait_write",
+    # Agent tools
+    "agent_register",
+    "agent_create",
+    "agent_list",
+    "agent_delete",
+    # Knowledge graph tools
+    "memory_relations",
+    "memory_relations_get_batch",
+    "memory_find_related",
+    "memory_query_relations",
+    # Audit tool
+    "memory_audit",
+    # Tag management tools
+    "memory_list_tags",
+    "memory_update_tags",
+    "memory_entries_by_tag",
+    # Feedback tools (EPIC-029)
+    "feedback_rate",
+    "feedback_gap",
+    "feedback_issue",
+    "feedback_record",
+    "feedback_query",
+    # Diagnostics (EPIC-030)
+    "diagnostics_report",
+    "diagnostics_history",
+    # Flywheel (EPIC-031) — core tools only; eval+hive_feedback are operator
+    "flywheel_process",
+    "flywheel_gaps",
+    "flywheel_report",
+    # AgentBrain facade (EPIC-057)
+    "brain_remember",
+    "brain_recall",
+    "brain_forget",
+    "brain_learn_success",
+    "brain_learn_failure",
+    "brain_status",
+    # Consumer audit (TAP-2093)
+    "brain_audit_consumers",
+    # Recall-quality telemetry (TAP-2094)
+    "recall_quality_metrics",
+    # Managed Agents export (TAP-2099)
+    "brain_export",
+    # Batch tools (STORY-070.11)
+    "memory_save_many",
+    "memory_recall_many",
+    "memory_reinforce_many",
+    # KG tools (EPIC-076 STORY-076.5)
+    "brain_record_event",
+    "brain_get_neighbors",
+    "brain_explain_connection",
+    "brain_record_feedback",
+    # KG batch (TAP-1973, EPIC-302)
+    "brain_record_events_batch",
+    # KG entity resolution (TAP-2725)
+    "brain_resolve_entity",
+    # Experience query (TAP-3157 / EPIC-074)
+    "brain_query_events",
+    # Profile-scoped learned data (EPIC-075)
+    "brain_profile_set",
+    "brain_profile_get",
+    # Gated learning (TAP-5542)
+    "brain_promote_learning",
+    "brain_demote_learning",
+    # Approved-only tool-path recall (TAP-5545)
+    "brain_recall_tool_paths",
+    # Mission-scoped shared state (TAP-5544)
+    "brain_mission_state_set",
+    "brain_mission_state_get",
+    # NOTE: "maintenance_decay_learnings" (TAP-5547) is operator-only
+    # (mcp_profiles.yaml puts it in the operator profile only) — it must
+    # NOT appear here. See test_core_literal_matches_full_profile below.
+    # KG predicate registry (TAP-5508)
+    "brain_register_predicate",
+    "brain_list_predicates",
+    # KG ledger check (TAP-5509)
+    "brain_kg_check",
+    # Docs lookup (Context7 + llms.txt cache)
+    "docs_lookup",
+    "docs_warm",
+    # Web research (TAP-5364 / ADR-0030)
+    "web_research",
+    "research_fetch",
+    # Document plane (TAP-4998 / TAP-5003)
+    "document_put",
+    "document_get",
+    "document_search",
+    "document_list",
+    "document_delete",
+}
+
+
 class TestCoreTools:
     """Test core memory CRUD tools are registered."""
 
@@ -180,175 +304,47 @@ class TestCoreTools:
     def test_all_expected_tools_present(self, mcp_server):
         """Default server (no operator tools) must expose only the core tool surface."""
         tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
-        expected = {
-            # Core memory tools
-            "memory_save",
-            "memory_get",
-            "memory_delete",
-            "memory_search",
-            "memory_list",
-            "memory_list_groups",
-            "memory_recall",
-            "memory_reinforce",
-            "memory_ingest",
-            "memory_supersede",
-            "memory_history",
-            # Session and capture tools
-            "memory_index_session",
-            "memory_search_sessions",
-            "memory_capture",
-            # Session-end tool
-            "tapps_brain_session_end",
-            # Profile tools
-            "profile_info",
-            "memory_profile_onboarding",
-            "profile_switch",
-            # Hive tools
-            "hive_status",
-            "hive_search",
-            "hive_propagate",
-            "hive_push",
-            "hive_write_revision",
-            "hive_wait_write",
-            # Agent tools
-            "agent_register",
-            "agent_create",
-            "agent_list",
-            "agent_delete",
-            # Knowledge graph tools
-            "memory_relations",
-            "memory_relations_get_batch",
-            "memory_find_related",
-            "memory_query_relations",
-            # Audit tool
-            "memory_audit",
-            # Tag management tools
-            "memory_list_tags",
-            "memory_update_tags",
-            "memory_entries_by_tag",
-            # Feedback tools (EPIC-029)
-            "feedback_rate",
-            "feedback_gap",
-            "feedback_issue",
-            "feedback_record",
-            "feedback_query",
-            # Diagnostics (EPIC-030)
-            "diagnostics_report",
-            "diagnostics_history",
-            # Flywheel (EPIC-031) — core tools only; eval+hive_feedback are operator
-            "flywheel_process",
-            "flywheel_gaps",
-            "flywheel_report",
-            # AgentBrain facade (EPIC-057)
-            "brain_remember",
-            "brain_recall",
-            "brain_forget",
-            "brain_learn_success",
-            "brain_learn_failure",
-            "brain_status",
-            # Consumer audit (TAP-2093)
-            "brain_audit_consumers",
-            # Recall-quality telemetry (TAP-2094)
-            "recall_quality_metrics",
-            # Managed Agents export (TAP-2099)
-            "brain_export",
-            # Batch tools (STORY-070.11)
-            "memory_save_many",
-            "memory_recall_many",
-            "memory_reinforce_many",
-            # KG tools (EPIC-076 STORY-076.5)
-            "brain_record_event",
-            "brain_get_neighbors",
-            "brain_explain_connection",
-            "brain_record_feedback",
-            # KG batch (TAP-1973, EPIC-302)
-            "brain_record_events_batch",
-            # KG entity resolution (TAP-2725)
-            "brain_resolve_entity",
-            # Experience query (TAP-3157 / EPIC-074)
-            "brain_query_events",
-            # Profile-scoped learned data (EPIC-075)
-            "brain_profile_set",
-            "brain_profile_get",
-            # Gated learning (TAP-5542)
-            "brain_promote_learning",
-            "brain_demote_learning",
-            # Approved-only tool-path recall (TAP-5545)
-            "brain_recall_tool_paths",
-            # Mission-scoped shared state (TAP-5544)
-            "brain_mission_state_set",
-            "brain_mission_state_get",
-            # Learning decay / demotion sweep (TAP-5547, operator-only)
-            "maintenance_decay_learnings",
-            # KG predicate registry (TAP-5508)
-            "brain_register_predicate",
-            "brain_list_predicates",
-            # KG ledger check (TAP-5509)
-            "brain_kg_check",
-            # Docs lookup (Context7 + llms.txt cache)
-            "docs_lookup",
-            "docs_warm",
-            # Web research (TAP-5364 / ADR-0030)
-            "web_research",
-            "research_fetch",
-            # Document plane (TAP-4998 / TAP-5003)
-            "document_put",
-            "document_get",
-            "document_search",
-            "document_list",
-            "document_delete",
-        }
+        expected = _CORE_TOOL_NAMES
         assert expected == tool_names, (
             f"Tool mismatch.\n"
             f"  Missing from server: {expected - tool_names}\n"
             f"  Extra on server (not in expected): {tool_names - expected}"
         )
 
+    def test_core_literal_matches_full_profile(self):
+        """_CORE_TOOL_NAMES cannot drift from the 'full' profile in
+        mcp_profiles.yaml — the source of truth for which tools are core
+        (non-operator).
+        """
+        from tapps_brain.mcp_server.profile_registry import ProfileRegistry
+
+        expected = _CORE_TOOL_NAMES
+        full_profile = ProfileRegistry().get("full")
+        assert expected == full_profile, (
+            "test_all_expected_tools_present's literal has drifted from the "
+            "'full' profile in mcp_profiles.yaml.\n"
+            f"  In literal but not in 'full': {sorted(expected - full_profile)}\n"
+            f"  In 'full' but not in literal: {sorted(full_profile - expected)}"
+        )
+
     def test_operator_tools_absent_by_default(self, mcp_server):
         """Operator tools must NOT appear in the default (non-operator) session."""
+        from tapps_brain.mcp_server.server import _OPERATOR_TOOL_NAMES
+
         tool_names = {t.name for t in mcp_server._tool_manager._unfiltered_list_tools()}
-        operator_tools = {
-            "maintenance_consolidate",
-            "maintenance_gc",
-            "maintenance_stale",
-            "tapps_brain_health",
-            "memory_gc_config",
-            "memory_gc_config_set",
-            "memory_consolidation_config",
-            "memory_consolidation_config_set",
-            "memory_export",
-            "memory_import",
-            "tapps_brain_relay_export",
-            "flywheel_evaluate",
-            "flywheel_hive_feedback",
-        }
-        present = operator_tools & tool_names
+        present = _OPERATOR_TOOL_NAMES & tool_names
         assert not present, f"Operator tools should be absent by default but found: {present}"
         assert not mcp_server._tapps_operator_tools_enabled
 
     def test_operator_tools_present_when_enabled(self, store_dir):
         """All operator tools must appear when enable_operator_tools=True."""
         from tapps_brain.mcp_server import create_server
+        from tapps_brain.mcp_server.server import _OPERATOR_TOOL_NAMES
 
         server = create_server(store_dir, enable_hive=False, enable_operator_tools=True)
         try:
             tool_names = {t.name for t in server._tool_manager._unfiltered_list_tools()}
-            expected_operator = {
-                "maintenance_consolidate",
-                "maintenance_gc",
-                "maintenance_stale",
-                "tapps_brain_health",
-                "memory_gc_config",
-                "memory_gc_config_set",
-                "memory_consolidation_config",
-                "memory_consolidation_config_set",
-                "memory_export",
-                "memory_import",
-                "tapps_brain_relay_export",
-                "flywheel_evaluate",
-                "flywheel_hive_feedback",
-            }
-            missing = expected_operator - tool_names
+            missing = _OPERATOR_TOOL_NAMES - tool_names
             assert not missing, f"Operator tools missing: {missing}"
             assert server._tapps_operator_tools_enabled
         finally:
