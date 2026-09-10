@@ -48,6 +48,21 @@ _KNN_FALLBACK_K = 10
 #: reuses that same constant rather than inventing a new one.
 _SEARCH_FUSION_RRF_K = 60
 
+#: TAP-7338 (PR #297 follow-up) — minimum vector-channel similarity (cosine
+#: distance converted via ``1.0 / (1.0 + distance)``) a KNN row must clear to
+#: enter fusion *when the lexical channel already found something*.
+#:
+#: Measured against the real embedding model (BAAI/bge-small-en-v1.5): an
+#: actually-unrelated memory sits at similarity 0.716 against an unrelated
+#: query, while true-positive fixtures in test_search_relevance_fusion.py and
+#: test_search_fallback.py sit at 0.909+. 0.80 has margin on both sides. See
+#: the PR description for the full derivation and why the floor is
+#: conditioned on non-empty FTS results rather than applied unconditionally
+#: (a pinned fallback-only fixture sits at 0.714 — 0.002 below the false
+#: positive above — so no single unconditional floor can separate them; only
+#: "did the lexical channel already find real signal" can).
+_KNN_MIN_SIMILARITY_FOR_FUSION = 0.80
+
 
 def _filter_memory_entries(
     entries: list[MemoryEntry],
@@ -559,6 +574,13 @@ class QueryMixin(_MemoryStoreBase):
                     group_tags=group_tags,
                     learning_status=learning_status,
                 )
+                if results and vector_entries:
+                    # TAP-7338 fix: lexical signal already exists here, so a
+                    # weak vector row would dilute it rather than add to it.
+                    # See _KNN_MIN_SIMILARITY_FOR_FUSION for the derivation.
+                    vector_entries, vector_relevance = self._filter_vector_entries_by_similarity(
+                        vector_entries, vector_relevance, _KNN_MIN_SIMILARITY_FOR_FUSION
+                    )
                 if vector_entries:
                     results, relevance_raw = self._fuse_fts_and_vector(
                         results, relevance_raw, vector_entries, vector_relevance
@@ -678,6 +700,22 @@ class QueryMixin(_MemoryStoreBase):
         if entries:
             self._metrics.increment("store.search.knn_fallback")
         return entries, relevance
+
+    @staticmethod
+    def _filter_vector_entries_by_similarity(
+        entries: list[MemoryEntry],
+        relevance: dict[str, float],
+        floor: float,
+    ) -> tuple[list[MemoryEntry], dict[str, float]]:
+        """Drop vector-channel rows below *floor* similarity (TAP-7338 fix).
+
+        Callers must only invoke this when the lexical channel already
+        returned rows — see ``_KNN_MIN_SIMILARITY_FOR_FUSION`` for why the
+        floor is conditioned on that instead of applying unconditionally.
+        """
+        kept = [e for e in entries if relevance.get(e.key, 0.0) >= floor]
+        kept_keys = {e.key for e in kept}
+        return kept, {k: v for k, v in relevance.items() if k in kept_keys}
 
     def _fuse_fts_and_vector(
         self,
