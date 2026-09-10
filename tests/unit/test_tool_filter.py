@@ -873,3 +873,54 @@ class TestValidationErrorEnrichment:
         msg = str(exc_info.value)
         assert "required_fields" not in msg
         assert "internal blowup" in msg
+
+
+# ---------------------------------------------------------------------------
+# TAP-7296: tools/list cache must be scoped per wrapped instance, not a
+# process-global dict keyed only by profile name — otherwise a MagicMock-tool
+# server and a real server sharing the "full" profile key clobber each
+# other's cached tools/list result.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_mcp
+class TestToolsListCacheInstanceScoping:
+    def test_two_servers_do_not_share_tools_list_cache(self, tmp_path: Any) -> None:
+        """A MagicMock-tooled server and a real server, both on profile "full"
+        in the same process, must each see only their own tools/list result.
+
+        Reproduces TAP-7296: tests/integration/test_profile_filter.py builds
+        mock servers with bare ``MagicMock()`` tools and lists them under the
+        "full" profile; tests/test_tenancy_isolation_matrix.py builds a real
+        server via ``create_server()`` and also resolves to "full". Before
+        the fix, both installs read/wrote the same module-global
+        ``_TOOLS_LIST_CACHE["full"]`` entry, so whichever server listed tools
+        second got back the other server's (mock or real) tool objects.
+        """
+        from tapps_brain.mcp_server import create_server
+
+        registry = ProfileRegistry()
+
+        mock_mcp = _make_mock_mcp(["fake_tool_a", "fake_tool_b"])
+        install_tool_filter(mock_mcp, profile_registry=registry)
+
+        real_mcp = create_server(tmp_path, enable_hive=False)
+        install_tool_filter(real_mcp, profile_registry=registry)
+
+        mock_result = mock_mcp._tool_manager.list_tools()
+        real_result = real_mcp._tool_manager.list_tools()
+
+        mock_names = {t.name for t in mock_result}
+        real_names = {t.name for t in real_result}
+
+        assert mock_names == {"fake_tool_a", "fake_tool_b"}
+        assert "fake_tool_a" not in real_names
+        assert "fake_tool_b" not in real_names
+        assert len(real_names) > 0
+
+        # Re-list in the opposite order — must still be independent (proves
+        # this isn't just "whoever populates first wins").
+        real_result_again = real_mcp._tool_manager.list_tools()
+        mock_result_again = mock_mcp._tool_manager.list_tools()
+        assert {t.name for t in real_result_again} == real_names
+        assert {t.name for t in mock_result_again} == mock_names

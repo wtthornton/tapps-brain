@@ -58,6 +58,7 @@ from __future__ import annotations
 import contextvars
 import threading
 import time
+import weakref
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -76,16 +77,48 @@ _DEFAULT_PROFILE = "full"
 # Tools are registered at server startup and never change during process
 # lifetime; the 300 s TTL is a safety valve for future hot-reload scenarios.
 #
+# TAP-7296: the cache is scoped to the wrapped ``_tool_manager`` instance (an
+# attribute on that instance), not a process-global dict. A module-global
+# dict keyed only by profile name lets two unrelated `FastMCP` instances
+# (e.g. two servers built in the same test process) clobber each other's
+# entries under the same profile key, so one server's tools/list response
+# can leak into another's. Scoping to the instance means the cache dies with
+# it — no cross-instance leakage is possible.
+#
 # CPython dict read/write is GIL-protected, so no separate lock is needed
 # for the dict itself. Concurrent cache misses on the very first request may
 # double-compute; the second write is idempotent (same tool list) and harmless.
-_TOOLS_LIST_CACHE: dict[str, tuple[float, list[Any]]] = {}
 _TOOLS_LIST_CACHE_TTL: float = 300.0
+
+# Registry of live per-instance cache dicts, used only so `clear_tools_list_cache()`
+# can flush every outstanding cache (test hygiene). Keyed by `id(tool_manager)`
+# holding `(weakref.ref(tool_manager), cache_dict)` so entries can be pruned once
+# the tool manager is garbage-collected.
+_INSTANCE_CACHE_REGISTRY: dict[int, tuple["weakref.ref[Any]", dict[str, tuple[float, list[Any]]]]] = {}
+
+
+def _instance_cache(tool_manager: Any) -> dict[str, tuple[float, list[Any]]]:
+    """Return the tools/list cache dict owned by *tool_manager*, creating it
+    on first use. Stored as an attribute on the instance so it is garbage
+    collected along with it — no process-global leakage across instances."""
+    cache = getattr(tool_manager, "_tools_list_cache", None)
+    if cache is None:
+        cache = {}
+        tool_manager._tools_list_cache = cache
+        _INSTANCE_CACHE_REGISTRY[id(tool_manager)] = (weakref.ref(tool_manager), cache)
+    return cache
 
 
 def clear_tools_list_cache() -> None:
-    """Flush the in-process tools/list cache.  For use in tests only."""
-    _TOOLS_LIST_CACHE.clear()
+    """Flush every outstanding in-process tools/list cache.  For use in tests only."""
+    dead = []
+    for key, (ref, cache) in _INSTANCE_CACHE_REGISTRY.items():
+        if ref() is None:
+            dead.append(key)
+            continue
+        cache.clear()
+    for key in dead:
+        del _INSTANCE_CACHE_REGISTRY[key]
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +400,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
 
     _orig_list_tools = mcp._tool_manager.list_tools
     _orig_call_tool = mcp._tool_manager.call_tool
+    _cache = _instance_cache(mcp._tool_manager)
 
     # ------------------------------------------------------------------
     # Wrap list_tools
@@ -392,7 +426,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
             now = _t0  # reuse the monotonic timestamp; sub-ms drift is harmless
 
             # --- TAP-1833: cache hit — return a copy so callers cannot mutate ---
-            cached = _TOOLS_LIST_CACHE.get(profile)
+            cached = _cache.get(profile)
             if cached is not None and now < cached[0]:
                 cached_tools = cached[1]
                 with _METRICS_LOCK:
@@ -419,7 +453,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 # Store in cache (concurrent miss → idempotent overwrite, same result).
                 # Return a copy — the cached list is the canonical reference; the
                 # caller must not be able to corrupt it via mutation.
-                _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, visible_tools)
+                _cache[profile] = (now + _TOOLS_LIST_CACHE_TTL, visible_tools)
                 return list(visible_tools)
             try:
                 allowed: frozenset[str] = profile_registry.get(profile)
@@ -441,7 +475,7 @@ def install_tool_filter(  # noqa: PLR0915  # single-concern wiring of list_tools
                 _MCP_TOOLS_LIST_VISIBLE_GAUGE[profile] = len(filtered)
             # Cache the filtered result for this profile.
             # Return a copy — same mutation safety rationale as the full-profile path.
-            _TOOLS_LIST_CACHE[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
+            _cache[profile] = (now + _TOOLS_LIST_CACHE_TTL, filtered)
             return list(filtered)
         finally:
             # TAP-1849: record probe duration regardless of outcome.
