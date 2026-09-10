@@ -255,6 +255,19 @@ def _get_store_for_project(
     per_call_differs = bool(call_agent_id and call_agent_id != agent_id)
 
     if not project_id and not per_call_differs:
+        # TAP-7329: under TAPPS_BRAIN_STRICT_PROJECTS a falsy project_id must
+        # not silently reuse the server's default tenant store — that would
+        # let a request that should have been refused upstream (or a
+        # transport that never supplies one) read/write the wrong tenant's
+        # data. Lax mode (the default) keeps the historical single-tenant
+        # fallback used by stdio callers with no TAPPS_BRAIN_PROJECT set.
+        from tapps_brain.project_registry import is_strict_projects_enabled
+
+        if is_strict_projects_enabled():
+            from tapps_brain.project_registry import ProjectNotRegisteredError
+            from tapps_brain.project_resolver import DEFAULT_PROJECT_ID
+
+            raise ProjectNotRegisteredError(DEFAULT_PROJECT_ID)
         return default_store
 
     # ``_tapps_project_id`` is an explicit override (tests); production stores
