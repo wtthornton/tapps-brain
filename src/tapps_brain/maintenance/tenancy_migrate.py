@@ -15,8 +15,10 @@ Each row is classified by provenance, first rule to fire wins:
   join ``audit_log`` on, so R1 never fires for it (see module note below).
 - **R2** ``source_agent`` — names a registered approved project, or a known
   agent of one, via a caller-supplied agent->project map (absent map -> rule
-  skipped, stated in the plan's ``rule_config``).  ``private_relations`` has no
-  ``source_agent`` column, so R2 never fires for it either.
+  skipped, stated in the plan's ``rule_config``).  Skipped for a row whose
+  literal ``project_id`` is ``'default'`` — see the R1/R2/R3 "default" note
+  below.  ``private_relations`` has no ``source_agent`` column, so R2 never
+  fires for it either.
 - **R3** ingest key shape — ``mem-<slug>-<hash>`` keys written by ``/ingest``
   for ``nlt-ideas-scout`` (TAP-7232), ``source_agent='unknown'``, inside a
   caller-supplied window measured on ``created_at`` -> keep project, agent_id
@@ -27,6 +29,32 @@ Each row is classified by provenance, first rule to fire wins:
   and no rule above fired -> keep project, agent_id -> ``'legacy-unattributed'``
   (the decision on TAP-7260).  Applies to both tables.
 - **R5** everything else -> archive.  Applies to both tables.
+
+**Agent-axis resolution on every re-home (TAP-7279 plan-fix).** R1/R2 pick the
+*project* only; the row's ``agent_id`` is re-homed too whenever it is a literal
+placeholder (``'default'``/``'unknown'``) — never carried across verbatim. The
+resolution, tried in order: the ``audit_log`` actor for the row's earliest
+``save``/``remember`` event, if that actor is itself a real (non-placeholder)
+agent -> that actor; else, if the row falls inside R3's nlt-ideas-scout ingest
+window -> ``'ingest'``; else -> ``'legacy-unattributed'``. A target agent of
+``'default'``/``'unknown'`` is never a valid re-home outcome. See
+:func:`resolve_target_agent`. A row whose own ``agent_id`` is already a real
+identity keeps it unchanged.
+
+**``default``-project rows are archived unless R1 fires (TAP-7279 plan-fix).**
+Rows under the literal project ``'default'`` are rescued only by an
+``audit_log`` origin naming a registered approved project (R1); a mapped
+``source_agent`` (R2) or the ingest key shape (R3) never rescues them — those
+rows fall straight through to R5 archive. This mirrors R4's own restriction to
+non-placeholder projects.
+
+**Hex-id probe tenants are out of this migration's population
+(TAP-7279 plan-fix).** A row whose ``project_id`` matches ``^[0-9a-f]{8,}$`` is
+excluded from the S3 population entirely, in both tables — never enumerated,
+classified, re-homed, or archived. Those tenants' delete/keep disposition is
+fenced to the operator by the separate tenant-hygiene enumeration ticket. Their
+row counts, grouped by tenant, are reported for visibility in the plan's
+``skipped_probe_tenants`` section.
 
 Because ``private_relations`` carries no ``source_agent``/``key`` columns, R1-R3
 are structurally inapplicable to it; only R4/R5 ever fire for that table, and
@@ -123,6 +151,12 @@ DEFERRED_TABLES: tuple[str, ...] = (
 #: ``mem-<slug>-<hash>`` key shape written by ``/ingest`` for nlt-ideas-scout (TAP-7232).
 _INGEST_KEY_RE = re.compile(r"^mem-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-[0-9a-f]{6,}$")
 
+#: Hex-looking probe-tenant project ids (e.g. ``67e930ab4783a1a8``) — fenced out of
+#: this migration's population; see the module docstring's probe-tenant note. The
+#: SQL predicates below embed this same pattern as a literal (Postgres ``~``/``!~``
+#: take a text pattern, not a compiled regex object).
+_HEX_TENANT_RE = re.compile(r"^[0-9a-f]{8,}$")
+
 #: Archive table name shape (used for both the caller-supplied base name and its
 #: ``_relations``-suffixed sibling) — mirrors ``project_profiles_id_shape``'s
 #: slug guard (migrations/private/008_project_profiles.sql) so a hostile
@@ -148,6 +182,16 @@ class ApplyIntegrityError(TenancyMigrationError):
 
 class InvalidArchiveTableNameError(TenancyMigrationError):
     """Raised when ``--archive-table`` is not a safe SQL identifier."""
+
+
+class SelfCollisionError(TenancyMigrationError):
+    """Raised when a re-home group's target identity equals its source identity.
+
+    Refused as a plan error rather than silently applied as a no-op: a target
+    equal to the source means a classification rule computed a target agent/
+    project it should never produce (see the module docstring's agent-axis
+    resolution note) — this is a bug in the plan, not a legitimate outcome.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -276,35 +320,83 @@ def classify_r4_legacy_unattributed(project_id: str, agent_id: str) -> bool:
     return project_id not in S3_PROJECT_IDS and agent_id in S3_AGENT_IDS
 
 
+def resolve_target_agent(
+    agent_id: str,
+    *,
+    key: str,
+    audit_earliest_agent: dict[str, str],
+    is_ingest_match: bool,
+) -> str:
+    """Resolve the agent axis for an R1/R2 re-home target (TAP-7279 plan-fix).
+
+    A literal placeholder ``agent_id`` (``'default'``/``'unknown'``) is never
+    carried across a re-home verbatim. Resolution order: the ``audit_log``
+    actor for the row's earliest ``save``/``remember`` event, when that actor
+    is itself a real (non-placeholder) agent; else, when the row matches R3's
+    nlt-ideas-scout ingest-window shape, ``'ingest'``; else
+    ``'legacy-unattributed'``. A row whose own ``agent_id`` is already real
+    keeps it unchanged — this function only touches the placeholder case.
+    """
+    if agent_id not in S3_AGENT_IDS:
+        return agent_id
+    audit_agent = audit_earliest_agent.get(key)
+    if audit_agent is not None and audit_agent not in S3_AGENT_IDS:
+        return audit_agent
+    if is_ingest_match:
+        return "ingest"
+    return "legacy-unattributed"
+
+
 def classify_memory_row(
     row: MemoryRow,
     *,
     approved_projects: frozenset[str],
     audit_earliest_project: dict[str, str],
+    audit_earliest_agent: dict[str, str],
     agent_project_map: dict[str, str] | None,
     ingest_window: tuple[str, str] | None,
 ) -> Classification:
     """Apply R1-R5, in order, to one ``private_memories`` row."""
+    is_ingest_match = classify_r3_ingest_window(row, ingest_window=ingest_window)
+
     target = classify_r1_audit_log(
         row.key, audit_earliest_project=audit_earliest_project, approved_projects=approved_projects
     )
     if target is not None:
+        target_agent = resolve_target_agent(
+            row.agent_id,
+            key=row.key,
+            audit_earliest_agent=audit_earliest_agent,
+            is_ingest_match=is_ingest_match,
+        )
         return Classification(
-            rule="R1", action="re_home", target_project=target, target_agent=row.agent_id
+            rule="R1", action="re_home", target_project=target, target_agent=target_agent
         )
 
-    target = classify_r2_source_agent(
-        row.source_agent, agent_project_map=agent_project_map, approved_projects=approved_projects
-    )
-    if target is not None:
-        return Classification(
-            rule="R2", action="re_home", target_project=target, target_agent=row.agent_id
+    # R2/R3 never rescue a row under the literal 'default' project — only an
+    # audit-log origin (R1) does (TAP-7279 plan-fix); such rows fall through
+    # to R4 (which also excludes 'default') and then R5 archive.
+    if row.project_id != "default":
+        target = classify_r2_source_agent(
+            row.source_agent,
+            agent_project_map=agent_project_map,
+            approved_projects=approved_projects,
         )
+        if target is not None:
+            target_agent = resolve_target_agent(
+                row.agent_id,
+                key=row.key,
+                audit_earliest_agent=audit_earliest_agent,
+                is_ingest_match=is_ingest_match,
+            )
+            return Classification(
+                rule="R2", action="re_home", target_project=target, target_agent=target_agent
+            )
 
-    if classify_r3_ingest_window(row, ingest_window=ingest_window):
-        return Classification(
-            rule="R3", action="re_home", target_project=row.project_id, target_agent="ingest"
-        )
+        if is_ingest_match:
+            return Classification(
+                rule="R3", action="re_home", target_project=row.project_id, target_agent="ingest"
+            )
 
     if classify_r4_legacy_unattributed(row.project_id, row.agent_id):
         return Classification(
@@ -375,10 +467,28 @@ class DeferredTableCount(BaseModel):
     note: str = ""
 
 
+class SkippedProbeTenant(BaseModel):
+    """One hex-id probe tenant fenced out of the S3 population, and its row count."""
+
+    tenant: str
+    rows: int
+
+
+class SkippedProbeTenants(BaseModel):
+    """Rows matching the S3 predicate but excluded because ``project_id`` looks like
+    a hex probe-tenant id (``^[0-9a-f]{8,}$``) — never enumerated, classified, or
+    touched by ``--apply``. Their delete/keep disposition is fenced to the operator
+    by the tenant-hygiene enumeration ticket, out of this migration's scope."""
+
+    tenants: list[SkippedProbeTenant] = Field(default_factory=list)
+    total_rows: int = 0
+
+
 class MigrationPlan(BaseModel):
     generated_at: str
     tables: dict[str, TablePlan]
     deferred_tables: list[DeferredTableCount] = Field(default_factory=list)
+    skipped_probe_tenants: SkippedProbeTenants = Field(default_factory=SkippedProbeTenants)
     rule_config: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -406,8 +516,18 @@ class ApplyResult(BaseModel):
 # Enumeration
 # ---------------------------------------------------------------------------
 
-_MEMORIES_PREDICATE_SQL = "(project_id = ANY(%(project_ids)s) OR agent_id = ANY(%(agent_ids)s))"
+_S3_BASE_PREDICATE_SQL = "(project_id = ANY(%(project_ids)s) OR agent_id = ANY(%(agent_ids)s))"
+
+#: The population predicate: the S3 boolean OR, minus hex-id probe tenants
+#: (fenced out of this migration entirely — see the module docstring).
+_MEMORIES_PREDICATE_SQL = f"{_S3_BASE_PREDICATE_SQL} AND project_id !~ '{_HEX_TENANT_RE.pattern}'"
 _RELATIONS_PREDICATE_SQL = _MEMORIES_PREDICATE_SQL
+
+#: The complement of the population predicate above: S3-matching rows fenced
+#: out solely because their project_id looks like a hex probe-tenant id.
+_SKIPPED_PROBE_TENANT_PREDICATE_SQL = (
+    f"{_S3_BASE_PREDICATE_SQL} AND project_id ~ '{_HEX_TENANT_RE.pattern}'"
+)
 
 _PREDICATE_PARAMS: dict[str, Any] = {
     "project_ids": sorted(S3_PROJECT_IDS),
@@ -548,22 +668,31 @@ def load_approved_projects(conn: psycopg.Connection) -> frozenset[str]:
         return frozenset(row[0] for row in cur.fetchall())
 
 
-def _load_audit_earliest_project(conn: psycopg.Connection, keys: list[str]) -> dict[str, str]:
-    """The earliest ``save``/``remember`` audit event's project_id, per key.
+def _load_audit_earliest(
+    conn: psycopg.Connection, keys: list[str]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """The earliest ``save``/``remember`` audit event's project_id and agent_id, per key.
 
-    Read-only. Empty ``keys`` short-circuits without a query.
+    Returns ``(audit_earliest_project, audit_earliest_agent)`` — the same
+    earliest event backs both maps, so R1's project check and the agent-axis
+    resolution (:func:`resolve_target_agent`) always agree on which event they
+    read. Read-only. Empty ``keys`` short-circuits without a query.
     """
     if not keys:
-        return {}
+        return {}, {}
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT DISTINCT ON (key) key, project_id "
+            "SELECT DISTINCT ON (key) key, project_id, agent_id "
             "FROM audit_log "
             "WHERE key = ANY(%(keys)s) AND event_type IN ('save', 'remember') "
             "ORDER BY key, timestamp ASC",
             {"keys": keys},
         )
-        return dict(cur.fetchall())
+        rows = cur.fetchall()
+    return (
+        {key: project_id for key, project_id, _agent_id in rows},
+        {key: agent_id for key, _project_id, agent_id in rows},
+    )
 
 
 def _table_has_columns(conn: psycopg.Connection, table: str, columns: tuple[str, ...]) -> bool:
@@ -615,6 +744,32 @@ def deferred_table_counts(conn: psycopg.Connection) -> list[DeferredTableCount]:
     return out
 
 
+def skipped_probe_tenant_counts(conn: psycopg.Connection) -> SkippedProbeTenants:
+    """S3-predicate rows fenced out for being under a hex-id probe tenant (read-only).
+
+    Counts across both :data:`MIGRATED_TABLES`, summed per tenant — these rows
+    are never enumerated by :func:`enumerate_memory_rows`/
+    :func:`enumerate_relation_rows` (both use :data:`_MEMORIES_PREDICATE_SQL`,
+    which excludes them), so this is the only place their count is visible.
+    """
+    totals: dict[str, int] = {}
+    for table in MIGRATED_TABLES:
+        if not table_exists(conn, table):
+            continue
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT project_id, count(*) FROM {table} "  # nosec B608 — table is a module constant
+                f"WHERE {_SKIPPED_PROBE_TENANT_PREDICATE_SQL} GROUP BY project_id",
+                _predicate_params(),
+            )
+            for project_id, count in cur.fetchall():
+                totals[project_id] = totals.get(project_id, 0) + int(count)
+    tenants = [
+        SkippedProbeTenant(tenant=tenant, rows=count) for tenant, count in sorted(totals.items())
+    ]
+    return SkippedProbeTenants(tenants=tenants, total_rows=sum(totals.values()))
+
+
 # ---------------------------------------------------------------------------
 # Plan construction (dry run) — read-only.
 # ---------------------------------------------------------------------------
@@ -656,7 +811,9 @@ def build_plan(
             f"reports {relations_live_count} — rows changed mid-enumeration; refusing to plan."
         )
 
-    audit_earliest_project = _load_audit_earliest_project(conn, [row.key for row in memory_rows])
+    audit_earliest_project, audit_earliest_agent = _load_audit_earliest(
+        conn, [row.key for row in memory_rows]
+    )
 
     memory_classified = [
         (
@@ -665,6 +822,7 @@ def build_plan(
                 row,
                 approved_projects=approved_projects,
                 audit_earliest_project=audit_earliest_project,
+                audit_earliest_agent=audit_earliest_agent,
                 agent_project_map=agent_project_map,
                 ingest_window=ingest_window,
             ),
@@ -693,6 +851,7 @@ def build_plan(
             "private_relations": relations_table_plan,
         },
         deferred_tables=deferred_table_counts(conn),
+        skipped_probe_tenants=skipped_probe_tenant_counts(conn),
         rule_config={
             "approved_projects": sorted(approved_projects),
             "s3_project_ids": sorted(S3_PROJECT_IDS),
@@ -735,6 +894,12 @@ def _build_table_plan(
         target_project,
         target_agent,
     ), row_ids in groups.items():
+        if action == "re_home" and (target_project, target_agent) == (old_project, old_agent):
+            raise SelfCollisionError(
+                f"{table}: re-home group ({old_project!r}, {old_agent!r}) via {rule} "
+                f"targets itself ({target_project!r}, {target_agent!r}) for "
+                f"{len(row_ids)} row(s) — refusing to plan a self-collision."
+            )
         plan_groups.append(
             PlanGroup(
                 old_project=old_project,
@@ -933,10 +1098,14 @@ def _apply_table(
         )
 
     with conn.cursor() as cur:
+        # The predicate is appended via `+`, not folded into the .format() template
+        # string: it contains literal `{8,}` from the hex-tenant regex, which
+        # sql.SQL.format() would otherwise try to parse as a named placeholder.
         cur.execute(
-            sql.SQL("CREATE TABLE {} AS SELECT * FROM {} WHERE " + _MEMORIES_PREDICATE_SQL).format(
+            sql.SQL("CREATE TABLE {} AS SELECT * FROM {} WHERE ").format(
                 archive_table_ident, sql.Identifier(table)
-            ),
+            )
+            + sql.SQL(_MEMORIES_PREDICATE_SQL),
             _predicate_params(),
         )
     with conn.cursor() as cur:

@@ -160,13 +160,17 @@ class TestClassifyMemoryRowOrder:
             row,
             approved_projects=frozenset({"agentforge"}),
             audit_earliest_project={"k1": "agentforge"},
+            audit_earliest_agent={},
             agent_project_map=None,
             ingest_window=None,
         )
         assert cls.rule == "R1"
         assert cls.action == "re_home"
         assert cls.target_project == "agentforge"
-        assert cls.target_agent == "default"  # R1 changes project only, not agent_id
+        # No audit actor and no ingest-window match -> the agent axis falls
+        # through to the legacy-unattributed default (TAP-7279 plan-fix): a
+        # literal placeholder agent_id is never carried across a re-home.
+        assert cls.target_agent == "legacy-unattributed"
 
     def test_r5_is_the_fallback(self) -> None:
         row = tm.MemoryRow(
@@ -181,6 +185,7 @@ class TestClassifyMemoryRowOrder:
             row,
             approved_projects=frozenset({"agentforge"}),
             audit_earliest_project={},
+            audit_earliest_agent={},
             agent_project_map=None,
             ingest_window=None,
         )
@@ -212,6 +217,49 @@ class TestClassifyRelationRow:
             created_at="2026-06-01T00:00:00+00:00",
         )
         assert tm.classify_relation_row(row) == tm.Classification(rule="R5", action="archive")
+
+
+class TestResolveTargetAgent:
+    """TAP-7279 plan-fix: the agent axis on an R1/R2 re-home is never carried
+    across verbatim when it is a literal placeholder — see the module
+    docstring's agent-axis resolution note."""
+
+    def test_audit_actor_names_a_real_agent(self) -> None:
+        target = tm.resolve_target_agent(
+            "default", key="k1", audit_earliest_agent={"k1": "real-actor-1"}, is_ingest_match=False
+        )
+        assert target == "real-actor-1"
+
+    def test_ingest_window_match_with_no_audit_actor(self) -> None:
+        target = tm.resolve_target_agent(
+            "default", key="k2", audit_earliest_agent={}, is_ingest_match=True
+        )
+        assert target == "ingest"
+
+    def test_neither_audit_actor_nor_ingest_match_falls_back(self) -> None:
+        target = tm.resolve_target_agent(
+            "unknown", key="k3", audit_earliest_agent={}, is_ingest_match=False
+        )
+        assert target == "legacy-unattributed"
+
+    def test_placeholder_audit_actor_is_not_treated_as_real(self) -> None:
+        """An audit event whose own actor is 'unknown'/'default' does not count as
+        naming a real agent -- falls through to the ingest-window tier."""
+        target = tm.resolve_target_agent(
+            "default", key="k4", audit_earliest_agent={"k4": "unknown"}, is_ingest_match=True
+        )
+        assert target == "ingest"
+
+    def test_real_agent_id_is_kept_unchanged(self) -> None:
+        """A row whose own agent_id is already real is never overridden, even
+        when the audit log names a different actor."""
+        target = tm.resolve_target_agent(
+            "already-real-agent",
+            key="k5",
+            audit_earliest_agent={"k5": "someone-else"},
+            is_ingest_match=False,
+        )
+        assert target == "already-real-agent"
 
 
 class TestParseJsonbList:
@@ -466,7 +514,10 @@ class TestDryRunPlan:
 
         assert by_key["r1-key"].rule == "R1"
         assert by_key["r1-key"].target_project == "agentforge"
-        assert by_key["r1-key"].target_agent == "default"
+        # r1-key's earliest audit event names a real actor ('ingest-job') ->
+        # the agent axis resolves to that actor, not the literal 'default'
+        # the row itself carries (TAP-7279 plan-fix).
+        assert by_key["r1-key"].target_agent == "ingest-job"
 
         assert by_key["r2-key"].rule == "R2"
         assert by_key["r2-key"].target_project == "agentforge"
@@ -534,6 +585,136 @@ class TestDryRunPlan:
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM audit_log")
             assert cur.fetchone()[0] >= 1  # nothing deleted from a deferred table
+
+
+class TestDefaultProjectRescueRestriction:
+    """TAP-7279 plan-fix: a row under the literal 'default' project is rescued
+    only by an audit-log origin (R1); a mapped source_agent (R2) or the ingest
+    key shape (R3) never rescues it -- it archives (R5) instead."""
+
+    def test_default_project_row_with_mapped_source_agent_archives(
+        self, conn: psycopg.Connection
+    ) -> None:
+        _insert_project(conn, "agentforge", approved=True)
+        _insert_memory(
+            conn,
+            project_id="default",
+            agent_id="someagent",
+            key="d-key",
+            source_agent="mapped-worker",
+            created_at=_ts(0),
+        )
+        plan = tm.build_plan(conn, agent_project_map={"mapped-worker": "agentforge"})
+        memories = plan.tables["private_memories"]
+        group = next(g for g in memories.groups if any(rid == ["d-key"] for rid in g.row_ids))
+        assert group.rule == "R5"
+        assert group.action == "archive"
+
+    def test_default_project_row_with_audit_origin_still_rescued_by_r1(
+        self, conn: psycopg.Connection
+    ) -> None:
+        """R1 is unaffected by the 'default'-project restriction -- only R2/R3 are."""
+        _insert_project(conn, "agentforge", approved=True)
+        _insert_memory(
+            conn,
+            project_id="default",
+            agent_id="default",
+            key="d-key-r1",
+            source_agent="unknown",
+            created_at=_ts(0),
+        )
+        _insert_audit_event(
+            conn, project_id="agentforge", agent_id="real-actor", key="d-key-r1", timestamp=_ts(-1)
+        )
+        plan = tm.build_plan(conn)
+        memories = plan.tables["private_memories"]
+        group = next(g for g in memories.groups if any(rid == ["d-key-r1"] for rid in g.row_ids))
+        assert group.rule == "R1"
+        assert group.target_project == "agentforge"
+        assert group.target_agent == "real-actor"
+
+
+class TestHexProbeTenantFence:
+    """TAP-7279 plan-fix: a row whose project_id looks like a hex probe-tenant id
+    is fenced entirely out of this migration's population -- never enumerated,
+    classified, or touched by apply -- and reported in skipped_probe_tenants."""
+
+    def test_hex_tenant_row_is_excluded_and_counted(self, conn: psycopg.Connection) -> None:
+        _seed_s3_fixture(conn)
+        _insert_memory(
+            conn,
+            project_id="67e930ab4783a1a8",
+            agent_id="default",
+            key="hex-key",
+            source_agent="someone",
+            created_at=_ts(0),
+        )
+        plan = _build_fixture_plan(conn)
+
+        memories = plan.tables["private_memories"]
+        assert memories.live_count == 6  # unchanged from the non-hex fixture population
+        for group in memories.groups:
+            assert all(rid != ["hex-key"] for rid in group.row_ids)
+
+        assert plan.skipped_probe_tenants.total_rows == 1
+        assert plan.skipped_probe_tenants.tenants == [
+            tm.SkippedProbeTenant(tenant="67e930ab4783a1a8", rows=1)
+        ]
+
+    def test_apply_never_touches_a_hex_tenant_row(
+        self, fixture_dsn: str, conn: psycopg.Connection
+    ) -> None:
+        _seed_s3_fixture(conn)
+        _insert_memory(
+            conn,
+            project_id="67e930ab4783a1a8",
+            agent_id="default",
+            key="hex-key",
+            source_agent="someone",
+            created_at=_ts(0),
+        )
+        plan = _build_fixture_plan(conn)
+
+        with psycopg.connect(fixture_dsn) as apply_conn:
+            tm.apply_plan(apply_conn, plan, archive_table="tap7279_hex_test")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM private_memories "
+                "WHERE project_id = '67e930ab4783a1a8' AND key = 'hex-key'"
+            )
+            assert cur.fetchone()[0] == 1  # untouched: still live at its original identity
+            cur.execute("SELECT count(*) FROM tap7279_hex_test WHERE key = 'hex-key'")
+            assert cur.fetchone()[0] == 0  # never archived either
+
+
+class TestSelfCollisionGuard:
+    """TAP-7279 plan-fix: a re-home group whose target identity equals its
+    source identity is a plan bug, never a legitimate outcome -- refuse it."""
+
+    def test_build_table_plan_refuses_a_self_targeting_group(
+        self, conn: psycopg.Connection
+    ) -> None:
+        row = tm.MemoryRow(
+            project_id="agentforge",
+            agent_id="default",
+            key="self-collide-key",
+            created_at=_ts(0).isoformat(),
+            updated_at=_ts(0).isoformat(),
+            source_agent="someone",
+        )
+        classified = [
+            (
+                row,
+                tm.Classification(
+                    rule="R1", action="re_home", target_project="agentforge", target_agent="default"
+                ),
+            )
+        ]
+        with pytest.raises(tm.SelfCollisionError):
+            tm._build_table_plan(
+                conn, table="private_memories", live_count=1, classified=classified
+            )
 
 
 class TestDryRunEmptyDbRefusal:
@@ -631,14 +812,17 @@ class TestApply:
             )
             assert cur.fetchone()[0] == 0
 
-            # R1 landed at (agentforge, default, r1-key) with the migrated_from tag.
+            # R1 landed at (agentforge, ingest-job, r1-key) with the migrated_from
+            # tag -- the audit actor for r1-key's earliest event names a real
+            # agent ('ingest-job'), which the agent-axis resolution uses instead
+            # of carrying the row's literal 'default' across (TAP-7279 plan-fix).
             cur.execute(
                 "SELECT agent_id, tags FROM private_memories WHERE project_id = 'agentforge' AND key = 'r1-key'"
             )
             row = cur.fetchone()
             assert row is not None
             agent_id, tags = row
-            assert agent_id == "default"
+            assert agent_id == "ingest-job"
             assert "migrated_from:api/default" in tags
 
             # R4's collision: the source row won, the pre-existing row is gone.
