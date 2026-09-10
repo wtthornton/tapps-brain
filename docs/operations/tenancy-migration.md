@@ -30,20 +30,46 @@ owns them).
 
 | Rule | Fires when | Outcome |
 |------|-----------|---------|
-| R1 | Earliest `save`/`remember` `audit_log` event for the row's `key` names a registered, **approved** project | Re-home to that project; `agent_id` unchanged |
-| R2 | `source_agent` maps to a registered approved project via a caller-supplied agent→project map (absent map → rule skipped) | Re-home to that project; `agent_id` unchanged |
-| R3 | `mem-<slug>-<hash>` key, `source_agent='unknown'`, project is `nlt-ideas-scout`, `created_at` inside a caller-supplied window (absent window → rule skipped) | Keep project; `agent_id → 'ingest'` |
+| R1 | Earliest `save`/`remember` `audit_log` event for the row's `key` names a registered, **approved** project | Re-home to that project; `agent_id` resolved (see below) |
+| R2 | `source_agent` maps to a registered approved project via a caller-supplied agent→project map (absent map → rule skipped); **skipped** for a row whose literal `project_id` is `'default'` | Re-home to that project; `agent_id` resolved (see below) |
+| R3 | `mem-<slug>-<hash>` key, `source_agent='unknown'`, project is `nlt-ideas-scout`, `created_at` inside a caller-supplied window (absent window → rule skipped); **skipped** for a row whose literal `project_id` is `'default'` | Keep project; `agent_id → 'ingest'` |
 | R4 | Row is under a REAL project (not one of the four S3 placeholders) with `agent_id` in `('default','unknown')` and no rule above fired | Keep project; `agent_id → 'legacy-unattributed'` |
 | R5 | Everything else | Archive |
 
-**R1/R2 change `project_id` only.** A row can still carry `agent_id` in
-`('default','unknown')` after an R1/R2 re-home and would still match the S3
-predicate's `agent_id` clause. This is intentional and safe — the tool
-addresses every read/write by the row identity captured *before* any
-mutation, never by re-evaluating the predicate mid-apply (see the module
-docstring's "Row identity, not predicate re-evaluation" note). A second run
-against the same database will pick such a row up again and this time land it
-on R4, which is expected, idempotent behavior, not a bug.
+**Agent-axis resolution on every re-home.** R1/R2 pick the target *project*;
+the target *agent* is resolved separately whenever the row's own `agent_id` is
+a literal placeholder (`'default'`/`'unknown'`) — it is never carried across
+verbatim. Resolution order: the `audit_log` actor for the row's earliest
+`save`/`remember` event, when that actor is itself a real (non-placeholder)
+agent; else, when the row falls inside R3's nlt-ideas-scout ingest-window
+shape, `'ingest'`; else `'legacy-unattributed'`. A target agent of
+`'default'`/`'unknown'` is never a valid outcome. A row whose own `agent_id`
+is already real keeps it unchanged. See `resolve_target_agent()` in the
+module.
+
+**`default`-project rows are rescued only by R1.** A row under the literal
+project `'default'` is re-homed only when an `audit_log` origin names a
+registered approved project; a mapped `source_agent` (R2) or the ingest key
+shape (R3) never rescues it — such a row falls straight through to R5
+archive, mirroring R4's own restriction to non-placeholder projects.
+
+**Hex-id probe tenants are out of this migration's population.** A row whose
+`project_id` matches `^[0-9a-f]{8,}$` is excluded entirely, in both tables —
+never enumerated, classified, re-homed, or archived. Their delete/keep
+disposition is fenced to the operator by the separate tenant-hygiene
+enumeration ticket. Their row counts, grouped by tenant, are reported in the
+plan's `skipped_probe_tenants` section for visibility.
+
+**A re-home group whose target identity equals its source identity is
+refused** (`SelfCollisionError`) rather than silently applied — that shape
+means a classification rule computed a target it should never produce.
+
+**Identity-addressed writes, not predicate re-evaluation.** Every read/write
+in `apply_plan` addresses rows by the identity captured in the plan *before*
+any mutation, never by re-evaluating the S3 boolean predicate mid-apply (see
+the module docstring's "Row identity, not predicate re-evaluation" note) —
+this is what makes collision handling and the archive/delete sequencing safe
+regardless of what the agent-axis resolution above produces.
 
 ## Collision policy
 
