@@ -217,3 +217,5 @@ roles and grants configured will produce informational notices but no errors.
 - `docs/planning/adr/ADR-007-postgres-only-no-sqlite.md` — Postgres-only decision
 - `docs/engineering/threat-model.md` — STRIDE threat model referencing DB roles
 - `docs/guides/hive-deployment.md` — full Docker/K8s deployment guide
+- [Tenancy Migration Runbook](./tenancy-migration.md) — re-homing the S3 population
+  (TAP-7279); explains why it must connect as a `BYPASSRLS` role, never `tapps_runtime`

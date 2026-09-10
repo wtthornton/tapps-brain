@@ -14,6 +14,9 @@ tapps-brain targets a **biweekly minor release** cadence (approximately every 14
 
 ### Added
 
+- **Tenancy migration tool for the S3 population** ([TAP-7279](https://linear.app/tappscodingagents/issue/TAP-7279)) — `python -m tapps_brain.maintenance.tenancy_migrate` enumerates `private_memories`/`private_relations` rows carrying a throwaway or misattributed tenant identity (`project_id IN ('default','api','main','repo-brain')` or `agent_id IN ('default','unknown')`), classifies each by provenance (audit-log history, a caller-supplied agent→project map, the `/ingest` key shape, or the TAP-7260 "legacy-unattributed" fallback), and either re-homes it to its correct tenant or archives it.
+
+  `--dry-run` is provably read-only and refuses (exit 2) when the predicate matches zero rows. `--apply` runs in one transaction, snapshots the full S3 population into a caller-named archive table before writing, resolves primary-key collisions by keeping the newer row, and refuses when the live row count no longer matches the plan (a stale dry run). See [`docs/operations/tenancy-migration.md`](docs/operations/tenancy-migration.md) for the rule table, collision policy, and rollback procedure.
 - **Tenant-scope refusal gate for `/v1/*` data-plane routes (ADR-010)** — two independent,
   off-by-default flags, `TAPPS_BRAIN_STRICT_PROJECTS=1` and `TAPPS_BRAIN_STRICT_AGENT_ID=1`,
   refuse a write or global-scope read (`/v1/recall`, `/v1/kg/neighbors`) before any store is
