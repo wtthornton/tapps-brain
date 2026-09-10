@@ -616,19 +616,36 @@ class MemoryRetriever:
         rank_index: int,
         total_candidates: int,
         now: datetime,
+        *,
+        relevance_raw: float | None = None,
     ) -> float:
         """Composite score for an entry from a pre-ranked candidate list (TAP-6696).
 
         For callers that already receive entries ordered by an external
         relevance signal (FTS/KNN) without its raw magnitude exposed —
-        e.g. ``brain_recall``'s ``store.search()`` path — relevance is
-        derived from rank position (1.0 for the top hit, decaying toward
-        0.0 for the last) instead of BM25. Confidence, recency and frequency
-        use the same components and this retriever's configured weights as
-        :meth:`_build_scored_memory_item`, so recall and context injection
-        rank consistently.
+        e.g. ``brain_recall``'s ``store.search()`` path — relevance was
+        historically derived from rank position alone (1.0 for the top hit,
+        decaying toward 0.0 for the last), which tracks *list position* and
+        is blind to how close together (or far apart) two candidates'
+        underlying retrieval scores actually are.
+
+        TAP-7338: when the caller *can* recover the backend's raw magnitude
+        (``ts_rank`` for FTS, cosine similarity for vector — see
+        ``store.last_search_relevance``), pass it as *relevance_raw* and it
+        is used directly (clamped to ``[0, 1]``) instead of the rank-position
+        formula. ``None`` (the default) preserves the exact pre-TAP-7338
+        behaviour for callers/backends that cannot expose a magnitude.
+
+        Confidence, recency and frequency use the same components and this
+        retriever's configured weights as :meth:`_build_scored_memory_item`,
+        so recall and context injection rank consistently.
         """
-        relevance = 1.0 - (rank_index / (total_candidates - 1)) if total_candidates > 1 else 1.0
+        if relevance_raw is not None:
+            relevance = max(0.0, min(1.0, relevance_raw))
+        elif total_candidates > 1:
+            relevance = 1.0 - (rank_index / (total_candidates - 1))
+        else:
+            relevance = 1.0
         recency = self._recency_score(entry, now)
         frequency = self._frequency_score(entry)
         composite = (

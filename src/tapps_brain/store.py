@@ -772,6 +772,10 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         self._removal_epoch: int = 0
         self._removed_at: dict[str, int] = {}
 
+        # TAP-7338: raw ts_rank / vector-similarity magnitude from the most
+        # recent search() call — see _store_query.py::search.
+        self.last_search_relevance: dict[str, float] = {}
+
         # TAP-655: startup sanity check — warn if expected HNSW index is absent.
         _verify = getattr(self._persistence, "verify_expected_indexes", None)
         if callable(_verify):

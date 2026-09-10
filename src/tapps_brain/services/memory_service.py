@@ -380,6 +380,12 @@ def brain_recall(
         )
         retriever = MemoryRetriever(scoring_config=scoring_config)
         total_entries = len(entries)
+        # TAP-7338: real ts_rank / vector-similarity magnitude from the fused
+        # search, when the store exposes it — see
+        # _store_query.py::search / store.last_search_relevance. Absent for
+        # test doubles and older PrivateBackend implementations, which keep
+        # the exact pre-TAP-7338 rank-position scoring below.
+        relevance_by_key: dict[str, float] = getattr(store, "last_search_relevance", None) or {}
         candidates: list[tuple[dict[str, Any], float]] = []
         for rank_index, entry in enumerate(entries):
             item: dict[str, Any]
@@ -420,7 +426,13 @@ def brain_recall(
                 stale_reason = getattr(entry, "stale_reason", None)
                 if stale_reason:
                     item["stale_reason"] = stale_reason
-            item["score"] = retriever.score_by_rank(entry, rank_index, total_entries, now)
+            item["score"] = retriever.score_by_rank(
+                entry,
+                rank_index,
+                total_entries,
+                now,
+                relevance_raw=relevance_by_key.get(entry.key),
+            )
             candidates.append((item, item["score"]))
 
         candidates.sort(key=lambda pair: pair[1], reverse=True)
