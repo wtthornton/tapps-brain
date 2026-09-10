@@ -100,7 +100,7 @@ _TOOLS_LIST_CACHE_TTL: float = 300.0
 # child MagicMock rather than raising AttributeError, so a `getattr(...,
 # None)`-guarded lazy-init could never observe "not yet created" on a mock
 # and would hand back a MagicMock in place of the real cache dict.
-_INSTANCE_CACHES: "weakref.WeakKeyDictionary[Any, dict[str, tuple[float, list[Any]]]]" = (
+_INSTANCE_CACHES: weakref.WeakKeyDictionary[Any, dict[str, tuple[float, list[Any]]]] = (
     weakref.WeakKeyDictionary()
 )
 
