@@ -522,7 +522,9 @@ class AgentBrain:
     ) -> None:
         """Record a successful task outcome.
 
-        Saves the experience and reinforces any recently recalled memories.
+        Saves the experience, reinforces any recently recalled memories, and
+        applies a positive feedback signal (a ``feedback_events`` row plus a
+        ``positive_feedback_count`` bump) to those same keys.
         """
         tid = task_id or self._task_id
         key = _content_key(f"success-{task_description}")
@@ -536,6 +538,7 @@ class AgentBrain:
         for recalled_key in self._last_recalled_keys:
             with contextlib.suppress(KeyError):
                 self._store.reinforce(recalled_key, confidence_boost=boost)
+            self._apply_recall_feedback(recalled_key, positive=True, reason=task_description)
 
     def learn_from_failure(
         self,
@@ -544,7 +547,15 @@ class AgentBrain:
         task_id: str | None = None,
         error: str | None = None,
     ) -> None:
-        """Record a failed task outcome to avoid repeating mistakes."""
+        """Record a failed task outcome to avoid repeating mistakes.
+
+        Saves the experience, and — only when *error* carries a failure
+        reason — writes a negative feedback signal (a ``feedback_events`` row
+        plus a ``negative_feedback_count`` bump) to the recently recalled
+        memories. A failure recorded without a reason is not a usable signal,
+        so no row is written and no counter is touched when *error* is absent
+        or blank.
+        """
         tid = task_id or self._task_id
         key = _content_key(f"failure-{description}")
         value = description
@@ -554,3 +565,36 @@ class AgentBrain:
         if tid:
             tags.append(f"task:{tid}")
         self._checked_save(key=key, value=value, tier="procedural", tags=tags)
+
+        reason = error.strip() if error else ""
+        if not reason:
+            return
+        for recalled_key in self._last_recalled_keys:
+            self._apply_recall_feedback(recalled_key, positive=False, reason=reason)
+
+    def _apply_recall_feedback(self, key: str, *, positive: bool, reason: str) -> None:
+        """Write a feedback event and bump the matching counter on *key*.
+
+        Uses ``_ensure_entry_cached`` (not ``get()``) to peek at the entry
+        without bumping its ``access_count`` — a feedback write should not
+        also inflate the frequency signal of the very entry it may be
+        penalizing.
+        """
+        event_type = "implicit_positive" if positive else "implicit_negative"
+        self._store.record_feedback(
+            event_type,
+            entry_key=key,
+            session_id=self._session_id,
+            utility_score=1.0 if positive else -1.0,
+            details={"reason": reason},
+        )
+        entry = self._store._ensure_entry_cached(key)
+        if entry is None:
+            return
+        field = "positive_feedback_count" if positive else "negative_feedback_count"
+        current = getattr(entry, field)
+        self._store.update_fields(
+            key,
+            **{field: current + 1.0},
+            updated_at=entry.updated_at,
+        )
