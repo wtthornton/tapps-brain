@@ -117,6 +117,8 @@ services:
       # back-compat fallback (which a future mcp release may remove).
       TAPPS_BRAIN_MCP_ALLOWED_HOSTS: "${TAPPS_BRAIN_MCP_ALLOWED_HOSTS:-tapps-brain-http:8080,tapps-brain-http:8090,localhost:8080,localhost:8090,127.0.0.1:8080,127.0.0.1:8090}"
       TAPPS_BRAIN_STRICT: "1"
+      TAPPS_BRAIN_STRICT_PROJECTS: "${TAPPS_BRAIN_STRICT_PROJECTS:-0}"
+      TAPPS_BRAIN_STRICT_AGENT_ID: "${TAPPS_BRAIN_STRICT_AGENT_ID:-0}"
       # TAP-1076 — production-hardening passthroughs.  Default to empty so
       # the dev stack still boots without these set, but the runtime emits a
       # one-shot startup warning per unset variable so operators see the gap
