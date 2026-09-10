@@ -407,6 +407,7 @@ class TestToolsListCache:
         mcp = pytest.importorskip("mcp.server.fastmcp", reason="mcp extra not installed")
         FastMCP = mcp.FastMCP
 
+        from tapps_brain.mcp_server import tool_filter as _tf
         from tapps_brain.mcp_server.profile_registry import ProfileRegistry
         from tapps_brain.mcp_server.tool_filter import (
             clear_tools_list_cache,
@@ -432,10 +433,10 @@ class TestToolsListCache:
         assert len(cold_result) == 2
 
         # Cache must be populated after the first call. TAP-7296: the cache
-        # lives on the wrapped tool manager instance, not a process-global
-        # dict, so two servers built in the same test process cannot leak
-        # tools/list results into each other.
-        assert "full" in server._tool_manager._tools_list_cache, (
+        # is keyed by the identity of the wrapped tool manager instance, not
+        # a process-global dict, so two servers built in the same test
+        # process cannot leak tools/list results into each other.
+        assert "full" in _tf._instance_cache(server._tool_manager), (
             "cache not populated after first call"
         )
 
@@ -469,18 +470,19 @@ class TestToolsListCache:
 
         # Populate cache.
         server._tool_manager.list_tools()
-        assert "full" in server._tool_manager._tools_list_cache
+        cache = _tf._instance_cache(server._tool_manager)
+        assert "full" in cache
 
         # Backdate the cache entry so it appears expired.
-        _old_expires, old_tools = server._tool_manager._tools_list_cache["full"]
-        server._tool_manager._tools_list_cache["full"] = (time.monotonic() - 1.0, old_tools)
+        _old_expires, old_tools = cache["full"]
+        cache["full"] = (time.monotonic() - 1.0, old_tools)
 
         # Next call should rebuild (expired TTL → cache miss path).
         result = server._tool_manager.list_tools()
         assert len(result) == 1
 
         # Cache is refreshed with a new expiry in the future.
-        new_expires, _ = server._tool_manager._tools_list_cache["full"]
+        new_expires, _ = cache["full"]
         assert new_expires > time.monotonic()
 
     def test_tools_list_cache_returns_copy(self) -> None:

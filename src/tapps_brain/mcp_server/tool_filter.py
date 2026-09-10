@@ -90,35 +90,36 @@ _DEFAULT_PROFILE = "full"
 # double-compute; the second write is idempotent (same tool list) and harmless.
 _TOOLS_LIST_CACHE_TTL: float = 300.0
 
-# Registry of live per-instance cache dicts, used only so `clear_tools_list_cache()`
-# can flush every outstanding cache (test hygiene). Keyed by `id(tool_manager)`
-# holding `(weakref.ref(tool_manager), cache_dict)` so entries can be pruned once
-# the tool manager is garbage-collected.
-_INSTANCE_CACHE_REGISTRY: dict[int, tuple["weakref.ref[Any]", dict[str, tuple[float, list[Any]]]]] = {}
+# Cache dicts keyed by the identity of the wrapped `_tool_manager` instance
+# via a WeakKeyDictionary — entries vanish automatically once that instance is
+# garbage collected, so nothing needs explicit teardown per server.
+#
+# A plain instance *attribute* (e.g. `tool_manager._tools_list_cache = {}`)
+# was tried first and rejected: unit tests wrap a `MagicMock()` as the tool
+# manager, and MagicMock auto-vivifies any attribute access into a fresh
+# child MagicMock rather than raising AttributeError, so a `getattr(...,
+# None)`-guarded lazy-init could never observe "not yet created" on a mock
+# and would hand back a MagicMock in place of the real cache dict.
+_INSTANCE_CACHES: "weakref.WeakKeyDictionary[Any, dict[str, tuple[float, list[Any]]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def _instance_cache(tool_manager: Any) -> dict[str, tuple[float, list[Any]]]:
     """Return the tools/list cache dict owned by *tool_manager*, creating it
-    on first use. Stored as an attribute on the instance so it is garbage
-    collected along with it — no process-global leakage across instances."""
-    cache = getattr(tool_manager, "_tools_list_cache", None)
+    on first use. Keyed by instance identity so it is garbage collected along
+    with the instance — no process-global leakage across instances."""
+    cache = _INSTANCE_CACHES.get(tool_manager)
     if cache is None:
         cache = {}
-        tool_manager._tools_list_cache = cache
-        _INSTANCE_CACHE_REGISTRY[id(tool_manager)] = (weakref.ref(tool_manager), cache)
+        _INSTANCE_CACHES[tool_manager] = cache
     return cache
 
 
 def clear_tools_list_cache() -> None:
     """Flush every outstanding in-process tools/list cache.  For use in tests only."""
-    dead = []
-    for key, (ref, cache) in _INSTANCE_CACHE_REGISTRY.items():
-        if ref() is None:
-            dead.append(key)
-            continue
+    for cache in list(_INSTANCE_CACHES.values()):
         cache.clear()
-    for key in dead:
-        del _INSTANCE_CACHE_REGISTRY[key]
 
 
 # ---------------------------------------------------------------------------
