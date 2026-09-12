@@ -620,15 +620,20 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
             return auth_err
 
         # --- Tenant headers ---
-        project_id, agent_id, scope, group = _resolve_tenant_headers(request)
-        if not project_id:
+        # TAP-7329: route through the same choke point /v1/* already uses
+        # (resolve_tenant_or_refuse, TAP-7243/ADR-010) instead of only
+        # checking for an empty header. This refuses strict-mode literal
+        # placeholders (e.g. X-Project-Id: default) and the anonymous agent
+        # literal the same way /v1/* does; with both strict flags unset the
+        # refusal shape for a missing header is unchanged in substance
+        # (still a 400 bad_request).
+        project_id, agent_id, tenant_refusal = resolve_tenant_or_refuse(request)
+        if tenant_refusal is not None:
             return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "bad_request",
-                    "detail": "X-Project-Id header is required for /mcp requests.",
-                },
+                status_code=tenant_refusal.status_code,
+                content=tenant_refusal.detail,
             )
+        _, _, scope, group = _resolve_tenant_headers(request)
 
         # --- Profile resolution (STORY-073.2) ---
         resolved_profile, profile_err = _resolve_mcp_profile(request, project_id, agent_id)
