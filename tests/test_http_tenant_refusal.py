@@ -268,6 +268,36 @@ class TestAgentAxisRefusal:
 # ---------------------------------------------------------------------------
 
 
+def _register_project_if_live_db(project_id: str) -> None:
+    """Register *project_id* in ``project_profiles`` when a live Postgres DSN
+    is configured (TAP-6829: this file now also runs against CI's compose
+    Postgres, where ``MemoryStore``'s strict-mode profile resolution hits the
+    real registry — see ``store.py::_resolve_profile_from_registry``).  In an
+    environment with no DSN this is a no-op: the in-memory backend injected by
+    ``tests/conftest.py`` never consults the registry, so the positive control
+    never needed a real row there in the first place."""
+    import os
+
+    dsn = (os.environ.get("TAPPS_BRAIN_DATABASE_URL") or "").strip()
+    if not dsn:
+        return
+
+    from tapps_brain.postgres_connection import PostgresConnectionManager
+    from tapps_brain.profile import get_builtin_profile
+    from tapps_brain.project_registry import ProjectRegistry
+
+    cm = PostgresConnectionManager(dsn)
+    try:
+        ProjectRegistry(cm).register(
+            project_id,
+            get_builtin_profile("repo-brain"),
+            source="admin",
+            approved=True,
+        )
+    finally:
+        cm.close()
+
+
 class TestBothFlagsPositiveAndBaseBehaviour:
     def test_both_flags_on_registered_headers_persist_under_that_tenant(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -279,6 +309,7 @@ class TestBothFlagsPositiveAndBaseBehaviour:
 
         monkeypatch.setenv("TAPPS_BRAIN_STRICT_PROJECTS", "1")
         monkeypatch.setenv("TAPPS_BRAIN_STRICT_AGENT_ID", "1")
+        _register_project_if_live_db("acme-widgets")
         store = MemoryStore(tmp_path)
         settings = _make_settings(store=store)
         headers = {"X-Project-Id": "acme-widgets", "X-Agent-Id": "ci-runner-7"}

@@ -124,7 +124,29 @@ async def test_streamable_http_curated_tools_respond() -> None:
         headers["Authorization"] = f"Bearer {auth_token}"
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://parity.local") as client:
+    # Three things this bare client must do that `TestClient` (used by
+    # sibling files, e.g. test_mcp_tenant_refusal.py) does for free:
+    #   1. Enter the app lifespan — the FastMCP Streamable HTTP session
+    #      manager only starts there (http_adapter.py's `_lifespan` hook);
+    #      the /mcp ASGI sub-app is mounted eagerly so the route exists
+    #      without it, but `tools/call` needs the running session-manager
+    #      task group or the transport returns an empty body.
+    #   2. Follow the 307 from `/mcp` to the mounted `/mcp/` (trailing
+    #      slash) — a plain POST otherwise gets a bodyless redirect back,
+    #      which also has no content-type and looks identical to (1).
+    #   3. Present a Host header FastMCP's DNS-rebinding guard accepts.
+    #      `FastMCP.__init__` auto-enables `TransportSecuritySettings` with
+    #      `allowed_hosts=["127.0.0.1:*", "localhost:*", ...]` whenever it's
+    #      bound to loopback (the default) and no explicit settings are
+    #      passed (mcp/server/fastmcp/server.py) — a bare "localhost" Host
+    #      header (no port) does not match the "localhost:*" wildcard, so
+    #      the base URL needs an explicit port.
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://localhost:8000", follow_redirects=True
+        ) as client,
+    ):
         for tool_name in CURATED_TOOLS:
             payload = {
                 "jsonrpc": "2.0",
