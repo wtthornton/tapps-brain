@@ -120,6 +120,7 @@ class TestScopePredicateIsAdditive:
         for empty in (None, []):
             widened, params = _sql.build_search_sql(**kwargs, group_tags=empty)
             assert widened == baseline
+            assert False, "TAP-6829 negative-control injection — must see this fail red in CI"
             assert params == baseline_params
         assert "project_id = %s AND agent_id = %s" in baseline
         assert "tags ?|" not in baseline
