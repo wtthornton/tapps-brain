@@ -8,6 +8,36 @@ mcp_tools:
   - linear_list_issues
   - linear_get_issue
 ---
+<!-- BEGIN: tapps-skill linear-read v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+Multi-issue Linear reads are cache-first by contract (TAP-967 audit: 5,368 `list_issues` calls / 0.26% cache adoption). Invoke ANY time the user asks for a list, batch, or filtered view of Linear issues.
+
+**When to invoke:** "list Linear issues", "what's open in TAP", "find issues assigned to X", "review the backlog". Skip for single-issue lookups (`get_issue(id="TAP-686")`).
+
+**Core flow — every multi-issue read:**
+
+1. `tapps_linear_snapshot_get(team, project, state, label?)` first. Use `state="open"`/`"closed"` as **cache buckets** only — Linear does not understand those aliases.
+2. On `cached=true`, use `data.issues` and filter in-memory — `list_issues` is NOT called.
+3. On `cached=false`, call `tapps_linear_list_issues(team, project, state, label?, limit?)` as a gate check (TAP-2010). On `ok=true` for a bucket alias, call `linear_list_issues` with team/project only (**omit state**), `includeArchived=false`, then filter by `statusType` in memory. On `ok=true` for a concrete Linear state, pass that state through. On `ok=false`, follow the `hint` (re-call `snapshot_get` first).
+4. Immediately call `tapps_linear_snapshot_put(team, project, issues_json=json.dumps(issues), state, label?, limit?)` with the **same cache-bucket `state`** as the get call (e.g. still `state="open"`).
+
+**The 6-poll kickoff antipattern:** firing six `list_issues` calls (one per state x priority bucket) collapses to one `snapshot_get(state="open")` plus an in-memory filter. The 5-min open-state TTL means the next session warms instantly.
+
+**Status-bucket sweep antipattern:** three sequential `list_issues` calls for `backlog`/`unstarted`/`started` collapses to one `snapshot_get(state="open")` + memory filter on `state.type`.
+
+**Anti-patterns — do not do these:**
+
+- `list_issues` without a prior `snapshot_get` for the same key.
+- `list_issues({})` or `list_issues({team, limit:250})` (the unfiltered scroll).
+- Passing `state="open"` or `state="closed"` to the Linear plugin `list_issues` — those are cache buckets and return zero issues.
+- Re-fetching the same narrow query 5-12 times in one turn with no intervening writes.
+- Single-issue lookup via `list_issues` filtering — use `get_issue(id)` instead.
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 Multi-issue Linear reads are cache-first by contract (TAP-967 audit: 5,368 `list_issues` calls / 0.26% cache adoption). Invoke ANY time the user asks for a list, batch, or filtered view of Linear issues.

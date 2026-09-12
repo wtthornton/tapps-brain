@@ -6,6 +6,45 @@ description: Post a structured Linear project update document on a version relea
 allowed-tools: mcp__nlt-release-ship__tapps_release_update mcp__nlt-release-ship__docs_generate_release_update mcp__nlt-release-ship__docs_validate_release_update mcp__nlt-release-ship__docs_release_gate mcp__plugin_linear_linear__save_document mcp__nlt-linear-issues__tapps_linear_snapshot_invalidate
 argument-hint: "--version vX.Y.Z --prev-version vX.Y.W [--team <team>] [--project <project>] [--dry-run]"
 ---
+<!-- BEGIN: tapps-skill linear-release-update v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+Post a structured Linear project update document when a new version is released. The user's request to post a release update is standing authorization for the full pipeline — do NOT pause mid-flow to ask "should I post this?"
+
+**Flow:**
+
+1. Call `mcp__nlt-release-ship__tapps_release_update(version, prev_version, team, project)`.
+   - `version` and `prev_version` are required. Parse from the user's prompt or ask once if both are missing.
+   - `team` and `project`: read from `.tapps-mcp.yaml` if present (`linear_team`, `linear_project` fields), otherwise pass empty strings.
+   - If `dry_run=true` is requested, pass it through — the tool returns the body without requiring validation to pass.
+
+1b. **Docs release gate (required unless dry_run):** Call `mcp__nlt-release-ship__docs_release_gate`. If `success=false` or aggregate verdict is fail, surface findings and stop — do not post.
+
+2. Check the response:
+   - If `success=false`: surface the `error.message` and `findings` to the user. Stop — do not post.
+   - If `agent_ready=false` (and not dry_run): surface findings, stop.
+   - If `agent_ready=true`: proceed.
+
+3. Call `mcp__plugin_linear_linear__save_document`:
+   - `project`: use `data.project` from the tool response.
+   - `title`: use `data.document_title` from the tool response (format: `Release vX.Y.Z — YYYY-MM-DD`).
+   - `content`: use `data.body` from the tool response verbatim.
+
+4. After `save_document` succeeds, call `mcp__nlt-linear-issues__tapps_linear_snapshot_invalidate`:
+   - `team`: use `data.team` from tool response.
+   - `project`: use `data.project` from tool response.
+
+5. Report the document URL from `save_document` response and the version that was posted.
+
+**Rules:**
+- Never call `save_document` without a prior `agent_ready=true` from `tapps_release_update` (unless `dry_run=true`).
+- `document_title` must use the em-dash format from `data.document_title` — do not construct it manually.
+- Do not modify the body returned by the tool. Pass `data.body` verbatim.
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 Post a structured Linear project update document when a new version is released. The user's request to post a release update is standing authorization for the full pipeline — do NOT pause mid-flow to ask "should I post this?"

@@ -9,6 +9,66 @@ description: >-
 origin: ECC
 version: 2.1.0
 ---
+<!-- BEGIN: tapps-skill continuous-learning-v2 v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+# Continuous Learning v2.1 - Instinct-Based Architecture
+
+Turns Claude Code sessions into reusable knowledge via atomic **instincts** —
+small learned behaviors with confidence scoring.
+
+**v2.1** adds **project-scoped instincts** so framework conventions stay in the
+project that taught them, while universal patterns can still be global.
+
+## When to Activate
+
+- Setting up automatic learning from Claude Code sessions
+- Configuring instinct-based extraction via hooks
+- Tuning confidence thresholds or reviewing instinct libraries
+- Evolving instincts into skills, commands, or agents
+- Managing project vs global scope / promoting instincts
+
+## Instincts (summary)
+
+An instinct is one trigger -> one action, with confidence (0.3-0.9), domain tags,
+evidence, and scope (`project` default or `global`).
+
+Full YAML example and pipeline diagram:
+[references/architecture.md](references/architecture.md).
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/instinct-status` | Show instincts (project + global) with confidence |
+| `/evolve` | Cluster instincts into skills/commands; suggest promotions |
+| `/instinct-export` | Export instincts (filterable by scope/domain) |
+| `/instinct-import <file>` | Import instincts with scope control |
+| `/promote [id]` | Promote project instincts to global scope |
+| `/projects` | List known projects and instinct counts |
+
+## Quick Start
+
+1. **Hooks** — wire `observe.sh` on PreToolUse/PostToolUse (plugin or
+   `~/.claude/skills/...` path). Full JSON:
+   [references/operations.md](references/operations.md#quick-start-hooks).
+2. **Dirs** — created on first use under `~/.claude/homunculus/` (global +
+   per-project hashes).
+3. **Operate** — `/instinct-status`, `/evolve`, `/promote` as needed.
+
+## Companions
+
+| Topic | File |
+|-------|------|
+| Architecture, instinct model, project detection, what's new | [references/architecture.md](references/architecture.md) |
+| Hooks setup, config, scope, promotion, confidence, privacy | [references/operations.md](references/operations.md) |
+
+Load companions only when configuring or debugging the learning system.
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 6 heading(s) duplicate the managed block above verbatim (# Continuous Learning v2.1 - Instinct-Based Architecture, ## When to Activate, ## Instincts (summary), ## Commands, ## Quick Start, ## Companions); 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 # Continuous Learning v2.1 - Instinct-Based Architecture

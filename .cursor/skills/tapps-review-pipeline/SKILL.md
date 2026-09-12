@@ -10,6 +10,29 @@ mcp_tools:
   - tapps_checklist
   - tapps_session_start
 ---
+<!-- BEGIN: tapps-skill tapps-review-pipeline v3.12.83 -->
+<!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
+
+Run a parallel review-fix-validate pipeline on changed Python files:
+
+1. Call `tapps_session_start` if not already called
+2. Determine scope: detect changed Python files via git diff or accept a file list
+3. For each file (or batch of files), spawn a `tapps-review-fixer` agent:
+   - Pass the file path and instructions to score, fix, and gate the file
+4. Wait for all agents to complete and collect their results
+5. Review and merge any changes
+6. Call `tapps_validate_changed` with explicit `file_paths` to verify all files pass
+7. **Creator ≠ verifier:** the agents that *implemented* fixes must not be the sole judges.
+   Spawn a fresh review pass that did not write the fixes, then
+   `uv run tapps-mcp pipeline-mark creator-verifier`.
+8. Call `tapps_checklist(task_type="review")` for final verification — clear
+   `creator_verifier_skipped` / `contract_assertions_unverified` if present
+9. Present a summary table: file | before score | after score | gate | fixes applied
+<!-- END: tapps-skill -->
+
+<!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->
+<!-- flagged: 100% of this region's lines duplicate the managed block above — review and trim -->
+
 <!-- upgrade-policy: overwrite. tapps_upgrade replaces this file wholesale on every run and local edits are lost (tapps_init leaves an existing copy alone; upgrade does not). Fold the change upstream into the platform template, or pin the whole directory with an upgrade_skip_files token. -->
 
 Run a parallel review-fix-validate pipeline on changed Python files:

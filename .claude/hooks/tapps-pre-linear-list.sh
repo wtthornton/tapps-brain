@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.78
-# tapps-mcp-hook-content-sha: 5862e6ab
+# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-content-sha: a41e62ca
 # TappsMCP PreToolUse hook — Linear cache-first read gate (TAP-1224)
 # Gates raw mcp__plugin_linear_linear__list_issues calls behind a recent
 # tapps_linear_snapshot_get sentinel for the same (team, project, state,
@@ -95,7 +95,15 @@ esac
 if [ -z "$KEY" ]; then
   exit 0
 fi
-ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+ROOT="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$ROOT" ]; then
+  _common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$_common" ]; then
+    ROOT="$(cd "$_common/.." && pwd)"
+  else
+    ROOT="$PWD"
+  fi
+fi
 if [ "${TAPPS_LINEAR_SKIP_CACHE_GATE:-0}" = "1" ]; then
   mkdir -p "$ROOT/.tapps-mcp" 2>/dev/null
   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"bypass\":\"TAPPS_LINEAR_SKIP_CACHE_GATE\",\"key\":\"${KEY}\"}" \

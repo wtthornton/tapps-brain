@@ -1,4 +1,4 @@
-<!-- tapps-claude-version: 3.12.78 -->
+<!-- tapps-claude-version: 3.12.83 -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -229,7 +229,7 @@ Feature intake and triage governance for agents:
 
 **Python one-liners in Claude Code:** do not use `-c` or `-e` flags with interpreters when a PreToolUse guard is active — write `/tmp/snippet.py` or use `python3 - << 'EOF' ... EOF` instead.
 
-<!-- BEGIN: tapps-obligations v3.12.78 -->
+<!-- BEGIN: tapps-obligations v3.12.83 -->
 # TAPPS Quality Pipeline
 
 This project uses the TAPPS MCP server for code quality enforcement.

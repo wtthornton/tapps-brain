@@ -1,4 +1,4 @@
-<!-- tapps-generated: v3.12.78 -->
+<!-- tapps-generated: v3.12.83 -->
 # Copilot Instructions
 
 This project uses **TappsMCP** (Code Quality MCP Server) for automated
@@ -10,7 +10,7 @@ the pipeline below.
 ### Stage 1: Discover
 - Run `tapps_session_start` at the beginning of each session to initialize context
 - Brain memory is bridge-only: use `uv run tapps-mcp memory search --query "..."` or pinned keys in `.tapps-mcp.yaml` → `memory_hooks.auto_recall.recall_keys`. When `nlt-memory` is enabled, `tapps_memory` MCP is a slim facade on that server.
-- Recall prior decisions: `uv run tapps-mcp memory search --query "..."` or read `.tapps-mcp/session-handoff.md`
+- Recall prior decisions: `uv run tapps-mcp memory search --query "..."` or read `.tapps-mcp/session-handoff.md` (`uv run tapps-mcp handoff list` when several programs share the repo)
 
 ### Stage 2: Research
 - Use `tapps_lookup_docs` to verify library API signatures
