@@ -75,10 +75,21 @@ def _build_app_and_mcp():
     call ``tools/call`` directly without an initialize handshake — the SDK
     skips the init-required check only in stateless mode.  Production default
     is stateful (VSCode / agent-sdk compat); this switch is test-scoped.
+
+    Clears ``TAPPS_BRAIN_MCP_ALLOWED_HOSTS`` before building the server:
+    ``tests/integration/test_profile_filter.py`` leaks it into the process
+    via a bare ``os.environ.setdefault(..., "127.0.0.1")`` with no teardown,
+    which — now that this file also runs in the same CI pytest session
+    (TAP-6829) — silently narrows ``_build_transport_security()``'s
+    allow-list away from the ``localhost:<port>`` Host header this test
+    sends, breaking `tools/call` with a 421 depending on run order. Popping
+    it here makes this test hermetic to that order instead of dueling over
+    who sets it last.
     """
     import os as _os
 
     _os.environ["TAPPS_BRAIN_STATELESS_HTTP"] = "1"
+    _os.environ.pop("TAPPS_BRAIN_MCP_ALLOWED_HOSTS", None)
     from tapps_brain.http_adapter import create_app
     from tapps_brain.mcp_server import create_server
 

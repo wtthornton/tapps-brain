@@ -378,9 +378,20 @@ def check_default_partition_empty(conn: Any) -> dict[str, Any]:
 
 
 def check_flywheel_lag(
-    conn: Any, *, max_age_hours: int = _DEFAULT_FLYWHEEL_LAG_HOURS
+    conn: Any,
+    *,
+    max_age_hours: int = _DEFAULT_FLYWHEEL_LAG_HOURS,
+    project_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """SLO 4: no ``flywheel_meta`` feedback cursor is stale relative to ``feedback_events``."""
+    """SLO 4: no ``flywheel_meta`` feedback cursor is stale relative to ``feedback_events``.
+
+    Args:
+        project_ids: restrict the scan to these tenants; defaults to every
+            tenant with ``feedback_events`` rows. Same testability hook as
+            :func:`check_no_overdue_active_rows`'s ``project_ids`` — lets a
+            test assert against its own fixture rows without depending on
+            the rest of a shared database being pollution-free.
+    """
     # Same bounded-sample-with-true-total shape as SLO 1: window functions run
     # after HAVING, so ``count(*) OVER ()`` counts every violating tenant while
     # the LIMIT keeps the enumerated sample small (TAP-6698).
@@ -397,15 +408,19 @@ def check_flywheel_lag(
                 ON fm.project_id = fe.project_id
                AND fm.agent_id = fe.agent_id
                AND fm.key = 'feedback_cursor'
+            WHERE (%(project_ids)s::text[] IS NULL OR fe.project_id = ANY(%(project_ids)s))
             GROUP BY fe.project_id, fe.agent_id, fm.updated_at
             HAVING fm.updated_at IS NULL
-                OR (MAX(fe.timestamp) - fm.updated_at) > (%s || ' hours')::interval
+                OR (MAX(fe.timestamp) - fm.updated_at) > (%(max_age_hours)s || ' hours')::interval
         ) v
         ORDER BY v.newest_feedback DESC
-        LIMIT %s
+        LIMIT %(limit)s
     """
     with conn.cursor() as cur:
-        cur.execute(query, (max_age_hours, _MAX_SAMPLE))
+        cur.execute(
+            query,
+            {"project_ids": project_ids, "max_age_hours": max_age_hours, "limit": _MAX_SAMPLE},
+        )
         rows = cur.fetchall()
 
     violations = [
@@ -473,6 +488,7 @@ def evaluate_retention_slos(
     *,
     retention_env: str = "",
     config: DecayConfig | None = None,
+    project_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run all five SLO checks.
 
@@ -482,12 +498,20 @@ def evaluate_retention_slos(
     configured).  ``retention_ok`` is unchanged — an inapplicable check still
     contributes ``ok: True`` — but a caller can now tell how many checks the
     verdict actually rests on (TAP-6698).
+
+    Args:
+        project_ids: forwarded to the two tenant-scanning checks (SLO 1, SLO 4)
+            — see :func:`check_no_overdue_active_rows`. ``None`` (the default,
+            and always the case in production — ``/healthz?deep=1`` never
+            passes it) scans every tenant.
     """
     checks = {
-        "no_overdue_active_rows": check_no_overdue_active_rows(conn, config=config),
+        "no_overdue_active_rows": check_no_overdue_active_rows(
+            conn, config=config, project_ids=project_ids
+        ),
         "partition_horizon": check_partition_horizon(conn),
         "default_partition_empty": check_default_partition_empty(conn),
-        "flywheel_lag": check_flywheel_lag(conn),
+        "flywheel_lag": check_flywheel_lag(conn, project_ids=project_ids),
         "retention_manager_active": check_retention_manager_active(
             conn, retention_env=retention_env
         ),

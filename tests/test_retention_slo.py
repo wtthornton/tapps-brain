@@ -227,7 +227,14 @@ class TestSLO1ReportsTheTrueViolationCount:
             _delete_memory(conn, key=key)
 
     def test_a_clean_population_reports_zero_not_an_empty_sample(self, conn) -> None:
-        result = retention_slo.check_no_overdue_active_rows(conn)
+        # Scoped to this fixture's own tenant (TAP-6829): the unscoped scan
+        # covers every registered tenant in the database, which — once this
+        # file runs alongside tests/integration/ and tests/compat/ in the
+        # same live Postgres — legitimately is not violation-free (those
+        # suites write their own rows and are not this test's concern).
+        # ``project_ids`` is the testability hook check_no_overdue_active_rows
+        # documents for exactly this.
+        result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
         assert result["violating_total"] == 0
         assert result["ok"] is True
         assert result["sample_truncated"] is False
@@ -309,7 +316,12 @@ class TestSLO4FlywheelLag:
             conn.commit()
 
     def test_passes_on_a_fresh_fixture(self, conn) -> None:
-        result = retention_slo.check_flywheel_lag(conn)
+        # Scoped to this fixture's own tenant (TAP-6829) — see the identical
+        # note on TestSLO1ReportsTheTrueViolationCount.test_a_clean_population_
+        # reports_zero_not_an_empty_sample. An unscoped scan is not guaranteed
+        # violation-free once this file shares a live Postgres with
+        # tests/integration/ and tests/compat/.
+        result = retention_slo.check_flywheel_lag(conn, project_ids=[_PROJECT_ID])
         assert result == {
             "ok": True,
             "violating_total": 0,
@@ -383,7 +395,14 @@ class TestSLO5RetentionManagerActive:
 
 class TestEvaluateRetentionSlos:
     def test_aggregate_is_ok_on_a_clean_fixture(self, conn) -> None:
-        result = retention_slo.evaluate_retention_slos(conn, retention_env="")
+        # Scoped to this fixture's own tenant (TAP-6829) for the same reason
+        # as the SLO 1 and SLO 4 "clean fixture" tests above — the two
+        # tenant-scanning checks this aggregates are not guaranteed
+        # violation-free across the whole database once this file shares a
+        # live Postgres with tests/integration/ and tests/compat/.
+        result = retention_slo.evaluate_retention_slos(
+            conn, retention_env="", project_ids=[_PROJECT_ID]
+        )
         assert result["retention_ok"] is True, result["checks"]
 
     def test_aggregate_names_the_checks_that_passed_vacuously(self, conn) -> None:
