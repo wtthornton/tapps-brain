@@ -117,7 +117,7 @@ class TestSLO1NoOverdueActiveRows:
         old_ts = datetime.now(UTC) - timedelta(days=40)
         _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert result["ok"] is False
             assert any(v["key"] == key for v in result["violations"])
         finally:
@@ -127,7 +127,7 @@ class TestSLO1NoOverdueActiveRows:
         key = f"slo1-fresh-{uuid.uuid4().hex[:8]}"
         _insert_memory(conn, key=key, tier="context")
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert not any(v["key"] == key for v in result["violations"])
         finally:
             _delete_memory(conn, key=key)
@@ -152,7 +152,7 @@ class TestSLO1SurfacesUnrecognisedTiers:
         key = f"slo1-unknown-tier-{uuid.uuid4().hex[:8]}"
         _insert_memory(conn, key=key, tier="identity")
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert result["ok"] is False
             hit = next((v for v in result["violations"] if v["key"] == key), None)
             assert hit is not None, "an unrecognised tier was dropped, not surfaced"
@@ -169,7 +169,7 @@ class TestSLO1SurfacesUnrecognisedTiers:
         old_ts = datetime.now(UTC) - timedelta(days=40)
         _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             hit = next(v for v in result["violations"] if v["key"] == key)
             assert hit["reason"] == "overdue"
             assert hit["half_life_days"] == 14.0
@@ -181,7 +181,7 @@ class TestSLO1SurfacesUnrecognisedTiers:
         key = f"slo1-fresh-known-{uuid.uuid4().hex[:8]}"
         _insert_memory(conn, key=key, tier="architectural")
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert not any(v["key"] == key for v in result["violations"])
         finally:
             _delete_memory(conn, key=key)
@@ -199,14 +199,16 @@ class TestSLO1ReportsTheTrueViolationCount:
 
     def test_violating_total_exceeds_the_sample_cap(self, conn) -> None:
         overshoot = retention_slo._MAX_SAMPLE + 5
-        baseline = retention_slo.check_no_overdue_active_rows(conn)["violating_total"]
+        baseline = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])[
+            "violating_total"
+        ]
         old_ts = datetime.now(UTC) - timedelta(days=40)
         prefix = f"slo1-bulk-{uuid.uuid4().hex[:8]}"
         keys = [f"{prefix}-{i}" for i in range(overshoot)]
         for key in keys:
             _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert result["violating_total"] == baseline + overshoot
             assert len(result["violations"]) == retention_slo._MAX_SAMPLE
             assert result["sample_truncated"] is True
@@ -220,7 +222,7 @@ class TestSLO1ReportsTheTrueViolationCount:
         old_ts = datetime.now(UTC) - timedelta(days=40)
         _insert_memory(conn, key=key, tier="context", updated_at=old_ts)
         try:
-            result = retention_slo.check_no_overdue_active_rows(conn)
+            result = retention_slo.check_no_overdue_active_rows(conn, project_ids=[_PROJECT_ID])
             assert result["violating_total"] == len(result["violations"])
             assert result["sample_truncated"] is False
         finally:

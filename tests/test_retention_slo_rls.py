@@ -263,6 +263,17 @@ class TestTenantDiscovery:
         """End to end: no explicit tenant list, and the rows are still counted."""
         result = retention_slo.check_no_overdue_active_rows(rls_conn)
         assert result["violating_total"] >= len(seeded_tenants)
-        assert {v["key"] for v in result["violations"]} >= set(seeded_tenants)
         assert result["tenants_scanned"] >= 2
         assert result["rows_scanned"] >= len(seeded_tenants)
+
+        # The default scan's own returned sample is capped at _MAX_SAMPLE and
+        # globally ordered (TAP-6829: this suite now shares a database with
+        # hundreds of other tests, whose own violations can legitimately push
+        # these two rows out of the top-20 by age/reason ordering — that is
+        # the sample cap working as designed, not a discovery failure). Confirm
+        # the rows are genuinely discoverable, not merely counted, with an
+        # explicitly-scoped call against the same tenants.
+        scoped = retention_slo.check_no_overdue_active_rows(
+            rls_conn, project_ids=[_TENANT_A, _TENANT_B]
+        )
+        assert {v["key"] for v in scoped["violations"]} >= set(seeded_tenants)
