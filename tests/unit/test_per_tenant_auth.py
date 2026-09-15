@@ -180,6 +180,20 @@ class TestProjectRegistryVerifyToken:
         registry = ProjectRegistry(cm)
         assert registry.verify_token("proj", "wrong-token") is False
 
+    def test_returns_false_for_malformed_hash(self) -> None:
+        """A corrupt DB row (not a parseable argon2 hash) must not raise.
+
+        This exercises the ``except InvalidHashError`` branch directly —
+        the branch whose predecessor referenced a name (``VerifyInvalidError``)
+        that does not exist in ``argon2.exceptions`` for any released
+        ``argon2-cffi`` in the supported range, so the whole ``verify_token``
+        call raised ``ImportError`` before this branch could ever run.
+        """
+        pytest.importorskip("argon2")
+        cm = _make_mock_conn_cm("not-a-real-argon2-hash")
+        registry = ProjectRegistry(cm)
+        assert registry.verify_token("proj", "anytoken") is False
+
 
 # ---------------------------------------------------------------------------
 # Admin HTTP routes — rotate-token and revoke-token auth gating
