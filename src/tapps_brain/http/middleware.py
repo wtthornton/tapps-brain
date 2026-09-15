@@ -21,6 +21,8 @@ from typing import Any
 
 import structlog
 
+from tapps_brain.project_resolver import STRICT_REFUSED_AGENT_LITERALS
+
 try:
     from fastapi import HTTPException, Request, Response
     from fastapi.responses import JSONResponse
@@ -119,7 +121,9 @@ def _resolve_tenant_headers(request: Request) -> tuple[str, str, str | None, str
 # Anonymous placeholders Ruling 9 forbids under strict identity: the implicit
 # ``_resolve_tenant_headers`` default ("unknown") and the literal string a
 # caller might send when it has no real identity wired up yet ("default").
-_ANONYMOUS_AGENT_IDS = frozenset({"unknown", "default"})
+# TAP-7295: single definition site, shared with the TAPPS_BRAIN_STRICT_AGENT_ID
+# gate's literal set below.
+_ANONYMOUS_AGENT_IDS = STRICT_REFUSED_AGENT_LITERALS
 
 
 def strict_identity_refusal(agent_id: str) -> dict[str, Any] | None:
@@ -186,10 +190,7 @@ def resolve_tenant_or_refuse(request: Request) -> tuple[str, str, HTTPException 
     """
     from tapps_brain.errors import tenant_refusal_body
     from tapps_brain.project_registry import is_strict_projects_enabled as _strict_projects_enabled
-    from tapps_brain.project_resolver import (
-        STRICT_REFUSED_AGENT_LITERALS,
-        STRICT_REFUSED_PROJECT_LITERALS,
-    )
+    from tapps_brain.project_resolver import STRICT_REFUSED_PROJECT_LITERALS
 
     project_id = (request.headers.get("x-project-id") or "").strip()
     raw_agent_id = (request.headers.get("x-tapps-agent") or "").strip()
