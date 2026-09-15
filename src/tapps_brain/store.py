@@ -5450,8 +5450,8 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
         return TemporalDropRateSample(
             project_id=self._project_id,
             sample_queries=queries,
-            included_count=considered,
-            excluded_count=surviving,
+            included_count=surviving,
+            excluded_count=dropped,
             drop_rate=drop_rate,
         )
 

@@ -549,12 +549,25 @@ drop_rate = store.memory_temporal_drop_rate_sample()
 | `duplicate_key_clusters` / `duplicate_key_rows` | Rows grouped by key with any trailing `.vN` supersession suffix stripped (the suffix `MemoryStore.supersede()` mints). A cluster is a base key with more than one row — i.e. a key superseded at least once. |
 
 `MemoryStore.memory_temporal_drop_rate_sample(sample_size=10)` returns a
-`TemporalDropRateSample`: takes the `sample_size` most-recently-updated live entries as
-recall queries, runs each through `MemoryRetriever.search()` once with
-`include_superseded=True` (temporal filter bypassed) and once with the default
-`include_superseded=False` (temporal filter applied — `retrieval.py`'s
-`_entry_matches_temporal_window` / `stale_flag` logic, "Issue #70"), and reports the
-aggregate drop in result counts as `drop_rate`.
+`TemporalDropRateSample`: takes the `sample_size` most-recently-updated entries in the
+project — **any lifecycle `status`**, not just live ones, because a sample restricted to
+`status=active` could never contain a temporally-excludable row and would silently
+always report `drop_rate=0.0` regardless of whether the filter works. For each sampled
+entry it evaluates `MemoryEntry.is_temporally_valid()` directly, the identical predicate
+`MemoryRetriever` applies inline in its candidate-filtering loop
+(`retrieval.py:524-526`, "Issue #70"), and counts it as dropped exactly when that inline
+condition would drop it. `excluded_count` is the dropped rows, `included_count` is the
+surviving rows, and `drop_rate` is dropped / considered.
+
+This deliberately does **not** measure the drop by diffing two live
+`MemoryRetriever.search()` calls (`include_superseded=True` vs `False`) against
+free-text queries built from entry values: on a small/weakly-overlapping corpus the two
+calls hit different FTS candidate pools (the SQL-level `include_historical` WHERE clause
+changes which rows are even fetched before ranking), so the diff between the two result
+counts was observed to go **negative** in manual verification — an artifact of
+candidate-pool selection, not the temporal filter. Evaluating the predicate directly on
+the sample avoids that confound while still exercising the identical boolean recall's
+filter loop computes.
 
 ### RLS-scoping guarantee
 

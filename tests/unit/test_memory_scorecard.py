@@ -216,7 +216,7 @@ class TestTemporalDropRateSample:
         sample = store.memory_temporal_drop_rate_sample(sample_size=10)
 
         assert sample.included_count == 2
-        assert sample.excluded_count == 2
+        assert sample.excluded_count == 0
         assert sample.drop_rate == 0.0
 
     def test_expired_rows_in_sample_raise_drop_rate(self, store: MemoryStore) -> None:
@@ -226,7 +226,7 @@ class TestTemporalDropRateSample:
 
         sample = store.memory_temporal_drop_rate_sample(sample_size=10)
 
-        assert sample.included_count == 2
+        assert sample.included_count == 1
         assert sample.excluded_count == 1
         assert sample.drop_rate == pytest.approx(0.5)
 
