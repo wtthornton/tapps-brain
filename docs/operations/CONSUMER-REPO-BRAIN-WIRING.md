@@ -102,7 +102,7 @@ literal placeholder or an unregistered tenant:
 | Flag | Axis | Refuses when the resolved id is... |
 |------|------|-------------------------------------|
 | `TAPPS_BRAIN_STRICT_PROJECTS=1` | `X-Project-Id` | absent, one of the literals `default` / `repo-brain` / `api` / `main` (container-profile ids, not real tenants), or not a registered row in `project_profiles` |
-| `TAPPS_BRAIN_STRICT_AGENT_ID=1` | `X-Agent-Id` (or the higher-precedence `X-Tapps-Agent`) | absent, or the literal `unknown` |
+| `TAPPS_BRAIN_STRICT_AGENT_ID=1` | `X-Agent-Id` (or the higher-precedence `X-Tapps-Agent`) | absent, or one of the literals `unknown` / `default` |
 
 Both flags are read at request time (no restart needed to toggle) and apply to every
 `/v1/*` write route plus the global-scope reads `/v1/recall` and `/v1/kg/neighbors` — a
@@ -153,7 +153,7 @@ preserves pre-TAP-7243 behaviour.
 | project not registered | `tapps-brain project register <slug>` |
 | duplicate MCP servers | Remove direct `tapps-brain` from `.mcp.json`; run `tapps_upgrade` |
 | `400 tenant_project_missing` / `tenant_project_literal` / `tenant_project_unregistered` | Set `X-Project-Id` to your project's real, registered slug — see [Tenant-scope enforcement](#tenant-scope-enforcement-tap-7243) |
-| `400 tenant_agent_missing` / `tenant_agent_literal` | Set `X-Agent-Id` (or `X-Tapps-Agent`) to a stable logical agent name, not `unknown` |
+| `400 tenant_agent_missing` / `tenant_agent_literal` | Set `X-Agent-Id` (or `X-Tapps-Agent`) to a stable logical agent name, not `unknown` / `default` |
 
 Full matrix: [MEMORY_REFERENCE.md](../MEMORY_REFERENCE.md#troubleshooting-matrix).
 
