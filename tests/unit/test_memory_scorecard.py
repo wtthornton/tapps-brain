@@ -195,12 +195,31 @@ class TestMemoryScorecardBuckets:
         card = store.memory_scorecard()
         assert card.project_id == store._project_id
 
-    def test_rls_scoped_false_on_in_memory_backend(self, store: MemoryStore) -> None:
+    def test_rls_scoped_false_on_in_memory_backend(self) -> None:
         """The in-memory unit-test backend has no ``_scoped_conn`` / RLS path,
         so the report must say so rather than claiming a scoping guarantee it
-        cannot provide."""
-        card = store.memory_scorecard()
-        assert card.rls_scoped is False
+        cannot provide.
+
+        Constructs :class:`InMemoryPrivateBackend` explicitly rather than
+        relying on the autouse ``_inject_in_memory_private_backend`` fixture
+        (tests/conftest.py:450-478), which only injects it when
+        ``TAPPS_BRAIN_DATABASE_URL`` is unset. CI's unit job sets that DSN, so
+        a test that got its backend from the fixture was really asserting on
+        the *absence of an env var*, not on the in-memory backend it names —
+        it passed locally and failed in CI (TAP-4587)."""
+        from tests.conftest import InMemoryPrivateBackend
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = MemoryStore(
+                project_root=Path(tmpdir),
+                embedding_provider=None,
+                private_backend=InMemoryPrivateBackend(),
+            )
+            try:
+                card = s.memory_scorecard()
+                assert card.rls_scoped is False
+            finally:
+                s.close()
 
 
 # ---------------------------------------------------------------------------
