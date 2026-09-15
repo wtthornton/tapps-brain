@@ -32,7 +32,7 @@ silently dropped or silently re-defaulted by the compose file during the copy.
 | `TAPPS_BRAIN_ALLOWED_ORIGINS` | No | Comma-separated browser origins. Required because compose sets `TAPPS_BRAIN_STRICT=1`; a missing value crash-loops the brain. | Local dev: `http://127.0.0.1:8088,http://localhost:8088` | None — required. |
 | `TAPPS_BRAIN_STRICT_PROJECTS` | No | Refuses writes with an unrecognized `project_id` when `1`. | `0` (permissive) | `docker-compose.hive.yaml:120` defaults to `0` if unset. |
 | `TAPPS_BRAIN_STRICT_AGENT_ID` | No | Refuses writes whose `agent_id` resolves to the anonymous placeholders `unknown`/`default` when `1` (TAP-6696). | `0` (permissive) | `docker-compose.hive.yaml:121` defaults to `0` if unset. |
-| `TAPPS_BRAIN_PER_TENANT_AUTH` | No | Requires `X-Project-Id` and per-project token rotation when `1`. | `1` (compose default) — **note:** the currently live deploy overrides this to `0` via its `.env`; that divergence is tracked on TAP-7328 and is an operator decision, not something this reference changes. | `docker-compose.hive.yaml:167` defaults to `1` if unset. |
+| `TAPPS_BRAIN_PER_TENANT_AUTH` | No | Requires `X-Project-Id` and per-project token rotation when `1`. | `1` (compose default) — **note:** `docker/.env:53` also reads `1`, matching the default. The live appliance was observed briefly reporting `0` at one inspection; that was stale runtime state from a container that outlived a since-superseded `.env` edit, not a real `.env` override — see the relocation runbook's "Known divergence" section for the full account. Recreating the container (as relocation does) resolves it; the `.env` file itself needs no edit. | `docker-compose.hive.yaml:169` defaults to `1` if unset. |
 
 ## Non-exhaustive — see also
 
