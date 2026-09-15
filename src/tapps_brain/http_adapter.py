@@ -2252,7 +2252,9 @@ def create_app(
 
         REST counterpart of the ``brain_forget`` MCP tool. The entry is
         archived to the ``gc_archive`` table and removed from the active
-        store — not permanently deleted.
+        store — not permanently deleted. Its Hive copy, if any, is archived
+        too (TAP-6816) so the memory stops being recallable via Hive search,
+        not just locally.
 
         Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
         A duplicate key within 24 h replays the original response.
@@ -2264,7 +2266,20 @@ def create_app(
 
         Request body (JSON): ``{ "key": str }``
 
-        Response: ``{ "forgotten": bool, "key": str, "reason"?: str }``
+        Response: ``{ "forgotten": bool, "key": str, "reason"?: str,
+        "hive_forgotten"?: bool, "hive_reap"?: "archived" | "absent" |
+        "failed" }``. ``hive_forgotten`` is ``True`` only when a live Hive
+        copy was found and archived. ``hive_forgotten: False`` is ambiguous
+        on its own — it covers five different situations (no Hive backend
+        attached, a backend without ``archive_entry``, no Hive copy ever
+        existed, the copy was already archived, and the Hive archive attempt
+        itself raising) — so ``hive_reap`` disambiguates: "archived" matches
+        ``hive_forgotten: True``; "absent" covers the first four
+        never-existed/no-op cases; "failed" means the Hive archive attempt
+        raised and a Hive copy may still exist and be recallable via Hive
+        search even though the private row is gone. Callers that need to
+        know whether the memory is *fully* gone (private and Hive) must
+        check ``hive_reap != "failed"``, not just ``hive_forgotten``.
         """
         project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
         if _tenant_exc is not None:
