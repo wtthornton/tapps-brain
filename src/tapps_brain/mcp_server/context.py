@@ -123,6 +123,39 @@ def _meta_tenant_from_mcp_request() -> tuple[str | None, str | None]:
     return _meta_field(meta, "project_id"), _meta_field(meta, "agent_id")
 
 
+def _current_request_invocation_id() -> str | None:
+    """Resolve a server-controlled invocation id for the active MCP request (TAP-6822).
+
+    Mirrors the HTTP ``/v1/remember`` attribution path
+    (``http_adapter._extract_invocation_id``, VAL-19): ``X-Origin-Invocation-Id``
+    on the inbound request takes precedence, falling back to MCP JSON-RPC
+    ``_meta.invocation_id``. Both sources live on the transport envelope that
+    the calling MCP client (not the model's tool-call arguments) controls —
+    ``brain_remember``'s tool schema has no ``run_id``/``invocation_id``
+    parameter, so nothing in a tool call's arguments can reach this value.
+
+    Returns ``None`` when no request context is active (stdio without
+    ``_meta``, unit tests, background work) — callers must leave the stored
+    ``run_id`` unset rather than fabricate or inherit one.
+    """
+    try:
+        from mcp.server.lowlevel.server import request_ctx as _request_ctx_var
+    except Exception:
+        return None
+    try:
+        rc = _request_ctx_var.get()
+    except LookupError:
+        return None
+    req = getattr(rc, "request", None)
+    headers = getattr(req, "headers", None)
+    if headers is not None:
+        header_val = (headers.get("x-origin-invocation-id") or "").strip()
+        if header_val:
+            return header_val
+    meta = getattr(rc, "meta", None)
+    return _meta_field(meta, "invocation_id")
+
+
 @contextlib.contextmanager
 def _mcp_tenant_context_for_tool_call() -> Iterator[None]:
     """Bridge resolved tenant identity into contextvars for MCP tool execution."""
