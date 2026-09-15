@@ -2252,7 +2252,9 @@ def create_app(
 
         REST counterpart of the ``brain_forget`` MCP tool. The entry is
         archived to the ``gc_archive`` table and removed from the active
-        store — not permanently deleted.
+        store — not permanently deleted. Its Hive copy, if any, is archived
+        too (TAP-6816) so the memory stops being recallable via Hive search,
+        not just locally.
 
         Accepts ``X-Idempotency-Key`` (UUID) when ``TAPPS_BRAIN_IDEMPOTENCY=1``.
         A duplicate key within 24 h replays the original response.
@@ -2264,7 +2266,10 @@ def create_app(
 
         Request body (JSON): ``{ "key": str }``
 
-        Response: ``{ "forgotten": bool, "key": str, "reason"?: str }``
+        Response: ``{ "forgotten": bool, "key": str, "reason"?: str,
+        "hive_forgotten"?: bool }``. ``hive_forgotten`` is ``True`` when a
+        Hive copy existed and was archived, ``False`` when none existed —
+        never an error either way.
         """
         project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
         if _tenant_exc is not None:

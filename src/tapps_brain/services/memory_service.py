@@ -476,15 +476,24 @@ def brain_recall(
 
 
 def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
-    """Archive-then-delete a memory entry by key.
+    """Archive-then-delete a memory entry by key, reaping its Hive copy too.
 
     Both public surfaces (the ``brain_forget`` MCP tool and ``POST /v1/forget``)
     promise the entry is "not permanently deleted", so the row is written to
     the ``gc_archive`` table (same recoverability model as GC eviction) before
     it is removed from the active store.
 
-    Returns ``{"forgotten": True, "key": key}`` on success or
-    ``{"forgotten": False, "reason": "not_found"}`` when the key is unknown.
+    TAP-6816: a memory propagated to the Hive (``agent_scope`` other than
+    ``"private"``) leaves a copy there that survives forgetting the private
+    row unless it is also archived. ``_reap_hive_copy`` does that via the
+    Hive backend's own archive-shaped method (never a raw ``DELETE``) across
+    every namespace this agent's recall would search, so absence here means
+    absence from Hive search/recall too, not just this row.
+
+    Returns ``{"forgotten": True, "key": key, "hive_forgotten": bool}`` on
+    success or ``{"forgotten": False, "reason": "not_found"}`` when the key is
+    unknown. ``hive_forgotten`` is additive: existing fields never change
+    shape or value for an existing case.
     """
     with start_mcp_tool_span("brain_forget"):
         entry = store.get(key)
@@ -492,7 +501,8 @@ def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dic
             return {"forgotten": False, "reason": "not_found"}
         _archive_forgotten_entry(getattr(store, "_persistence", None), entry, key)
         store.delete(key)
-        return {"forgotten": True, "key": key}
+        hive_forgotten = _reap_hive_copy(store, key)
+        return {"forgotten": True, "key": key, "hive_forgotten": hive_forgotten}
 
 
 def _archive_forgotten_entry(backend: Any, entry: Any, key: str) -> None:
@@ -506,6 +516,49 @@ def _archive_forgotten_entry(backend: Any, entry: Any, key: str) -> None:
         return
     if not archive(entry):
         logger.warning("brain_forget.archive_failed", key=key)
+
+
+def _reap_hive_copy(store: Any, key: str) -> bool:
+    """Archive *key*'s Hive copy, if any, across every namespace it could live in.
+
+    TAP-6816: mirrors the exact namespace set ``RecallOrchestrator``/
+    ``recall.py`` search on this agent's behalf (``universal`` + the agent's
+    Hive profile namespace + every Hive group the agent belongs to) so
+    "reaped" and "no longer recallable via Hive search" are the same claim.
+    Best-effort per namespace — one failed lookup does not block reaping the
+    others, and no hive backend / no hive copy is a normal, non-error outcome
+    (forget stays idempotent per acceptance box b5).
+    """
+    hive_store = getattr(store, "_hive_store", None)
+    archive = getattr(hive_store, "archive_entry", None)
+    if not callable(archive):
+        return False
+
+    profile = getattr(store, "_profile", None)
+    agent_profile = getattr(profile, "name", None) or "repo-brain"
+    project_id = getattr(store, "_project_id", None) or ""
+    hive_agent_id = getattr(store, "_hive_agent_id", None) or ""
+
+    namespaces = ["universal", agent_profile]
+    get_agent_groups = getattr(hive_store, "get_agent_groups", None)
+    if callable(get_agent_groups):
+        try:
+            for group in get_agent_groups(hive_agent_id, project_id):
+                if group not in namespaces:
+                    namespaces.append(group)
+        except Exception:
+            logger.warning("brain_forget.hive_groups_lookup_failed", key=key, exc_info=True)
+
+    reaped = False
+    for namespace in namespaces:
+        try:
+            if archive(namespace, key):
+                reaped = True
+        except Exception:
+            logger.warning(
+                "brain_forget.hive_archive_failed", key=key, namespace=namespace, exc_info=True
+            )
+    return reaped
 
 
 def brain_learn_success(
@@ -2518,7 +2571,14 @@ async def async_brain_forget(
         if backend is not None:
             await asyncio.to_thread(_archive_forgotten_entry, backend, entry, key)
     await async_store.delete(key)
-    return {"forgotten": True, "key": key}
+    # TAP-6816: same Hive-reap obligation as the sync path. The Hive backend
+    # is psycopg-sync regardless of which private backend fronts this async
+    # store, so the reap itself always runs in a worker thread.
+    sync_store = getattr(async_store, "_store", None)
+    hive_forgotten = False
+    if sync_store is not None and getattr(sync_store, "_hive_store", None) is not None:
+        hive_forgotten = await asyncio.to_thread(_reap_hive_copy, sync_store, key)
+    return {"forgotten": True, "key": key, "hive_forgotten": hive_forgotten}
 
 
 async def async_brain_learn_success(

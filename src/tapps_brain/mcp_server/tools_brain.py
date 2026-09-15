@@ -147,7 +147,11 @@ def register_brain_tools(mcp: Any, ctx: ToolContext) -> None:  # noqa: ANN401, P
 
     @mcp.tool()  # type: ignore[untyped-decorator]
     def brain_forget(key: str, agent_id: str = "") -> str:
-        """Archive a memory by key (to gc_archive); not permanently deleted."""
+        """Archive a memory by key (to gc_archive); not permanently deleted.
+
+        Also archives the memory's Hive copy, if any (TAP-6816), so it stops
+        being recallable via Hive search once forgotten locally.
+        """
         project_id = _pid()
         ikey, dsn, cached = _mcp_idempotency_check(project_id, "brain_forget")
         if cached is not None:
