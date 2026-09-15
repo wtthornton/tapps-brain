@@ -29,6 +29,25 @@ from tapps_brain.tier_normalize import normalize_save_tier
 logger = structlog.get_logger(__name__)
 
 
+def _resolve_mcp_invocation_id() -> str | None:
+    """Resolve the server-controlled invocation id for the active MCP request (TAP-6822).
+
+    Delegates to :func:`tapps_brain.mcp_server.context._current_request_invocation_id`
+    (lazy import — avoids a circular dependency between ``services`` and
+    ``mcp_server``), which reads the transport envelope (``X-Origin-Invocation-Id``
+    header / MCP ``_meta.invocation_id``) rather than any tool-call argument.
+    Returns ``None`` when no request context is active or the resolver is
+    unavailable (e.g. unit tests without an MCP server context) — never
+    fabricates or inherits a value.
+    """
+    try:
+        from tapps_brain.mcp_server.context import _current_request_invocation_id
+
+        return _current_request_invocation_id()
+    except Exception:  # nosec B110 — resolver unavailable in some test contexts
+        return None
+
+
 def _save_rejection(result: Any) -> dict[str, Any] | None:
     """If ``MemoryStore.save`` returned an error dict, normalise it for callers."""
     if isinstance(result, dict) and result.get("error"):
@@ -82,8 +101,15 @@ def brain_remember(
     Pass ``skip_consolidation=True`` to save the entry without triggering the
     auto-consolidation check — the escape hatch for a long, self-contained
     artifact that must not be folded into a merged summary.
+
+    TAP-6822: the saved entry's ``run_id`` provenance column is resolved
+    server-side from the active MCP request's transport envelope (see
+    :func:`_resolve_mcp_invocation_id`) — there is no ``run_id`` parameter
+    here for a model to set via tool-call arguments. Absent invocation
+    context (e.g. stdio without ``_meta``), ``run_id`` stays ``None``.
     """
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
+        run_id = _resolve_mcp_invocation_id()
         key = _content_key(fact)
 
         # TAP-989: explicit agent_scope wins over legacy share / share_with.
@@ -118,6 +144,9 @@ def brain_remember(
             # Escape hatch for callers saving a self-contained artifact that
             # must not be merged into a neighbour's summary.
             "skip_consolidation": skip_consolidation,
+            # TAP-6822: server-resolved invocation id, propagated by
+            # store.save() into both the private row and any hive copy.
+            "run_id": run_id,
         }
         if memory_group:
             save_kwargs["memory_group"] = memory_group
