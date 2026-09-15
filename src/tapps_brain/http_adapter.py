@@ -128,7 +128,7 @@ from tapps_brain.http.middleware import (
 )
 
 # probe cache
-from tapps_brain.http.probe_cache import (  # noqa: F401
+from tapps_brain.http.probe_cache import (
     _PROBE_CACHE_TTL,
     _get_hive_pool_stats,
     _probe_db,
@@ -441,6 +441,71 @@ def _maybe_warn_retention_manager(
                 "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS. See TAP-6698."
             ),
         )
+
+
+# TAP-7682: dedicated readiness probe for per-tenant token verification.
+# tapps-brain#309 fixed an ImportError raised *inside*
+# ProjectRegistry.verify_token() that made every authenticated /v1/* call
+# 503 for hours while /health and /ready stayed green -- neither probed the
+# verification call itself, only DB reachability (see _probe_db above).
+# Sentinel identity below is never a real project or a real credential. A
+# healthy brain always returns True/False/None for this pair (see
+# ProjectRegistry.verify_token's docstring) -- only an exception raised
+# *inside* the verification call (import failure, DB error mid-call, etc.)
+# is "broken" and reported non-ok. Distinguishing a clean False/None
+# (healthy refusal) from a crash (real outage) is the entire point of this
+# probe -- see VAL-03.
+_READINESS_PROBE_PROJECT_ID = "__tapps_brain_readiness_probe__"
+_READINESS_PROBE_TOKEN = "readiness-probe-not-a-real-credential"
+
+_TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
+
+
+def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
+    """Readiness probe for per-tenant token verification.
+
+    Calls the same seam the data-plane auth dependency uses
+    (:func:`tapps_brain.http.auth._verify_per_tenant_token`) against a
+    sentinel project id and a deliberately-wrong token. A healthy call
+    returns ``True``/``False``/``None`` -- all three are "ok" for readiness
+    purposes, since a wrong-or-missing token producing a clean refusal is
+    expected behavior, not an outage. Only an exception escaping the call
+    is "broken".
+
+    Returns ``(ok, detail)``; never raises. Skipped (reported ok) when no
+    DSN is configured -- DB reachability is already covered by
+    :func:`_probe_db`, and this probe has nothing to connect to.
+    """
+    if not dsn:
+        return True, "skipped (no DSN configured)"
+    now = time.monotonic()
+    cached = _TOKEN_VERIFY_PROBE_CACHE.get(dsn)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    try:
+        from tapps_brain.http.auth import _verify_per_tenant_token
+
+        _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
+        result: tuple[bool, str] = (True, "ok")
+    except Exception as exc:
+        err_str = str(exc)
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(dsn)
+            if parsed.hostname:
+                err_str = err_str.replace(parsed.hostname, "[host]")
+            if parsed.port:
+                err_str = err_str.replace(str(parsed.port), "[port]")
+            if parsed.username:
+                err_str = err_str.replace(parsed.username, "[user]")
+            if parsed.password:
+                err_str = err_str.replace(parsed.password, "[pass]")
+        except Exception:
+            err_str = "token verification probe failed"
+        result = (False, f"token_verification_error: {err_str}")
+    _TOKEN_VERIFY_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    return result
 
 
 def create_app(
@@ -917,10 +982,24 @@ def create_app(
     @app.get("/ready")
     async def _ready() -> JSONResponse:
         is_ready, migration_version, message = _probe_db(cfg.dsn)
+        # TAP-7682: /ready used to answer "is Postgres reachable" only, and
+        # never touched per-tenant token verification -- during the incident
+        # this probe exists to make detectable, /ready stayed "ready" for
+        # hours while every authenticated /v1/* call 503'd from an ImportError
+        # inside verify_token(). See _probe_token_verification for what "ok"
+        # means here (a clean False/None refusal is healthy; only a crash
+        # inside the verification call is not).
+        token_verification_ok, token_verification_detail = _probe_token_verification(cfg.dsn)
+        overall_ready = is_ready and token_verification_ok
         body: dict[str, Any] = {
-            "status": "ready" if is_ready else "degraded",
+            "status": "ready" if overall_ready else "degraded",
             "migration_version": migration_version,
             "detail": message,
+            "checks": {
+                "token_verification": (
+                    "ok" if token_verification_ok else token_verification_detail
+                ),
+            },
         }
         _pool_stats = _get_hive_pool_stats(cfg.store)
         if _pool_stats:
@@ -931,7 +1010,7 @@ def create_app(
                 "available": _pool_stats.get("pool_available"),
                 "saturation": _pool_stats.get("pool_saturation"),
             }
-        return JSONResponse(status_code=200 if is_ready else 503, content=body)
+        return JSONResponse(status_code=200 if overall_ready else 503, content=body)
 
     @app.get("/metrics")
     async def _metrics(request: Request) -> PlainTextResponse:

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
@@ -89,8 +89,10 @@ def _clear_probe_db_cache() -> Any:
     import tapps_brain.http.probe_cache as _pc
 
     _pc._PROBE_CACHE.clear()
+    _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
     yield
     _pc._PROBE_CACHE.clear()
+    _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +388,10 @@ class TestReadyEndpointDbHealthy:
                 "tapps_brain.postgres_migrations.get_federation_schema_status",
                 return_value=mock_status,
             ),
+            # TAP-7682: isolate the DB-readiness assertion from the new
+            # token-verification check — a project with no per-tenant token
+            # legitimately returns None, which is "ok" for readiness.
+            patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None),
             _client(settings) as c,
         ):
             resp = c.get("/ready")
@@ -393,6 +399,7 @@ class TestReadyEndpointDbHealthy:
         body = resp.json()
         assert isinstance(body, dict)
         assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
 
     def test_migration_version_in_body(self) -> None:
         mock_status = MagicMock()
@@ -411,11 +418,159 @@ class TestReadyEndpointDbHealthy:
                 "tapps_brain.postgres_migrations.get_federation_schema_status",
                 return_value=mock_status,
             ),
+            patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None),
             _client(settings) as c,
         ):
             body = c.get("/ready").json()
         assert isinstance(body, dict)
         assert body["migration_version"] == 7
+
+
+# ---------------------------------------------------------------------------
+# /ready endpoint — token verification (TAP-7682, VAL-03)
+#
+# tapps-brain#309 fixed an ImportError raised *inside*
+# ProjectRegistry.verify_token() that made every authenticated /v1/* call
+# 503 for hours while /health and /ready stayed green. These tests assert
+# on the MECHANISM (that /ready actually calls
+# tapps_brain.http.auth._verify_per_tenant_token, the same seam the
+# data-plane auth dependency uses) rather than on a coincidental output, and
+# provide the negative control the fix is meant to catch: an exception
+# raised inside the verification call — not a clean False/None refusal —
+# must flip readiness non-ok.
+# ---------------------------------------------------------------------------
+
+
+def _enter_healthy_db_patches(stack: ExitStack, mock_status: MagicMock) -> None:
+    stack.enter_context(
+        patch("tapps_brain.postgres_migrations.get_hive_schema_status", return_value=mock_status)
+    )
+    stack.enter_context(
+        patch("tapps_brain.postgres_migrations.get_private_schema_status", return_value=mock_status)
+    )
+    stack.enter_context(
+        patch(
+            "tapps_brain.postgres_migrations.get_federation_schema_status",
+            return_value=mock_status,
+        )
+    )
+
+
+class TestReadyEndpointTokenVerification:
+    def test_calls_verify_per_tenant_token_with_synthetic_credentials(self) -> None:
+        """Mechanism assertion: /ready must call the real verification seam."""
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            mock_verify = stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            c = stack.enter_context(_client(settings))
+            c.get("/ready")
+        assert mock_verify.called
+        call_project_id, call_token, call_dsn = mock_verify.call_args[0]
+        # Sentinel identity only — never a real project or a real credential.
+        assert call_project_id != ""
+        assert call_token != ""
+        assert call_dsn == "postgres://mockhost/testdb"
+
+    def test_no_token_configured_is_ok_not_broken(self) -> None:
+        """A project with no per-tenant token (None) is a healthy state, not an outage."""
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+
+    def test_wrong_token_clean_false_is_ok_not_broken(self) -> None:
+        """A wrong-credential clean False refusal is healthy, not an outage."""
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=False)
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+
+    def test_broken_verification_call_reports_non_ok(self) -> None:
+        """VAL-03 negative control: an exception inside verify_token() must go non-ok.
+
+        Reproduces the tapps-brain#309 shape (an ImportError raised inside the
+        verification call, not a missing module or a dead database) via a real
+        monkeypatched mutation of the verification seam, and pastes the literal
+        before/after payloads (see evidence block).
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+
+        # -- BEFORE mutation: verification call path healthy --------------
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            c = stack.enter_context(_client(settings))
+            before_resp = c.get("/ready")
+        assert before_resp.status_code == 200
+        before_body = before_resp.json()
+        assert before_body["status"] == "ready"
+        assert before_body["checks"]["token_verification"] == "ok"
+
+        _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
+
+        # -- AFTER mutation: verification call raises inside the call -----
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._verify_per_tenant_token",
+                    side_effect=ImportError("argon2-cffi is not installed"),
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            after_resp = c.get("/ready")
+        assert after_resp.status_code == 503
+        after_body = after_resp.json()
+        assert after_body["status"] == "degraded"
+        assert after_body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in after_body["checks"]["token_verification"]
+
+        # DB readiness itself was never broken in this scenario — only the
+        # token-verification check is; this proves the new check is what
+        # flipped readiness, not a coincidental DB failure.
+        assert before_body["migration_version"] == after_body["migration_version"] == 5
+
+    def test_no_dsn_skips_check_without_real_io(self) -> None:
+        """No DSN configured: token check reports ok (skipped), not broken."""
+        settings = _make_settings(dsn=None)
+        with _client(settings) as c:
+            body = c.get("/ready").json()
+        # Overall readiness is still 503/degraded (no DSN => DB unreachable),
+        # but the token-verification sub-check itself must not report broken.
+        assert body["checks"]["token_verification"] == "ok"
 
 
 # ---------------------------------------------------------------------------
