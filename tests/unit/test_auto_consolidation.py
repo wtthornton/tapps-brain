@@ -12,14 +12,17 @@ import tempfile
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tapps_brain.auto_consolidation import (
+    PROMOTION_STATE_PARTIAL_LOSS_EVENT,
     ConsolidationUndoResult,
     check_consolidation_on_save,
 )
-from tapps_brain.models import MemoryTier
+from tapps_brain.models import LearningStatus, MemoryTier
+from tapps_brain.services.memory_service import brain_recall
 from tapps_brain.store import MemoryStore
 from tests.factories import make_entry
 
@@ -221,3 +224,170 @@ def test_persist_consolidated_rolls_back_on_source_mark_failure(
     # First source may have been marked before the failure; leave that as-is.
     assert store.get("src-a") is not None
     assert store.get("src-b") is not None
+
+
+# ---------------------------------------------------------------------------
+# Promotion-state survival across consolidation (TAP-6849)
+# ---------------------------------------------------------------------------
+
+
+class _SqlLikeStore:
+    """Store double whose ``search`` applies ``learning_status`` filtering the
+    way the Postgres SQL layer does (mirrors ``_SqlLikeStore`` in
+    ``test_recall_learning_status.py``).
+
+    The real ``InMemoryPrivateBackend`` test double (``tests/conftest.py``)
+    accepts ``learning_status`` as a stray kwarg and ignores it, so it cannot
+    be used to prove a promotion-state filter actually excludes/includes
+    rows — the filter is documented (TAP-6826) to run only in the backend's
+    SQL, never as a Python post-filter in ``brain_recall`` itself.
+    """
+
+    def __init__(self, entries: list[Any]) -> None:
+        self._entries = list(entries)
+
+    def search(self, _query: str, **kwargs: Any) -> list[Any]:
+        wanted = kwargs.get("learning_status")
+        if not wanted:
+            return list(self._entries)
+        return [e for e in self._entries if str(e.learning_status) in set(wanted)]
+
+
+def _make_jwt_pair() -> tuple[Any, Any]:
+    e1 = make_entry(
+        "auth-jwt-algorithm",
+        "Use RS256 for JWT signing. Store keys in environment variables.",
+        tier=MemoryTier.architectural,
+        tags=["security", "jwt"],
+    )
+    e2 = make_entry(
+        "auth-jwt-token-signing",
+        "JWT tokens must use RS256 algorithm. Private key lives in env vars.",
+        tier=MemoryTier.architectural,
+        tags=["security", "jwt"],
+    )
+    return e1, e2
+
+
+def test_approved_learning_survives_consolidation_in_filtered_recall(
+    store: MemoryStore,
+) -> None:
+    """VAL-09 (positive/red-fix pair): an approved source's promotion state must
+    survive its merge into a consolidated row, proven at the layer AgentForge's
+    consumers actually read — a recall filtered to ``learning_status=approved``.
+
+    Before the TAP-6849 fix, ``store.save()`` (the write path
+    ``_persist_consolidated_entry`` uses to create the merged row) has no
+    ``learning_status`` parameter, so the merged row always reverted to the
+    model default (``candidate``) regardless of what its sources carried —
+    this assertion FAILS on unfixed ``auto_consolidation.py`` because
+    ``merged.learning_status`` is ``candidate``, not ``approved``, and the
+    filtered recall below returns zero rows instead of the merged key.
+    """
+    e1, e2 = _make_jwt_pair()
+    for e in (e1, e2):
+        store.save(
+            key=e.key, value=e.value, tier=e.tier.value, tags=e.tags, skip_consolidation=True
+        )
+    store.promote_learning(e1.key, signal="human", actor="qa-reviewer")
+
+    result = check_consolidation_on_save(e2, store, threshold=0.3, min_entries=2)
+    if not result.triggered or result.consolidated_entry is None:
+        pytest.fail("Consolidation did not trigger — setup error, not the behavior under test.")
+    consolidated_key = result.consolidated_entry.key
+
+    merged = store.get(consolidated_key)
+    assert merged is not None
+    assert merged.learning_status == LearningStatus.approved, (
+        "merged row must inherit its lone approved source's promotion state"
+    )
+
+    # The proof consumers actually rely on: a recall filtered to approved must
+    # return the merged row, not just the raw column on the entry object.
+    filtered = brain_recall(
+        _SqlLikeStore([merged]),
+        "test-project",
+        "test-agent",
+        query="jwt rs256",
+        filter_learning_status="approved",
+    )
+    filtered_keys = {item["key"] for item in filtered}
+    assert consolidated_key in filtered_keys, (
+        "approved-filtered recall dropped the merged learning — it is invisible "
+        "to AgentForge's approved-only consumers"
+    )
+    assert filtered[0]["learning_status"] == "approved"
+
+
+def test_unpromoted_consolidation_merges_as_candidate_unaffected(
+    store: MemoryStore,
+) -> None:
+    """VAL-09 (positive control): an all-candidate merge is byte-for-byte
+    unaffected by the TAP-6849 fix — no promotion fields are written and no
+    partial-loss audit row is emitted, matching pre-fix behavior exactly.
+    """
+    e1, e2 = _make_jwt_pair()
+    for e in (e1, e2):
+        store.save(
+            key=e.key, value=e.value, tier=e.tier.value, tags=e.tags, skip_consolidation=True
+        )
+
+    result = check_consolidation_on_save(e2, store, threshold=0.3, min_entries=2)
+    if not result.triggered or result.consolidated_entry is None:
+        pytest.fail("Consolidation did not trigger — setup error, not the behavior under test.")
+    consolidated_key = result.consolidated_entry.key
+
+    merged = store.get(consolidated_key)
+    assert merged is not None
+    assert merged.learning_status == LearningStatus.candidate
+    assert merged.promoted_by is None
+    assert merged.promoted_at is None
+
+    rows = store._persistence.query_audit(
+        key=consolidated_key, event_type=PROMOTION_STATE_PARTIAL_LOSS_EVENT
+    )
+    assert rows == []
+
+
+def test_promotion_state_partial_loss_is_recorded_in_audit_log(
+    store: MemoryStore,
+) -> None:
+    """VAL-10: two approved sources with conflicting provenance can only carry
+    one source's ``promoted_by``/``promotion_signal`` onto the single merged
+    row — the discarded provenance must be visible in ``audit_log``, not
+    silently dropped (b5).
+    """
+    e1, e2 = _make_jwt_pair()
+    for e in (e1, e2):
+        store.save(
+            key=e.key, value=e.value, tier=e.tier.value, tags=e.tags, skip_consolidation=True
+        )
+    store.promote_learning(e1.key, signal="human", actor="reviewer-a")
+    store.promote_learning(e2.key, signal="eval", actor="eval-run-42")
+
+    # check_consolidation_on_save's ``entry`` argument stands in for "the
+    # entry that was just saved" — production callers invoke it against the
+    # entry store.save() just returned. Re-fetch e2 so it reflects the
+    # promotion above rather than the pre-promotion object still held
+    # locally; otherwise this test would exercise a single-approved-source
+    # path that can never observe the conflict under test.
+    e2_current = store.get(e2.key)
+    assert e2_current is not None
+
+    result = check_consolidation_on_save(e2_current, store, threshold=0.3, min_entries=2)
+    if not result.triggered or result.consolidated_entry is None:
+        pytest.fail("Consolidation did not trigger — setup error, not the behavior under test.")
+    consolidated_key = result.consolidated_entry.key
+
+    merged = store.get(consolidated_key)
+    assert merged is not None
+    assert merged.learning_status == LearningStatus.approved
+
+    rows = store._persistence.query_audit(
+        key=consolidated_key, event_type=PROMOTION_STATE_PARTIAL_LOSS_EVENT
+    )
+    assert len(rows) == 1, (
+        "conflicting approved provenance across sources must be recorded once "
+        "in audit_log, not silently overwritten"
+    )
+    assert rows[0]["details"]["resolved_learning_status"] == "approved"
