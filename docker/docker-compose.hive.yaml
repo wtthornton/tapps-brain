@@ -118,6 +118,8 @@ services:
       TAPPS_BRAIN_MCP_ALLOWED_HOSTS: "${TAPPS_BRAIN_MCP_ALLOWED_HOSTS:-tapps-brain-http:8080,tapps-brain-http:8090,localhost:8080,localhost:8090,127.0.0.1:8080,127.0.0.1:8090}"
       TAPPS_BRAIN_STRICT: "1"
       TAPPS_BRAIN_STRICT_PROJECTS: "${TAPPS_BRAIN_STRICT_PROJECTS:-0}"
+      # TAP-7295: when set to 1, refuses an explicit X-Agent-Id of either
+      # anonymous placeholder literal, "default" or "unknown".
       TAPPS_BRAIN_STRICT_AGENT_ID: "${TAPPS_BRAIN_STRICT_AGENT_ID:-0}"
       # TAP-1076 — production-hardening passthroughs.  Default to empty so
       # the dev stack still boots without these set, but the runtime emits a
