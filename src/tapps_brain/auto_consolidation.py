@@ -29,6 +29,7 @@ from tapps_brain.consolidation import (
 )
 from tapps_brain.models import (
     ConsolidatedEntry,
+    LearningStatus,
     MemoryEntry,
     MemoryStatus,
     _utc_now_iso,
@@ -55,6 +56,10 @@ _AUDIT_PAGE_LIMIT = 1000
 # refused outright rather than shipped lossy.
 MIN_CONTENT_PRESERVATION_RATIO = 0.6
 MERGE_BLOCKED_CONTENT_LOSS_METRIC = "store.consolidate.blocked_content_loss"
+
+# TAP-6849: audit event emitted when a merge can only carry forward one
+# source's promotion provenance (see ``_resolve_consolidated_promotion_state``).
+PROMOTION_STATE_PARTIAL_LOSS_EVENT = "consolidation_promotion_state_partial_loss"
 
 
 class MergeWouldLoseContentError(RuntimeError):
@@ -89,6 +94,69 @@ def _content_preservation_ratio(
     if total <= 0:
         return None
     return len(merged_value) / total
+
+
+# TAP-6849: consolidation used to drop every source's ``learning_status``
+# outright — ``store.save()`` (the write path ``_persist_consolidated_entry``
+# uses to create the merged row) has no ``learning_status`` parameter, so an
+# approved learning's merged replacement silently reverted to the
+# ``candidate`` default and vanished from any recall filtered to
+# ``learning_status=approved``.
+#
+# b1 semantics choice (recorded here and in the PR body): the merged row
+# INHERITS promotion state from its sources rather than declining to merge
+# whenever sources' promotion states differ. Priority is
+# approved > demoted > candidate — approved/demoted are deliberate trust
+# verdicts a fresh candidate-shaped merge must not silently erase, and an
+# approved source merged with candidate near-duplicates should stay
+# discoverable under the approved filter. Only one source's exact
+# provenance (``promoted_by``/``promotion_signal``/``demotion_reason``) can
+# live on the single merged row; when more than one source disagrees on
+# that provenance, the most recently-decided source's provenance wins and
+# the caller must make the discarded provenance's loss visible via
+# ``audit_log`` (b5) rather than dropping it silently.
+def _resolve_consolidated_promotion_state(
+    source_snapshots: dict[str, MemoryEntry],
+) -> tuple[LearningStatus, dict[str, Any], bool]:
+    """Decide the promotion state + fields a merged row should inherit.
+
+    Returns ``(resolved_status, update_fields, provenance_lost)``.
+    ``update_fields`` is empty when every source is a plain ``candidate``
+    (the pre-existing, unaffected behaviour for unpromoted merges — b4).
+    ``provenance_lost`` is ``True`` when more than one winning-status source
+    disagreed on provenance, so the caller must record the loss in the audit
+    trail (b5).
+    """
+    sources = list(source_snapshots.values())
+    approved = [e for e in sources if e.learning_status is LearningStatus.approved]
+    demoted = [e for e in sources if e.learning_status is LearningStatus.demoted]
+
+    if approved:
+        winner = max(approved, key=lambda e: e.promoted_at or "")
+        fields: dict[str, Any] = {
+            "learning_status": LearningStatus.approved,
+            "promoted_by": winner.promoted_by,
+            "promoted_at": winner.promoted_at,
+            "promotion_signal": winner.promotion_signal,
+            "demotion_reason": None,
+        }
+        lost = any(
+            (e.promoted_by, e.promotion_signal) != (winner.promoted_by, winner.promotion_signal)
+            for e in approved
+            if e is not winner
+        )
+        return LearningStatus.approved, fields, lost
+
+    if demoted:
+        winner = max(demoted, key=lambda e: e.updated_at or "")
+        fields = {
+            "learning_status": LearningStatus.demoted,
+            "demotion_reason": winner.demotion_reason,
+        }
+        lost = any(e.demotion_reason != winner.demotion_reason for e in demoted if e is not winner)
+        return LearningStatus.demoted, fields, lost
+
+    return LearningStatus.candidate, {}, False
 
 
 @dataclass(frozen=True)
@@ -740,6 +808,27 @@ def _persist_consolidated_entry(
             msg = f"consolidated entry save did not create '{consolidated.key}': {detail}"
             raise RuntimeError(msg)
         consolidated_saved = True
+
+        # TAP-6849: store.save() above has no learning_status parameter, so
+        # the merged row was just written with the model default
+        # (LearningStatus.candidate) regardless of what the sources carried.
+        # Carry forward the resolved promotion state via update_fields — the
+        # same mechanism store.promote_learning uses — before anything else
+        # can observe the merged row.
+        resolved_status, promotion_fields, promotion_state_lost = (
+            _resolve_consolidated_promotion_state(source_snapshots)
+        )
+        if promotion_fields:
+            store.update_fields(consolidated.key, **promotion_fields)
+        if promotion_state_lost:
+            store._persistence.append_audit(
+                PROMOTION_STATE_PARTIAL_LOSS_EVENT,
+                consolidated.key,
+                extra={
+                    "source_keys": source_keys,
+                    "resolved_learning_status": resolved_status.value,
+                },
+            )
 
         # Merge relations from all source entries onto the consolidated entry.
         relation_lists = [store.get_relations(k) for k in source_keys]
