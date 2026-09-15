@@ -439,7 +439,14 @@ class PostgresHiveBackend:
                 "WHERE namespace = %s AND key = %s AND invalid_at IS NULL",
                 (now, namespace, tip_key),
             )
-            return bool(cur.rowcount > 0)
+            archived = bool(cur.rowcount > 0)
+            if archived:
+                cur.execute(
+                    "UPDATE hive_write_notify SET revision = revision + 1, updated_at = %s "
+                    "WHERE id = 1",
+                    (now,),
+                )
+            return archived
 
     def search(
         self,

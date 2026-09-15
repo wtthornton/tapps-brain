@@ -2267,9 +2267,19 @@ def create_app(
         Request body (JSON): ``{ "key": str }``
 
         Response: ``{ "forgotten": bool, "key": str, "reason"?: str,
-        "hive_forgotten"?: bool }``. ``hive_forgotten`` is ``True`` when a
-        Hive copy existed and was archived, ``False`` when none existed —
-        never an error either way.
+        "hive_forgotten"?: bool, "hive_reap"?: "archived" | "absent" |
+        "failed" }``. ``hive_forgotten`` is ``True`` only when a live Hive
+        copy was found and archived. ``hive_forgotten: False`` is ambiguous
+        on its own — it covers five different situations (no Hive backend
+        attached, a backend without ``archive_entry``, no Hive copy ever
+        existed, the copy was already archived, and the Hive archive attempt
+        itself raising) — so ``hive_reap`` disambiguates: "archived" matches
+        ``hive_forgotten: True``; "absent" covers the first four
+        never-existed/no-op cases; "failed" means the Hive archive attempt
+        raised and a Hive copy may still exist and be recallable via Hive
+        search even though the private row is gone. Callers that need to
+        know whether the memory is *fully* gone (private and Hive) must
+        check ``hive_reap != "failed"``, not just ``hive_forgotten``.
         """
         project_id, agent_id, _tenant_exc = resolve_tenant_or_refuse(request)
         if _tenant_exc is not None:

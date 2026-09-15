@@ -78,7 +78,12 @@ class TestBrainForgetReapsHive:
 
         result = brain_forget(store, "proj-1", "agent-1", key="shared-key")
 
-        assert result == {"forgotten": True, "key": "shared-key", "hive_forgotten": True}
+        assert result == {
+            "forgotten": True,
+            "key": "shared-key",
+            "hive_forgotten": True,
+            "hive_reap": "archived",
+        }
         assert store._deleted == ["shared-key"]
         # b3: absence proven through the recall-layer read path, not the raw table.
         assert not any(r["key"] == "shared-key" for r in hive.search("q", namespaces=["universal"]))
@@ -90,14 +95,24 @@ class TestBrainForgetReapsHive:
 
         result = brain_forget(store, "proj-1", "agent-1", key="private-only")
 
-        assert result == {"forgotten": True, "key": "private-only", "hive_forgotten": False}
+        assert result == {
+            "forgotten": True,
+            "key": "private-only",
+            "hive_forgotten": False,
+            "hive_reap": "absent",
+        }
 
     def test_idempotent_with_no_hive_store_attached(self) -> None:
         store = _make_store(hive=None)
 
         result = brain_forget(store, "proj-1", "agent-1", key="k")
 
-        assert result == {"forgotten": True, "key": "k", "hive_forgotten": False}
+        assert result == {
+            "forgotten": True,
+            "key": "k",
+            "hive_forgotten": False,
+            "hive_reap": "absent",
+        }
 
     def test_not_found_short_circuits_before_any_hive_call(self) -> None:
         hive = FakeHiveBackend()
@@ -110,7 +125,13 @@ class TestBrainForgetReapsHive:
         assert hive.archive_calls == []
 
     def test_hive_archive_raising_does_not_error_the_forget(self) -> None:
-        """A Hive-side failure must not surface as a 500 to the forget caller."""
+        """A Hive-side failure must not surface as a 500 to the forget caller.
+
+        TAP-6816 defect 2: a raising Hive backend leaves a *live, still
+        recallable* Hive copy behind, which is a different outcome than "no
+        Hive copy existed" — so the response must say ``hive_reap: "failed"``,
+        not the same shape as the absent case.
+        """
 
         class RaisingHive(FakeHiveBackend):
             def archive_entry(self, namespace: str, key: str) -> bool:
@@ -122,7 +143,64 @@ class TestBrainForgetReapsHive:
 
         result = brain_forget(store, "proj-1", "agent-1", key="k")
 
-        assert result == {"forgotten": True, "key": "k", "hive_forgotten": False}
+        assert result == {
+            "forgotten": True,
+            "key": "k",
+            "hive_forgotten": False,
+            "hive_reap": "failed",
+        }
+
+    def test_failed_reap_is_distinguishable_from_absent_reap(self) -> None:
+        """VAL: the FAILED case's response must differ from the ABSENT case's.
+
+        Both leave ``hive_forgotten: False``, so the discriminator has to be
+        ``hive_reap``. If a future edit made the failure path return the
+        absent-case value, this assertion is what would catch it.
+        """
+
+        class RaisingHive(FakeHiveBackend):
+            def archive_entry(self, namespace: str, key: str) -> bool:
+                raise RuntimeError("hive unreachable")
+
+        failed_hive = RaisingHive()
+        failed_hive.seed(namespace="universal", key="k")
+        failed_store = _make_store(failed_hive)
+        failed_result = brain_forget(failed_store, "proj-1", "agent-1", key="k")
+
+        absent_hive = FakeHiveBackend()  # nothing seeded
+        absent_store = _make_store(absent_hive)
+        absent_result = brain_forget(absent_store, "proj-1", "agent-1", key="k")
+
+        assert failed_result["hive_forgotten"] == absent_result["hive_forgotten"] is False
+        assert failed_result["hive_reap"] == "failed"
+        assert absent_result["hive_reap"] == "absent"
+        assert failed_result != absent_result
+
+    def test_hive_backend_without_archive_entry_is_absent_not_failed(self) -> None:
+        """TAP-6816 defect 4: a hive backend present but lacking ``archive_entry``.
+
+        ``memory_service.py`` treats a non-callable ``archive_entry`` as the
+        same no-op outcome as no hive backend at all — never a failure. No
+        prior test constructed this state (only hive=None covered
+        hive-absent); this fixture is a double with ``search`` but no
+        ``archive_entry``.
+        """
+
+        class HiveWithoutArchiveEntry:
+            def search(self, query: str, namespaces: list[str] | None = None, **_: Any) -> list:
+                return []
+
+        store = _make_store(hive=None)
+        store._hive_store = HiveWithoutArchiveEntry()
+
+        result = brain_forget(store, "proj-1", "agent-1", key="k")
+
+        assert result == {
+            "forgotten": True,
+            "key": "k",
+            "hive_forgotten": False,
+            "hive_reap": "absent",
+        }
 
     def test_reaps_across_group_namespaces_the_agent_belongs_to(self) -> None:
         """A key propagated to a group namespace is still found by recall's search set."""
@@ -138,6 +216,7 @@ class TestBrainForgetReapsHive:
         result = brain_forget(store, "proj-1", "agent-1", key="shared-key")
 
         assert result["hive_forgotten"] is True
+        assert result["hive_reap"] == "archived"
         assert not any(
             r["key"] == "shared-key" for r in hive.search("q", namespaces=["frontend-guild"])
         )
@@ -164,7 +243,12 @@ class TestAsyncBrainForgetReapsHive:
 
         result = asyncio.run(async_brain_forget(async_store, "proj-1", "agent-1", key="shared-key"))
 
-        assert result == {"forgotten": True, "key": "shared-key", "hive_forgotten": True}
+        assert result == {
+            "forgotten": True,
+            "key": "shared-key",
+            "hive_forgotten": True,
+            "hive_reap": "archived",
+        }
         assert not any(r["key"] == "shared-key" for r in hive.search("q", namespaces=["universal"]))
 
 
@@ -182,10 +266,11 @@ class TestForgetResponseShapeIsAdditiveOnly:
 
         result = brain_forget(store, "proj-1", "agent-1", key="k1")
 
-        assert set(result.keys()) == {"forgotten", "key", "hive_forgotten"}
+        assert set(result.keys()) == {"forgotten", "key", "hive_forgotten", "hive_reap"}
         assert result["forgotten"] is True
         assert isinstance(result["key"], str) and result["key"] == "k1"
         assert isinstance(result["hive_forgotten"], bool)
+        assert result["hive_reap"] in {"archived", "absent", "failed"}
 
     def test_not_found_case_shape(self) -> None:
         store = _make_store(hive=None, has_entry=False)

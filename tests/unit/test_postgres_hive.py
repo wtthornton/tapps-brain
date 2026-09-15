@@ -330,6 +330,32 @@ class TestPostgresHiveBackendArchiveEntry:
         assert "UPDATE hive_memories SET invalid_at" in calls[1][0][0]
         assert "namespace = %s AND key = %s AND invalid_at IS NULL" in calls[1][0][0]
         assert calls[1][0][1][1:] == ("universal", "my-key")
+        # TAP-6816 defect 3: a successful archive bumps hive_write_notify,
+        # the same way save() and patch_confidence() do, so hive_wait_write
+        # consumers are woken by a forget-reap too.
+        assert "UPDATE hive_write_notify SET revision = revision + 1" in calls[2][0][0]
+
+    def test_archive_live_row_bumps_write_notify_revision(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        mock_cursor.fetchone.return_value = _row(key="my-key", invalid_at=None, superseded_by=None)
+        mock_cursor.rowcount = 1
+
+        backend.archive_entry("universal", "my-key")
+
+        calls = mock_cursor.execute.call_args_list
+        revision_calls = [c for c in calls if "hive_write_notify" in c[0][0]]
+        assert len(revision_calls) == 1
+
+    def test_archive_no_op_does_not_bump_write_notify_revision(self) -> None:
+        """Absent/no-op archives (nothing to reap) must not falsely wake waiters."""
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.fetchone.return_value = None
+
+        backend.archive_entry("universal", "no-such-key")
+
+        calls = mock_cursor.execute.call_args_list
+        assert not any("hive_write_notify" in c[0][0] for c in calls)
 
     def test_archive_missing_row_returns_false_without_update(self) -> None:
         backend, _, _, mock_cursor = _make_backend()
@@ -368,10 +394,12 @@ class TestPostgresHiveBackendArchiveEntry:
 
         assert result is True
         calls = mock_cursor.execute.call_args_list
-        # Two SELECTs (tombstone, then its live tip) + one UPDATE on the tip's key.
-        assert len(calls) == 3
+        # Two SELECTs (tombstone, then its live tip) + one UPDATE on the tip's
+        # key + one write-notify revision bump.
+        assert len(calls) == 4
         assert "UPDATE hive_memories SET invalid_at" in calls[2][0][0]
         assert calls[2][0][1][1:] == ("universal", "my-key-v2")
+        assert "UPDATE hive_write_notify SET revision = revision + 1" in calls[3][0][0]
 
     def test_archive_returns_false_when_update_matches_no_rows(self) -> None:
         backend, _, _, mock_cursor = _make_backend()
