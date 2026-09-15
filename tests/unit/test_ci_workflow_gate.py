@@ -107,3 +107,37 @@ class TestRuntimeRoleProvisioning:
             "roles/001 issues schema-wide GRANTs against existing objects; run it "
             "before the migrations and every table added later gets no grant"
         )
+
+
+class TestRegressionFileCollectedByLiteralPath:
+    """TAP-7660: tests/regression/test_brain_recall_shape.py must be named
+    explicitly, not swept in by a directory glob. A directory glob would
+    silently collect any future file dropped into tests/regression/ too,
+    defeating scripts/check_test_collection.py's own negative control (a
+    throwaway file placed under tests/regression/ must still be flagged as
+    uncollected — see tests/unit/test_check_test_collection.py)."""
+
+    def test_regression_file_named_literally(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "tests/regression/test_brain_recall_shape.py" in run
+
+    def test_regression_directory_is_not_named_wholesale(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        tokens = run.split()
+        assert "tests/regression/" not in tokens, (
+            "naming the whole tests/regression/ directory would silently collect "
+            "any future file dropped there, defeating the guard's negative control"
+        )
+
+    def test_regression_step_has_its_own_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "--junitxml=regression-junit.xml" in run
+
+    def test_execution_guard_reads_both_junit_files(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "check_test_execution.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "integration-compat-junit.xml" in run
+        assert "regression-junit.xml" in run
