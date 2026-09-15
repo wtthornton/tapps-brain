@@ -67,6 +67,10 @@ jobs:
       # is the documented override for CI/dev. Production uses tapps_runtime.
       TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
       TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
+      # TAP-6829: tests/test_http_mcp_parity.py module-skips itself when this
+      # is unset ("live Postgres Hive" gate) — same DB, Hive has no separate
+      # DSN in this single-Postgres deployment (see CLAUDE.md's Hive table).
+      TAPPS_BRAIN_HIVE_DSN: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
       TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
       HF_DATASETS_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
@@ -138,10 +142,23 @@ jobs:
       # Anything genuinely unrunnable here must skip behind an explicit guard
       # in the test itself, so the reason travels with the test rather than
       # living in this file.
+      #
+      # `tests/*.py` (TAP-6829): test files placed directly at the `tests/`
+      # root were collected by neither this step nor the unit-test step
+      # above — `testpaths = ["tests"]` in pyproject.toml only applies when
+      # no path argument is given, and both pytest invocations always give
+      # one. This is the step with the live Postgres + Hive DSN several of
+      # them need (tenancy/RLS/migration/retention suites); the shell glob
+      # means a new root file is picked up automatically, so the class of
+      # bug (a file silently never run by CI) cannot recur here. `scripts/
+      # check_test_collection.py` (next step) is the guard that makes that
+      # a checked property instead of a hopeful one.
       - name: Integration + compat tests (live Postgres)
         run: >-
           uv run pytest -q --tb=short -m "not benchmark"
-          tests/integration/ tests/compat/
+          tests/integration/ tests/compat/ tests/*.py
+      - name: Test collection guard (TAP-6829)
+        run: uv run python scripts/check_test_collection.py
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)

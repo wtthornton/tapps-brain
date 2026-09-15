@@ -56,10 +56,20 @@ class TestSuiteIsGatedWholesale:
         )
 
     def test_no_per_file_integration_allowlist_remains(self, test_job: dict[str, Any]) -> None:
-        """A reintroduced explicit list is the regression this guards against."""
+        """A reintroduced explicit list is the regression this guards against.
+
+        A shell glob (``tests/*.py``, TAP-6829) is exempted: unlike a static
+        enumerated list, it expands to whatever files exist at run time, so a
+        new file at ``tests/`` root is picked up automatically rather than
+        silently excluded — the opposite of the TAP-5731 failure mode this
+        test guards against. ``scripts/check_test_collection.py`` is the
+        companion guard that keeps that glob honest.
+        """
         run = _steps(test_job)[_step_index(test_job, "tests/integration/")]["run"]
         named_files = [
-            tok for tok in run.split() if tok.startswith("tests/") and tok.endswith(".py")
+            tok
+            for tok in run.split()
+            if tok.startswith("tests/") and tok.endswith(".py") and "*" not in tok
         ]
         assert not named_files, (
             f"CI names individual integration files again: {named_files}. Gate the "
