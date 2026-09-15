@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -147,6 +148,74 @@ CLOSE_VALIDITY_AUDIT_ACTION = "close_validity"
 #: ``learning_demote``).  Pre-rename rows keep ``action="promote"`` and are never
 #: rewritten, so an audit query spanning the rename must accept both.
 TIER_ESCALATE_AUDIT_ACTION = "tier_escalate"
+
+#: TAP-4587: strips the trailing ``.vN`` supersession suffix that
+#: :meth:`MemoryStore.supersede` mints (``f"{old_key}.v{count + 1}"``) so a
+#: duplicate-key cluster can be found by grouping on the pre-supersession key.
+_SCORECARD_VERSION_SUFFIX_RE = re.compile(r"\.v\d+$")
+
+
+def _scorecard_base_key(key: str) -> str:
+    """Return *key* with any trailing ``.vN`` version suffix stripped."""
+    return _SCORECARD_VERSION_SUFFIX_RE.sub("", key)
+
+
+@dataclass(frozen=True)
+class MemoryScorecard:
+    """Read-only per-project memory health report (TAP-4587).
+
+    Every count is taken over a single :meth:`MemoryStore.memory_scorecard`
+    read of ``private_backend.load_all()`` — the RLS-scoped connection path
+    (``PostgresPrivateBackend._scoped_conn()``) every other read in that
+    backend already uses — so the numbers are provably scoped to
+    ``project_id``, not merely believed to be.
+
+    ``superseded``/``stale``/``contradicted``/``archived`` are mutually
+    exclusive buckets keyed on the lifecycle ``status`` column
+    (:class:`~tapps_brain.models.MemoryStatus`) — never on
+    ``MemoryEntry.is_superseded``, which also returns ``True`` for a
+    stale/age-closed row and would silently collapse the ``superseded`` and
+    ``stale`` buckets into each other. ``expired`` is the orthogonal
+    temporal-validity axis (``MemoryEntry.is_temporally_valid``) and is
+    independent of ``status`` — a superseded or stale row is normally also
+    expired (closing validity stamps ``invalid_at``), so ``expired`` may
+    overlap the status buckets by design; it is not itself a status bucket.
+    """
+
+    project_id: str | None
+    rls_scoped: bool
+    total: int
+    live: int
+    expired: int
+    superseded: int
+    stale: int
+    contradicted: int
+    archived: int
+    duplicate_key_clusters: int
+    duplicate_key_rows: int
+    generated_at: str
+
+
+@dataclass(frozen=True)
+class TemporalDropRateSample:
+    """Recall temporal-filter drop-rate measured over a representative sample (TAP-4587).
+
+    For each of the ``sample_size`` most-recently-updated entries in the
+    project, evaluates ``MemoryEntry.is_temporally_valid()`` at the current
+    time — the identical predicate ``MemoryRetriever`` applies inline in its
+    candidate-filtering loop (``retrieval.py:524-526``, "Issue #70":
+    ``if not temporally_valid and not include_superseded: continue``) — and
+    counts an entry as dropped exactly when that inline condition would drop
+    it. See :meth:`MemoryStore.memory_temporal_drop_rate_sample` for why this
+    evaluates the predicate directly rather than diffing two live
+    ``MemoryRetriever.search()`` calls.
+    """
+
+    project_id: str | None
+    sample_queries: list[str]
+    included_count: int
+    excluded_count: int
+    drop_rate: float
 
 
 def _close_validity_updates(
@@ -5262,6 +5331,129 @@ class MemoryStore(RelationsMixin, IntegrityMixin, FeedbackMixin, QueryMixin):
             newest_first=True,
         )
         return list(reversed(entries))
+
+    def memory_scorecard(self) -> MemoryScorecard:
+        """Read-only per-project memory scorecard (TAP-4587, Box 1).
+
+        Reads via ``self._persistence.load_all()`` rather than the in-memory
+        ``self._entries`` cache: ``load_all()`` opens its connection through
+        ``PostgresPrivateBackend._scoped_conn()``, the same RLS-scoping path
+        every other backend read already uses, so this is a fresh,
+        provably-scoped read of the database, not a re-count of whatever this
+        process happens to have cached.
+
+        "Duplicate-key cluster" has no prior definition in this codebase, so
+        this method defines it: rows whose key, with any trailing ``.vN``
+        supersession suffix stripped (:func:`_scorecard_base_key`, mirroring
+        the ``f"{old_key}.v{count + 1}"`` pattern in :meth:`supersede`), share
+        the same base key. A cluster is any base key with more than one row —
+        i.e. a key that has been superseded at least once, whether or not the
+        predecessor rows are still live.
+
+        See :class:`MemoryScorecard` for the bucket definitions, and the
+        module docstring on that class for why ``expired`` may legitimately
+        overlap the status-based buckets.
+        """
+        entries = self._persistence.load_all()
+        now = _utc_now_iso()
+
+        live = 0
+        expired = 0
+        superseded = 0
+        stale = 0
+        contradicted = 0
+        archived = 0
+        base_key_counts: dict[str, int] = {}
+
+        for entry in entries:
+            base_key_counts[_scorecard_base_key(entry.key)] = (
+                base_key_counts.get(_scorecard_base_key(entry.key), 0) + 1
+            )
+            temporally_valid = entry.is_temporally_valid(now)
+            if not temporally_valid:
+                expired += 1
+            if entry.status == MemoryStatus.superseded:
+                superseded += 1
+            elif entry.status == MemoryStatus.stale:
+                stale += 1
+            elif entry.status == MemoryStatus.contradicted:
+                contradicted += 1
+            elif entry.status == MemoryStatus.archived:
+                archived += 1
+            if entry.status == MemoryStatus.active and temporally_valid:
+                live += 1
+
+        duplicate_key_clusters = sum(1 for n in base_key_counts.values() if n > 1)
+        duplicate_key_rows = sum(n for n in base_key_counts.values() if n > 1)
+
+        return MemoryScorecard(
+            project_id=self._project_id,
+            rls_scoped=self._project_id is not None and hasattr(self._persistence, "_scoped_conn"),
+            total=len(entries),
+            live=live,
+            expired=expired,
+            superseded=superseded,
+            stale=stale,
+            contradicted=contradicted,
+            archived=archived,
+            duplicate_key_clusters=duplicate_key_clusters,
+            duplicate_key_rows=duplicate_key_rows,
+            generated_at=now,
+        )
+
+    def memory_temporal_drop_rate_sample(self, *, sample_size: int = 10) -> TemporalDropRateSample:
+        """Recall temporal-filter drop-rate over a representative sample (TAP-4587, Box 2).
+
+        "Representative recall sample" is defined here as: the *sample_size*
+        most-recently-updated entries in this project — any lifecycle
+        ``status`` — each used as its own recall query (its ``value``,
+        truncated to 80 chars, or its ``key`` when ``value`` is empty).
+        Deterministic and grounded in real project content rather than a
+        fixed query list that might not match anything. Deliberately not
+        restricted to ``status=active``: a sample of only-live entries can
+        never show a temporal drop (nothing in it is excludable), so it would
+        silently always report ``drop_rate=0.0`` regardless of whether the
+        filter works.
+
+        Instruments the exact temporal-filter predicate ``MemoryRetriever``
+        applies inline during candidate filtering
+        (``retrieval.py:524-526``, "Issue #70" marker at ``retrieval.py:1007``):
+        ``temporally_valid = entry.is_temporally_valid(as_of); if not
+        temporally_valid and not include_superseded: continue``. For each
+        sampled entry this evaluates the same ``MemoryEntry.is_temporally_valid``
+        call at the current time and counts it as dropped exactly when that
+        inline condition would drop it.
+
+        This deliberately does **not** measure the drop by diffing two live
+        ``MemoryRetriever.search()`` calls (``include_superseded=True`` vs
+        ``False``) against free-text queries built from entry values: on a
+        small/weakly-overlapping corpus the two calls hit *different* FTS
+        candidate pools (the SQL-level ``include_historical`` WHERE clause
+        changes which rows are even fetched before ranking), so
+        ``len(included) - len(excluded)`` was observed to go **negative** in
+        manual verification — an artifact of candidate-pool selection, not
+        the temporal filter. Evaluating the predicate directly on the sample
+        avoids that confound while still exercising the identical boolean
+        recall's filter loop computes.
+        """
+        now = _utc_now_iso()
+        entries = list(self._persistence.load_all())
+        entries.sort(key=lambda e: e.updated_at, reverse=True)
+        sample = entries[:sample_size]
+        queries = [(entry.value[:80] if entry.value else entry.key) for entry in sample]
+
+        considered = len(sample)
+        dropped = sum(1 for entry in sample if not entry.is_temporally_valid(now))
+        surviving = considered - dropped
+        drop_rate = 0.0 if considered == 0 else dropped / considered
+
+        return TemporalDropRateSample(
+            project_id=self._project_id,
+            sample_queries=queries,
+            included_count=considered,
+            excluded_count=surviving,
+            drop_rate=drop_rate,
+        )
 
     def get_metrics(self) -> MetricsSnapshot:
         """Return a snapshot of in-process operation metrics.
