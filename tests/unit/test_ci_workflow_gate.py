@@ -141,3 +141,29 @@ class TestRegressionFileCollectedByLiteralPath:
         run = _steps(test_job)[idx]["run"]
         assert "integration-compat-junit.xml" in run
         assert "regression-junit.xml" in run
+
+
+class TestUnitJunitWiring:
+    """TAP-7660 round 2: widening the execution guard's walk to tests/unit/
+    (previous class in this file) is worthless unless the unit-test step
+    writes a JUnit XML and the guard step is handed that file. Without this,
+    221 tests/unit/*.py files are collected by CI config but read by the
+    guard as never run, failing CI on every PR (CI run 35030229419)."""
+
+    def test_unit_step_writes_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/unit/")
+        run = _steps(test_job)[idx]["run"]
+        assert "--junitxml=unit-junit.xml" in run, (
+            "the unit-test step must emit its own JUnit XML, matching the "
+            "naming of integration-compat-junit.xml / regression-junit.xml, "
+            "or the execution guard has nothing to read for tests/unit/"
+        )
+
+    def test_execution_guard_reads_unit_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "check_test_execution.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "unit-junit.xml" in run, (
+            "the guard step must be passed unit-junit.xml alongside the "
+            "existing JUnit files, or unit test files are invisible to it "
+            "even though the unit step now writes one"
+        )

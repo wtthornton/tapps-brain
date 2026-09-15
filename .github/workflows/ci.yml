@@ -119,7 +119,9 @@ jobs:
       # covered by the e2e Docker stack in `hive-smoke.yml`; widened triggers
       # there ensure any change to `mcp_server/`, `http/`, or `services/`
       # exercises it.
-      - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+      - run: >-
+          uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+          --junitxml=unit-junit.xml
       # Full integration + compat suites (TAP-5459, closing TAP-2803).
       #
       # This step used to name 19 mock-based files explicitly, excluding every
@@ -187,7 +189,7 @@ jobs:
       - name: Test execution guard (TAP-6829)
         run: >-
           uv run python scripts/check_test_execution.py
-          integration-compat-junit.xml regression-junit.xml
+          integration-compat-junit.xml regression-junit.xml unit-junit.xml
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)
