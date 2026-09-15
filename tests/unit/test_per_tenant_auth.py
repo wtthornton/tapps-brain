@@ -20,6 +20,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import tapps_brain.http_adapter as _http_mod
+from tapps_brain.http import auth as _auth
 from tapps_brain.http_adapter import (
     _per_tenant_auth_enabled,
     _service_version,
@@ -180,6 +181,20 @@ class TestProjectRegistryVerifyToken:
         registry = ProjectRegistry(cm)
         assert registry.verify_token("proj", "wrong-token") is False
 
+    def test_returns_false_for_malformed_hash(self) -> None:
+        """A corrupt DB row (not a parseable argon2 hash) must not raise.
+
+        This exercises the ``except InvalidHashError`` branch directly —
+        the branch whose predecessor referenced a name (``VerifyInvalidError``)
+        that does not exist in ``argon2.exceptions`` for any released
+        ``argon2-cffi`` in the supported range, so the whole ``verify_token``
+        call raised ``ImportError`` before this branch could ever run.
+        """
+        pytest.importorskip("argon2")
+        cm = _make_mock_conn_cm("not-a-real-argon2-hash")
+        registry = ProjectRegistry(cm)
+        assert registry.verify_token("proj", "anytoken") is False
+
 
 # ---------------------------------------------------------------------------
 # Admin HTTP routes — rotate-token and revoke-token auth gating
@@ -239,17 +254,19 @@ class TestRequireDataPlaneAuthPerTenant:
         monkeypatch.setenv("TAPPS_BRAIN_PER_TENANT_AUTH", "1")
 
         settings = _make_settings(dsn="postgresql://fake", auth_token=None)
+        # Patch the auth module binding require_data_plane_auth actually
+        # calls. http_adapter only re-exports the name; patching it is a no-op.
+        # GET /info is auth-gated and does not hit RestProfileGate or Postgres.
         with (
             _client(settings) as client,
-            patch.object(_http_mod, "_verify_per_tenant_token", return_value=True),
+            patch.object(_auth, "_verify_per_tenant_token", return_value=True),
         ):
             resp = client.get(
-                "/v1/recall",
+                "/info",
                 headers={
                     "Authorization": "Bearer some-token",
                     "x-project-id": "proj-a",
                 },
-                params={"query": "test"},
             )
         # 200 or 422/400 (no store) — auth should not 401/403
         assert resp.status_code not in (401, 403)
@@ -260,15 +277,14 @@ class TestRequireDataPlaneAuthPerTenant:
         settings = _make_settings(dsn="postgresql://fake", auth_token=None)
         with (
             _client(settings) as client,
-            patch.object(_http_mod, "_verify_per_tenant_token", return_value=False),
+            patch.object(_auth, "_verify_per_tenant_token", return_value=False),
         ):
             resp = client.get(
-                "/v1/recall",
+                "/info",
                 headers={
                     "Authorization": "Bearer wrong-token",
                     "x-project-id": "proj-a",
                 },
-                params={"query": "test"},
             )
         assert resp.status_code == 403
 
@@ -281,25 +297,23 @@ class TestRequireDataPlaneAuthPerTenant:
         settings = _make_settings(dsn="postgresql://fake", auth_token="global-tok")
         with (
             _client(settings) as client,
-            patch.object(_http_mod, "_verify_per_tenant_token", return_value=None),
+            patch.object(_auth, "_verify_per_tenant_token", return_value=None),
         ):
             # Correct global token → should pass
             resp_ok = client.get(
-                "/v1/recall",
+                "/info",
                 headers={
                     "Authorization": "Bearer global-tok",
                     "x-project-id": "proj-a",
                 },
-                params={"query": "test"},
             )
             # Wrong global token → 403
             resp_bad = client.get(
-                "/v1/recall",
+                "/info",
                 headers={
                     "Authorization": "Bearer wrong",
                     "x-project-id": "proj-a",
                 },
-                params={"query": "test"},
             )
         assert resp_ok.status_code not in (401, 403)
         assert resp_bad.status_code == 403

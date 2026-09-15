@@ -225,7 +225,7 @@ class ProjectRegistry:
                 (install ``tapps-brain[http]``).
         """
         try:
-            from argon2 import PasswordHasher  # type: ignore[import-not-found]
+            from argon2 import PasswordHasher
         except ImportError as exc:  # pragma: no cover
             raise ImportError(_ARGON2_IMPORT_ERROR_MSG) from exc
 
@@ -281,11 +281,17 @@ class ProjectRegistry:
         """
         try:
             from argon2 import PasswordHasher
-            from argon2.exceptions import (  # type: ignore[import-not-found]
-                VerifyInvalidError,
+            from argon2.exceptions import (
+                InvalidHashError,
                 VerifyMismatchError,
             )
-        except ImportError as exc:  # pragma: no cover
+        except ModuleNotFoundError as exc:  # pragma: no cover
+            # argon2-cffi itself isn't installed — the friendly, actionable
+            # message.  A bare ``except ImportError`` here would also catch
+            # "cannot import name X" symbol errors (e.g. a name that doesn't
+            # exist in the installed argon2-cffi version) and mislabel a
+            # real code bug as a missing dependency, hiding it from
+            # operators.  Let those propagate as their own ImportError.
             raise ImportError(_ARGON2_IMPORT_ERROR_MSG) from exc
 
         with self._cm.admin_context() as conn, conn.cursor() as cur:
@@ -304,7 +310,7 @@ class ProjectRegistry:
             ph.verify(hashed, token)
         except VerifyMismatchError:
             return False
-        except VerifyInvalidError:
+        except InvalidHashError:
             # Hash is malformed (corrupt DB row) — treat as no-match, but log
             # so operators can detect data corruption before it silently passes.
             logger.warning(
