@@ -947,3 +947,216 @@ class TestPrivateRelationsNotYetCreated:
                 "WHERE schemaname = 'public' AND tablename = 'tap7279_no_relations_test_relations'"
             )
             assert cur.fetchone()[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# The tenancy collision issue: b1 -- intra-plan convergence.
+#
+# `_detect_collisions` used to join each re-home group's rows against the
+# live table only. Two in-scope rows (different old identity, same rule or
+# different rules) that both re-home onto one target identity never appear
+# in the live table at plan time -- the live-only join finds nothing and
+# predicts zero collisions -- yet `apply_plan` resolves this correctly:
+# whichever group is processed second finds the first group's already-moved
+# row sitting at the target and runs the normal newer-wins comparison
+# against it. VAL-11 covers this gap.
+# ---------------------------------------------------------------------------
+
+
+class TestIntraPlanCollisionPrediction:
+    """VAL-11: `_detect_collisions` predicts collisions between two in-scope
+    rows converging on one target identity, not just against the live table."""
+
+    def test_two_in_scope_rows_converging_are_predicted(self, conn: psycopg.Connection) -> None:
+        """VAL-11 negative (pre-fix): this fixture reproduces the miss on the
+        unmodified `_detect_collisions` -- it predicts 0 collisions for
+        'shared' because neither row exists at the target when the live-only
+        join runs. VAL-11 positive (post-fix, asserted here): the fix
+        predicts exactly 1, with 'newer' (agent 'unknown', day +5) as the
+        intended winner over 'older' (agent 'default', day 0) -- the same
+        outcome `apply_plan` already produces by processing groups in order.
+        """
+        _insert_project(conn, "agentforge", approved=True)
+        # Two R4-eligible rows, same project, different placeholder agent,
+        # same key -- both target (agentforge, legacy-unattributed, shared).
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="default",
+            key="shared",
+            source_agent="someone",
+            created_at=_ts(0),
+            updated_at=_ts(0),
+            value="older",
+        )
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="unknown",
+            key="shared",
+            source_agent="someone2",
+            created_at=_ts(5),
+            updated_at=_ts(5),
+            value="newer",
+        )
+
+        plan = tm.build_plan(conn)
+        memories = plan.tables["private_memories"]
+
+        assert len(memories.groups) == 2
+        assert all(g.rule == "R4" for g in memories.groups)
+        assert all(g.target_project == "agentforge" for g in memories.groups)
+        assert all(g.target_agent == "legacy-unattributed" for g in memories.groups)
+
+        collisions = [c for c in memories.collisions if c.row_id == ["shared"]]
+        assert len(collisions) == 1
+        collision = collisions[0]
+        assert collision.old_project == "agentforge"
+        assert collision.old_agent == "unknown"  # the newer row is the challenger
+        assert collision.winner == "source"  # the newer row wins over the older one
+        assert collision.source_timestamp == _ts(5).isoformat()
+        assert collision.existing_timestamp == _ts(0).isoformat()
+
+    def test_apply_resolves_convergence_exactly_as_predicted(
+        self, fixture_dsn: str, conn: psycopg.Connection
+    ) -> None:
+        """The plan's prediction for a converging pair must match what apply
+        actually does -- proof the b3 unpredicted-collision guard does not
+        fire for this case once b1 is fixed."""
+        _insert_project(conn, "agentforge", approved=True)
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="default",
+            key="shared",
+            source_agent="someone",
+            created_at=_ts(0),
+            updated_at=_ts(0),
+            value="older",
+        )
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="unknown",
+            key="shared",
+            source_agent="someone2",
+            created_at=_ts(5),
+            updated_at=_ts(5),
+            value="newer",
+        )
+
+        plan = tm.build_plan(conn)
+        predicted_collisions = len(plan.tables["private_memories"].collisions)
+        assert predicted_collisions == 1
+
+        with psycopg.connect(fixture_dsn) as apply_conn:
+            result = tm.apply_plan(apply_conn, plan, archive_table="tap7279_intra_plan_test")
+
+        assert result.tables["private_memories"].collisions == predicted_collisions
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM private_memories "
+                "WHERE project_id = 'agentforge' AND agent_id = 'legacy-unattributed' "
+                "AND key = 'shared'"
+            )
+            row = cur.fetchone()
+            assert row is not None
+            assert row[0] == "newer"
+
+
+# ---------------------------------------------------------------------------
+# The tenancy collision issue: b2/b3 -- apply must not silently resolve more
+# than the plan predicted.
+#
+# `_apply_table`'s only staleness guard compares the S3-predicate row count
+# between plan and apply (`StalePlanError`). A write to an unrelated,
+# already-real target identity between `--dry-run` and `--apply` never moves
+# that count -- the target sits outside the S3 predicate entirely -- so it
+# passes the staleness check silently while still producing a collision the
+# plan never predicted. VAL-12 covers the apply-time guard that catches this.
+# ---------------------------------------------------------------------------
+
+
+class TestUnpredictedCollisionRefusal:
+    """VAL-12: apply refuses when it resolves a collision the plan never predicted."""
+
+    def test_apply_refuses_a_collision_the_plan_did_not_predict(
+        self, fixture_dsn: str, conn: psycopg.Connection
+    ) -> None:
+        """VAL-12 negative (this test, with the b3 guard removed, would pass
+        silently): build a plan with zero predicted collisions, then write a
+        new pre-existing row at the re-home target before apply runs -- the
+        live_count staleness check does not see it (it is a real, non-S3
+        row), so the plan still looks fresh. Apply must refuse rather than
+        silently resolve the extra collision.
+        """
+        _insert_project(conn, "agentforge", approved=True)
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="default",
+            key="race-key",
+            source_agent="someone",
+            created_at=_ts(0),
+        )
+
+        plan = tm.build_plan(conn)
+        assert plan.tables["private_memories"].collisions == []  # nothing predicted yet
+
+        # Simulate a write that lands between --dry-run and --apply: a real,
+        # non-S3 row now occupies the re-home target. live_predicate_count
+        # is blind to it (it doesn't match the S3 predicate), so the plan's
+        # own staleness check will still pass.
+        _insert_memory(
+            conn,
+            project_id="agentforge",
+            agent_id="legacy-unattributed",
+            key="race-key",
+            source_agent="n/a",
+            created_at=_ts(-1),
+            value="raced-in",
+        )
+        assert (
+            tm.live_predicate_count(conn, "private_memories")
+            == plan.tables["private_memories"].live_count
+        )
+
+        with pytest.raises(tm.UnpredictedCollisionError):
+            with psycopg.connect(fixture_dsn) as apply_conn:
+                tm.apply_plan(apply_conn, plan, archive_table="tap7279_unpredicted_test")
+
+        # Refused before commit: both rows are exactly where they were.
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM private_memories "
+                "WHERE project_id = 'agentforge' AND agent_id = 'default' AND key = 'race-key'"
+            )
+            assert cur.fetchone()[0] == 1
+            cur.execute(
+                "SELECT count(*) FROM private_memories "
+                "WHERE project_id = 'agentforge' AND agent_id = 'legacy-unattributed' "
+                "AND key = 'race-key'"
+            )
+            assert cur.fetchone()[0] == 1
+            cur.execute(
+                "SELECT count(*) FROM pg_tables "
+                "WHERE schemaname = 'public' AND tablename = 'tap7279_unpredicted_test'"
+            )
+            assert cur.fetchone()[0] == 0
+
+    def test_apply_with_a_correctly_predicted_plan_matches_counts_exactly(
+        self, fixture_dsn: str, conn: psycopg.Connection
+    ) -> None:
+        """VAL-12 positive: no drift between plan and apply -- result counts
+        equal the plan's prediction exactly, and apply completes normally."""
+        _seed_s3_fixture(conn)
+        plan = _build_fixture_plan(conn)
+        predicted_collisions = len(plan.tables["private_memories"].collisions)
+        assert predicted_collisions == 1
+
+        with psycopg.connect(fixture_dsn) as apply_conn:
+            result = tm.apply_plan(apply_conn, plan, archive_table="tap7279_matched_test")
+
+        assert result.tables["private_memories"].collisions == predicted_collisions
+        assert result.tables["private_memories"].remaining_after == 0
