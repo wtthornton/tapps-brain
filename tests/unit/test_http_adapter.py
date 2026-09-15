@@ -495,24 +495,6 @@ class TestReadyEndpointTokenVerification:
         assert body["status"] == "ready"
         assert body["checks"]["token_verification"] == "ok"
 
-    def test_wrong_token_clean_false_is_ok_not_broken(self) -> None:
-        """A wrong-credential clean False refusal is healthy, not an outage."""
-        mock_status = MagicMock()
-        mock_status.current_version = 5
-        mock_status.pending_migrations = []
-        settings = _make_settings(dsn="postgres://mockhost/testdb")
-        with ExitStack() as stack:
-            _enter_healthy_db_patches(stack, mock_status)
-            stack.enter_context(
-                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=False)
-            )
-            c = stack.enter_context(_client(settings))
-            resp = c.get("/ready")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "ready"
-        assert body["checks"]["token_verification"] == "ok"
-
     def test_broken_verification_call_reports_non_ok(self) -> None:
         """VAL-03 negative control: an exception inside verify_token() must go non-ok.
 
@@ -571,6 +553,99 @@ class TestReadyEndpointTokenVerification:
         # Overall readiness is still 503/degraded (no DSN => DB unreachable),
         # but the token-verification sub-check itself must not report broken.
         assert body["checks"]["token_verification"] == "ok"
+
+    def test_registry_clean_false_refusal_is_ok_not_broken(self) -> None:
+        """A wrong-credential clean False from the registry is healthy, not an outage.
+
+        Mocks only the DB/registry collaborator (``ProjectRegistry.verify_token``),
+        never ``_verify_per_tenant_token`` itself, so the probe's own call into
+        ``_verify_per_tenant_token`` — the seam under test — is exercised for real.
+        (The prior version of this test mocked ``_verify_per_tenant_token``
+        directly and asserted a ``False`` return that the production probe can
+        never actually produce for the sentinel project, which has no
+        ``project_profiles`` row — see the deleted
+        ``test_wrong_token_clean_false_is_ok_not_broken`` and
+        ``ProjectRegistry.verify_token``'s early return at
+        ``src/tapps_brain/project_registry.py:304-305``.)
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch(
+                    "tapps_brain.project_registry.ProjectRegistry.verify_token",
+                    return_value=False,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+
+    def test_runtime_argon2_break_reports_non_ok(self) -> None:
+        """VAL-03 gap-fix: a runtime break in argon2 hashing must go non-ok.
+
+        The sentinel project (``__tapps_brain_readiness_probe__``) has no
+        ``project_profiles`` row, so ``ProjectRegistry.verify_token`` always
+        takes its early return at ``src/tapps_brain/project_registry.py:304-305``
+        and never reaches ``PasswordHasher()`` / ``ph.verify`` at all — an
+        argon2 runtime break (as opposed to an import-time break) was
+        structurally undetectable by the probe. This test breaks
+        ``PasswordHasher.verify`` at runtime (not at import) and asserts
+        ``/ready`` goes 503/degraded with a failure string in
+        ``checks.token_verification``.
+
+        Mocks only ``argon2.PasswordHasher.verify`` — the hashing-library
+        collaborator — never ``_verify_per_tenant_token`` itself.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+
+        # -- BEFORE mutation: argon2 hashing path healthy ------------------
+        # ``_verify_per_tenant_token`` is mocked out here (the DB/registry
+        # collaborator's admin DB round-trip is already covered by the
+        # import-shape tests above) so this test isolates the one thing under
+        # test: the self-test hashing call the probe now makes directly.
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            c = stack.enter_context(_client(settings))
+            before_resp = c.get("/ready")
+        assert before_resp.status_code == 200
+        before_body = before_resp.json()
+        assert before_body["status"] == "ready"
+        assert before_body["checks"]["token_verification"] == "ok"
+
+        _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
+
+        # -- AFTER mutation: argon2 verify() raises at runtime -------------
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "argon2.PasswordHasher.verify",
+                    side_effect=RuntimeError("libargon2 native call failed"),
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            after_resp = c.get("/ready")
+        assert after_resp.status_code == 503
+        after_body = after_resp.json()
+        assert after_body["status"] == "degraded"
+        assert after_body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in after_body["checks"]["token_verification"]
 
 
 # ---------------------------------------------------------------------------

@@ -458,6 +458,31 @@ def _maybe_warn_retention_manager(
 _READINESS_PROBE_PROJECT_ID = "__tapps_brain_readiness_probe__"
 _READINESS_PROBE_TOKEN = "readiness-probe-not-a-real-credential"
 
+# TAP-7682 round 2: the sentinel project id above has no row in
+# ``project_profiles`` by design (it is never a real project), so
+# ``ProjectRegistry.verify_token`` always takes its early return at
+# ``src/tapps_brain/project_registry.py:304-305`` before it ever reaches
+# ``PasswordHasher()`` / ``ph.verify``. That means the call above only ever
+# exercised the import prologue and the admin DB round-trip -- a runtime
+# break in argon2 hashing (hasher construction or ``ph.verify`` raising,
+# including the ``except Exception: raise`` arm from TAP-782) was
+# structurally unreachable by this probe and would leave ``/ready`` green
+# while every authenticated ``/v1/*`` call for a project WITH a stored
+# token failed closed with 503.
+#
+# Fix: call the hashing primitives directly against a fixed, non-secret
+# self-test hash in addition to the registry lookup above. This is a
+# literal argon2id hash of a well-known constant, generated once offline
+# with the exact same ``argon2.PasswordHasher`` the production code path
+# uses -- it is not tied to any project, credential, or database row, so it
+# does not weaken the sentinel's isolation from real project data. A
+# healthy brain always verifies it successfully; any exception from
+# ``PasswordHasher()`` construction or ``ph.verify`` (a real mismatch is
+# impossible here since the secret and hash are a matched, hardcoded pair)
+# means the hashing runtime itself is broken.
+_READINESS_PROBE_SELF_TEST_SECRET = "tapps-brain-readiness-self-test-v1"
+_READINESS_PROBE_SELF_TEST_HASH = "$argon2id$v=19$m=65536,t=3,p=4$nJ2Yle7D2j/YnNE8b0PVJg$y5v488i2MBrJgbQYhy+3188bRc84npkGjP6HFX52Xts"
+
 _TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
 
 
@@ -472,6 +497,13 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
     expected behavior, not an outage. Only an exception escaping the call
     is "broken".
 
+    Because the sentinel project has no ``project_profiles`` row,
+    ``_verify_per_tenant_token`` alone never reaches argon2 hasher
+    construction or ``ph.verify`` (see the module comment above). This
+    probe additionally verifies a fixed, non-secret self-test hash directly
+    against ``argon2.PasswordHasher`` so a runtime break in the hashing
+    library itself -- not just an import-time break -- flips readiness.
+
     Returns ``(ok, detail)``; never raises. Skipped (reported ok) when no
     DSN is configured -- DB reachability is already covered by
     :func:`_probe_db`, and this probe has nothing to connect to.
@@ -483,8 +515,11 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
     if cached is not None and now < cached[0]:
         return cached[1]
     try:
+        from argon2 import PasswordHasher
+
         from tapps_brain.http.auth import _verify_per_tenant_token
 
+        PasswordHasher().verify(_READINESS_PROBE_SELF_TEST_HASH, _READINESS_PROBE_SELF_TEST_SECRET)
         _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
         result: tuple[bool, str] = (True, "ok")
     except Exception as exc:
