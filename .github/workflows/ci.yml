@@ -156,9 +156,19 @@ jobs:
       - name: Integration + compat tests (live Postgres)
         run: >-
           uv run pytest -q --tb=short -m "not benchmark"
+          --junitxml=integration-compat-junit.xml
           tests/integration/ tests/compat/ tests/*.py
       - name: Test collection guard (TAP-6829)
         run: uv run python scripts/check_test_collection.py
+      # Runtime counterpart to the static guard above (TAP-6829): that guard
+      # only proves ci.yml *names* every tests/ root file as a path argument.
+      # Under `-q` the step above prints no `collected N items` line and no
+      # test ids, so a file named in the command but never actually reaching
+      # the collector (stale glob, swallowed conftest error) would go
+      # undetected. This reads the JUnit XML the step just produced and fails
+      # if any root file has no executed testcase.
+      - name: Test execution guard (TAP-6829)
+        run: uv run python scripts/check_test_execution.py integration-compat-junit.xml
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)
