@@ -197,6 +197,24 @@ class SelfCollisionError(TenancyMigrationError):
     """
 
 
+class UnpredictedCollisionError(TenancyMigrationError):
+    """Raised when ``apply_plan`` resolves a collision the plan never predicted.
+
+    ``_detect_collisions`` predicts collisions from a single read-only snapshot
+    taken while the plan is built. Nothing about the plan/apply split
+    guarantees the *target* side of a re-home (which, by definition, sits
+    outside the S3 predicate — see :func:`_apply_table`'s staleness check)
+    is unchanged by the time ``--apply`` runs, possibly much later and in a
+    separate process. ``StalePlanError`` only catches drift in the S3
+    population's own row *count*; a write to an unrelated, already-real
+    target identity between dry-run and apply never moves that count, so it
+    passes the staleness check silently while still producing a collision
+    the operator never approved. Rather than resolve more than the plan
+    said, apply refuses outright: a stale or under-predicted plan must be
+    re-planned and re-approved, never silently over-applied.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Row identity
 # ---------------------------------------------------------------------------
@@ -932,33 +950,96 @@ def _build_table_plan(
     )
 
 
+@dataclass
+class _TargetHolder:
+    """The row currently occupying one target identity, as apply would see it.
+
+    ``old_project``/``old_agent`` are ``None`` for the initial live pre-existing
+    holder (it is not a plan group), and set to the winning group's old
+    identity once an in-plan row claims or takes over the target.
+    """
+
+    timestamp: str
+    old_project: str | None
+    old_agent: str | None
+
+
 def _detect_collisions(
     conn: psycopg.Connection, *, table: str, groups: list[PlanGroup]
 ) -> list[CollisionRecord]:
-    """Join each re-home group's target identity against the live table (read-only)."""
+    """Predict every collision ``apply_plan`` will resolve, live-table and intra-plan alike.
+
+    Two re-home groups can target the same identity without either of them
+    colliding with a row already live in the table -- e.g. two in-scope rows
+    (different old identity, same rule or different rules) both re-homing to
+    one target. ``apply_plan`` resolves that case correctly today: it
+    processes groups in plan order and each row's target lookup naturally
+    picks up whatever an *earlier* group in the same apply already moved
+    there. A prediction pass that only joins each group's rows against the
+    live table in isolation can't see that -- it never simulates the earlier
+    groups' moves, so it reports zero collisions for a target two in-scope
+    rows both converge on.
+
+    This function instead walks groups in the same order ``apply_plan`` will,
+    tracking one :class:`_TargetHolder` per ``(target_project, target_agent,
+    row_id)`` triple. The first row to reach a target identity checks the
+    live table (exactly the old behaviour); every subsequent row reaching the
+    *same* identity is compared against whichever row currently holds it --
+    the live pre-existing row, or an earlier in-plan winner -- using the same
+    "newer wins, ties go to the newcomer" rule :func:`_apply_one_rehome` uses.
+    Every contender after the first produces a :class:`CollisionRecord`, so a
+    three-way convergence yields two records (each naming its own old
+    identity and the timestamp it had to beat), matching how apply would
+    resolve it one comparison at a time.
+    """
     collisions: list[CollisionRecord] = []
+    holders: dict[tuple[str, str, tuple[str, ...]], _TargetHolder] = {}
+
     for group in groups:
         if group.action != "re_home" or group.target_project is None or group.target_agent is None:
             continue
         for row_id in group.row_ids:
-            existing = _fetch_row_timestamp(
-                conn,
-                table=table,
-                project_id=group.target_project,
-                agent_id=group.target_agent,
-                row_id=row_id,
+            target_key = (group.target_project, group.target_agent, tuple(row_id))
+            holder = holders.get(target_key)
+
+            if holder is None:
+                existing = _fetch_row_timestamp(
+                    conn,
+                    table=table,
+                    project_id=group.target_project,
+                    agent_id=group.target_agent,
+                    row_id=row_id,
+                )
+                if existing is None:
+                    source_ts = (
+                        _fetch_row_timestamp(
+                            conn,
+                            table=table,
+                            project_id=group.old_project,
+                            agent_id=group.old_agent,
+                            row_id=row_id,
+                        )
+                        or ""
+                    )
+                    holders[target_key] = _TargetHolder(
+                        timestamp=source_ts,
+                        old_project=group.old_project,
+                        old_agent=group.old_agent,
+                    )
+                    continue
+                holder = _TargetHolder(timestamp=existing, old_project=None, old_agent=None)
+
+            source_ts = (
+                _fetch_row_timestamp(
+                    conn,
+                    table=table,
+                    project_id=group.old_project,
+                    agent_id=group.old_agent,
+                    row_id=row_id,
+                )
+                or ""
             )
-            if existing is None:
-                continue
-            source_ts = _fetch_row_timestamp(
-                conn,
-                table=table,
-                project_id=group.old_project,
-                agent_id=group.old_agent,
-                row_id=row_id,
-            )
-            source_ts = source_ts or ""
-            winner = "source" if source_ts >= existing else "existing"
+            winner = "source" if source_ts >= holder.timestamp else "existing"
             collisions.append(
                 CollisionRecord(
                     old_project=group.old_project,
@@ -967,10 +1048,16 @@ def _detect_collisions(
                     target_agent=group.target_agent,
                     row_id=list(row_id),
                     source_timestamp=source_ts,
-                    existing_timestamp=existing,
+                    existing_timestamp=holder.timestamp,
                     winner=winner,
                 )
             )
+            if winner == "source":
+                holder = _TargetHolder(
+                    timestamp=source_ts, old_project=group.old_project, old_agent=group.old_agent
+                )
+            holders[target_key] = holder
+
     return collisions
 
 
@@ -1121,8 +1208,13 @@ def _apply_table(
         cur.execute(sql.SQL("SELECT count(*) FROM {}").format(archive_table_ident))
         snapshot_count = _scalar_count(cur)
 
+    predicted_collision_keys = {
+        (c.target_project, c.target_agent, tuple(c.row_id)) for c in table_plan.collisions
+    }
+
     re_homed_count = 0
     collisions = 0
+    unpredicted: list[tuple[str, str, tuple[str, ...]]] = []
     for group in table_plan.groups:
         if group.action != "re_home" or group.target_project is None or group.target_agent is None:
             continue
@@ -1137,13 +1229,22 @@ def _apply_table(
                 target_agent=group.target_agent,
                 row_id=row_id,
             )
-            if won == "collision":
+            if won in ("collision", "existing"):
                 collisions += 1
+                target_key = (group.target_project, group.target_agent, tuple(row_id))
+                if target_key not in predicted_collision_keys:
+                    unpredicted.append(target_key)
+            if won in ("collision", "source"):
                 re_homed_count += 1
-            elif won == "source":
-                re_homed_count += 1
-            elif won == "existing":
-                collisions += 1
+
+    if unpredicted:
+        raise UnpredictedCollisionError(
+            f"{table}: apply resolved {len(unpredicted)} collision(s) the plan never "
+            f"predicted (predicted {len(predicted_collision_keys)} total) — plan is stale "
+            "or under-predicted; refusing to apply more than the plan said. Sample "
+            f"unpredicted target(s): {unpredicted[:5]!r}. Re-run --dry-run and review "
+            "the new plan."
+        )
 
     _bulk_delete_by_identity(conn, table=table, groups=table_plan.groups)
 
@@ -1180,11 +1281,21 @@ def _apply_one_rehome(
     target_agent: str,
     row_id: list[str],
 ) -> str:
-    """Move one row to its target identity. Returns "source", "existing", or "collision".
+    """Move one row to its target identity.
 
-    "collision" is returned (in addition to "source"/"existing" internally
-    being folded into the caller's bookkeeping) only via the two-return-value
-    contract documented on the caller — see :func:`_apply_table`.
+    Returns one of:
+
+    - ``"source"`` — no existing row at the target; the source row moved in cleanly.
+    - ``"collision"`` — a live row was found at the target and the source won.
+    - ``"existing"`` — a live row was found at the target and it won; the source
+      row is left in place for :func:`_bulk_delete_by_identity` to remove.
+    - ``"already-resolved"`` — the source row is already gone from its own old
+      identity: an *earlier* group's target happened to equal this row's old
+      identity, and that group's own collision already archived (or moved)
+      it. This is not a new collision at *this* group's target — it is the
+      tail end of one already counted when the earlier group ran — so the
+      caller must not double-count it against ``collisions`` or treat this
+      group's target as having collided.
     """
 
     existing_ts = _fetch_row_timestamp(
@@ -1194,8 +1305,7 @@ def _apply_one_rehome(
         conn, table=table, project_id=old_project, agent_id=old_agent, row_id=row_id
     )
     if source_ts is None:
-        # Already moved or archived by an earlier collision in this same apply — nothing to do.
-        return "existing"
+        return "already-resolved"
 
     if existing_ts is None:
         _move_row(
