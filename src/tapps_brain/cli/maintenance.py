@@ -1395,6 +1395,18 @@ def maintenance_purge_test_tenants(
     Dry-run by default: reports how many rows match each reserved prefix without
     deleting. Pass ``--apply`` to remove them. Use this to mop up rows left by
     test or load harnesses that ran against a persistent/shared Postgres.
+
+    TAP-5895 — a dry-run zero is only proof the database is clean when the
+    connection cannot bypass row-level security. Every run reports the
+    connected role and a ``verdict`` of ``scoped-zero`` (RLS is enforced
+    against this role: rows may exist that this count could not see) versus
+    ``authoritative-zero`` (connected as a superuser or BYPASSRLS role: the
+    zero is trustworthy). Treat ``scoped-zero`` as inconclusive, never as
+    confirmation. **The authoritative confirmation step is to re-run this
+    command connected as the table-owner / BYPASSRLS role** (e.g. set
+    ``TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE=1`` with a privileged ``--dsn``) and
+    check for ``authoritative-zero`` before declaring the database clean — a
+    ``scoped-zero`` alone is never sufficient.
     """
     if not dsn:
         typer.echo("Error: --dsn or TAPPS_BRAIN_DATABASE_URL is required.", err=True)
@@ -1410,6 +1422,7 @@ def maintenance_purge_test_tenants(
     prefixes = tuple(prefix) if prefix else RESERVED_TEST_PROJECT_PREFIXES
     cm = PostgresConnectionManager(dsn)
     try:
+        connected_role, rls_scoped = _probe_connection_role(cm)
         if apply:
             deleted = purge_by_prefix(cm, prefixes)
             status = "purged"
@@ -1419,21 +1432,79 @@ def maintenance_purge_test_tenants(
     finally:
         cm.close()
 
+    total_rows = sum(deleted.values())
+    verdict = _purge_verdict(total_rows=total_rows, apply=apply, rls_scoped=rls_scoped)
+
     data = {
         "prefixes": list(prefixes),
         "status": status,
+        "connected_role": connected_role,
+        "rls_scoped": rls_scoped,
+        "verdict": verdict,
         "rows_by_table": deleted,
-        "total_rows": sum(deleted.values()),
+        "total_rows": total_rows,
     }
     if as_json:
         _output(data, as_json=True)
     else:
         verb = "Deleted" if apply else "Would delete"
         typer.echo(f"{verb} {data['total_rows']} rows for prefixes {list(prefixes)}:")
+        typer.echo(f"  connected role: {connected_role} (rls_scoped={rls_scoped})")
         for table, count in sorted(deleted.items()):
             typer.echo(f"  {table}: {count}")
+        if not apply and total_rows == 0:
+            if rls_scoped:
+                typer.echo(
+                    "SCOPED ZERO — this connection is RLS-scoped; a zero here is NOT proof "
+                    "the database is clean. Re-run as the table owner or a BYPASSRLS role "
+                    "for an authoritative count."
+                )
+            else:
+                typer.echo(
+                    "AUTHORITATIVE ZERO — connected as a role that bypasses RLS; the "
+                    "database is confirmed clean for these prefixes."
+                )
         if not apply:
             typer.echo("(dry-run — pass --apply to delete)")
+
+
+def _probe_connection_role(cm: object) -> tuple[str, bool]:
+    """Return ``(connected_role, rls_scoped)`` for the given connection.
+
+    ``rls_scoped`` is True when row-level security is enforced against this
+    role (not a superuser, ``BYPASSRLS=false``) — the same signal
+    :meth:`PostgresConnectionManager._assert_non_privileged_role` uses (TAP-512),
+    reused here so "does RLS apply to this connection" cannot drift between the
+    startup guard and this disclosure (TAP-5895). A missing ``pg_roles`` row is
+    treated as RLS-scoped out of caution: unknown must never read as clean.
+    """
+    from tapps_brain.postgres_connection import _ROLE_PROBE_SQL
+
+    with cm.get_connection() as conn, conn.cursor() as cur:  # type: ignore[attr-defined]
+        cur.execute(_ROLE_PROBE_SQL)
+        row = cur.fetchone()
+    if row is None:
+        return "(unknown)", True
+    role, is_super, bypass_rls = str(row[0]), bool(row[1]), bool(row[2])
+    return role, not (is_super or bypass_rls)
+
+
+def _purge_verdict(*, total_rows: int, apply: bool, rls_scoped: bool) -> str:
+    """Label a purge-test-tenants result so a scoped zero cannot read as clean.
+
+    TAP-5895: a zero row count taken over an RLS-scoped connection is a
+    CONFIDENT, PLAUSIBLE, WRONG "clean" — RLS silently filters out rows the
+    connected role cannot see, and nothing distinguishes that zero from a
+    zero taken as the table owner. ``scoped-zero`` and ``authoritative-zero``
+    MUST stay distinct labels for the identical underlying row state
+    (``total_rows == 0``); collapsing them back to one label re-introduces the
+    disclosure gap this function exists to close.
+    """
+    if apply:
+        return "purged"
+    if total_rows > 0:
+        return "rows-found"
+    return "scoped-zero" if rls_scoped else "authoritative-zero"
 
 
 def _count_prefix_rows(
