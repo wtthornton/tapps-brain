@@ -112,6 +112,8 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from pydantic import BaseModel, Field
 
+from tapps_brain.project_resolver import STRICT_REFUSED_AGENT_LITERALS
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -127,8 +129,9 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 #: Placeholder/throwaway project ids that are never a real tenant.
 S3_PROJECT_IDS: frozenset[str] = frozenset({"default", "api", "main", "repo-brain"})
 
-#: Placeholder/unattributed agent ids.
-S3_AGENT_IDS: frozenset[str] = frozenset({"default", "unknown"})
+#: Placeholder/unattributed agent ids (TAP-7295: single definition site,
+#: shared with the HTTP tenant gate's ``STRICT_REFUSED_AGENT_LITERALS``).
+S3_AGENT_IDS: frozenset[str] = STRICT_REFUSED_AGENT_LITERALS
 
 #: Tables this tool re-homes/archives. Both carry (project_id, agent_id) tenant columns.
 MIGRATED_TABLES: tuple[str, ...] = ("private_memories", "private_relations")
