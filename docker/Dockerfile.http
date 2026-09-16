@@ -16,11 +16,21 @@ RUN apt-get update \
 # uv-only config. Pin the CPU-only torch build here too, before installing the
 # wheel, so the sentence-transformers dependency chain doesn't pull the
 # CUDA-bundled PyPI build (15 nvidia-* packages) into a container with no GPU.
+#
+# Same TAP-6659 gap bit again for `mcp`: the wheel's [mcp]/[http] extras only
+# constrain to "mcp>=1.25.0,<3", and uv.lock's pin at 1.26.0 is invisible to
+# this plain-pip install. mcp 2.x renamed FastMCP to MCPServer and this
+# codebase (src/tapps_brain/mcp_server/server.py:_lazy_import_mcp) still
+# imports `from mcp.server.fastmcp import FastMCP`, so an unpinned build can
+# silently resolve mcp 2.x and crash the ASGI app at startup with
+# "ModuleNotFoundError: No module named 'mcp.server.fastmcp'" — mcp_ok never
+# gets a chance to be false; the process never comes up to serve /healthz at
+# all. Pin to the same version uv.lock (and CI's tests) actually run against.
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.13.0+cpu"
 RUN --mount=type=cache,target=/root/.cache/pip \
     whl=$(ls /tmp/tapps_brain-*.whl) \
-    && pip install --no-cache-dir "${whl}[cli,mcp,http,reranker,otel]" "psycopg[binary]"
+    && pip install --no-cache-dir "${whl}[cli,mcp,http,reranker,otel]" "mcp==1.26.0" "psycopg[binary]"
 
 # TAP-4276 — bake the pinned embedding model for offline cold starts.
 # Revision must match tapps_brain.embeddings._DEFAULT_MODEL_REVISION.
