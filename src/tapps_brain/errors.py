@@ -139,6 +139,60 @@ def retry_policy(code: ErrorCode) -> RetryPolicy:
 
 
 # ---------------------------------------------------------------------------
+# Tenant-scope refusal envelope (ADR-010, TAP-7243 / TAP-7255)
+# ---------------------------------------------------------------------------
+
+# One shape for both the project axis (TAPPS_BRAIN_STRICT_PROJECTS) and the
+# agent axis (TAPPS_BRAIN_STRICT_AGENT_ID) — clients branch on ``code`` alone.
+# Not part of the numeric ErrorCode/_TAXONOMY table above: these refusals
+# fire at the HTTP tenant gate, before a store (or even ``memory_service``)
+# is reached, so they carry no JSON-RPC mapping.
+TENANT_REFUSAL_CODES = frozenset(
+    {
+        "tenant_project_missing",
+        "tenant_project_literal",
+        "tenant_project_unregistered",
+        "tenant_agent_missing",
+        "tenant_agent_literal",
+    }
+)
+
+
+def tenant_refusal_body(code: str, remediation: str) -> dict[str, Any]:
+    """Build the tenant-scope refusal envelope (ADR-010, TAP-7243).
+
+    Shape: ``{ok: false, code, category: "user_input", retryable: false,
+    remediation, gate: "tenant_scope"}`` — the one envelope every strict-mode
+    tenant refusal uses, for both the project and the agent axis, replacing
+    the pre-TAP-7243 split (data-plane 404 ``project_not_registered`` vs the
+    global handler's 403). See ``code`` in :data:`TENANT_REFUSAL_CODES`.
+
+    Args:
+        code: One of :data:`TENANT_REFUSAL_CODES`.
+        remediation: Human-readable corrective action naming the header the
+            caller must set.
+
+    Returns:
+        A plain :class:`dict` ready to be serialised as the HTTP body of a
+        400 response.
+    """
+    if code not in TENANT_REFUSAL_CODES:
+        msg = (
+            f"Unknown tenant refusal code: {code!r} "
+            f"(expected one of {sorted(TENANT_REFUSAL_CODES)})"
+        )
+        raise ValueError(msg)
+    return {
+        "ok": False,
+        "code": code,
+        "category": "user_input",
+        "retryable": False,
+        "remediation": remediation,
+        "gate": "tenant_scope",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Body builders
 # ---------------------------------------------------------------------------
 

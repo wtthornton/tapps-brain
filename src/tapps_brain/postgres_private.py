@@ -202,6 +202,12 @@ class PostgresPrivateBackend:
         # "no neighbours" from "semantic recall degraded".
         self.knn_search_degraded: bool = False
         self.index_verify_unknown: bool = False
+        # TAP-7338: raw ts_rank magnitude from the most recent search() call,
+        # keyed by entry key. search() itself returns list[MemoryEntry] (the
+        # PrivateBackend protocol contract), which has no room for the score —
+        # this side channel lets QueryMixin.search() recover the magnitude
+        # without widening the protocol. Reset at the top of every search().
+        self.last_search_ranks: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Connection helper — enforces tenant RLS (EPIC-069 STORY-069.8)
@@ -425,6 +431,7 @@ class PostgresPrivateBackend:
                 100 rows by rank, so a post-filter would silently return fewer
                 promoted rows than asked for whenever unpromoted rows outrank them.
         """
+        self.last_search_ranks = {}
         if not query.strip():
             return []
 
@@ -478,7 +485,9 @@ class PostgresPrivateBackend:
         results = []
         for row in rows:
             row_dict = dict(zip(col_names, row, strict=False))
-            row_dict.pop("_rank", None)  # computed column, not in MemoryEntry
+            rank = row_dict.pop("_rank", None)  # computed column, not in MemoryEntry
+            if rank is not None:
+                self.last_search_ranks[str(row_dict["key"])] = float(rank)
             results.append(self._row_to_entry(row_dict))
         return results
 

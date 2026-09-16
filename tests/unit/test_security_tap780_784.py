@@ -182,15 +182,15 @@ class TestVerifyTokenExceptions:
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         return ProjectRegistry(mock_cm), mock_cursor
 
-    def test_verify_invalid_error_returns_false(self) -> None:
+    def test_invalid_hash_error_returns_false(self) -> None:
         pytest.importorskip("argon2")
         from argon2 import PasswordHasher
-        from argon2.exceptions import VerifyInvalidError
+        from argon2.exceptions import InvalidHashError
 
         registry, cursor = self._make_registry()
         cursor.fetchone.return_value = ("not-a-real-hash",)
 
-        with patch.object(PasswordHasher, "verify", side_effect=VerifyInvalidError):
+        with patch.object(PasswordHasher, "verify", side_effect=InvalidHashError):
             result = registry.verify_token("proj", "tok")
 
         assert result is False

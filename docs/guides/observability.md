@@ -521,6 +521,66 @@ AUTO_GC=1 make brain-diagnostics-live    # archive stale (contradicted-low-confi
 
 ---
 
+## Memory scorecard (TAP-4587)
+
+A **different report from the diagnostics/SLO scorecard above** (`_build_scorecard` /
+`ScorecardCheck` in `visual_snapshot.py`, which reports orphan-entity / staleness ratios
+for `tapps-brain diagnostics health`). This one reports per-project lifecycle bucket
+counts and a recall temporal-filter drop-rate sample. Both live in the codebase; do not
+conflate them.
+
+### Invocation
+
+```python
+store = MemoryStore(project_root)  # or however the caller already holds a store
+scorecard = store.memory_scorecard()
+drop_rate = store.memory_temporal_drop_rate_sample()
+```
+
+`MemoryStore.memory_scorecard()` (`src/tapps_brain/store.py`) returns a `MemoryScorecard`:
+
+| Field | Meaning |
+|---|---|
+| `project_id` / `rls_scoped` | Which tenant this run was scoped to, and whether the read went through the RLS-enforcing connection path. **Always check these** — a count taken over a connection RLS is enforced against returns a confident, plausible, wrong number (usually zero) and never errors. |
+| `total` | All rows for this project, any status. |
+| `live` | `status=active` AND temporally valid (`is_temporally_valid`) — actually recallable. |
+| `expired` | Temporally invalid (`invalid_at`/`valid_until` in the past), independent of `status`. May overlap the status buckets below — closing a row's validity for any reason also stamps `invalid_at`. |
+| `superseded` / `stale` / `contradicted` / `archived` | Mutually exclusive lifecycle-`status` buckets (`MemoryStatus`). Bucketed on `status`, **never** on `MemoryEntry.is_superseded` — that property also returns `True` for a stale/age-closed row and would collapse the `superseded` and `stale` buckets into one. |
+| `duplicate_key_clusters` / `duplicate_key_rows` | Rows grouped by key with any trailing `.vN` supersession suffix stripped (the suffix `MemoryStore.supersede()` mints). A cluster is a base key with more than one row — i.e. a key superseded at least once. |
+
+`MemoryStore.memory_temporal_drop_rate_sample(sample_size=10)` returns a
+`TemporalDropRateSample`: takes the `sample_size` most-recently-updated entries in the
+project — **any lifecycle `status`**, not just live ones, because a sample restricted to
+`status=active` could never contain a temporally-excludable row and would silently
+always report `drop_rate=0.0` regardless of whether the filter works. For each sampled
+entry it evaluates `MemoryEntry.is_temporally_valid()` directly, the identical predicate
+`MemoryRetriever` applies inline in its candidate-filtering loop
+(`retrieval.py:524-526`, "Issue #70"), and counts it as dropped exactly when that inline
+condition would drop it. `excluded_count` is the dropped rows, `included_count` is the
+surviving rows, and `drop_rate` is dropped / considered.
+
+This deliberately does **not** measure the drop by diffing two live
+`MemoryRetriever.search()` calls (`include_superseded=True` vs `False`) against
+free-text queries built from entry values: on a small/weakly-overlapping corpus the two
+calls hit different FTS candidate pools (the SQL-level `include_historical` WHERE clause
+changes which rows are even fetched before ranking), so the diff between the two result
+counts was observed to go **negative** in manual verification — an artifact of
+candidate-pool selection, not the temporal filter. Evaluating the predicate directly on
+the sample avoids that confound while still exercising the identical boolean recall's
+filter loop computes.
+
+### RLS-scoping guarantee
+
+Both methods read via `private_backend.load_all()`, which opens its connection through
+`PostgresPrivateBackend._scoped_conn()` — the same session-scoped `SET app.project_id`
+path every other read in that backend uses (migration 009 RLS policies on
+`private_memories`). The scorecard is therefore a fresh, per-project read of the
+database, never the in-memory cache, and `rls_scoped=True` is only set when that path was
+actually available (it is `False` for non-Postgres backends, e.g. tests against
+`InMemoryPrivateBackend`, where RLS does not apply).
+
+---
+
 ## Prometheus metrics — profile filter (STORY-073.4)
 
 The HTTP adapter exposes five profile-filter metrics on `/metrics` once the

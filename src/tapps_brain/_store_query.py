@@ -16,6 +16,7 @@ from typing import Any, cast
 import structlog
 
 from tapps_brain import _postgres_private_sql as _sql
+from tapps_brain import fusion as _fusion
 from tapps_brain._store_base import _MemoryStoreBase
 from tapps_brain.metrics import MetricsTimer
 from tapps_brain.models import MemoryEntry, _utc_now_iso
@@ -34,11 +35,33 @@ from tapps_brain.otel_tracer import (
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
-#: TAP-5677 — pool size for the stage-3 semantic fallback.  Deliberately far
-#: below the FTS LIMIT 100: nearest-neighbour results without a lexical match
-#: are speculative, and downstream consumers (``brain_recall`` max_results,
-#: flywheel top-3) never read more than a handful.
+#: TAP-5677 / TAP-7338 — pool size for the vector branch.  Deliberately far
+#: below the FTS LIMIT 100: nearest-neighbour candidates are fused with the
+#: lexical channel (not just consulted when it is empty), and downstream
+#: consumers (``brain_recall`` max_results, flywheel top-3) never read more
+#: than a handful.
 _KNN_FALLBACK_K = 10
+
+#: TAP-7338 — RRF smoothing constant for fusing the FTS and vector channels
+#: in ``QueryMixin.search``.  Matches the default already used and tested by
+#: ``MemoryRetriever._get_hybrid_candidates`` (retrieval.py) — this wiring
+#: reuses that same constant rather than inventing a new one.
+_SEARCH_FUSION_RRF_K = 60
+
+#: TAP-7338 (PR #297 follow-up) — minimum vector-channel similarity (cosine
+#: distance converted via ``1.0 / (1.0 + distance)``) a KNN row must clear to
+#: enter fusion *when the lexical channel already found something*.
+#:
+#: Measured against the real embedding model (BAAI/bge-small-en-v1.5): an
+#: actually-unrelated memory sits at similarity 0.716 against an unrelated
+#: query, while true-positive fixtures in test_search_relevance_fusion.py and
+#: test_search_fallback.py sit at 0.909+. 0.80 has margin on both sides. See
+#: the PR description for the full derivation and why the floor is
+#: conditioned on non-empty FTS results rather than applied unconditionally
+#: (a pinned fallback-only fixture sits at 0.714 — 0.002 below the false
+#: positive above — so no single unconditional floor can separate them; only
+#: "did the lexical channel already find real signal" can).
+_KNN_MIN_SIMILARITY_FOR_FUSION = 0.80
 
 
 def _filter_memory_entries(
@@ -524,15 +547,26 @@ class QueryMixin(_MemoryStoreBase):
                 **status_kw,
             )
 
-            # TAP-5677 stage 3: lexical stages (AND, then the backend's OR
-            # retry) found nothing — fall back to vector KNN when available.
-            # Stands down for since/until/memory_class queries: those filters
-            # live in the FTS SQL only, and a speculative semantic match must
-            # never resurface rows a precision filter excluded.  ``learning_status``
-            # (TAP-6826) is the exception: it *is* expressible in the KNN SQL, so
-            # it is forwarded and the fallback stays available.
-            if not results and since is None and until is None and memory_class is None:
-                results = self._knn_fallback_entries(
+            # TAP-7338: raw ts_rank magnitude for the FTS rows, when the
+            # backend exposes it (the Postgres backend does; the in-memory
+            # test double and older PrivateBackend implementations do not —
+            # ``getattr`` degrades to "no magnitude available" for those).
+            relevance_raw: dict[str, float] = dict(
+                getattr(self._persistence, "last_search_ranks", None) or {}
+            )
+
+            # TAP-7338: run the vector branch unconditionally and fuse it
+            # with the lexical channel via RRF — previously this only ran
+            # when FTS came back completely empty, so a semantically correct
+            # row was silently dropped whenever FTS matched *something else*
+            # first.  Stands down for since/until/memory_class queries: those
+            # filters live in the FTS SQL only, and a speculative semantic
+            # match must never resurface rows a precision filter excluded.
+            # ``learning_status`` (TAP-6826) is the exception: it *is*
+            # expressible in the KNN SQL, so it is forwarded and the vector
+            # branch stays available.
+            if since is None and until is None and memory_class is None:
+                vector_entries, vector_relevance = self._knn_branch_entries(
                     query,
                     include_expired=include_historical,
                     as_of=as_of,
@@ -540,6 +574,17 @@ class QueryMixin(_MemoryStoreBase):
                     group_tags=group_tags,
                     learning_status=learning_status,
                 )
+                if results and vector_entries:
+                    # TAP-7338 fix: lexical signal already exists here, so a
+                    # weak vector row would dilute it rather than add to it.
+                    # See _KNN_MIN_SIMILARITY_FOR_FUSION for the derivation.
+                    vector_entries, vector_relevance = self._filter_vector_entries_by_similarity(
+                        vector_entries, vector_relevance, _KNN_MIN_SIMILARITY_FOR_FUSION
+                    )
+                if vector_entries:
+                    results, relevance_raw = self._fuse_fts_and_vector(
+                        results, relevance_raw, vector_entries, vector_relevance
+                    )
 
             results = self._apply_search_filters(
                 results,
@@ -551,6 +596,15 @@ class QueryMixin(_MemoryStoreBase):
                 as_of=as_of,
                 include_contradicted=include_contradicted,
             )
+
+            # TAP-7338: raw per-entry magnitude survives the search() call so
+            # brain_recall's composite scoring (retrieval.py::score_by_rank)
+            # can use it instead of rank position. Narrowed to the entries
+            # that actually survived filtering.
+            surviving_keys = {r.key for r in results}
+            self.last_search_relevance = {
+                k: v for k, v in relevance_raw.items() if k in surviving_keys
+            }
 
             # STORY-056.5: Group-aware recall — search group namespaces in Hive
             if include_group_memories:
@@ -568,7 +622,7 @@ class QueryMixin(_MemoryStoreBase):
             rm_add_recall_latency_ms(_search_elapsed_ms)
             return results
 
-    def _knn_fallback_entries(
+    def _knn_branch_entries(
         self,
         query: str,
         *,
@@ -577,38 +631,46 @@ class QueryMixin(_MemoryStoreBase):
         include_stale: bool = False,
         group_tags: list[str] | None = None,
         learning_status: list[str] | None = None,
-    ) -> list[MemoryEntry]:
-        """Semantic fallback for lexically unmatched queries (TAP-5677).
+    ) -> tuple[list[MemoryEntry], dict[str, float]]:
+        """Vector-similarity branch for hybrid fusion (TAP-7338; formerly TAP-5677).
 
         Embeds *query* with the store's embedding provider and returns the
         nearest :data:`_KNN_FALLBACK_K` entries by cosine distance, closest
-        first.  Requires both a configured embedding provider and a backend
-        with ``knn_search`` (the Postgres backend); otherwise — or when
-        embedding/KNN fails — returns ``[]`` so search degrades to its
-        previous empty-result behaviour rather than raising.  Failures are
-        logged; ``knn_search`` degradation flags stay the backend's concern.
+        first, alongside their similarity magnitude. Requires both a
+        configured embedding provider and a backend with ``knn_search`` (the
+        Postgres backend); otherwise — or when embedding/KNN fails — returns
+        ``([], {})`` so search degrades to lexical-only results rather than
+        raising. Failures are logged; ``knn_search`` degradation flags stay
+        the backend's concern.
+
+        TAP-7338: this now runs alongside the FTS channel unconditionally
+        (fused via RRF in :meth:`_fuse_fts_and_vector`), not only when FTS
+        returns zero rows — a real magnitude is required for that fusion, so
+        cosine distance is converted to a ``[0, 1]`` similarity here using the
+        same formula as ``MemoryRetriever._vector_search`` (retrieval.py).
 
         *learning_status* (TAP-6826) is forwarded into the KNN SQL rather than
-        standing the fallback down: a promotion-state filter that silently
+        standing the branch down: a promotion-state filter that silently
         disabled semantic recall would make "filtered" and "no such rows" look
         the same to the caller — the exact confusion this filter exists to end.
         """
         knn = getattr(self._persistence, "knn_search", None)
         load_one = getattr(self._persistence, "load_one", None)
+        empty: tuple[list[MemoryEntry], dict[str, float]] = ([], {})
         if (
             not query.strip()
             or self._embedding_provider is None
             or not callable(knn)
             or not callable(load_one)
         ):
-            return []
+            return empty
         try:
             embedding = self._embedding_provider.embed(query)
         except Exception:
-            logger.warning("search.knn_fallback.embed_failed", exc_info=True)
-            return []
+            logger.warning("search.knn_branch.embed_failed", exc_info=True)
+            return empty
         if not embedding:
-            return []
+            return empty
         try:
             group_kw: dict[str, Any] = {"group_tags": group_tags} if group_tags else {}
             status_kw: dict[str, Any] = (
@@ -624,15 +686,66 @@ class QueryMixin(_MemoryStoreBase):
                 **status_kw,
             )
         except Exception:
-            logger.warning("search.knn_fallback.knn_failed", exc_info=True)
-            return []
+            logger.warning("search.knn_branch.knn_failed", exc_info=True)
+            return empty
         entries: list[MemoryEntry] = []
-        for key, _distance in pairs:
+        relevance: dict[str, float] = {}
+        for key, distance in pairs:
             # Same widening on the hydration read — a group-shared key admitted
             # by KNN would otherwise be dropped here and the fix left inert.
             entry = cast("MemoryEntry | None", load_one(key, **group_kw))
             if entry is not None:
                 entries.append(entry)
+                relevance[key] = 1.0 / (1.0 + max(0.0, float(distance)))
         if entries:
             self._metrics.increment("store.search.knn_fallback")
-        return entries
+        return entries, relevance
+
+    @staticmethod
+    def _filter_vector_entries_by_similarity(
+        entries: list[MemoryEntry],
+        relevance: dict[str, float],
+        floor: float,
+    ) -> tuple[list[MemoryEntry], dict[str, float]]:
+        """Drop vector-channel rows below *floor* similarity (TAP-7338 fix).
+
+        Callers must only invoke this when the lexical channel already
+        returned rows — see ``_KNN_MIN_SIMILARITY_FOR_FUSION`` for why the
+        floor is conditioned on that instead of applying unconditionally.
+        """
+        kept = [e for e in entries if relevance.get(e.key, 0.0) >= floor]
+        kept_keys = {e.key for e in kept}
+        return kept, {k: v for k, v in relevance.items() if k in kept_keys}
+
+    def _fuse_fts_and_vector(
+        self,
+        fts_entries: list[MemoryEntry],
+        fts_relevance: dict[str, float],
+        vector_entries: list[MemoryEntry],
+        vector_relevance: dict[str, float],
+    ) -> tuple[list[MemoryEntry], dict[str, float]]:
+        """RRF-fuse the lexical and vector channels (TAP-7338).
+
+        Wiring only: reuses :func:`tapps_brain.fusion.reciprocal_rank_fusion_weighted`,
+        the same already-tested primitive ``MemoryRetriever._get_hybrid_candidates``
+        (retrieval.py) uses for context-injection recall, with equal channel
+        weights and the module's default ``k``. When one channel is empty this
+        degrades to exactly that channel's order (RRF over a single ranked
+        list preserves it), matching the pre-TAP-7338 fallback shape.
+
+        The returned relevance map is **not** the RRF score itself — that is
+        still rank-derived and would defeat the point of VAL-14. It is the raw
+        ts_rank / similarity magnitude per key (FTS wins when a row matched
+        both channels), for ``score_by_rank`` to consume.
+        """
+        fts_keys = [e.key for e in fts_entries]
+        vector_keys = [e.key for e in vector_entries]
+        fused = _fusion.reciprocal_rank_fusion_weighted(
+            fts_keys, vector_keys, k=_SEARCH_FUSION_RRF_K
+        )
+        entry_by_key: dict[str, MemoryEntry] = {e.key: e for e in fts_entries}
+        entry_by_key.update({e.key: e for e in vector_entries})
+        fused_entries = [entry_by_key[key] for key, _score in fused if key in entry_by_key]
+        relevance = dict(vector_relevance)
+        relevance.update(fts_relevance)
+        return fused_entries, relevance

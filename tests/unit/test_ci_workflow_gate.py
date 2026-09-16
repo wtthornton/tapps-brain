@@ -56,10 +56,20 @@ class TestSuiteIsGatedWholesale:
         )
 
     def test_no_per_file_integration_allowlist_remains(self, test_job: dict[str, Any]) -> None:
-        """A reintroduced explicit list is the regression this guards against."""
+        """A reintroduced explicit list is the regression this guards against.
+
+        A shell glob (``tests/*.py``, TAP-6829) is exempted: unlike a static
+        enumerated list, it expands to whatever files exist at run time, so a
+        new file at ``tests/`` root is picked up automatically rather than
+        silently excluded — the opposite of the TAP-5731 failure mode this
+        test guards against. ``scripts/check_test_collection.py`` is the
+        companion guard that keeps that glob honest.
+        """
         run = _steps(test_job)[_step_index(test_job, "tests/integration/")]["run"]
         named_files = [
-            tok for tok in run.split() if tok.startswith("tests/") and tok.endswith(".py")
+            tok
+            for tok in run.split()
+            if tok.startswith("tests/") and tok.endswith(".py") and "*" not in tok
         ]
         assert not named_files, (
             f"CI names individual integration files again: {named_files}. Gate the "
@@ -96,4 +106,64 @@ class TestRuntimeRoleProvisioning:
         ), (
             "roles/001 issues schema-wide GRANTs against existing objects; run it "
             "before the migrations and every table added later gets no grant"
+        )
+
+
+class TestRegressionFileCollectedByLiteralPath:
+    """TAP-7660: tests/regression/test_brain_recall_shape.py must be named
+    explicitly, not swept in by a directory glob. A directory glob would
+    silently collect any future file dropped into tests/regression/ too,
+    defeating scripts/check_test_collection.py's own negative control (a
+    throwaway file placed under tests/regression/ must still be flagged as
+    uncollected — see tests/unit/test_check_test_collection.py)."""
+
+    def test_regression_file_named_literally(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "tests/regression/test_brain_recall_shape.py" in run
+
+    def test_regression_directory_is_not_named_wholesale(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        tokens = run.split()
+        assert "tests/regression/" not in tokens, (
+            "naming the whole tests/regression/ directory would silently collect "
+            "any future file dropped there, defeating the guard's negative control"
+        )
+
+    def test_regression_step_has_its_own_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/regression/test_brain_recall_shape.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "--junitxml=regression-junit.xml" in run
+
+    def test_execution_guard_reads_both_junit_files(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "check_test_execution.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "integration-compat-junit.xml" in run
+        assert "regression-junit.xml" in run
+
+
+class TestUnitJunitWiring:
+    """TAP-7660 round 2: widening the execution guard's walk to tests/unit/
+    (previous class in this file) is worthless unless the unit-test step
+    writes a JUnit XML and the guard step is handed that file. Without this,
+    221 tests/unit/*.py files are collected by CI config but read by the
+    guard as never run, failing CI on every PR (CI run 35030229419)."""
+
+    def test_unit_step_writes_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "tests/unit/")
+        run = _steps(test_job)[idx]["run"]
+        assert "--junitxml=unit-junit.xml" in run, (
+            "the unit-test step must emit its own JUnit XML, matching the "
+            "naming of integration-compat-junit.xml / regression-junit.xml, "
+            "or the execution guard has nothing to read for tests/unit/"
+        )
+
+    def test_execution_guard_reads_unit_junit(self, test_job: dict[str, Any]) -> None:
+        idx = _step_index(test_job, "check_test_execution.py")
+        run = _steps(test_job)[idx]["run"]
+        assert "unit-junit.xml" in run, (
+            "the guard step must be passed unit-junit.xml alongside the "
+            "existing JUnit files, or unit test files are invisible to it "
+            "even though the unit step now writes one"
         )

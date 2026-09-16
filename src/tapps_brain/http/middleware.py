@@ -16,12 +16,15 @@ that unit tests patching ``tapps_brain.http_adapter.get_settings`` and
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import structlog
 
+from tapps_brain.project_resolver import STRICT_REFUSED_AGENT_LITERALS
+
 try:
-    from fastapi import Request, Response  # noqa: TC002
+    from fastapi import HTTPException, Request, Response
     from fastapi.responses import JSONResponse
     from starlette.middleware.base import BaseHTTPMiddleware
 except ImportError as exc:  # pragma: no cover
@@ -118,7 +121,9 @@ def _resolve_tenant_headers(request: Request) -> tuple[str, str, str | None, str
 # Anonymous placeholders Ruling 9 forbids under strict identity: the implicit
 # ``_resolve_tenant_headers`` default ("unknown") and the literal string a
 # caller might send when it has no real identity wired up yet ("default").
-_ANONYMOUS_AGENT_IDS = frozenset({"unknown", "default"})
+# TAP-7295: single definition site, shared with the TAPPS_BRAIN_STRICT_AGENT_ID
+# gate's literal set below.
+_ANONYMOUS_AGENT_IDS = STRICT_REFUSED_AGENT_LITERALS
 
 
 def strict_identity_refusal(agent_id: str) -> dict[str, Any] | None:
@@ -141,6 +146,125 @@ def strict_identity_refusal(agent_id: str) -> dict[str, Any] | None:
         "higher-precedence X-Tapps-Agent) to a stable logical name."
     )
     return {"error": "identity_required", "detail": detail, "message": detail, "agent_id": agent_id}
+
+
+def is_strict_agent_id_enabled() -> bool:
+    """True when ``TAPPS_BRAIN_STRICT_AGENT_ID=1`` for the HTTP tenant gate (TAP-7243).
+
+    Same env var the MCP-side resolver in ``mcp_server/context.py`` already
+    reads for a different check (stdio agent identity); the two are
+    independent flag *readers* over one flag *name* — TAP-7243 forbids a
+    second flag name for the agent axis. Read at call time (not cached) so
+    tests and admin tooling can toggle it per-process, matching
+    :func:`tapps_brain.project_registry._strict_mode_enabled`'s convention
+    for ``TAPPS_BRAIN_STRICT_PROJECTS``.
+    """
+    return os.environ.get("TAPPS_BRAIN_STRICT_AGENT_ID", "").strip() == "1"
+
+
+def resolve_tenant_or_refuse(request: Request) -> tuple[str, str, HTTPException | None]:
+    """Resolve ``(project_id, agent_id, refusal)`` for one HTTP data-plane request.
+
+    Single choke point (TAP-7243, ADR-010) for every ``/v1/*`` handler that
+    touches a tenant store or does a global-scope read: normal
+    ``project_id`` / ``agent_id`` extraction, plus — under
+    ``TAPPS_BRAIN_STRICT_PROJECTS`` and/or ``TAPPS_BRAIN_STRICT_AGENT_ID`` —
+    the tenant-scope gate. One envelope shape (:func:`tapps_brain.errors.tenant_refusal_body`)
+    covers both axes, replacing the pre-TAP-7243 split (data-plane 404
+    ``project_not_registered`` vs the global handler's 403).
+
+    ``project_id`` is the same raw, stripped ``X-Project-Id`` value callers
+    always extracted (``""`` when absent). ``agent_id`` is resolved via the
+    existing X-Tapps-Agent-over-X-Agent-Id precedence with the historical
+    ``"unknown"`` default (:func:`_resolve_tenant_headers` uses the same
+    precedence) — unchanged, so downstream store/cache keying stays
+    byte-identical to base regardless of the flags.
+
+    ``refusal`` is ``None`` when the call may proceed; otherwise a pre-built
+    :class:`~fastapi.HTTPException` the caller need only ``raise``.  A
+    missing ``X-Project-Id`` always refuses (that check predates TAP-7243),
+    but its *body* is the historical ``bad_request`` shape when both flags
+    are unset and the new ``tenant_project_missing`` envelope only when
+    ``TAPPS_BRAIN_STRICT_PROJECTS=1`` — so with both flags unset this
+    function's behaviour, and every caller's, is byte-identical to base.
+    """
+    from tapps_brain.errors import tenant_refusal_body
+    from tapps_brain.project_registry import is_strict_projects_enabled as _strict_projects_enabled
+    from tapps_brain.project_resolver import STRICT_REFUSED_PROJECT_LITERALS
+
+    project_id = (request.headers.get("x-project-id") or "").strip()
+    raw_agent_id = (request.headers.get("x-tapps-agent") or "").strip()
+    if not raw_agent_id:
+        raw_agent_id = (request.headers.get("x-agent-id") or "").strip()
+    agent_id = raw_agent_id or "unknown"
+
+    strict_projects = _strict_projects_enabled()
+
+    if not project_id:
+        if strict_projects:
+            return (
+                project_id,
+                agent_id,
+                HTTPException(
+                    status_code=400,
+                    detail=tenant_refusal_body(
+                        "tenant_project_missing",
+                        "Set the X-Project-Id header to a registered project id.",
+                    ),
+                ),
+            )
+        return (
+            project_id,
+            agent_id,
+            HTTPException(
+                status_code=400,
+                detail={"error": "bad_request", "detail": "X-Project-Id header is required."},
+            ),
+        )
+
+    if strict_projects and project_id in STRICT_REFUSED_PROJECT_LITERALS:
+        return (
+            project_id,
+            agent_id,
+            HTTPException(
+                status_code=400,
+                detail=tenant_refusal_body(
+                    "tenant_project_literal",
+                    f"'{project_id}' is a placeholder/container-profile id, not a tenant "
+                    "project. Set X-Project-Id to your project's registered, approved id.",
+                ),
+            ),
+        )
+
+    if is_strict_agent_id_enabled():
+        if not raw_agent_id:
+            return (
+                project_id,
+                agent_id,
+                HTTPException(
+                    status_code=400,
+                    detail=tenant_refusal_body(
+                        "tenant_agent_missing",
+                        "Set the X-Agent-Id header (or the higher-precedence X-Tapps-Agent) "
+                        "to a stable logical agent name.",
+                    ),
+                ),
+            )
+        if raw_agent_id in STRICT_REFUSED_AGENT_LITERALS:
+            return (
+                project_id,
+                agent_id,
+                HTTPException(
+                    status_code=400,
+                    detail=tenant_refusal_body(
+                        "tenant_agent_literal",
+                        "'unknown' is the anonymous placeholder, not a real agent identity. "
+                        "Set X-Agent-Id (or X-Tapps-Agent) to a stable logical name.",
+                    ),
+                ),
+            )
+
+    return project_id, agent_id, None
 
 
 async def _check_mcp_auth(request: Request, auth_token: str | None) -> JSONResponse | None:
@@ -497,15 +621,20 @@ class McpTenantMiddleware(BaseHTTPMiddleware):
             return auth_err
 
         # --- Tenant headers ---
-        project_id, agent_id, scope, group = _resolve_tenant_headers(request)
-        if not project_id:
+        # TAP-7329: route through the same choke point /v1/* already uses
+        # (resolve_tenant_or_refuse, TAP-7243/ADR-010) instead of only
+        # checking for an empty header. This refuses strict-mode literal
+        # placeholders (e.g. X-Project-Id: default) and the anonymous agent
+        # literal the same way /v1/* does; with both strict flags unset the
+        # refusal shape for a missing header is unchanged in substance
+        # (still a 400 bad_request).
+        project_id, agent_id, tenant_refusal = resolve_tenant_or_refuse(request)
+        if tenant_refusal is not None:
             return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "bad_request",
-                    "detail": "X-Project-Id header is required for /mcp requests.",
-                },
+                status_code=tenant_refusal.status_code,
+                content=tenant_refusal.detail,
             )
+        _, _, scope, group = _resolve_tenant_headers(request)
 
         # --- Profile resolution (STORY-073.2) ---
         resolved_profile, profile_err = _resolve_mcp_profile(request, project_id, agent_id)

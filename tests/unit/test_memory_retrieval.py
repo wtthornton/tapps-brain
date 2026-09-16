@@ -24,7 +24,16 @@ from tests.factories import make_entry
 # Helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 2, 27, 12, 0, 0, tzinfo=UTC)
+# NOTE: must track real wall-clock time, not a hardcoded past date. Composite
+# scoring's confidence term is computed by `MemoryRetriever.search()` against
+# `datetime.now(UTC)` (retrieval.py) -- it has no way to accept an injected
+# clock. A frozen `_NOW` drifts further into the past every day the suite
+# runs, until entries built from `_RECENT`/`_OLD` decay past the
+# `confidence_floor` (pattern half-life 60d) and every entry's effective
+# confidence collapses to the same floor value regardless of its starting
+# confidence -- silently erasing the signal `test_high_confidence_outranks_low`
+# depends on (TAP-7292).
+_NOW = datetime.now(UTC)
 _RECENT = (_NOW - timedelta(days=1)).isoformat()
 _OLD = (_NOW - timedelta(days=90)).isoformat()
 _VERY_OLD = (_NOW - timedelta(days=365)).isoformat()
@@ -125,21 +134,21 @@ class TestMemoryRetriever:
         assert len(results) >= 1
         assert results[0].entry.key == "jwt-auth"
 
-    def test_high_confidence_outranks_low(self) -> None:
-        entries = [
-            _make_entry(
-                "low-conf",
-                "test framework value",
-                confidence=0.3,
-                updated_at=_RECENT,
-            ),
-            _make_entry(
-                "high-conf",
-                "test framework value",
-                confidence=0.9,
-                updated_at=_RECENT,
-            ),
-        ]
+    @pytest.mark.parametrize("insertion_order", ["low-first", "high-first"])
+    def test_high_confidence_outranks_low(self, insertion_order: str) -> None:
+        low_conf = _make_entry(
+            "low-conf",
+            "test framework value",
+            confidence=0.3,
+            updated_at=_RECENT,
+        )
+        high_conf = _make_entry(
+            "high-conf",
+            "test framework value",
+            confidence=0.9,
+            updated_at=_RECENT,
+        )
+        entries = [low_conf, high_conf] if insertion_order == "low-first" else [high_conf, low_conf]
         retriever = MemoryRetriever()
         store = _make_store(entries)
 

@@ -29,6 +29,25 @@ from tapps_brain.tier_normalize import normalize_save_tier
 logger = structlog.get_logger(__name__)
 
 
+def _resolve_mcp_invocation_id() -> str | None:
+    """Resolve the server-controlled invocation id for the active MCP request (TAP-6822).
+
+    Delegates to :func:`tapps_brain.mcp_server.context._current_request_invocation_id`
+    (lazy import — avoids a circular dependency between ``services`` and
+    ``mcp_server``), which reads the transport envelope (``X-Origin-Invocation-Id``
+    header / MCP ``_meta.invocation_id``) rather than any tool-call argument.
+    Returns ``None`` when no request context is active or the resolver is
+    unavailable (e.g. unit tests without an MCP server context) — never
+    fabricates or inherits a value.
+    """
+    try:
+        from tapps_brain.mcp_server.context import _current_request_invocation_id
+
+        return _current_request_invocation_id()
+    except Exception:  # nosec B110 — resolver unavailable in some test contexts
+        return None
+
+
 def _save_rejection(result: Any) -> dict[str, Any] | None:
     """If ``MemoryStore.save`` returned an error dict, normalise it for callers."""
     if isinstance(result, dict) and result.get("error"):
@@ -82,8 +101,15 @@ def brain_remember(
     Pass ``skip_consolidation=True`` to save the entry without triggering the
     auto-consolidation check — the escape hatch for a long, self-contained
     artifact that must not be folded into a merged summary.
+
+    TAP-6822: the saved entry's ``run_id`` provenance column is resolved
+    server-side from the active MCP request's transport envelope (see
+    :func:`_resolve_mcp_invocation_id`) — there is no ``run_id`` parameter
+    here for a model to set via tool-call arguments. Absent invocation
+    context (e.g. stdio without ``_meta``), ``run_id`` stays ``None``.
     """
     with start_mcp_tool_span("brain_remember", extra_attributes={"memory.tier": tier}):
+        run_id = _resolve_mcp_invocation_id()
         key = _content_key(fact)
 
         # TAP-989: explicit agent_scope wins over legacy share / share_with.
@@ -118,6 +144,9 @@ def brain_remember(
             # Escape hatch for callers saving a self-contained artifact that
             # must not be merged into a neighbour's summary.
             "skip_consolidation": skip_consolidation,
+            # TAP-6822: server-resolved invocation id, propagated by
+            # store.save() into both the private row and any hive copy.
+            "run_id": run_id,
         }
         if memory_group:
             save_kwargs["memory_group"] = memory_group
@@ -380,6 +409,19 @@ def brain_recall(
         )
         retriever = MemoryRetriever(scoring_config=scoring_config)
         total_entries = len(entries)
+        # TAP-7338: real ts_rank / vector-similarity magnitude from the fused
+        # search, when the store exposes it — see
+        # _store_query.py::search / store.last_search_relevance. Absent for
+        # test doubles and older PrivateBackend implementations, which keep
+        # the exact pre-TAP-7338 rank-position scoring below.
+        # Type-check rather than trust getattr/or-fallback: an unspecced
+        # MagicMock auto-vivifies `last_search_relevance` into a further
+        # mock rather than raising AttributeError or returning None, so
+        # `getattr(..., None) or {}` never falls through to `{}`.
+        _raw_relevance_map = getattr(store, "last_search_relevance", None)
+        relevance_by_key: dict[str, float] = (
+            _raw_relevance_map if isinstance(_raw_relevance_map, dict) else {}
+        )
         candidates: list[tuple[dict[str, Any], float]] = []
         for rank_index, entry in enumerate(entries):
             item: dict[str, Any]
@@ -420,7 +462,13 @@ def brain_recall(
                 stale_reason = getattr(entry, "stale_reason", None)
                 if stale_reason:
                     item["stale_reason"] = stale_reason
-            item["score"] = retriever.score_by_rank(entry, rank_index, total_entries, now)
+            item["score"] = retriever.score_by_rank(
+                entry,
+                rank_index,
+                total_entries,
+                now,
+                relevance_raw=relevance_by_key.get(entry.key),
+            )
             candidates.append((item, item["score"]))
 
         candidates.sort(key=lambda pair: pair[1], reverse=True)
@@ -428,15 +476,31 @@ def brain_recall(
 
 
 def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dict[str, Any]:
-    """Archive-then-delete a memory entry by key.
+    """Archive-then-delete a memory entry by key, reaping its Hive copy too.
 
     Both public surfaces (the ``brain_forget`` MCP tool and ``POST /v1/forget``)
     promise the entry is "not permanently deleted", so the row is written to
     the ``gc_archive`` table (same recoverability model as GC eviction) before
     it is removed from the active store.
 
-    Returns ``{"forgotten": True, "key": key}`` on success or
+    TAP-6816: a memory propagated to the Hive (``agent_scope`` other than
+    ``"private"``) leaves a copy there that survives forgetting the private
+    row unless it is also archived. ``_reap_hive_copy`` does that via the
+    Hive backend's own archive-shaped method (never a raw ``DELETE``) across
+    every namespace this agent's recall would search, so absence here means
+    absence from Hive search/recall too, not just this row.
+
+    Returns ``{"forgotten": True, "key": key, "hive_forgotten": bool,
+    "hive_reap": "archived" | "absent" | "failed"}`` on success or
     ``{"forgotten": False, "reason": "not_found"}`` when the key is unknown.
+    ``hive_forgotten``/``hive_reap`` are additive: existing fields never
+    change shape or value for an existing case. ``hive_reap`` is the honest
+    signal — "archived" means a live Hive copy was found and tombstoned,
+    "absent" means there was never one to reap (no Hive backend, no copy, or
+    already archived), and "failed" means a Hive copy may still exist and be
+    recallable because the archive attempt itself raised. A caller that only
+    reads ``hive_forgotten`` cannot tell "absent" from "failed" apart — both
+    are ``False`` — so use ``hive_reap`` to distinguish them.
     """
     with start_mcp_tool_span("brain_forget"):
         entry = store.get(key)
@@ -444,7 +508,13 @@ def brain_forget(store: Any, project_id: str, agent_id: str, *, key: str) -> dic
             return {"forgotten": False, "reason": "not_found"}
         _archive_forgotten_entry(getattr(store, "_persistence", None), entry, key)
         store.delete(key)
-        return {"forgotten": True, "key": key}
+        hive_forgotten, hive_reap = _reap_hive_copy(store, key)
+        return {
+            "forgotten": True,
+            "key": key,
+            "hive_forgotten": hive_forgotten,
+            "hive_reap": hive_reap,
+        }
 
 
 def _archive_forgotten_entry(backend: Any, entry: Any, key: str) -> None:
@@ -458,6 +528,62 @@ def _archive_forgotten_entry(backend: Any, entry: Any, key: str) -> None:
         return
     if not archive(entry):
         logger.warning("brain_forget.archive_failed", key=key)
+
+
+def _reap_hive_copy(store: Any, key: str) -> tuple[bool, str]:
+    """Archive *key*'s Hive copy, if any, across every namespace it could live in.
+
+    TAP-6816: mirrors the exact namespace set ``RecallOrchestrator``/
+    ``recall.py`` search on this agent's behalf (``universal`` + the agent's
+    Hive profile namespace + every Hive group the agent belongs to) so
+    "reaped" and "no longer recallable via Hive search" are the same claim.
+    Best-effort per namespace — one failed lookup does not block reaping the
+    others, and no hive backend / no hive copy is a normal, non-error outcome
+    (forget stays idempotent per acceptance box b5).
+
+    Returns ``(hive_forgotten, hive_reap)``. ``hive_reap`` is "archived" when
+    at least one namespace's copy was tombstoned, "failed" when nothing was
+    archived AND at least one namespace's archive attempt raised (a Hive copy
+    may still be live and recallable), and "absent" for every other
+    non-error case (no backend, no ``archive_entry``, no copy anywhere, or
+    every copy was already archived).
+    """
+    hive_store = getattr(store, "_hive_store", None)
+    archive = getattr(hive_store, "archive_entry", None)
+    if not callable(archive):
+        return False, "absent"
+
+    profile = getattr(store, "_profile", None)
+    agent_profile = getattr(profile, "name", None) or "repo-brain"
+    project_id = getattr(store, "_project_id", None) or ""
+    hive_agent_id = getattr(store, "_hive_agent_id", None) or ""
+
+    namespaces = ["universal", agent_profile]
+    get_agent_groups = getattr(hive_store, "get_agent_groups", None)
+    if callable(get_agent_groups):
+        try:
+            for group in get_agent_groups(hive_agent_id, project_id):
+                if group not in namespaces:
+                    namespaces.append(group)
+        except Exception:
+            logger.warning("brain_forget.hive_groups_lookup_failed", key=key, exc_info=True)
+
+    reaped = False
+    errored = False
+    for namespace in namespaces:
+        try:
+            if archive(namespace, key):
+                reaped = True
+        except Exception:
+            errored = True
+            logger.warning(
+                "brain_forget.hive_archive_failed", key=key, namespace=namespace, exc_info=True
+            )
+    if reaped:
+        return True, "archived"
+    if errored:
+        return False, "failed"
+    return False, "absent"
 
 
 def brain_learn_success(
@@ -2447,8 +2573,9 @@ async def async_brain_forget(
 ) -> dict[str, Any]:
     """Async-native counterpart of :func:`brain_forget`.
 
-    Same return shape and same archive-then-delete semantics; the Postgres
-    writes go through the async backend when one is wired.
+    Same return shape (including ``hive_reap``) and same archive-then-delete
+    semantics; the Postgres writes go through the async backend when one is
+    wired.
     """
     import asyncio
     import inspect
@@ -2470,7 +2597,20 @@ async def async_brain_forget(
         if backend is not None:
             await asyncio.to_thread(_archive_forgotten_entry, backend, entry, key)
     await async_store.delete(key)
-    return {"forgotten": True, "key": key}
+    # TAP-6816: same Hive-reap obligation as the sync path. The Hive backend
+    # is psycopg-sync regardless of which private backend fronts this async
+    # store, so the reap itself always runs in a worker thread.
+    sync_store = getattr(async_store, "_store", None)
+    hive_forgotten = False
+    hive_reap = "absent"
+    if sync_store is not None and getattr(sync_store, "_hive_store", None) is not None:
+        hive_forgotten, hive_reap = await asyncio.to_thread(_reap_hive_copy, sync_store, key)
+    return {
+        "forgotten": True,
+        "key": key,
+        "hive_forgotten": hive_forgotten,
+        "hive_reap": hive_reap,
+    }
 
 
 async def async_brain_learn_success(

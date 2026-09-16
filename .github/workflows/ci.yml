@@ -67,6 +67,10 @@ jobs:
       # is the documented override for CI/dev. Production uses tapps_runtime.
       TAPPS_BRAIN_DATABASE_URL: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
       TAPPS_TEST_POSTGRES_DSN: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
+      # TAP-6829: tests/test_http_mcp_parity.py module-skips itself when this
+      # is unset ("live Postgres Hive" gate) — same DB, Hive has no separate
+      # DSN in this single-Postgres deployment (see CLAUDE.md's Hive table).
+      TAPPS_BRAIN_HIVE_DSN: postgresql://tapps:tapps@localhost:5432/tapps_brain_dev
       TAPPS_BRAIN_ALLOW_PRIVILEGED_ROLE: "1"
       HF_DATASETS_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
@@ -115,7 +119,9 @@ jobs:
       # covered by the e2e Docker stack in `hive-smoke.yml`; widened triggers
       # there ensure any change to `mcp_server/`, `http/`, or `services/`
       # exercises it.
-      - run: uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+      - run: >-
+          uv run pytest tests/unit/ -v --tb=short -m "not benchmark"
+          --junitxml=unit-junit.xml
       # Full integration + compat suites (TAP-5459, closing TAP-2803).
       #
       # This step used to name 19 mock-based files explicitly, excluding every
@@ -138,10 +144,52 @@ jobs:
       # Anything genuinely unrunnable here must skip behind an explicit guard
       # in the test itself, so the reason travels with the test rather than
       # living in this file.
+      #
+      # `tests/*.py` (TAP-6829): test files placed directly at the `tests/`
+      # root were collected by neither this step nor the unit-test step
+      # above — `testpaths = ["tests"]` in pyproject.toml only applies when
+      # no path argument is given, and both pytest invocations always give
+      # one. This is the step with the live Postgres + Hive DSN several of
+      # them need (tenancy/RLS/migration/retention suites); the shell glob
+      # means a new root file is picked up automatically, so the class of
+      # bug (a file silently never run by CI) cannot recur here. `scripts/
+      # check_test_collection.py` (next step) is the guard that makes that
+      # a checked property instead of a hopeful one.
+      #
       - name: Integration + compat tests (live Postgres)
         run: >-
           uv run pytest -q --tb=short -m "not benchmark"
-          tests/integration/ tests/compat/
+          --junitxml=integration-compat-junit.xml
+          tests/integration/ tests/compat/ tests/*.py
+      # `tests/regression/test_brain_recall_shape.py` (TAP-7660): the
+      # collection guard was widened to walk every subdirectory of `tests/`,
+      # and this file — a plain model-shape test with no DB dependency — was
+      # the one real file it surfaced as uncollected. Named as a literal file
+      # here (its own step, deliberately not folded into the step above) so
+      # it is exercised without re-litigating the file-list ban that step's
+      # comment and `test_no_per_file_integration_allowlist_remains` enforce.
+      # Naming the *directory* instead would silently swallow any future file
+      # dropped into `tests/regression/`, defeating the guard this same
+      # ticket adds — see `TestNegativeControlNewRegressionFileStillCaught`
+      # in `tests/unit/test_ci_workflow_gate.py`.
+      - name: Regression tests (TAP-7660)
+        run: >-
+          uv run pytest -q --tb=short
+          --junitxml=regression-junit.xml
+          tests/regression/test_brain_recall_shape.py
+      - name: Test collection guard (TAP-6829)
+        run: uv run python scripts/check_test_collection.py
+      # Runtime counterpart to the static guard above (TAP-6829): that guard
+      # only proves ci.yml *names* every tests/ file as a path argument.
+      # Under `-q` the step above prints no `collected N items` line and no
+      # test ids, so a file named in the command but never actually reaching
+      # the collector (stale glob, swallowed conftest error) would go
+      # undetected. This reads the JUnit XML the steps above just produced
+      # and fails if any file has no executed testcase.
+      - name: Test execution guard (TAP-6829)
+        run: >-
+          uv run python scripts/check_test_execution.py
+          integration-compat-junit.xml regression-junit.xml unit-junit.xml
 
 # Removed in the 2026-04-27 cost-discipline pass:
 #   - eval-golden, benchmark-smoke (nightly cron via `schedule:`)

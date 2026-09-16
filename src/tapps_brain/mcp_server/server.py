@@ -205,6 +205,7 @@ _MCP_INSTRUCTIONS = (
 _OPERATOR_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "maintenance_consolidate",
+        "maintenance_decay_learnings",
         "maintenance_gc",
         "maintenance_stale",
         "tapps_brain_health",

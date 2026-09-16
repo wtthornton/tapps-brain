@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import collections
 import hmac
+import logging
 import os
 import threading
 import time
@@ -28,6 +29,15 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 logger = structlog.get_logger(__name__)
+
+# Fallback channel for the per-tenant-verify error below.  ``structlog`` is
+# configured process-wide — the MCP ASGI sub-app mounted at ``/mcp`` by the
+# same process calls ``structlog.configure(wrapper_class=..filtering_bound_logger(CRITICAL))``
+# at startup, which silently raises the minimum level for *every* structlog
+# logger in the process, including this one.  A plain ``logging`` call is a
+# separate config surface, so it still reaches stdout/docker logs even when
+# structlog has been silenced elsewhere in-process.
+_stdlib_logger = logging.getLogger(__name__)
 
 _BEARER_PREFIX = "bearer "
 
@@ -233,6 +243,16 @@ def require_data_plane_auth(request: Request) -> None:
                 "auth.per_tenant_verify_error",
                 project_id=project_id,
                 detail="token verification failed due to backend error; failing closed",
+                exc_info=True,
+            )
+            # Redundant stdlib emit: see the module-level comment on
+            # ``_stdlib_logger`` — this is the only channel guaranteed not to
+            # be silenced by the co-mounted MCP server's global structlog
+            # reconfiguration.
+            _stdlib_logger.error(
+                "auth.per_tenant_verify_error project_id=%s: %s",
+                project_id,
+                exc,
                 exc_info=True,
             )
             raise HTTPException(
