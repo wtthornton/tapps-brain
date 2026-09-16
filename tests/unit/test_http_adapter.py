@@ -392,6 +392,10 @@ class TestReadyEndpointDbHealthy:
             # token-verification check — a project with no per-tenant token
             # legitimately returns None, which is "ok" for readiness.
             patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None),
+            # TAP-7682 round 5: isolate from real param-set discovery I/O —
+            # dsn is a non-resolvable mock host, and the discovery-query
+            # exception is no longer swallowed (that was the round-5 bug).
+            patch("tapps_brain.http.auth._distinct_token_param_sets", return_value=[], create=True),
             _client(settings) as c,
         ):
             resp = c.get("/ready")
@@ -419,6 +423,7 @@ class TestReadyEndpointDbHealthy:
                 return_value=mock_status,
             ),
             patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None),
+            patch("tapps_brain.http.auth._distinct_token_param_sets", return_value=[], create=True),
             _client(settings) as c,
         ):
             body = c.get("/ready").json()
@@ -468,6 +473,13 @@ class TestReadyEndpointTokenVerification:
             mock_verify = stack.enter_context(
                 patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
             )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
             c = stack.enter_context(_client(settings))
             c.get("/ready")
         assert mock_verify.called
@@ -487,6 +499,13 @@ class TestReadyEndpointTokenVerification:
             _enter_healthy_db_patches(stack, mock_status)
             stack.enter_context(
                 patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
             )
             c = stack.enter_context(_client(settings))
             resp = c.get("/ready")
@@ -514,6 +533,13 @@ class TestReadyEndpointTokenVerification:
             stack.enter_context(
                 patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
             )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
             c = stack.enter_context(_client(settings))
             before_resp = c.get("/ready")
         assert before_resp.status_code == 200
@@ -530,6 +556,13 @@ class TestReadyEndpointTokenVerification:
                 patch(
                     "tapps_brain.http.auth._verify_per_tenant_token",
                     side_effect=ImportError("argon2-cffi is not installed"),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
                 )
             )
             c = stack.enter_context(_client(settings))
@@ -580,6 +613,13 @@ class TestReadyEndpointTokenVerification:
                     return_value=False,
                 )
             )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
             c = stack.enter_context(_client(settings))
             resp = c.get("/ready")
         assert resp.status_code == 200
@@ -618,6 +658,13 @@ class TestReadyEndpointTokenVerification:
             stack.enter_context(
                 patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
             )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
             c = stack.enter_context(_client(settings))
             before_resp = c.get("/ready")
         assert before_resp.status_code == 200
@@ -637,6 +684,13 @@ class TestReadyEndpointTokenVerification:
                 patch(
                     "argon2.PasswordHasher.verify",
                     side_effect=RuntimeError("libargon2 native call failed"),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
                 )
             )
             c = stack.enter_context(_client(settings))
@@ -806,13 +860,17 @@ class TestReadyEndpointTokenVerificationNoSwallow:
 
     def test_malformed_row_skipped_valid_row_still_verified(self) -> None:
         """One malformed parameter row must not hard-degrade readiness while
-        a valid row alongside it is still self-tested.
+        a valid, distinct row alongside it is still self-tested.
 
         ``(0, 2, 8)`` is malformed: memory_cost 0 is below the RFC 9106
         floor of ``8 * parallelism`` (64), the exact shape that raised
         ``HashingError: Memory cost is too small`` when fed straight into
-        ``PasswordHasher`` unvalidated. ``(65536, 3, 4)`` is the pinned,
-        known-good set and must still be verified.
+        ``PasswordHasher`` unvalidated. ``(102400, 2, 8)`` is a valid,
+        legacy argon2-cffi default distinct from the pinned (65536, 3, 4)
+        set (TAP-7682 round 5: the pinned triple itself must not be reused
+        here, since a valid discovered row equal to the pinned one is
+        deduplicated against it rather than double-counted -- see
+        ``TestReadyEndpointTokenVerificationDedup`` below).
         """
         mock_status = MagicMock()
         mock_status.current_version = 5
@@ -826,7 +884,7 @@ class TestReadyEndpointTokenVerificationNoSwallow:
             stack.enter_context(
                 patch(
                     "tapps_brain.http.auth._distinct_token_param_sets",
-                    return_value=[(0, 2, 8), (65536, 3, 4)],
+                    return_value=[(0, 2, 8), (102400, 2, 8)],
                     create=True,
                 )
             )
@@ -838,8 +896,8 @@ class TestReadyEndpointTokenVerificationNoSwallow:
         )
         assert body["status"] == "ready"
         assert body["checks"]["token_verification"] == "ok"
-        # pinned self-test (1) + the one valid discovered set (1) = 2;
-        # the malformed (0, 2, 8) row must not count.
+        # pinned self-test (1) + the one valid, distinct discovered set (1)
+        # = 2; the malformed (0, 2, 8) row must not count.
         assert body["checks"]["token_verification_param_sets_checked"] == 2
 
     def test_coverage_count_present_for_zero_and_populated_sets(self) -> None:
@@ -889,6 +947,157 @@ class TestReadyEndpointTokenVerificationNoSwallow:
             populated_body["checks"]["token_verification_param_sets_checked"]
             > zero_body["checks"]["token_verification_param_sets_checked"]
         )
+
+
+class TestReadyEndpointTokenVerificationRound5:
+    """TAP-7682 round 5: three defects survived four rounds of review.
+
+    1. The round-4 ``psycopg.OperationalError`` exemption on discovery
+       failures swallows exactly the outage it most needs to surface (a
+       ``statement_timeout`` on the discovery query raises
+       ``QueryCanceled``, an ``OperationalError`` subclass) -- and
+       ``_probe_db`` does not cover it, since it is a different query on a
+       different, separately-cached connection.
+    2. ``param_sets_checked`` double-counted a discovered stored set that
+       happens to match the pinned (65536, 3, 4) triple -- the argon2-cffi
+       23.1.0+ default, so a common case in practice.
+    3. An all-malformed discovery result (rows returned, none valid) still
+       reported ok, covering zero of the parameter sets production actually
+       stores -- the same failure shape round 4 fixed one level up.
+    """
+
+    def test_operational_error_subclass_from_discovery_reports_non_ok(self) -> None:
+        """A ``QueryCanceled`` (an ``OperationalError`` subclass) raised by
+        discovery must flip readiness non-ok, not be swallowed as "no extra
+        sets". MUST FAIL on the pre-fix tree, where this exact subclass was
+        exempted and the probe reported ok.
+        """
+        import psycopg
+
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    side_effect=psycopg.errors.QueryCanceled(
+                        "canceling statement due to statement timeout"
+                    ),
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 503, (
+            f"expected 503/degraded when discovery raises an OperationalError "
+            f"subclass; got {resp.status_code} body={body}"
+        )
+        assert body["status"] == "degraded"
+        assert body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in body["checks"]["token_verification"]
+
+    def test_discovered_set_matching_pinned_triple_not_double_counted(self) -> None:
+        """Discovery returning exactly the pinned (65536, 3, 4) triple must
+        count as one distinct parameter set, not two. MUST FAIL on the
+        pre-fix tree, where this reports 2.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[(65536, 3, 4)],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 200
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+        assert body["checks"]["token_verification_param_sets_checked"] == 1
+
+    def test_all_malformed_discovered_rows_reports_non_ok(self) -> None:
+        """Discovery returning only invalid rows must flip readiness
+        non-ok -- the probe has then covered zero of the parameter sets
+        production actually stores, while reporting ok. MUST FAIL on the
+        pre-fix tree, where this reports ok.
+
+        ``(1, 3, 4)`` fails the RFC 9106 ``memory_cost >= 8 * parallelism``
+        rule (1 < 32).
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[(1, 3, 4)],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 503, (
+            f"an all-malformed discovery result must not report ok; got "
+            f"{resp.status_code} body={body}"
+        )
+        assert body["status"] == "degraded"
+        assert body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in body["checks"]["token_verification"]
+
+    def test_empty_discovery_stays_ok_boundary(self) -> None:
+        """Boundary control: discovery legitimately returning zero rows
+        (no per-tenant tokens stored at all) must stay ok -- the
+        discriminator for defect 3 is "rows returned but none usable", not
+        "no sets checked". Must stay green on both the pre-fix and post-fix
+        tree; if this goes red, the defect-3 fix over-fires.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 200
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+        assert body["checks"]["token_verification_param_sets_checked"] == 1
 
 
 # ---------------------------------------------------------------------------

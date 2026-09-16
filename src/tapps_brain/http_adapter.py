@@ -482,6 +482,10 @@ _READINESS_PROBE_TOKEN = "readiness-probe-not-a-real-credential"
 # means the hashing runtime itself is broken.
 _READINESS_PROBE_SELF_TEST_SECRET = "tapps-brain-readiness-self-test-v1"
 _READINESS_PROBE_SELF_TEST_HASH = "$argon2id$v=19$m=65536,t=3,p=4$nJ2Yle7D2j/YnNE8b0PVJg$y5v488i2MBrJgbQYhy+3188bRc84npkGjP6HFX52Xts"
+# The (memory_cost, time_cost, parallelism) triple encoded in the pinned hash
+# above -- argon2-cffi's default from 23.1.0 onward, so a discovered stored
+# set commonly matches it exactly (TAP-7682 round 5).
+_READINESS_PROBE_SELF_TEST_PARAMS = (65536, 3, 4)
 
 _TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str, int]]] = {}
 
@@ -540,9 +544,19 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
 
     ``param_sets_checked`` counts every argon2 parameter set actually
     self-tested (the pinned set plus any distinct stored set that passed
-    :func:`_is_valid_argon2_param_set`) so an operator can tell "verified 2
-    parameter sets" from "verified none" instead of inferring coverage from
-    a bare "ok" (TAP-7682 round 4).
+    :func:`_is_valid_argon2_param_set`), deduplicated by parameter triple
+    against the pinned set, so an operator can tell "verified 2 parameter
+    sets" from "verified none" instead of inferring coverage from a bare
+    "ok" (TAP-7682 round 4). A stored set whose triple matches the pinned
+    one is not counted twice (TAP-7682 round 5).
+
+    If discovery returns one or more rows and *none* of them pass
+    :func:`_is_valid_argon2_param_set`, the probe reports non-ok -- an
+    all-malformed table means this probe has covered zero of the parameter
+    sets production actually stores, which must not read as "ok" any more
+    than a discovery-query failure should (TAP-7682 round 5). Discovery
+    legitimately returning zero rows is a different case -- no per-tenant
+    tokens are stored at all, so there is nothing to cover -- and stays ok.
     """
     if not dsn:
         return True, "skipped (no DSN configured)", 0
@@ -550,14 +564,14 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
     cached = _TOKEN_VERIFY_PROBE_CACHE.get(dsn)
     if cached is not None and now < cached[0]:
         return cached[1]
-    param_sets_checked = 0
+    checked_param_sets: set[tuple[int, int, int]] = set()
     try:
         from argon2 import PasswordHasher
 
         from tapps_brain.http.auth import _distinct_token_param_sets, _verify_per_tenant_token
 
         PasswordHasher().verify(_READINESS_PROBE_SELF_TEST_HASH, _READINESS_PROBE_SELF_TEST_SECRET)
-        param_sets_checked += 1
+        checked_param_sets.add(_READINESS_PROBE_SELF_TEST_PARAMS)
 
         # TAP-7682 round 3: the pinned hash above is fixed at m=65536,t=3,p=4
         # and never exercises the parameter sets production actually stores.
@@ -572,35 +586,28 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
         # cost stays bounded regardless of tenant count) in addition to the
         # pinned hash above.
         #
-        # TAP-7682 round 4: a discovery-query failure must SURFACE, not be
-        # swallowed into "no extra sets" -- a probe that could not enumerate
-        # what it is supposed to cover must not report "ok". The one
-        # exception is a bare DB-connectivity failure
-        # (``psycopg.OperationalError``, e.g. unreachable host, pool
-        # exhaustion/timeout): that outage is already reported by the
-        # sibling ``_probe_db`` check, so re-raising it here would only
-        # double-count the same outage under this check's name, not add
-        # coverage. Anything else -- a missing-migration schema error, a
-        # role lacking SELECT on ``project_profiles``, a ``::int`` cast
-        # error on one unexpected row -- propagates to the outer except
+        # TAP-7682 round 5: a discovery-query failure must SURFACE
+        # unconditionally, not be swallowed into "no extra sets" -- a probe
+        # that could not enumerate what it is supposed to cover must not
+        # report "ok". Round 4 carved out an exemption for
+        # ``psycopg.OperationalError`` on the theory that it is a bare
+        # DB-connectivity failure already reported by the sibling
+        # ``_probe_db`` check. That is false: ``psycopg.errors.QueryCanceled``
+        # (a ``statement_timeout`` on this exact discovery query),
+        # ``TooManyConnections``, and ``DeadlockDetected`` are all
+        # ``OperationalError`` subclasses that ``_probe_db`` -- a different
+        # query on a different, separately-cached connection -- does not
+        # cover. Every discovery failure now propagates to the outer except
         # below, same as any other probe failure.
-        try:
-            extra_param_sets = _distinct_token_param_sets(dsn)
-        except Exception as discovery_exc:
-            import psycopg
-
-            if not isinstance(discovery_exc, psycopg.OperationalError):
-                raise
-            logger.warning(
-                "token_verification_probe.param_set_discovery_unreachable", exc_info=True
-            )
-            extra_param_sets = []
+        extra_param_sets = _distinct_token_param_sets(dsn)
+        malformed_count = 0
         for memory_cost, time_cost, parallelism in extra_param_sets:
             # TAP-7682 round 4: validate before constructing the hasher so
             # one malformed stored row (e.g. a truncated regex match) cannot
             # hard-degrade readiness on its own -- skip it and keep checking
             # the remaining discovered sets.
             if not _is_valid_argon2_param_set(memory_cost, time_cost, parallelism):
+                malformed_count += 1
                 logger.warning(
                     "token_verification_probe.malformed_param_set_skipped",
                     memory_cost=memory_cost,
@@ -608,15 +615,28 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
                     parallelism=parallelism,
                 )
                 continue
-            ph = PasswordHasher(
-                memory_cost=memory_cost, time_cost=time_cost, parallelism=parallelism
+            triple = (memory_cost, time_cost, parallelism)
+            if triple not in checked_param_sets:
+                ph = PasswordHasher(
+                    memory_cost=memory_cost, time_cost=time_cost, parallelism=parallelism
+                )
+                self_test_hash = ph.hash(_READINESS_PROBE_SELF_TEST_SECRET)
+                ph.verify(self_test_hash, _READINESS_PROBE_SELF_TEST_SECRET)
+                checked_param_sets.add(triple)
+
+        # TAP-7682 round 5: rows were returned but every one was malformed --
+        # this probe has covered zero of the parameter sets production
+        # actually stores, the same failure shape as a discovery-query
+        # failure. An empty ``extra_param_sets`` (no stored tokens at all)
+        # must stay ok -- the discriminator is "rows returned but none
+        # usable", not "no sets checked".
+        if extra_param_sets and malformed_count == len(extra_param_sets):
+            raise ValueError(
+                f"all {malformed_count} discovered argon2 parameter set(s) failed validation"
             )
-            self_test_hash = ph.hash(_READINESS_PROBE_SELF_TEST_SECRET)
-            ph.verify(self_test_hash, _READINESS_PROBE_SELF_TEST_SECRET)
-            param_sets_checked += 1
 
         _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
-        result: tuple[bool, str, int] = (True, "ok", param_sets_checked)
+        result: tuple[bool, str, int] = (True, "ok", len(checked_param_sets))
     except Exception as exc:
         err_str = str(exc)
         try:
@@ -633,7 +653,7 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
                 err_str = err_str.replace(parsed.password, "[pass]")
         except Exception:
             err_str = "token verification probe failed"
-        result = (False, f"token_verification_error: {err_str}", param_sets_checked)
+        result = (False, f"token_verification_error: {err_str}", len(checked_param_sets))
     _TOKEN_VERIFY_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
     return result
 
