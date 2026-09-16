@@ -57,6 +57,27 @@ echo "    Operator MCP : ${TAPPS_OPERATOR_MCP_PORT}"
 pass() { echo "  [PASS] $*"; PASS=$((PASS + 1)); }
 fail() { echo "  [FAIL] $*"; FAIL=$((FAIL + 1)); }
 
+# Dump whatever a failing tapps-brain-http tells us: docker's view of the
+# container plus the /healthz body itself (status + JSON), so a startup
+# failure is diagnosable from the CI log alone, without re-running locally.
+dump_brain_http_diagnostics() {
+    echo ""
+    echo "--- docker compose ps ---"
+    ${COMPOSE} ps 2>&1 || true
+    echo ""
+    echo "--- GET /healthz (tapps-brain-http, port ${ADAPTER_PORT}) ---"
+    local healthz_body healthz_status
+    healthz_body=$(mktemp)
+    healthz_status=$(curl -s -o "$healthz_body" -w "%{http_code}" \
+        "http://localhost:${ADAPTER_PORT}/healthz" 2>/dev/null || echo "000")
+    echo "HTTP status: ${healthz_status}"
+    cat "$healthz_body" 2>/dev/null || echo "(no body captured)"
+    echo ""
+    rm -f "$healthz_body"
+    echo "--- docker logs tapps-brain-http (tail -80) ---"
+    ${COMPOSE} logs tapps-brain-http 2>&1 | tail -80 || true
+}
+
 wait_for_url() {
     local url="$1"
     local label="$2"
@@ -173,7 +194,17 @@ write_smoke_env
 echo "==> Building and starting unified brain stack…"
 # `up -d` brings up tapps-brain-db → tapps-brain-migrate (one-shot) →
 # tapps-brain-http → tapps-visual, respecting the depends_on health gates.
-${COMPOSE} up -d --build
+# tapps-visual's `depends_on: tapps-brain-http: condition: service_healthy`
+# means compose itself fails this step — under `set -e`, before the
+# wait_for_url probes below ever run — if tapps-brain-http's own Docker
+# HEALTHCHECK goes unhealthy. That is the actual failure mode this guards:
+# without it, a healthcheck failure exits here with zero diagnostics.
+if ! ${COMPOSE} up -d --build; then
+    echo ""
+    echo "ERROR: docker compose up failed — a service did not become healthy."
+    dump_brain_http_diagnostics
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Wait
@@ -186,8 +217,8 @@ echo "==> Waiting for health probes…"
 # Wait on /healthz so smoke does not race a still-warming DB/MCP stack.
 wait_for_url "http://localhost:${ADAPTER_PORT}/healthz" "tapps-brain-http /healthz" || {
     echo ""
-    echo "ERROR: tapps-brain-http did not become healthy. Container logs:"
-    ${COMPOSE} logs tapps-brain-http | tail -40
+    echo "ERROR: tapps-brain-http did not become healthy."
+    dump_brain_http_diagnostics
     exit 1
 }
 
