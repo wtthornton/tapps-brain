@@ -8,8 +8,9 @@ description: >-
 mcp_tools:
   - tapps_research
   - tapps_lookup_docs
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-research v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-research v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Research using TappsMCP's unified front door (ADR-0030):

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-// BEGIN: tapps-skill-asset orchestration-prompt/scripts/check-learnings-size.js v3.12.83
+// BEGIN: tapps-skill-asset orchestration-prompt/scripts/check-learnings-size.js v3.12.89
 // Measure a learnings.md file against the byte/bullet/per-bullet ceilings and
 // the required trailing-date house style, mirroring nlt-orchestrator's
 // check-learnings-size.js (TAP-7078 box 6). See

@@ -6,8 +6,9 @@ description: >-
   Testing-focused TAPPS workflow: playbook, pytest docs, diff impact, and validation. Use when adding tests, fixing test gaps, or validating affected tests after refactors.
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__nlt-build__tapps_domain_playbook mcp__nlt-build__tapps_lookup_docs mcp__nlt-build__tapps_quick_check mcp__nlt-build__tapps_validate_changed mcp__nlt-build__tapps_checklist mcp__nlt-build__tapps_diff_impact mcp__nlt-build__tapps_call_graph
 argument-hint: "[file-path or scope]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-domain-testing v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-domain-testing v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Domain playbook workflow — same quality gate as the standard TAPPS pipeline.

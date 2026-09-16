@@ -10,8 +10,9 @@ mcp_tools:
   - tapps_validate_changed
   - tapps_checklist
   - tapps_score_file
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-domain-frontend v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-domain-frontend v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Domain playbook workflow — same quality gate as the standard TAPPS pipeline.

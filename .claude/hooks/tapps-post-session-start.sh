@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-version: 3.12.89
 # tapps-mcp-hook-content-sha: 2aae887b
 # TappsMCP PostToolUse hook — session-start sentinel writer.
 # Writes .session-start-done-<SID> ONLY when tapps_session_start actually

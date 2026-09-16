@@ -14,7 +14,7 @@ allowed-tools: >-
   mcp__nlt-project-docs__docs_check_completeness
 argument-hint: "[style: minimal|standard|comprehensive]"
 ---
-<!-- BEGIN: tapps-skill tapps-docs-bootstrap v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-docs-bootstrap v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Bootstrap project documentation end-to-end:

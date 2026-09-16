@@ -8,8 +8,9 @@ description: >-
   up TappsMCP in a new or existing project for the first time.
 allowed-tools: mcp__nlt-setup__tapps_init mcp__nlt-setup__tapps_doctor
 argument-hint: "[project-root]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-init v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-init v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Bootstrap TappsMCP in a new or existing project:

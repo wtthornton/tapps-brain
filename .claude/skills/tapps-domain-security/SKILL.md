@@ -6,8 +6,9 @@ description: >-
   Security-focused TAPPS workflow: playbook, library docs, security scan, and CVE check. Use when implementing auth, secrets, input validation, or pre-release security passes.
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__nlt-build__tapps_domain_playbook mcp__nlt-build__tapps_lookup_docs mcp__nlt-build__tapps_quick_check mcp__nlt-build__tapps_validate_changed mcp__nlt-build__tapps_checklist mcp__nlt-build__tapps_security_scan mcp__nlt-build__tapps_dependency_scan
 argument-hint: "[file-path or scope]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-domain-security v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-domain-security v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Domain playbook workflow — same quality gate as the standard TAPPS pipeline.

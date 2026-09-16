@@ -1,7 +1,6 @@
 ---
 name: tapps-wayfind
 user-invocable: true
-disable-model-invocation: true
 description: >-
   Chart foggy multi-session work as a Linear decision map, then resolve one
   decision ticket per session until the route to the destination is clear. Use
@@ -9,7 +8,7 @@ description: >-
   orchestration-prompt refuses to invent a Goal because decisions are missing.
 argument-hint: "[chart <idea> | work <map-id> [ticket-id]]"
 ---
-<!-- BEGIN: tapps-skill tapps-wayfind v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-wayfind v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 # tapps-wayfind

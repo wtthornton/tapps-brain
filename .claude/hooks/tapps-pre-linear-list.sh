@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-version: 3.12.89
 # tapps-mcp-hook-content-sha: a41e62ca
 # TappsMCP PreToolUse hook — Linear cache-first read gate (TAP-1224)
 # Gates raw mcp__plugin_linear_linear__list_issues calls behind a recent

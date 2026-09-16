@@ -10,7 +10,7 @@ description: >-
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__plugin_linear_linear__get_issue Bash Read
 argument-hint: "[slot] [optional Linear issue id e.g. TAP-1234]"
 ---
-<!-- BEGIN: tapps-skill tapps-continue-session v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-continue-session v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Start work in a fresh context window by assembling structured state — not a user paste.

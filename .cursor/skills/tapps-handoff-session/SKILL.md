@@ -8,8 +8,9 @@ description: >-
 mcp_tools:
   - tapps_handoff_save
   - tapps_session_start
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-handoff-session v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-handoff-session v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 End the session with a durable handoff the next chat loads via `tapps-continue-session`.

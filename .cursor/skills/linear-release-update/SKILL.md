@@ -8,8 +8,9 @@ mcp_tools:
   - docs_release_gate
   - linear_save_document
   - tapps_linear_snapshot_invalidate
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-release-update v3.12.83 -->
+<!-- BEGIN: tapps-skill linear-release-update v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Post a structured Linear project update document when a new version is released. The user's request to post a release update is standing authorization for the full pipeline — do NOT pause mid-flow to ask "should I post this?"

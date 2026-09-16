@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-# BEGIN: tapps-skill-asset gitfacts-script/scripts/gitfacts.sh v3.12.83
+# BEGIN: tapps-skill-asset gitfacts-script/scripts/gitfacts.sh v3.12.89
 # The five git questions an orchestrator asks constantly, answered correctly once.
 #
 # Usage:
@@ -32,7 +32,7 @@ set -euo pipefail
 usage() { sed -n '/^# Usage:/,/^# *$/p' "${BASH_SOURCE[0]}" >&2; exit 2; }
 
 CMD=${1:-}; REPO=${2:-}
-[ -n "$CMD" ] && [ -n "$REPO" ] || usage
+if [ -z "$CMD" ] || [ -z "$REPO" ]; then usage; fi
 [ -d "$REPO/.git" ] || git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || {
   echo "not a git checkout: $REPO" >&2; exit 1; }
 
@@ -97,10 +97,13 @@ case "$CMD" in
     flagged=$(g ls-files -v | grep '^[a-z]' || true)
     if [ -n "$flagged" ]; then
       echo "ASSUME-UNCHANGED FILES PRESENT -- 'git status' is blind to these:"
-      echo "$flagged" | sed 's/^/  /'
+      echo "  ${flagged//$'\n'/$'\n'  }"
     fi
-    [ "$behind" -eq 0 ] && echo "VERDICT: current." || {
-      echo "VERDICT: STALE by $behind commit(s). Any -S / grep / read here answers about old code."; }
+    if [ "$behind" -eq 0 ]; then
+      echo "VERDICT: current."
+    else
+      echo "VERDICT: STALE by $behind commit(s). Any -S / grep / read here answers about old code."
+    fi
     ;;
 
   sessions)

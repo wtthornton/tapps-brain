@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/method-detail.md v3.12.83 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/method-detail.md v3.12.89 -->
 # Method detail — the nine load-bearing parts, in full
 
 Read this while drafting a Goal or a Loop. `SKILL.md` carries the index (the one-line-per-part summary and the proof-shape table); this file carries the elaboration each part actually needs to be followed correctly.

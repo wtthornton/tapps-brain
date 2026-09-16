@@ -10,8 +10,9 @@ description: >-
   version is available and the project scaffolding needs to be refreshed.
 allowed-tools: Bash mcp__nlt-build__tapps_session_start mcp__nlt-setup__tapps_doctor mcp__nlt-build__tapps_checklist
 argument-hint: "[--from-checkout <path> | --from-tag vX.Y.Z]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-upgrade v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-upgrade v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Upgrade tapps-mcp / docs-mcp end-to-end. The user's request to upgrade is standing authorization for the full pipeline — do NOT pause mid-flow.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-# BEGIN: tapps-skill-asset orchestration-prompt/scripts/start-program.sh v3.12.83
+# BEGIN: tapps-skill-asset orchestration-prompt/scripts/start-program.sh v3.12.89
 # Kick off a MULTI-SESSION orchestration program.
 #
 # Usage: scripts/start-program.sh <slug> <driver-prompt> <integrator> <session>...
@@ -48,7 +48,7 @@ USAGE
 }
 
 SLUG=${1:-}; PROMPT=${2:-}; INTEGRATOR=${3:-}
-[ -n "$SLUG" ] && [ -n "$PROMPT" ] && [ -n "$INTEGRATOR" ] || usage
+if [ -z "$SLUG" ] || [ -z "$PROMPT" ] || [ -z "$INTEGRATOR" ]; then usage; fi
 shift 3
 SESSIONS=("$@")
 [ "${#SESSIONS[@]}" -ge 2 ] || { echo "need >=2 sessions; use dispatch-lane.sh for single-session work" >&2; exit 2; }

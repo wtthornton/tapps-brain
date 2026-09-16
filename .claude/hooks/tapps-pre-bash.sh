@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.83
+# tapps-mcp-hook-version: 3.12.89
 # tapps-mcp-hook-content-sha: da7d038c
 # TappsMCP PreToolUse hook (Bash) - destructive command guard (opt-in)
 # Blocks commands containing rm -rf, format c:, etc. Exit 2 = block, 0 = allow.

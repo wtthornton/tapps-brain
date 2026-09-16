@@ -5,8 +5,9 @@ model: claude-haiku-4-5-20251001
 description: Read multi-issue Linear data via cache-first dance. MANDATORY for any list-style Linear read. Routes through tapps_linear_snapshot_get/put before list_issues. Use when listing, filtering, or reviewing Linear issues (backlog review, "what's open", triage, "find issues assigned to X"). Single-issue lookups go straight to get_issue instead.
 allowed-tools: mcp__nlt-linear-issues__tapps_linear_snapshot_get mcp__nlt-linear-issues__tapps_linear_snapshot_put mcp__nlt-linear-issues__tapps_linear_list_issues mcp__plugin_linear_linear__list_issues mcp__plugin_linear_linear__get_issue
 argument-hint: "[free-form query, e.g. 'open issues in TAP', 'backlog assigned to me']"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-read v3.12.83 -->
+<!-- BEGIN: tapps-skill linear-read v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Multi-issue Linear reads are cache-first by contract (TAP-967 audit found 5,368 `list_issues` calls with 0.26% cache adoption — soft rules failed; this skill is the routed path the agent reaches for instead). Invoke ANY time the user asks for a list, batch, or filtered view of Linear issues.

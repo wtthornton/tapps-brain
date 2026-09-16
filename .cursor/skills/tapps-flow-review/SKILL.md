@@ -7,8 +7,9 @@ mcp_tools:
   - tapps_validate_changed
   - tapps_checklist
   - tapps_security_scan
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-flow-review v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-flow-review v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Prefer `/tapps-review-pipeline` for multiple Python files. Otherwise:

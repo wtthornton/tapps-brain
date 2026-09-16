@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/verification-routing.md v3.12.83 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/verification-routing.md v3.12.89 -->
 # Verification routing and honest reporting
 
 Ten rules promoted from a consuming project's local region, where they were working and reaching nobody else. `references/field-rules-and-rulings.md` is about whether a proof is sound; these are about who runs it, over what population, and how its result gets reported.

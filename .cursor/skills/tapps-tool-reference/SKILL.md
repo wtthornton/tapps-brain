@@ -6,8 +6,9 @@ description: >-
   Use when you need guidance on which TappsMCP tool to call for a given situation.
 mcp_tools:
   - tapps_server_info
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-tool-reference v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-tool-reference v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 When the user asks about TappsMCP tools, provide the full tool reference.

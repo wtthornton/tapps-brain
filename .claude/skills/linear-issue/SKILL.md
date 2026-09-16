@@ -5,8 +5,9 @@ model: claude-haiku-4-5-20251001
 description: Create, lint, validate, or triage Linear issues and epics for agents. MANDATORY for all Linear writes — never call plugin save_issue directly. Routes to docs-mcp generator/validator/triage tools and the Linear plugin by user intent. Use when creating, linting, validating, or triaging a Linear issue or epic.
 allowed-tools: mcp__nlt-linear-issues__docs_generate_epic mcp__nlt-linear-issues__docs_generate_story mcp__nlt-linear-issues__docs_lint_linear_issue mcp__nlt-linear-issues__docs_validate_linear_issue mcp__nlt-linear-issues__docs_linear_triage mcp__nlt-linear-issues__docs_save_linear_issue mcp__plugin_linear_linear__save_issue mcp__plugin_linear_linear__get_issue mcp__plugin_linear_linear__list_issues mcp__nlt-linear-issues__tapps_linear_snapshot_get mcp__nlt-linear-issues__tapps_linear_snapshot_put mcp__nlt-linear-issues__tapps_linear_snapshot_invalidate
 argument-hint: "[create-epic|create-story|lint TAP-###|validate|triage] [free-form detail]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-issue v3.12.83 -->
+<!-- BEGIN: tapps-skill linear-issue v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Work with Linear issues for AI-agent consumption. Infer intent from the user's prompt and act autonomously within scope — see `autonomy.md`. The user's original request is the authorization for the full generator → validator → save_issue chain; do NOT pause mid-flow to ask "should I create this?"

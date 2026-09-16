@@ -1,5 +1,5 @@
 // upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-// BEGIN: tapps-skill-asset workflows/.claude/workflows/linear-disposition-verify.js v3.12.83
+// BEGIN: tapps-skill-asset workflows/.claude/workflows/linear-disposition-verify.js v3.12.89
 export const meta = {
   name: 'linear-disposition-verify',
   description: 'Read-only evidence gathering + adversarial verify for Linear issue dispositions -- writes happen in the calling session, never here',

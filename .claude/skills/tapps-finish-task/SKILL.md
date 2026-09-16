@@ -6,7 +6,7 @@ description: Run the end-of-task TAPPS pipeline in one shot — validate_changed
 allowed-tools: mcp__nlt-build__tapps_validate_changed mcp__nlt-build__tapps_checklist mcp__nlt-build__tapps_lookup_docs Bash
 argument-hint: "[task_type: feature|bugfix|refactor|security|review]"
 ---
-<!-- BEGIN: tapps-skill tapps-finish-task v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-finish-task v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Close out the current task end-to-end. Run each step; do NOT skip one that failed — surface the failure and stop.

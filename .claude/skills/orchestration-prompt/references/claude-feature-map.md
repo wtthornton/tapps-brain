@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/claude-feature-map.md v3.12.83 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/claude-feature-map.md v3.12.89 -->
 # Claude feature map — intent → mechanism → model tier
 
 Read this when choosing how a chunk of an orchestration prompt should run. Put each

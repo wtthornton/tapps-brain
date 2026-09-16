@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.83
-# tapps-mcp-hook-content-sha: d7b2f1e4
+# tapps-mcp-hook-version: 3.12.89
+# tapps-mcp-hook-content-sha: c7eba674
 # TappsMCP PreToolUse hook — session-start enforcement gate.
 # Blocks TappsMCP quality tools until tapps_session_start has actually run this
 # Claude session (proven by a tool-written .session-start-done-<SID> sentinel,
@@ -29,10 +29,8 @@ esac
 [ "$MODE" = "off" ] && exit 0
 ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ]; then
-  _common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-  if [ -n "$_common" ]; then
-    ROOT="$(cd "$_common/.." && pwd)"
-  else
+  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -z "$ROOT" ]; then
     ROOT="$PWD"
   fi
 fi

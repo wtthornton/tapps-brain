@@ -10,8 +10,9 @@ mcp_tools:
   - tapps_quick_check
   - tapps_validate_changed
   - tapps_checklist
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-flow-develop v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-flow-develop v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 1. `tapps_session_start()`

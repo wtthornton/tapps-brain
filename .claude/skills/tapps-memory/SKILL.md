@@ -8,8 +8,9 @@ description: >-
   checking brain bridge health. For chat handoffs use tapps-handoff-session.
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__nlt-memory__tapps_session_notes Bash
 argument-hint: "[save|search|get] [key]"
+disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-memory v3.12.83 -->
+<!-- BEGIN: tapps-skill tapps-memory v3.12.89 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 `tapps_memory` on the **`nlt-memory`** MCP server is a slim facade (TAP-3895). Default consumer path is **`uv run tapps-mcp memory`** (bridge-only — never add direct `tapps-brain` to `.mcp.json`).

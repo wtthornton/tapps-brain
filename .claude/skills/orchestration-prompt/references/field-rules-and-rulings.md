@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/field-rules-and-rulings.md v3.12.83 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/field-rules-and-rulings.md v3.12.89 -->
 # Field rules and rulings
 
 Read while filling Guardrails, the Validation contract, or the Plane map. Twelve field rules distilled from postmortems of this skill's own emitted prompts, followed by eight rulings that pin edge cases the proof-shape table (`references/method-detail.md` §5) does not spell out on its own.
