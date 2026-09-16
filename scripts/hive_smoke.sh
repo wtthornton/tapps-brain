@@ -69,8 +69,8 @@ dump_brain_http_diagnostics() {
     local healthz_body healthz_status
     healthz_body=$(mktemp)
     healthz_status=$(curl -s -o "$healthz_body" -w "%{http_code}" \
-        "http://localhost:${ADAPTER_PORT}/healthz" 2>/dev/null || echo "000")
-    echo "HTTP status: ${healthz_status}"
+        "http://localhost:${ADAPTER_PORT}/healthz" 2>/dev/null) || healthz_status="000"
+    echo "HTTP status: ${healthz_status:-000}"
     cat "$healthz_body" 2>/dev/null || echo "(no body captured)"
     echo ""
     rm -f "$healthz_body"
