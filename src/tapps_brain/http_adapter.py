@@ -504,6 +504,14 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
     against ``argon2.PasswordHasher`` so a runtime break in the hashing
     library itself -- not just an import-time break -- flips readiness.
 
+    TAP-7682 round 3: the pinned hash above is fixed at one argon2
+    parameter set (m=65536,t=3,p=4). ``PasswordHasher.verify`` reads
+    memory/time/parallelism cost from the encoded hash, not the hasher, so
+    this probe additionally self-tests one freshly-generated hash per
+    distinct parameter set found in ``project_profiles.hashed_token`` --
+    catching a runtime break (e.g. a memory allocation error) specific to a
+    parameter set production actually stores but the pinned hash does not.
+
     Returns ``(ok, detail)``; never raises. Skipped (reported ok) when no
     DSN is configured -- DB reachability is already covered by
     :func:`_probe_db`, and this probe has nothing to connect to.
@@ -517,9 +525,36 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
     try:
         from argon2 import PasswordHasher
 
-        from tapps_brain.http.auth import _verify_per_tenant_token
+        from tapps_brain.http.auth import _distinct_token_param_sets, _verify_per_tenant_token
 
         PasswordHasher().verify(_READINESS_PROBE_SELF_TEST_HASH, _READINESS_PROBE_SELF_TEST_SECRET)
+
+        # TAP-7682 round 3: the pinned hash above is fixed at m=65536,t=3,p=4
+        # and never exercises the parameter sets production actually stores.
+        # ``PasswordHasher.verify`` reads memory/time/parallelism cost from
+        # the encoded hash string, not from the hasher instance, so a token
+        # issued under a different argon2-cffi version (e.g. the pre-23.1.0
+        # default of m=102400,t=2,p=8 -- a 100 MiB allocation vs. this
+        # probe's 64 MiB) is verified at a memory/time cost the pinned hash
+        # never touches. Self-test one freshly-generated hash per distinct
+        # parameter set actually present in ``project_profiles.hashed_token``
+        # (deduplicated by parameter triple, not per project row, so the
+        # cost stays bounded regardless of tenant count) in addition to the
+        # pinned hash above. Failure to enumerate the stored parameter sets
+        # (e.g. DB unreachable -- already covered by the sibling DB-readiness
+        # check) degrades to no additional sets, not a probe failure.
+        try:
+            extra_param_sets = _distinct_token_param_sets(dsn)
+        except Exception:
+            logger.warning("token_verification_probe.param_set_discovery_failed", exc_info=True)
+            extra_param_sets = []
+        for memory_cost, time_cost, parallelism in extra_param_sets:
+            ph = PasswordHasher(
+                memory_cost=memory_cost, time_cost=time_cost, parallelism=parallelism
+            )
+            self_test_hash = ph.hash(_READINESS_PROBE_SELF_TEST_SECRET)
+            ph.verify(self_test_hash, _READINESS_PROBE_SELF_TEST_SECRET)
+
         _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
         result: tuple[bool, str] = (True, "ok")
     except Exception as exc:

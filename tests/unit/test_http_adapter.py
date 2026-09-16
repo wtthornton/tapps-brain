@@ -648,6 +648,112 @@ class TestReadyEndpointTokenVerification:
         assert "token_verification_error" in after_body["checks"]["token_verification"]
 
 
+class TestReadyEndpointTokenVerificationParamSets:
+    """TAP-7682 round 3: the self-test must cover the argon2 parameter sets
+    production actually stores in ``project_profiles.hashed_token``, not
+    only the pinned m=65536,t=3,p=4 set. Tokens issued under argon2-cffi
+    < 23.1.0 carry m=102400,t=2,p=8 (a 100 MiB allocation vs. the pinned
+    probe's 64 MiB) — ``verify()`` reads memory/time/parallelism cost from
+    the encoded hash string, not from the ``PasswordHasher`` instance, so a
+    runtime break specific to that parameter set was invisible to the
+    pinned-only self-test.
+    """
+
+    def test_legacy_param_set_break_reports_non_ok_pinned_set_unaffected(self) -> None:
+        """Scoped break: only the discovered (m=102400,t=2,p=8) parameter set
+        fails; the pinned (m=65536,t=3,p=4) set must keep succeeding — proves
+        the probe distinguishes parameter sets rather than treating any
+        argon2 break as global (the one mutation the old self-test already
+        caught, see ``test_runtime_argon2_break_reports_non_ok`` above).
+
+        Mocks only two collaborators: the new DB/registry seam that
+        enumerates distinct stored parameter sets (never
+        ``_verify_per_tenant_token``, the sentinel-lookup unit under test),
+        and ``argon2.PasswordHasher.hash`` gated on the *instance's*
+        ``memory_cost`` — the same field production's stored-hash parameter
+        actually varies on — so the pinned self-test hash (m=65536) is
+        provably unaffected by the same patch.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+
+        from argon2 import PasswordHasher
+
+        original_hash = PasswordHasher.hash
+
+        def _hash_fails_only_for_legacy_params(self: PasswordHasher, secret: bytes | str) -> str:
+            if self.memory_cost == 102400 and self.time_cost == 2 and self.parallelism == 8:
+                raise RuntimeError(
+                    "simulated memory allocation error for legacy argon2 parameter set"
+                )
+            return original_hash(self, secret)
+
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[(102400, 2, 8)],
+                    create=True,
+                )
+            )
+            stack.enter_context(
+                patch.object(PasswordHasher, "hash", _hash_fails_only_for_legacy_params)
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+
+        body = resp.json()
+        assert resp.status_code == 503, (
+            f"expected 503/degraded once the legacy parameter set is self-tested; "
+            f"got {resp.status_code} body={body}"
+        )
+        assert body["status"] == "degraded"
+        assert body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in body["checks"]["token_verification"]
+
+        # Sanity: the pinned m=65536,t=3,p=4 hasher path is provably
+        # unaffected by the same patch — a global break would fail here too.
+        healthy_hasher = PasswordHasher(memory_cost=65536, time_cost=3, parallelism=4)
+        healthy_hash = _hash_fails_only_for_legacy_params(
+            healthy_hasher, "tapps-brain-readiness-self-test-v1"
+        )
+        healthy_hasher.verify(healthy_hash, "tapps-brain-readiness-self-test-v1")
+
+    def test_no_stored_param_sets_falls_back_to_pinned_hash(self) -> None:
+        """Zero distinct parameter sets in the table (today's live-DB state,
+        see the round-3 note) must fall back to the pinned self-test and stay
+        ok — this is the path that runs in production today.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+
+
 # ---------------------------------------------------------------------------
 # /healthz endpoint — TAP-1970 phased readiness payload
 # ---------------------------------------------------------------------------
