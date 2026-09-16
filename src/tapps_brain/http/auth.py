@@ -160,6 +160,17 @@ def _verify_per_tenant_token(project_id: str, token: str, dsn: str) -> bool | No
     return ProjectRegistry(get_registry_cm(dsn)).verify_token(project_id, token)
 
 
+def _distinct_token_param_sets(dsn: str) -> list[tuple[int, int, int]]:
+    """Return distinct argon2 parameter sets from stored per-tenant hashes.
+
+    Used by the readiness self-test (TAP-7682 round 3) — see
+    :meth:`tapps_brain.project_registry.ProjectRegistry.distinct_hashed_token_param_sets`.
+    """
+    from tapps_brain.project_registry import ProjectRegistry
+
+    return ProjectRegistry(get_registry_cm(dsn)).distinct_hashed_token_param_sets()
+
+
 def require_data_plane_auth(request: Request) -> None:
     """Dependency: data-plane bearer-token check.
 
