@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tapps-brain"
-version = "3.32.2"
+version = "3.33.0"
 description = "Persistent cross-session memory system for AI coding assistants"
 license = "MIT"
 requires-python = ">=3.12"
@@ -96,6 +96,9 @@ dev = [
     "starlette>=0.40,<2",
     "httpx>=0.27,<1",
     "typer>=0.15.0,<1",
+    # STORY-070.8: exercise the argon2id per-tenant auth path in tests instead
+    # of skipping it (the [http] extra is otherwise optional at runtime).
+    "argon2-cffi>=23.1.0,<25",
 ]
 
 # Force transitive pins past known CVEs surfaced by pip-audit (2026-08-01 audit).

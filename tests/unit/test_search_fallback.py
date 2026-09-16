@@ -131,18 +131,33 @@ def store(tmp_path: Path) -> Generator[MemoryStore, None, None]:
 
 
 class TestKnnFallback:
-    """Stage-3 semantic fallback fires only when lexical stages return empty."""
+    """TAP-7338: the vector branch fuses with FTS unconditionally.
 
-    def test_lexical_hit_never_calls_knn(self, store: MemoryStore) -> None:
+    Not only when the lexical stages return empty — see ``QueryMixin.search``
+    / ``QueryMixin._fuse_fts_and_vector`` in ``_store_query.py``.
+    """
+
+    def test_lexical_hit_also_runs_vector_branch(self, store: MemoryStore) -> None:
+        """TAP-7338: a lexical hit no longer stands the vector branch down.
+
+        Pre-TAP-7338 this asserted the opposite (KNN must NOT be called on a
+        lexical hit) — that was the FTS-then-fallback bug this lane fixes: a
+        semantically correct row ranked outside the lexical hits was silently
+        dropped whenever FTS matched *something*. Fusion means both channels
+        always run when no precision filter (since/until/memory_class) is set.
+        """
         store.save(key="k-alpha", value="alpha bravo content")
+        store.save(key="k-semantic", value="unrelated lexical text")
+        knn_calls: list[str] = []
 
-        def _knn_boom(*args: Any, **kwargs: Any) -> list[tuple[str, float]]:
-            msg = "knn_search must not be called on a lexical hit"
-            raise AssertionError(msg)
+        def _knn(embedding: list[float], k: int, **kwargs: Any) -> list[tuple[str, float]]:
+            knn_calls.append("called")
+            return [("k-semantic", 0.1)]
 
-        store._persistence.knn_search = _knn_boom  # type: ignore[attr-defined]
+        store._persistence.knn_search = _knn  # type: ignore[attr-defined]
         results = store.search("alpha")
-        assert [e.key for e in results] == ["k-alpha"]
+        assert knn_calls, "vector branch must run alongside a lexical hit (TAP-7338)"
+        assert {e.key for e in results} == {"k-alpha", "k-semantic"}
 
     def test_knn_fallback_on_lexical_miss_orders_by_distance(self, store: MemoryStore) -> None:
         store.save(key="k-near", value="alpha content")

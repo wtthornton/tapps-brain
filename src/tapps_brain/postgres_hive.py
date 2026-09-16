@@ -405,6 +405,49 @@ class PostgresHiveBackend:
                 return None
             return self._row_to_dict(tip)
 
+    def archive_entry(self, namespace: str, key: str) -> bool:
+        """Archive (tombstone) the live row at ``(namespace, key)`` — TAP-6816.
+
+        Supported removal path for a Hive entry: sets ``invalid_at`` rather
+        than issuing a ``DELETE``, matching the private side's ``gc_archive``
+        recoverability model. Follows ``superseded_by`` tombstone chains like
+        :meth:`get` so a key that has since been versioned is archived at its
+        live tip, not its stale supersede record.
+
+        Returns ``True`` when a live row was archived, ``False`` when none
+        exists (already archived, or never propagated here) — the caller is
+        expected to treat ``False`` as a no-op, not an error, so forgetting a
+        private-only memory stays idempotent.
+        """
+        now = datetime.now(tz=UTC).isoformat()
+        with self._cm.get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM hive_memories WHERE namespace = %s AND key = %s",
+                (namespace, key),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            col_names = [desc[0] for desc in cur.description]
+            current = dict(zip(col_names, row, strict=False))
+            current = self._follow_live_tip(cur, namespace, current)
+            if current.get("invalid_at") is not None:
+                return False
+            tip_key = str(current.get("key") or key)
+            cur.execute(
+                "UPDATE hive_memories SET invalid_at = %s "
+                "WHERE namespace = %s AND key = %s AND invalid_at IS NULL",
+                (now, namespace, tip_key),
+            )
+            archived = bool(cur.rowcount > 0)
+            if archived:
+                cur.execute(
+                    "UPDATE hive_write_notify SET revision = revision + 1, updated_at = %s "
+                    "WHERE id = 1",
+                    (now,),
+                )
+            return archived
+
     def search(
         self,
         query: str,

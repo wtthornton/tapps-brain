@@ -181,6 +181,8 @@ class HiveBackend(Protocol):
 
     def get(self, key: str, namespace: str = "universal") -> dict[str, Any] | None: ...
 
+    def archive_entry(self, namespace: str, key: str) -> bool: ...
+
     def search(
         self,
         query: str,

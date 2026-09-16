@@ -19,26 +19,11 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.requires_mcp
+# Operator tool names: imported from the gate itself (server.py) rather than
+# hand-copied here, so this test can never drift from the real gate set.
+from tapps_brain.mcp_server.server import _OPERATOR_TOOL_NAMES
 
-# Operator tool names as defined in the gate inside create_server.
-_OPERATOR_TOOL_NAMES = frozenset(
-    {
-        "maintenance_consolidate",
-        "maintenance_gc",
-        "maintenance_stale",
-        "tapps_brain_health",
-        "memory_gc_config",
-        "memory_gc_config_set",
-        "memory_consolidation_config",
-        "memory_consolidation_config_set",
-        "memory_export",
-        "memory_import",
-        "tapps_brain_relay_export",
-        "flywheel_evaluate",
-        "flywheel_hive_feedback",
-    }
-)
+pytestmark = pytest.mark.requires_mcp
 
 
 def _tool_names(server: Any) -> set[str]:

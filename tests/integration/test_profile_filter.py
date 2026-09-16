@@ -234,6 +234,31 @@ class TestDriftDetection:
             f"  {sorted(unclassified)}"
         )
 
+    def test_operator_gate_matches_derived_operator_only_set(self) -> None:
+        """server._OPERATOR_TOOL_NAMES must equal (operator - full) from the YAML.
+
+        _OPERATOR_TOOL_NAMES is a second, hand-maintained copy of the same set
+        the profile YAML already encodes (used by create_server() to physically
+        remove operator tools from a non-operator server via
+        ``_tool_manager.remove_tool``). Deriving the expected set here — instead
+        of hardcoding a tool list — means the two copies cannot silently drift:
+        a tool added to (or removed from) the operator profile in
+        mcp_profiles.yaml without a matching edit to _OPERATOR_TOOL_NAMES fails
+        this test immediately.
+        """
+        from tapps_brain.mcp_server.server import _OPERATOR_TOOL_NAMES
+
+        registry = ProfileRegistry()
+        derived_operator_only = registry.get("operator") - registry.get("full")
+        assert _OPERATOR_TOOL_NAMES == derived_operator_only, (
+            "server._OPERATOR_TOOL_NAMES has drifted from mcp_profiles.yaml's "
+            "operator-only set (operator - full).\n"
+            f"  In _OPERATOR_TOOL_NAMES but not derived: "
+            f"{sorted(_OPERATOR_TOOL_NAMES - derived_operator_only)}\n"
+            f"  Derived but missing from _OPERATOR_TOOL_NAMES: "
+            f"{sorted(derived_operator_only - _OPERATOR_TOOL_NAMES)}"
+        )
+
     def test_registered_tool_count_is_98(self) -> None:
         """The MCP server must have exactly 98 registered tools (84 standard + 14 operator).
 

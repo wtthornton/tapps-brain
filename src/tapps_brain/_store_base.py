@@ -80,6 +80,10 @@ class _MemoryStoreBase:
         _latest_quality_report: dict[str, Any] | None
         _last_consolidation_candidates: int
         _last_gc_candidates: int
+        # TAP-7338: raw ts_rank / vector-similarity magnitude from the most
+        # recent QueryMixin.search() call, keyed by entry key — see
+        # _store_query.py::search for what populates it.
+        last_search_relevance: dict[str, float]
         _removal_epoch: int
         _removed_at: dict[str, int]
 

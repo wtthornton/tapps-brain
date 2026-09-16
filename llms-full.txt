@@ -2,7 +2,7 @@
 
 > Persistent cross-session memory system for AI coding assistants
 
-- Version: 3.32.2
+- Version: 3.33.0
 - License: MIT
 - Homepage: https://github.com/wtthornton/tapps-brain
 
@@ -67,22 +67,19 @@
 - `docs/engineering/data-stores-and-schema.md`
 - `docs/engineering/diagrams.md`
 - `docs/engineering/experience-events.md`
-- ... and 276 more
+- ... and 283 more
 
 ## API Summary
 
-- Packages: 12
-- Modules: 141
-- Public API symbols: 866
+- Packages: 13
+- Modules: 150
+- Public API symbols: 944
 
 ## Project Structure
 
 ```
-.coverage
 .cursorignore
-.docker-last-migrate-sha
 .docsmcp.yaml
-.env
 .env.example
 .envrc
 .gitattributes
@@ -98,7 +95,6 @@ Makefile
 README.md
 SECURITY.md
 TECH_STACK.md
-brain-eval-reports/
 config/
 docker/
 docker-compose.yml
@@ -108,5 +104,9 @@ llms-full.txt
 llms.txt
 package-lock.json
 package.json
-... and 9 more
+packages/
+prompts/
+pyproject.toml
+scripts/
+... and 5 more
 ```
