@@ -17,6 +17,10 @@ directions, not just the one direction that shows "different":
 If run1 != run2, the harness is non-deterministic and that is reported as a
 failure (exit 1) rather than papered over - it would invalidate b3 entirely.
 
+RECALL_HARNESS_DSN is required - there is no fallback. An unset var fails closed
+(exit 1) rather than silently reaching whatever happens to be listening on a
+guessed default port.
+
 Reproduce from a clean checkout:
 
     $ docker run -d --name pgvector-tap7717-r2-$$ \\
@@ -38,10 +42,17 @@ import sys
 import psycopg
 from sentence_transformers import SentenceTransformer
 
-DSN = os.environ.get(
-    "RECALL_HARNESS_DSN",
-    "postgresql://tapps:tapps@127.0.0.1:5432/tapps_test",
-)
+DSN = os.environ.get("RECALL_HARNESS_DSN")
+if not DSN:
+    print(
+        "RECALL_HARNESS_DSN is required (no fallback) - set it to a throwaway "
+        "pgvector container, e.g.:\n"
+        "  docker run -d --name pgvector-tap7717-r2-$$ "
+        "-e POSTGRES_PASSWORD=tapps -e POSTGRES_USER=tapps -e POSTGRES_DB=tapps_test "
+        "-p 0:5432 pgvector/pgvector:pg17",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 MODEL_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
