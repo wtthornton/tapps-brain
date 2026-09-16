@@ -754,6 +754,143 @@ class TestReadyEndpointTokenVerificationParamSets:
         assert body["checks"]["token_verification"] == "ok"
 
 
+class TestReadyEndpointTokenVerificationNoSwallow:
+    """TAP-7682 round 4: the discovery-query swallow reopened round 3's gap.
+
+    ``_probe_token_verification`` used to catch any exception from
+    ``_distinct_token_param_sets`` and fall back to "no extra sets", so a
+    discovery failure (e.g. missing SELECT on ``project_profiles``, a bad
+    cast, migration 011 not yet applied) silently covered zero parameter
+    sets while still reporting ``checks.token_verification == "ok"`` and a
+    healthy 200 -- byte-identical to fully healthy, reopening the exact gap
+    round 3 closed. This class asserts the discovery failure surfaces
+    instead, that one malformed row does not take down the whole check, and
+    that the payload reports how many parameter sets were actually covered.
+    """
+
+    def test_discovery_query_failure_reports_non_ok(self) -> None:
+        """A raising discovery query must flip readiness non-ok, not ``ok``.
+
+        Mocks only ``tapps_brain.http.auth._distinct_token_param_sets`` (the
+        new DB/registry seam) to raise -- never ``_verify_per_tenant_token``,
+        the sentinel-lookup unit under test. MUST FAIL on the pre-fix tree
+        where the discovery failure is swallowed into ``extra_param_sets = []``
+        and the probe reports ok.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    side_effect=RuntimeError("permission denied for table project_profiles"),
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 503, (
+            f"expected 503/degraded when parameter-set discovery raises; "
+            f"got {resp.status_code} body={body}"
+        )
+        assert body["status"] == "degraded"
+        assert body["checks"]["token_verification"] != "ok"
+        assert "token_verification_error" in body["checks"]["token_verification"]
+
+    def test_malformed_row_skipped_valid_row_still_verified(self) -> None:
+        """One malformed parameter row must not hard-degrade readiness while
+        a valid row alongside it is still self-tested.
+
+        ``(0, 2, 8)`` is malformed: memory_cost 0 is below the RFC 9106
+        floor of ``8 * parallelism`` (64), the exact shape that raised
+        ``HashingError: Memory cost is too small`` when fed straight into
+        ``PasswordHasher`` unvalidated. ``(65536, 3, 4)`` is the pinned,
+        known-good set and must still be verified.
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[(0, 2, 8), (65536, 3, 4)],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            resp = c.get("/ready")
+        body = resp.json()
+        assert resp.status_code == 200, (
+            f"a malformed row must not hard-degrade readiness; got body={body}"
+        )
+        assert body["status"] == "ready"
+        assert body["checks"]["token_verification"] == "ok"
+        # pinned self-test (1) + the one valid discovered set (1) = 2;
+        # the malformed (0, 2, 8) row must not count.
+        assert body["checks"]["token_verification_param_sets_checked"] == 2
+
+    def test_coverage_count_present_for_zero_and_populated_sets(self) -> None:
+        """The payload must distinguish "verified 2 parameter sets" from
+        "verified none" rather than making zero coverage indistinguishable
+        from a bare "ok".
+        """
+        mock_status = MagicMock()
+        mock_status.current_version = 5
+        mock_status.pending_migrations = []
+        settings = _make_settings(dsn="postgres://mockhost/testdb")
+
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            zero_body = c.get("/ready").json()
+        assert zero_body["checks"]["token_verification_param_sets_checked"] == 1
+
+        _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
+
+        with ExitStack() as stack:
+            _enter_healthy_db_patches(stack, mock_status)
+            stack.enter_context(
+                patch("tapps_brain.http.auth._verify_per_tenant_token", return_value=None)
+            )
+            stack.enter_context(
+                patch(
+                    "tapps_brain.http.auth._distinct_token_param_sets",
+                    return_value=[(102400, 2, 8)],
+                    create=True,
+                )
+            )
+            c = stack.enter_context(_client(settings))
+            populated_body = c.get("/ready").json()
+        assert populated_body["checks"]["token_verification_param_sets_checked"] == 2
+        assert (
+            populated_body["checks"]["token_verification_param_sets_checked"]
+            > zero_body["checks"]["token_verification_param_sets_checked"]
+        )
+
+
 # ---------------------------------------------------------------------------
 # /healthz endpoint — TAP-1970 phased readiness payload
 # ---------------------------------------------------------------------------

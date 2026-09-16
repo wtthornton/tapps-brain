@@ -483,10 +483,31 @@ _READINESS_PROBE_TOKEN = "readiness-probe-not-a-real-credential"
 _READINESS_PROBE_SELF_TEST_SECRET = "tapps-brain-readiness-self-test-v1"
 _READINESS_PROBE_SELF_TEST_HASH = "$argon2id$v=19$m=65536,t=3,p=4$nJ2Yle7D2j/YnNE8b0PVJg$y5v488i2MBrJgbQYhy+3188bRc84npkGjP6HFX52Xts"
 
-_TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str]]] = {}
+_TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str, int]]] = {}
 
 
-def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
+def _is_valid_argon2_param_set(memory_cost: object, time_cost: object, parallelism: object) -> bool:
+    """Return whether a ``(memory_cost, time_cost, parallelism)`` triple is
+    safe to hand to ``argon2.PasswordHasher`` (TAP-7682 round 4).
+
+    A malformed row -- e.g. a truncated regex match, or a memory_cost too
+    small for its parallelism (RFC 9106 requires ``memory_cost >=
+    8 * parallelism`` KiB, the exact shape observed as
+    ``HashingError: Memory cost is too small``) -- must not construct a
+    hasher that is guaranteed to raise. Reject it here instead so one bad
+    row degrades only its own parameter set, not the whole readiness check.
+    """
+    return (
+        isinstance(memory_cost, int)
+        and isinstance(time_cost, int)
+        and isinstance(parallelism, int)
+        and time_cost >= 1
+        and 1 <= parallelism <= 2**24 - 1
+        and memory_cost >= 8 * parallelism
+    )
+
+
+def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
     """Readiness probe for per-tenant token verification.
 
     Calls the same seam the data-plane auth dependency uses
@@ -512,22 +533,31 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
     catching a runtime break (e.g. a memory allocation error) specific to a
     parameter set production actually stores but the pinned hash does not.
 
-    Returns ``(ok, detail)``; never raises. Skipped (reported ok) when no
-    DSN is configured -- DB reachability is already covered by
-    :func:`_probe_db`, and this probe has nothing to connect to.
+    Returns ``(ok, detail, param_sets_checked)``; never raises. Skipped
+    (reported ok, 0 sets checked) when no DSN is configured -- DB
+    reachability is already covered by :func:`_probe_db`, and this probe has
+    nothing to connect to.
+
+    ``param_sets_checked`` counts every argon2 parameter set actually
+    self-tested (the pinned set plus any distinct stored set that passed
+    :func:`_is_valid_argon2_param_set`) so an operator can tell "verified 2
+    parameter sets" from "verified none" instead of inferring coverage from
+    a bare "ok" (TAP-7682 round 4).
     """
     if not dsn:
-        return True, "skipped (no DSN configured)"
+        return True, "skipped (no DSN configured)", 0
     now = time.monotonic()
     cached = _TOKEN_VERIFY_PROBE_CACHE.get(dsn)
     if cached is not None and now < cached[0]:
         return cached[1]
+    param_sets_checked = 0
     try:
         from argon2 import PasswordHasher
 
         from tapps_brain.http.auth import _distinct_token_param_sets, _verify_per_tenant_token
 
         PasswordHasher().verify(_READINESS_PROBE_SELF_TEST_HASH, _READINESS_PROBE_SELF_TEST_SECRET)
+        param_sets_checked += 1
 
         # TAP-7682 round 3: the pinned hash above is fixed at m=65536,t=3,p=4
         # and never exercises the parameter sets production actually stores.
@@ -540,23 +570,53 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
         # parameter set actually present in ``project_profiles.hashed_token``
         # (deduplicated by parameter triple, not per project row, so the
         # cost stays bounded regardless of tenant count) in addition to the
-        # pinned hash above. Failure to enumerate the stored parameter sets
-        # (e.g. DB unreachable -- already covered by the sibling DB-readiness
-        # check) degrades to no additional sets, not a probe failure.
+        # pinned hash above.
+        #
+        # TAP-7682 round 4: a discovery-query failure must SURFACE, not be
+        # swallowed into "no extra sets" -- a probe that could not enumerate
+        # what it is supposed to cover must not report "ok". The one
+        # exception is a bare DB-connectivity failure
+        # (``psycopg.OperationalError``, e.g. unreachable host, pool
+        # exhaustion/timeout): that outage is already reported by the
+        # sibling ``_probe_db`` check, so re-raising it here would only
+        # double-count the same outage under this check's name, not add
+        # coverage. Anything else -- a missing-migration schema error, a
+        # role lacking SELECT on ``project_profiles``, a ``::int`` cast
+        # error on one unexpected row -- propagates to the outer except
+        # below, same as any other probe failure.
         try:
             extra_param_sets = _distinct_token_param_sets(dsn)
-        except Exception:
-            logger.warning("token_verification_probe.param_set_discovery_failed", exc_info=True)
+        except Exception as discovery_exc:
+            import psycopg
+
+            if not isinstance(discovery_exc, psycopg.OperationalError):
+                raise
+            logger.warning(
+                "token_verification_probe.param_set_discovery_unreachable", exc_info=True
+            )
             extra_param_sets = []
         for memory_cost, time_cost, parallelism in extra_param_sets:
+            # TAP-7682 round 4: validate before constructing the hasher so
+            # one malformed stored row (e.g. a truncated regex match) cannot
+            # hard-degrade readiness on its own -- skip it and keep checking
+            # the remaining discovered sets.
+            if not _is_valid_argon2_param_set(memory_cost, time_cost, parallelism):
+                logger.warning(
+                    "token_verification_probe.malformed_param_set_skipped",
+                    memory_cost=memory_cost,
+                    time_cost=time_cost,
+                    parallelism=parallelism,
+                )
+                continue
             ph = PasswordHasher(
                 memory_cost=memory_cost, time_cost=time_cost, parallelism=parallelism
             )
             self_test_hash = ph.hash(_READINESS_PROBE_SELF_TEST_SECRET)
             ph.verify(self_test_hash, _READINESS_PROBE_SELF_TEST_SECRET)
+            param_sets_checked += 1
 
         _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
-        result: tuple[bool, str] = (True, "ok")
+        result: tuple[bool, str, int] = (True, "ok", param_sets_checked)
     except Exception as exc:
         err_str = str(exc)
         try:
@@ -573,7 +633,7 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str]:
                 err_str = err_str.replace(parsed.password, "[pass]")
         except Exception:
             err_str = "token verification probe failed"
-        result = (False, f"token_verification_error: {err_str}")
+        result = (False, f"token_verification_error: {err_str}", param_sets_checked)
     _TOKEN_VERIFY_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
     return result
 
@@ -1059,7 +1119,9 @@ def create_app(
         # inside verify_token(). See _probe_token_verification for what "ok"
         # means here (a clean False/None refusal is healthy; only a crash
         # inside the verification call is not).
-        token_verification_ok, token_verification_detail = _probe_token_verification(cfg.dsn)
+        token_verification_ok, token_verification_detail, token_verification_param_sets = (
+            _probe_token_verification(cfg.dsn)
+        )
         overall_ready = is_ready and token_verification_ok
         body: dict[str, Any] = {
             "status": "ready" if overall_ready else "degraded",
@@ -1069,6 +1131,10 @@ def create_app(
                 "token_verification": (
                     "ok" if token_verification_ok else token_verification_detail
                 ),
+                # TAP-7682 round 4: distinguish "verified N parameter sets"
+                # from "verified none" so zero coverage is visible to an
+                # operator rather than inferred from a bare "ok".
+                "token_verification_param_sets_checked": token_verification_param_sets,
             },
         }
         _pool_stats = _get_hive_pool_stats(cfg.store)
