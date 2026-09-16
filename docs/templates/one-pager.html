@@ -1,0 +1,423 @@
+<!--
+  one-pager.html — brand-neutral one-pager template (TAP-7423)
+
+  This fragment carries no colours or type choices of its own. Drop it into a
+  page that already defines the eleven custom properties below (on :root or
+  body), replace every [bracketed] placeholder, and the layout — a header
+  bar, a hero with an ownership strip, a bento grid, an admin-style console
+  list, a proof case, an approval strip, an honest-status box and a close —
+  is ready to fill in.
+
+  Token contract — define every one of these before this fragment renders:
+    --bg          page background
+    --bg-alt      secondary background (alternating sections, if any)
+    --surface     raised card/cell background
+    --border      hairline border colour, used at low opacity by convention
+    --fg          primary text colour
+    --fg-dim      secondary/muted text colour
+    --accent      primary accent (eyebrows, tags, rules, current-step marks)
+    --accent-2    secondary accent (hover states, emphasis)
+    --font        body typeface stack
+    --font-display  heading typeface stack
+    --mono        monospace stack (labels, figures, meta)
+
+  By design this fragment never sets a typeface property itself — the three
+  type tokens above are for YOUR page's own stylesheet (:root or body) to
+  apply, so this fragment inherits your type system instead of fighting it.
+  Everything else here (colour, spacing, layout) reads only from the custom
+  properties above; there is no colour literal anywhere in this file.
+-->
+<title>[Product or Service Name] — One-Pager</title>
+
+<style>
+  :root {
+    /* Spacing and type scale are layout-only (no colour, no typeface) and
+       ship with sensible defaults — nothing here needs to be redefined. */
+    --u: 8px;
+    --content-max: 42rem;
+    --t-xs:  12px;
+    --t-sm:  13.5px;
+    --t-base:17px;
+    --t-md:  21px;
+    --t-lg:  27px;
+    --t-xl:  34px;
+    --t-2xl: 44px;
+    --t-3xl: 58px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: var(--t-base);
+    line-height: 1.6;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+  section { padding: calc(var(--u) * 12) 0; }
+  @media (max-width: 760px) { section { padding: calc(var(--u) * 8) 0; } }
+  .rule { border: 0; border-top: 1px solid var(--border); margin: 0; }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+
+  .eyebrow {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 calc(var(--u) * 2);
+  }
+
+  h1 {
+    font-size: clamp(var(--t-2xl), 5.6vw, var(--t-3xl));
+    font-weight: 800;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+  }
+
+  h2 {
+    font-size: var(--t-xl);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  h3 { font-size: var(--t-md); font-weight: 600; line-height: 1.25; }
+
+  p { margin: 0 0 calc(var(--u) * 2); max-width: var(--content-max); }
+  p:last-child { margin-bottom: 0; }
+
+  .lede { font-size: var(--t-md); line-height: 1.5; color: var(--fg-dim); max-width: 40rem; }
+  .dim { color: var(--fg-dim); }
+  .mono { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Header ---------- */
+  header.bar { border-bottom: 1px solid var(--border); padding: calc(var(--u) * 2.5) 0; }
+  .bar-in {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--u) * 2);
+    flex-wrap: wrap;
+  }
+  .lockup { font-size: var(--t-md); font-weight: 800; letter-spacing: -0.02em; }
+  .lockup .accent-word { color: var(--accent); }
+  .bar-meta { font-size: var(--t-xs); color: var(--fg-dim); letter-spacing: 0.02em; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding-top: calc(var(--u) * 10); padding-bottom: calc(var(--u) * 9); }
+  .hero h1 { max-width: 18ch; }
+  .hero .lede { margin-top: calc(var(--u) * 3); }
+
+  .hero-frame {
+    margin-top: calc(var(--u) * 5);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+  @media (max-width: 760px) { .hero-frame { grid-template-columns: 1fr; } }
+  .keep { background: var(--bg); padding: calc(var(--u) * 3); }
+  .keep dt {
+    font-size: var(--t-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: var(--u);
+  }
+  .keep dd { margin: 0; font-size: var(--t-sm); line-height: 1.55; color: var(--fg-dim); }
+  .keep dd strong { color: var(--fg); font-weight: 600; }
+
+  /* ---------- Bento grid ---------- */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: calc(var(--u) * 2);
+    margin-top: calc(var(--u) * 5);
+  }
+  .cell {
+    grid-column: span 3;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: calc(var(--u) * 3.5);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.5);
+  }
+  .cell.w4 { grid-column: span 4; }
+  .cell.w2 { grid-column: span 2; }
+  @media (max-width: 900px) {
+    .bento { grid-template-columns: 1fr; }
+    .cell, .cell.w4, .cell.w2 { grid-column: span 1; }
+  }
+  .cell p { font-size: var(--t-sm); line-height: 1.6; color: var(--fg-dim); max-width: none; }
+  .cell p strong { color: var(--fg); font-weight: 600; }
+  .tag { font-size: var(--t-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .cell-note {
+    margin-top: auto;
+    padding-top: calc(var(--u) * 1.5);
+    border-top: 1px dashed var(--border);
+    font-size: var(--t-xs);
+    line-height: 1.5;
+    color: var(--fg-dim);
+  }
+
+  /* ---------- Admin / console rows ---------- */
+  .console { margin-top: calc(var(--u) * 5); display: grid; gap: calc(var(--u) * 3.5); max-width: 50rem; }
+  .row {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: calc(var(--u) * 3);
+    padding-left: calc(var(--u) * 2.5);
+    border-left: 2px solid var(--accent);
+  }
+  @media (max-width: 700px) { .row { grid-template-columns: 1fr; gap: var(--u); } }
+  .row-k { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); padding-top: 4px; }
+  .row-v { font-size: var(--t-sm); line-height: 1.6; color: var(--fg-dim); }
+  .row-v strong { color: var(--fg); font-weight: 600; }
+  code {
+    font-size: 0.92em;
+    background: var(--bg-alt);
+    color: var(--accent-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* ---------- Proof case ---------- */
+  .proof {
+    position: relative;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    padding: calc(var(--u) * 6);
+    margin-top: calc(var(--u) * 5);
+  }
+  @media (max-width: 760px) { .proof { padding: calc(var(--u) * 3.5); } }
+  .figs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: calc(var(--u) * 3);
+    margin: calc(var(--u) * 4) 0;
+    padding: calc(var(--u) * 3) 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  @media (max-width: 760px) { .figs { grid-template-columns: repeat(2, 1fr); gap: calc(var(--u) * 2.5); } }
+  .fig-n { font-size: var(--t-xl); font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
+  .fig-l { margin-top: var(--u); font-size: var(--t-xs); line-height: 1.45; color: var(--fg-dim); }
+  .pull {
+    border-left: 2px solid var(--accent);
+    padding-left: calc(var(--u) * 2.5);
+    font-size: var(--t-md);
+    line-height: 1.45;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    max-width: 34rem;
+  }
+
+  /* ---------- Approve strip ---------- */
+  .approve { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(var(--u) * 2); margin-top: calc(var(--u) * 4); }
+  @media (max-width: 760px) { .approve { grid-template-columns: 1fr; } }
+  .step { border-top: 2px solid var(--accent); padding-top: calc(var(--u) * 2); }
+  .step-n { font-size: var(--t-xs); letter-spacing: 0.1em; color: var(--accent); display: block; margin-bottom: var(--u); }
+  .step p { font-size: var(--t-sm); color: var(--fg-dim); line-height: 1.6; max-width: none; }
+  .step strong { color: var(--fg); font-weight: 600; }
+
+  /* ---------- Honest-status box ---------- */
+  .stage { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 12px; padding: calc(var(--u) * 4); max-width: 52rem; }
+  .stage p { font-size: var(--t-sm); line-height: 1.65; }
+  .stage ul { margin: calc(var(--u) * 2) 0 0; padding-left: 0; list-style: none; display: grid; gap: calc(var(--u) * 1.25); }
+  .stage li { font-size: var(--t-xs); line-height: 1.55; color: var(--fg-dim); padding-left: calc(var(--u) * 2.5); position: relative; }
+  .stage li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 10px; height: 1px; background: var(--accent); }
+
+  /* ---------- Close ---------- */
+  .close h2 { max-width: 20ch; }
+  .close .lede { margin-top: calc(var(--u) * 2); }
+  .sig { margin-top: calc(var(--u) * 4); display: flex; align-items: center; gap: calc(var(--u) * 2); flex-wrap: wrap; font-size: var(--t-sm); color: var(--fg-dim); }
+  .sig .link-placeholder { color: var(--accent-2); font-weight: 700; }
+
+  footer.foot { border-top: 1px solid var(--border); padding: calc(var(--u) * 3) 0 calc(var(--u) * 6); font-size: var(--t-xs); color: var(--fg-dim); line-height: 1.6; }
+</style>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <div class="lockup">[Company<span class="accent-word">Name</span>]</div>
+    <div class="bar-meta">[Product Name] &middot; [category] &middot; one-pager</div>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero wrap">
+    <p class="eyebrow">[Who this is for]</p>
+    <h1>[Headline — the one sentence that states the value you deliver]</h1>
+    <p class="lede">
+      [Lede paragraph. Two or three sentences describing what the offering is, what it replaces,
+      and why it matters to the reader. Replace every bracketed placeholder before shipping.]
+    </p>
+
+    <dl class="hero-frame">
+      <div class="keep">
+        <dt>[Benefit label]</dt>
+        <dd><strong>[One-line claim.]</strong> [Supporting detail for this benefit.]</dd>
+      </div>
+      <div class="keep">
+        <dt>[Benefit label]</dt>
+        <dd><strong>[One-line claim.]</strong> [Supporting detail for this benefit.]</dd>
+      </div>
+      <div class="keep">
+        <dt>[Benefit label]</dt>
+        <dd><strong>[One-line claim.]</strong> [Supporting detail for this benefit.]</dd>
+      </div>
+    </dl>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <p class="eyebrow">[What comes included]</p>
+    <h2>[Section headline naming what's built in]</h2>
+    <p class="lede" style="margin-top: 16px;">
+      [One or two sentences framing why these pieces matter together.]
+    </p>
+
+    <div class="bento">
+      <article class="cell w4">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description. Keep this to two or three sentences of concrete detail.]</p>
+        <p class="cell-note">[Optional proof note — a fact, not a projection.]</p>
+      </article>
+
+      <article class="cell w2">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description.]</p>
+      </article>
+
+      <article class="cell w2">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description.]</p>
+      </article>
+
+      <article class="cell w4">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description.]</p>
+      </article>
+
+      <article class="cell">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description.]</p>
+      </article>
+
+      <article class="cell">
+        <span class="tag">[Category]</span>
+        <h3>[Feature headline]</h3>
+        <p>[Feature description.]</p>
+      </article>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <p class="eyebrow">[How you run it]</p>
+    <h2>[Section headline about day-to-day operation]</h2>
+    <p class="lede" style="margin-top: 16px;">[One or two sentences framing the operating model.]</p>
+
+    <div class="console">
+      <div class="row">
+        <div class="row-k">[Task]</div>
+        <div class="row-v"><strong>[Where it happens.]</strong> [Detail.]</div>
+      </div>
+      <div class="row">
+        <div class="row-k">[Task]</div>
+        <div class="row-v"><strong>[Where it happens.]</strong> [Detail, optionally with <code>inline-code</code>.]</div>
+      </div>
+      <div class="row">
+        <div class="row-k">[Task]</div>
+        <div class="row-v"><strong>[Where it happens.]</strong> [Detail.]</div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <p class="eyebrow">[The proof case]</p>
+    <h2>[Named customer or case study, replace or remove]</h2>
+
+    <div class="proof">
+      <p class="lede" style="color: var(--fg);">
+        [One or two sentences setting up the case: who they were, what state they started from.]
+      </p>
+
+      <div class="figs">
+        <div><div class="fig-n mono">[N]</div><div class="fig-l">[what this figure counts]</div></div>
+        <div><div class="fig-n mono">[N]</div><div class="fig-l">[what this figure counts]</div></div>
+        <div><div class="fig-n mono">[N]</div><div class="fig-l">[what this figure counts]</div></div>
+        <div><div class="fig-n mono">[N]</div><div class="fig-l">[what this figure counts]</div></div>
+      </div>
+
+      <p class="pull">[Pull quote — the one honest, specific detail worth calling out on its own.]</p>
+
+      <p style="margin-top: 24px;" class="dim">[Closing context: timeframe, scope, or a caveat worth stating plainly.]</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <p class="eyebrow">[Before anyone sees it]</p>
+    <h2>[Section headline about the approval process]</h2>
+    <p class="lede" style="margin-top: 16px;">[One or two sentences on why review happens before anything goes public.]</p>
+
+    <div class="approve">
+      <div class="step"><span class="step-n mono">01 / [STEP]</span><p>[Step description.]</p></div>
+      <div class="step"><span class="step-n mono">02 / [STEP]</span><p>[Step description.]</p></div>
+      <div class="step"><span class="step-n mono">03 / [STEP]</span><p>[Step description.]</p></div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <p class="eyebrow">[Where this actually stands]</p>
+    <h2>[Section headline for an honest status update]</h2>
+
+    <div class="stage" style="margin-top: 24px;">
+      <p>[One sentence framing why you're stating limitations directly.]</p>
+      <ul>
+        <li>[Status line: what's done, what isn't, stated plainly.]</li>
+        <li>[Status line.]</li>
+        <li>[Status line.]</li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap close">
+    <p class="eyebrow">[Why choose this]</p>
+    <h2>[Closing headline]</h2>
+    <p class="lede">[Closing paragraph — tie the offering back to the reader's stated problem.]</p>
+
+    <div class="sig">
+      <span>[Company Name]</span>
+      <span class="link-placeholder">[yourdomain.example]</span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    [Footer disclaimer / figures-current-as-of line / trademark notices — replace or remove.]
+  </div>
+</footer>
