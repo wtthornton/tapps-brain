@@ -270,6 +270,148 @@ class TestPostgresHiveBackendGet:
         assert result is None
 
 
+_ROW_COLUMNS = [
+    ("namespace",),
+    ("key",),
+    ("value",),
+    ("source_agent",),
+    ("tier",),
+    ("confidence",),
+    ("source",),
+    ("tags",),
+    ("valid_at",),
+    ("invalid_at",),
+    ("superseded_by",),
+    ("memory_group",),
+    ("conflict_policy",),
+    ("embedding",),
+    ("created_at",),
+    ("updated_at",),
+    ("search_vector",),
+]
+
+
+def _row(*, key: str, invalid_at: str | None, superseded_by: str | None) -> tuple:
+    return (
+        "universal",
+        key,
+        "value",
+        "agent-1",
+        "pattern",
+        0.6,
+        "agent",
+        "[]",
+        None,
+        invalid_at,
+        superseded_by,
+        None,
+        "supersede",
+        None,
+        "2025-01-01",
+        "2025-01-01",
+        None,
+    )
+
+
+class TestPostgresHiveBackendArchiveEntry:
+    """TAP-6816: the supported non-DELETE removal path for a Hive row."""
+
+    def test_archive_live_row_sets_invalid_at_and_returns_true(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        mock_cursor.fetchone.return_value = _row(key="my-key", invalid_at=None, superseded_by=None)
+        mock_cursor.rowcount = 1
+
+        result = backend.archive_entry("universal", "my-key")
+
+        assert result is True
+        calls = mock_cursor.execute.call_args_list
+        assert "SELECT" in calls[0][0][0]
+        assert "UPDATE hive_memories SET invalid_at" in calls[1][0][0]
+        assert "namespace = %s AND key = %s AND invalid_at IS NULL" in calls[1][0][0]
+        assert calls[1][0][1][1:] == ("universal", "my-key")
+        # TAP-6816 defect 3: a successful archive bumps hive_write_notify,
+        # the same way save() and patch_confidence() do, so hive_wait_write
+        # consumers are woken by a forget-reap too.
+        assert "UPDATE hive_write_notify SET revision = revision + 1" in calls[2][0][0]
+
+    def test_archive_live_row_bumps_write_notify_revision(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        mock_cursor.fetchone.return_value = _row(key="my-key", invalid_at=None, superseded_by=None)
+        mock_cursor.rowcount = 1
+
+        backend.archive_entry("universal", "my-key")
+
+        calls = mock_cursor.execute.call_args_list
+        revision_calls = [c for c in calls if "hive_write_notify" in c[0][0]]
+        assert len(revision_calls) == 1
+
+    def test_archive_no_op_does_not_bump_write_notify_revision(self) -> None:
+        """Absent/no-op archives (nothing to reap) must not falsely wake waiters."""
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.fetchone.return_value = None
+
+        backend.archive_entry("universal", "no-such-key")
+
+        calls = mock_cursor.execute.call_args_list
+        assert not any("hive_write_notify" in c[0][0] for c in calls)
+
+    def test_archive_missing_row_returns_false_without_update(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.fetchone.return_value = None
+
+        result = backend.archive_entry("universal", "no-such-key")
+
+        assert result is False
+        # Only the SELECT ran — no UPDATE for a row that was never there.
+        assert len(mock_cursor.execute.call_args_list) == 1
+
+    def test_archive_already_archived_row_returns_false(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        # A tombstone at the end of its chain: invalid_at set, no next hop.
+        mock_cursor.fetchone.return_value = _row(
+            key="my-key", invalid_at="2025-06-01T00:00:00+00:00", superseded_by=None
+        )
+
+        result = backend.archive_entry("universal", "my-key")
+
+        assert result is False
+        assert len(mock_cursor.execute.call_args_list) == 1
+
+    def test_archive_follows_tombstone_chain_to_live_tip(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        tombstone = _row(
+            key="my-key", invalid_at="2025-06-01T00:00:00+00:00", superseded_by="my-key-v2"
+        )
+        live_tip = _row(key="my-key-v2", invalid_at=None, superseded_by=None)
+        mock_cursor.fetchone.side_effect = [tombstone, live_tip]
+        mock_cursor.rowcount = 1
+
+        result = backend.archive_entry("universal", "my-key")
+
+        assert result is True
+        calls = mock_cursor.execute.call_args_list
+        # Two SELECTs (tombstone, then its live tip) + one UPDATE on the tip's
+        # key + one write-notify revision bump.
+        assert len(calls) == 4
+        assert "UPDATE hive_memories SET invalid_at" in calls[2][0][0]
+        assert calls[2][0][1][1:] == ("universal", "my-key-v2")
+        assert "UPDATE hive_write_notify SET revision = revision + 1" in calls[3][0][0]
+
+    def test_archive_returns_false_when_update_matches_no_rows(self) -> None:
+        backend, _, _, mock_cursor = _make_backend()
+        mock_cursor.description = _ROW_COLUMNS
+        mock_cursor.fetchone.return_value = _row(key="my-key", invalid_at=None, superseded_by=None)
+        mock_cursor.rowcount = 0
+
+        result = backend.archive_entry("universal", "my-key")
+
+        assert result is False
+
+
 class TestPostgresHiveBackendSearch:
     def test_search_uses_plainto_tsquery(self) -> None:
         backend, _, _, mock_cursor = _make_backend()
