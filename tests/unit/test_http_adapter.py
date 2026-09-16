@@ -27,6 +27,7 @@ import tapps_brain.http_adapter as _mod
 from tapps_brain.http_adapter import (
     HttpAdapter,
     _probe_db,
+    _probe_token_verification,
     _service_version,
     _Settings,
     create_app,
@@ -1098,6 +1099,99 @@ class TestReadyEndpointTokenVerificationRound5:
         assert body["status"] == "ready"
         assert body["checks"]["token_verification"] == "ok"
         assert body["checks"]["token_verification_param_sets_checked"] == 1
+
+
+class TestProbeTokenVerificationDsnRedaction:
+    """TAP-7719: the outer ``except`` in ``_probe_token_verification`` must
+    scrub BOTH DSN spellings psycopg accepts -- a URL
+    (``postgresql://user:pass@host:port/db``) and keyword/value
+    (``host=... user=... password=...``). ``urlparse`` only understands the
+    former and returns ``None`` for every component of the latter, so none
+    of the four ``if parsed.<field>:`` guards fired and the keyword-form
+    password reached the response body in clear text.
+
+    Each test calls ``_probe_token_verification`` directly and forces the
+    outer ``except`` via a mocked ``_distinct_token_param_sets`` raising
+    with the DSN embedded in the message -- the same shape a real
+    connection failure produces (the driver's error text routinely echoes
+    the conninfo it failed to use).
+    """
+
+    def setup_method(self) -> None:
+        _mod._TOKEN_VERIFY_PROBE_CACHE.clear()
+
+    def test_keyword_form_password_not_leaked(self) -> None:
+        """RED on the pre-fix tree: urlparse(dsn) returns None for every
+        field of a keyword-form DSN, so the password passes through
+        untouched. GREEN once redaction goes through psycopg's own
+        conninfo parser instead.
+        """
+        dsn = "host=db.example port=5432 user=user password=s3cret dbname=brain"
+        with patch(
+            "tapps_brain.http.auth._distinct_token_param_sets",
+            side_effect=RuntimeError(f"connection failed for {dsn}"),
+        ):
+            ok, detail, _ = _probe_token_verification(dsn)
+        assert ok is False
+        assert "s3cret" not in detail
+
+    def test_url_form_password_not_leaked(self) -> None:
+        """GREEN on both base and head -- proves the fix did not move the
+        defect by weakening the URL-form path, which already worked.
+        """
+        dsn = "postgresql://user:s3cret@db.example:5432/brain"
+        with patch(
+            "tapps_brain.http.auth._distinct_token_param_sets",
+            side_effect=RuntimeError(f"connection failed for {dsn}"),
+        ):
+            ok, detail, _ = _probe_token_verification(dsn)
+        assert ok is False
+        assert "s3cret" not in detail
+
+    def test_unparseable_dsn_redacts_to_fixed_string(self) -> None:
+        """A DSN neither parser accepts must fall back to a fixed detail
+        containing no fragment of the input -- the inner ``except`` must
+        still hold after routing redaction through psycopg's parser.
+        """
+        dsn = "XYZZY123-not-a-valid-dsn-in-either-spelling !!!"
+        with patch(
+            "tapps_brain.http.auth._distinct_token_param_sets",
+            side_effect=RuntimeError(f"connection failed for {dsn}"),
+        ):
+            ok, detail, _ = _probe_token_verification(dsn)
+        assert ok is False
+        assert "XYZZY123" not in detail
+
+    def test_password_equal_to_username_not_leaked(self) -> None:
+        """A password value that collides with another field (here the
+        username) must not survive a naive per-field ``.replace()`` chain.
+        This implementation redacts longest-value-first so the shared
+        string is removed regardless of which field's guard "claims" it;
+        the resulting label may read [user] or [pass], but the raw secret
+        text must never remain in either case.
+        """
+        dsn = "host=db.example port=5432 user=shared password=shared dbname=brain"
+        with patch(
+            "tapps_brain.http.auth._distinct_token_param_sets",
+            side_effect=RuntimeError(f"connection failed for {dsn}"),
+        ):
+            ok, detail, _ = _probe_token_verification(dsn)
+        assert ok is False
+        assert "shared" not in detail
+
+    def test_empty_password_no_crash_no_stray_marker(self) -> None:
+        """A DSN with no password field at all must not crash and must not
+        emit a stray ``[pass]`` marker where no password existed.
+        """
+        dsn = "host=db.example port=5432 user=admin dbname=brain"
+        with patch(
+            "tapps_brain.http.auth._distinct_token_param_sets",
+            side_effect=RuntimeError(f"connection failed for {dsn}"),
+        ):
+            ok, detail, _ = _probe_token_verification(dsn)
+        assert ok is False
+        assert "[pass]" not in detail
+        assert "db.example" not in detail
 
 
 # ---------------------------------------------------------------------------

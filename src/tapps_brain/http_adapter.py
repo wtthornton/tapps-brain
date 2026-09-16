@@ -640,17 +640,36 @@ def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
     except Exception as exc:
         err_str = str(exc)
         try:
-            from urllib.parse import urlparse
+            # TAP-7719: parse via psycopg's own conninfo parser, not
+            # ``urllib.parse.urlparse``. ``urlparse`` only understands the
+            # URL spelling (``postgresql://user:pass@host:port/db``) and
+            # returns ``None`` for every component of a keyword/value DSN
+            # (``host=... user=... password=...``) -- which psycopg accepts
+            # identically -- so the guards below silently no-op and the raw
+            # password reaches the response body. ``conninfo_to_dict``
+            # parses both spellings into the same field names by
+            # construction, so there is one redaction path instead of two.
+            from psycopg.conninfo import conninfo_to_dict
 
-            parsed = urlparse(dsn)
-            if parsed.hostname:
-                err_str = err_str.replace(parsed.hostname, "[host]")
-            if parsed.port:
-                err_str = err_str.replace(str(parsed.port), "[port]")
-            if parsed.username:
-                err_str = err_str.replace(parsed.username, "[user]")
-            if parsed.password:
-                err_str = err_str.replace(parsed.password, "[pass]")
+            parsed = conninfo_to_dict(dsn)
+            redactions: list[tuple[str, str]] = []
+            if parsed.get("host"):
+                redactions.append((str(parsed["host"]), "[host]"))
+            if parsed.get("port"):
+                redactions.append((str(parsed["port"]), "[port]"))
+            if parsed.get("user"):
+                redactions.append((str(parsed["user"]), "[user]"))
+            if parsed.get("password"):
+                redactions.append((str(parsed["password"]), "[pass]"))
+            # Longest value first: if the password happens to be a substring
+            # of another field (e.g. equal to the dbname, or embedded in the
+            # username), redacting the longer field first removes the
+            # embedded password text as a side effect, instead of leaving it
+            # for a later, now-empty .replace() to miss.
+            for value, placeholder in sorted(
+                redactions, key=lambda item: len(item[0]), reverse=True
+            ):
+                err_str = err_str.replace(value, placeholder)
         except Exception:
             err_str = "token verification probe failed"
         result = (False, f"token_verification_error: {err_str}", len(checked_param_sets))
