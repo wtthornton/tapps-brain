@@ -123,50 +123,68 @@ Stood up a throwaway, uniquely-named standalone pgvector container (`docker run`
 `docker compose`):
 
 ```
-$ docker run -d --name pgvector-tap7717-3459636 \
+$ docker run -d --name pgvector-tap7717-r2-3559682 \
     -e POSTGRES_PASSWORD=tapps -e POSTGRES_USER=tapps -e POSTGRES_DB=tapps_test \
     -p 0:5432 pgvector/pgvector:pg17
-3c54cd5e4c5c1696f5d03b0f333e04b3cf71b8675a315ff9e0807fcababb10ea
-$ docker ps --filter name=pgvector-tap7717-3459636 --format '{{.Names}}\t{{.Ports}}'
-pgvector-tap7717-3459636       0.0.0.0:32768->5432/tcp, [::]:32768->5432/tcp
-$ docker exec pgvector-tap7717-3459636 psql -U tapps -d tapps_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+37f100717cb1ac4d1b632a8c3b8bb5162ccca3020c22bb407aace8243f5f2c56
+$ docker ps --filter name=pgvector-tap7717-r2-3559682 --format '{{.Names}}\t{{.Ports}}'
+pgvector-tap7717-r2-3559682    0.0.0.0:32770->5432/tcp, [::]:32770->5432/tcp
+$ docker exec pgvector-tap7717-r2-3559682 psql -U tapps -d tapps_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 CREATE EXTENSION
 ```
 
 This container never touched `TAPPS_BRAIN_DATABASE_URL`, port 8080, or any container named
 `tapps-brain-*`; it was `docker rm -f`'d immediately after the run below (verified: no
-`*tap7717*` container remains).
+`*tap7717*` container remains). This supersedes the round-1 single-container run
+(`pgvector-tap7717-3459636`), which produced only a baseline-vs-perturbed pair and no negative
+control.
 
-Harness (`docs/evidence/../../` — kept outside `src/` per the file partition; the script itself
-lives in the session scratchpad, not committed, since it is not part of the shipped package):
-a 10-document corpus embedded with the installed `sentence-transformers==5.4.1` /
+Harness: committed at [`docs/evidence/recall-286-harness.py`](recall-286-harness.py) (kept
+outside `src/` per the file partition, self-contained so a future reader can replay it from a
+clean checkout — corpus literal, container command, query, and comparison all live in the file).
+A 10-document corpus embedded with the installed `sentence-transformers==5.4.1` /
 `BAAI/bge-small-en-v1.5` (the same model+revision `src/tapps_brain/embeddings.py` pins), inserted
 into a `VECTOR(384)` column, queried by cosine distance (`<=>`) for
-`"How does the system rank and combine search results?"`, then one document (id 5 — originally
-about "reciprocal rank fusion", topically closest to the query) rewritten to an unrelated topic
-("Bananas are a good source of potassium...") and the same query re-run against the re-seeded
-corpus.
+`"How does the system rank and combine search results?"`.
+
+The harness runs the comparison **three times** against the same environment, not once, because
+one direction (only ever showing "different") cannot distinguish a working comparison from a
+harness that unconditionally reports "different":
+
+- `run1` — baseline: seed the unperturbed 10-doc corpus, query, record ids.
+- `run2` — **negative control**: re-seed the *same* unperturbed corpus, query again. Asserts
+  `run1 == run2` — this is the direction the original single-run version of this document never
+  exercised, and it is what rules out a harness that always reports "different" regardless of
+  input.
+- `run3` — **positive control**: perturb one document (id 5 — originally about "reciprocal rank
+  fusion", topically closest to the query — rewritten to "Bananas are a good source of
+  potassium..."), query again. Asserts `run1 != run3`.
 
 Literal output:
 ```
 st_version=5.4.1
-corpus_size=10
 query_text='How does the system rank and combine search results?'
-baseline_ids_in_order=[5, 4, 2, 1, 3, 8, 9, 7, 6, 10]
-perturbed_ids_in_order=[4, 2, 1, 3, 8, 9, 7, 6, 5, 10]
-HARNESS_RESULT=DIFFERENT_AFTER_PERTURBATION -> OK
+corpus_size=10
+run1_ids=[5, 4, 2, 1, 3, 8, 9, 7, 6, 10]
+run2_ids=[5, 4, 2, 1, 3, 8, 9, 7, 6, 10]
+run3_ids=[4, 2, 1, 3, 8, 9, 7, 6, 5, 10]
+negative_control_run1_eq_run2=PASS
+positive_control_run1_ne_run3=PASS
+HARNESS_RESULT=RUN1_EQ_RUN2_AND_RUN1_NE_RUN3 -> OK
 ```
 
-10 ids compared before vs. after perturbation. Doc 5 moves from rank 1 to rank 9 (all other 9
-ids retain relative order among themselves). The harness reports a difference, not "identical" —
-**b3 = PASS**, on the only branch this PR exercises (5.4.1 -> 5.4.1, so the harness ran once
-against one environment, which is exactly what b3 requires: proof the comparison mechanism can
-detect change, independent of whether this specific PR produces any).
+`run1 == run2` (identical id lists, byte-for-byte) on the unperturbed re-seed — the harness does
+not unconditionally report "different"; it reports "identical" when nothing changed. `run1 !=
+run3`: doc 5 moves from rank 1 to rank 9 after perturbation (all other 9 ids retain relative
+order among themselves). Both controls pass, in both required directions — **b3 = PASS**, on the
+only branch this PR exercises (5.4.1 -> 5.4.1, so all three runs are against one environment,
+which is exactly what b3 requires: proof the comparison mechanism can detect both "nothing
+changed" and "something changed", independent of whether this specific PR produces any change).
 
 Container teardown:
 ```
-$ docker rm -f pgvector-tap7717-3459636
-pgvector-tap7717-3459636
+$ docker rm -f pgvector-tap7717-r2-3559682
+pgvector-tap7717-r2-3559682
 $ docker ps -a --format '{{.Names}}' | grep -i tap7717
 container removed, none remaining
 ```
