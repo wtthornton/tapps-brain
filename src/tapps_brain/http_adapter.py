@@ -128,7 +128,7 @@ from tapps_brain.http.middleware import (
 )
 
 # probe cache
-from tapps_brain.http.probe_cache import (  # noqa: F401
+from tapps_brain.http.probe_cache import (
     _PROBE_CACHE_TTL,
     _get_hive_pool_stats,
     _probe_db,
@@ -441,6 +441,221 @@ def _maybe_warn_retention_manager(
                 "TAPPS_BRAIN_EVENTS_RETENTION_MONTHS. See TAP-6698."
             ),
         )
+
+
+# TAP-7682: dedicated readiness probe for per-tenant token verification.
+# tapps-brain#309 fixed an ImportError raised *inside*
+# ProjectRegistry.verify_token() that made every authenticated /v1/* call
+# 503 for hours while /health and /ready stayed green -- neither probed the
+# verification call itself, only DB reachability (see _probe_db above).
+# Sentinel identity below is never a real project or a real credential. A
+# healthy brain always returns True/False/None for this pair (see
+# ProjectRegistry.verify_token's docstring) -- only an exception raised
+# *inside* the verification call (import failure, DB error mid-call, etc.)
+# is "broken" and reported non-ok. Distinguishing a clean False/None
+# (healthy refusal) from a crash (real outage) is the entire point of this
+# probe -- see VAL-03.
+_READINESS_PROBE_PROJECT_ID = "__tapps_brain_readiness_probe__"
+_READINESS_PROBE_TOKEN = "readiness-probe-not-a-real-credential"
+
+# TAP-7682 round 2: the sentinel project id above has no row in
+# ``project_profiles`` by design (it is never a real project), so
+# ``ProjectRegistry.verify_token`` always takes its early return at
+# ``src/tapps_brain/project_registry.py:304-305`` before it ever reaches
+# ``PasswordHasher()`` / ``ph.verify``. That means the call above only ever
+# exercised the import prologue and the admin DB round-trip -- a runtime
+# break in argon2 hashing (hasher construction or ``ph.verify`` raising,
+# including the ``except Exception: raise`` arm from TAP-782) was
+# structurally unreachable by this probe and would leave ``/ready`` green
+# while every authenticated ``/v1/*`` call for a project WITH a stored
+# token failed closed with 503.
+#
+# Fix: call the hashing primitives directly against a fixed, non-secret
+# self-test hash in addition to the registry lookup above. This is a
+# literal argon2id hash of a well-known constant, generated once offline
+# with the exact same ``argon2.PasswordHasher`` the production code path
+# uses -- it is not tied to any project, credential, or database row, so it
+# does not weaken the sentinel's isolation from real project data. A
+# healthy brain always verifies it successfully; any exception from
+# ``PasswordHasher()`` construction or ``ph.verify`` (a real mismatch is
+# impossible here since the secret and hash are a matched, hardcoded pair)
+# means the hashing runtime itself is broken.
+_READINESS_PROBE_SELF_TEST_SECRET = "tapps-brain-readiness-self-test-v1"
+_READINESS_PROBE_SELF_TEST_HASH = "$argon2id$v=19$m=65536,t=3,p=4$nJ2Yle7D2j/YnNE8b0PVJg$y5v488i2MBrJgbQYhy+3188bRc84npkGjP6HFX52Xts"
+# The (memory_cost, time_cost, parallelism) triple encoded in the pinned hash
+# above -- argon2-cffi's default from 23.1.0 onward, so a discovered stored
+# set commonly matches it exactly (TAP-7682 round 5).
+_READINESS_PROBE_SELF_TEST_PARAMS = (65536, 3, 4)
+
+_TOKEN_VERIFY_PROBE_CACHE: dict[str, tuple[float, tuple[bool, str, int]]] = {}
+
+
+def _is_valid_argon2_param_set(memory_cost: object, time_cost: object, parallelism: object) -> bool:
+    """Return whether a ``(memory_cost, time_cost, parallelism)`` triple is
+    safe to hand to ``argon2.PasswordHasher`` (TAP-7682 round 4).
+
+    A malformed row -- e.g. a truncated regex match, or a memory_cost too
+    small for its parallelism (RFC 9106 requires ``memory_cost >=
+    8 * parallelism`` KiB, the exact shape observed as
+    ``HashingError: Memory cost is too small``) -- must not construct a
+    hasher that is guaranteed to raise. Reject it here instead so one bad
+    row degrades only its own parameter set, not the whole readiness check.
+    """
+    return (
+        isinstance(memory_cost, int)
+        and isinstance(time_cost, int)
+        and isinstance(parallelism, int)
+        and time_cost >= 1
+        and 1 <= parallelism <= 2**24 - 1
+        and memory_cost >= 8 * parallelism
+    )
+
+
+def _probe_token_verification(dsn: str | None) -> tuple[bool, str, int]:
+    """Readiness probe for per-tenant token verification.
+
+    Calls the same seam the data-plane auth dependency uses
+    (:func:`tapps_brain.http.auth._verify_per_tenant_token`) against a
+    sentinel project id and a deliberately-wrong token. A healthy call
+    returns ``True``/``False``/``None`` -- all three are "ok" for readiness
+    purposes, since a wrong-or-missing token producing a clean refusal is
+    expected behavior, not an outage. Only an exception escaping the call
+    is "broken".
+
+    Because the sentinel project has no ``project_profiles`` row,
+    ``_verify_per_tenant_token`` alone never reaches argon2 hasher
+    construction or ``ph.verify`` (see the module comment above). This
+    probe additionally verifies a fixed, non-secret self-test hash directly
+    against ``argon2.PasswordHasher`` so a runtime break in the hashing
+    library itself -- not just an import-time break -- flips readiness.
+
+    TAP-7682 round 3: the pinned hash above is fixed at one argon2
+    parameter set (m=65536,t=3,p=4). ``PasswordHasher.verify`` reads
+    memory/time/parallelism cost from the encoded hash, not the hasher, so
+    this probe additionally self-tests one freshly-generated hash per
+    distinct parameter set found in ``project_profiles.hashed_token`` --
+    catching a runtime break (e.g. a memory allocation error) specific to a
+    parameter set production actually stores but the pinned hash does not.
+
+    Returns ``(ok, detail, param_sets_checked)``; never raises. Skipped
+    (reported ok, 0 sets checked) when no DSN is configured -- DB
+    reachability is already covered by :func:`_probe_db`, and this probe has
+    nothing to connect to.
+
+    ``param_sets_checked`` counts every argon2 parameter set actually
+    self-tested (the pinned set plus any distinct stored set that passed
+    :func:`_is_valid_argon2_param_set`), deduplicated by parameter triple
+    against the pinned set, so an operator can tell "verified 2 parameter
+    sets" from "verified none" instead of inferring coverage from a bare
+    "ok" (TAP-7682 round 4). A stored set whose triple matches the pinned
+    one is not counted twice (TAP-7682 round 5).
+
+    If discovery returns one or more rows and *none* of them pass
+    :func:`_is_valid_argon2_param_set`, the probe reports non-ok -- an
+    all-malformed table means this probe has covered zero of the parameter
+    sets production actually stores, which must not read as "ok" any more
+    than a discovery-query failure should (TAP-7682 round 5). Discovery
+    legitimately returning zero rows is a different case -- no per-tenant
+    tokens are stored at all, so there is nothing to cover -- and stays ok.
+    """
+    if not dsn:
+        return True, "skipped (no DSN configured)", 0
+    now = time.monotonic()
+    cached = _TOKEN_VERIFY_PROBE_CACHE.get(dsn)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    checked_param_sets: set[tuple[int, int, int]] = set()
+    try:
+        from argon2 import PasswordHasher
+
+        from tapps_brain.http.auth import _distinct_token_param_sets, _verify_per_tenant_token
+
+        PasswordHasher().verify(_READINESS_PROBE_SELF_TEST_HASH, _READINESS_PROBE_SELF_TEST_SECRET)
+        checked_param_sets.add(_READINESS_PROBE_SELF_TEST_PARAMS)
+
+        # TAP-7682 round 3: the pinned hash above is fixed at m=65536,t=3,p=4
+        # and never exercises the parameter sets production actually stores.
+        # ``PasswordHasher.verify`` reads memory/time/parallelism cost from
+        # the encoded hash string, not from the hasher instance, so a token
+        # issued under a different argon2-cffi version (e.g. the pre-23.1.0
+        # default of m=102400,t=2,p=8 -- a 100 MiB allocation vs. this
+        # probe's 64 MiB) is verified at a memory/time cost the pinned hash
+        # never touches. Self-test one freshly-generated hash per distinct
+        # parameter set actually present in ``project_profiles.hashed_token``
+        # (deduplicated by parameter triple, not per project row, so the
+        # cost stays bounded regardless of tenant count) in addition to the
+        # pinned hash above.
+        #
+        # TAP-7682 round 5: a discovery-query failure must SURFACE
+        # unconditionally, not be swallowed into "no extra sets" -- a probe
+        # that could not enumerate what it is supposed to cover must not
+        # report "ok". Round 4 carved out an exemption for
+        # ``psycopg.OperationalError`` on the theory that it is a bare
+        # DB-connectivity failure already reported by the sibling
+        # ``_probe_db`` check. That is false: ``psycopg.errors.QueryCanceled``
+        # (a ``statement_timeout`` on this exact discovery query),
+        # ``TooManyConnections``, and ``DeadlockDetected`` are all
+        # ``OperationalError`` subclasses that ``_probe_db`` -- a different
+        # query on a different, separately-cached connection -- does not
+        # cover. Every discovery failure now propagates to the outer except
+        # below, same as any other probe failure.
+        extra_param_sets = _distinct_token_param_sets(dsn)
+        malformed_count = 0
+        for memory_cost, time_cost, parallelism in extra_param_sets:
+            # TAP-7682 round 4: validate before constructing the hasher so
+            # one malformed stored row (e.g. a truncated regex match) cannot
+            # hard-degrade readiness on its own -- skip it and keep checking
+            # the remaining discovered sets.
+            if not _is_valid_argon2_param_set(memory_cost, time_cost, parallelism):
+                malformed_count += 1
+                logger.warning(
+                    "token_verification_probe.malformed_param_set_skipped",
+                    memory_cost=memory_cost,
+                    time_cost=time_cost,
+                    parallelism=parallelism,
+                )
+                continue
+            triple = (memory_cost, time_cost, parallelism)
+            if triple not in checked_param_sets:
+                ph = PasswordHasher(
+                    memory_cost=memory_cost, time_cost=time_cost, parallelism=parallelism
+                )
+                self_test_hash = ph.hash(_READINESS_PROBE_SELF_TEST_SECRET)
+                ph.verify(self_test_hash, _READINESS_PROBE_SELF_TEST_SECRET)
+                checked_param_sets.add(triple)
+
+        # TAP-7682 round 5: rows were returned but every one was malformed --
+        # this probe has covered zero of the parameter sets production
+        # actually stores, the same failure shape as a discovery-query
+        # failure. An empty ``extra_param_sets`` (no stored tokens at all)
+        # must stay ok -- the discriminator is "rows returned but none
+        # usable", not "no sets checked".
+        if extra_param_sets and malformed_count == len(extra_param_sets):
+            raise ValueError(
+                f"all {malformed_count} discovered argon2 parameter set(s) failed validation"
+            )
+
+        _verify_per_tenant_token(_READINESS_PROBE_PROJECT_ID, _READINESS_PROBE_TOKEN, dsn)
+        result: tuple[bool, str, int] = (True, "ok", len(checked_param_sets))
+    except Exception as exc:
+        err_str = str(exc)
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(dsn)
+            if parsed.hostname:
+                err_str = err_str.replace(parsed.hostname, "[host]")
+            if parsed.port:
+                err_str = err_str.replace(str(parsed.port), "[port]")
+            if parsed.username:
+                err_str = err_str.replace(parsed.username, "[user]")
+            if parsed.password:
+                err_str = err_str.replace(parsed.password, "[pass]")
+        except Exception:
+            err_str = "token verification probe failed"
+        result = (False, f"token_verification_error: {err_str}", len(checked_param_sets))
+    _TOKEN_VERIFY_PROBE_CACHE[dsn] = (time.monotonic() + _PROBE_CACHE_TTL, result)
+    return result
 
 
 def create_app(
@@ -917,10 +1132,30 @@ def create_app(
     @app.get("/ready")
     async def _ready() -> JSONResponse:
         is_ready, migration_version, message = _probe_db(cfg.dsn)
+        # TAP-7682: /ready used to answer "is Postgres reachable" only, and
+        # never touched per-tenant token verification -- during the incident
+        # this probe exists to make detectable, /ready stayed "ready" for
+        # hours while every authenticated /v1/* call 503'd from an ImportError
+        # inside verify_token(). See _probe_token_verification for what "ok"
+        # means here (a clean False/None refusal is healthy; only a crash
+        # inside the verification call is not).
+        token_verification_ok, token_verification_detail, token_verification_param_sets = (
+            _probe_token_verification(cfg.dsn)
+        )
+        overall_ready = is_ready and token_verification_ok
         body: dict[str, Any] = {
-            "status": "ready" if is_ready else "degraded",
+            "status": "ready" if overall_ready else "degraded",
             "migration_version": migration_version,
             "detail": message,
+            "checks": {
+                "token_verification": (
+                    "ok" if token_verification_ok else token_verification_detail
+                ),
+                # TAP-7682 round 4: distinguish "verified N parameter sets"
+                # from "verified none" so zero coverage is visible to an
+                # operator rather than inferred from a bare "ok".
+                "token_verification_param_sets_checked": token_verification_param_sets,
+            },
         }
         _pool_stats = _get_hive_pool_stats(cfg.store)
         if _pool_stats:
@@ -931,7 +1166,7 @@ def create_app(
                 "available": _pool_stats.get("pool_available"),
                 "saturation": _pool_stats.get("pool_saturation"),
             }
-        return JSONResponse(status_code=200 if is_ready else 503, content=body)
+        return JSONResponse(status_code=200 if overall_ready else 503, content=body)
 
     @app.get("/metrics")
     async def _metrics(request: Request) -> PlainTextResponse:

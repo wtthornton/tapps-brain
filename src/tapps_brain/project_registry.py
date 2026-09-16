@@ -333,6 +333,31 @@ class ProjectRegistry:
         else:
             return True
 
+    def distinct_hashed_token_param_sets(self) -> list[tuple[int, int, int]]:
+        """Return distinct argon2 ``(memory_cost, time_cost, parallelism)``
+        triples encoded in stored ``hashed_token`` values.
+
+        Used by the readiness self-test (TAP-7682 round 3) to exercise the
+        parameter sets production tokens are actually verified against —
+        ``PasswordHasher.verify`` reads memory/time/parallelism cost from the
+        encoded hash string, not from the hasher instance, so a hash issued
+        under a different argon2-cffi version (e.g. the pre-23.1.0 default of
+        m=102400,t=2,p=8) allocates memory the pinned m=65536,t=3,p=4
+        self-test never exercises. Deduplicated by parameter triple, not per
+        project row, so the work stays bounded regardless of tenant count.
+        Returns an empty list when no project has a stored token.
+        """
+        with self._cm.admin_context() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT "
+                "(regexp_match(hashed_token, 'm=(\\d+),t=(\\d+),p=(\\d+)'))[1]::int, "
+                "(regexp_match(hashed_token, 'm=(\\d+),t=(\\d+),p=(\\d+)'))[2]::int, "
+                "(regexp_match(hashed_token, 'm=(\\d+),t=(\\d+),p=(\\d+)'))[3]::int "
+                "FROM project_profiles WHERE hashed_token IS NOT NULL"
+            )
+            rows = cur.fetchall()
+        return [(m, t, p) for m, t, p in rows if m is not None and t is not None and p is not None]
+
     # ------------------------------------------------------------------
     # Resolution
     # ------------------------------------------------------------------

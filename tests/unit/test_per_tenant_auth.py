@@ -84,6 +84,22 @@ def _make_mock_conn_cm(hashed_token: str | None) -> MagicMock:
     return cm
 
 
+def _make_mock_conn_cm_fetchall(rows: list[tuple[Any, ...]]) -> MagicMock:
+    """Build a mock PostgresConnectionManager whose cursor.fetchall() returns *rows*."""
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchall.return_value = rows
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    cm = MagicMock()
+    cm.admin_context.return_value.__enter__ = MagicMock(return_value=conn)
+    cm.admin_context.return_value.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
 def _make_mock_conn_cm_rowcount(rowcount: int) -> MagicMock:
     """Build a mock where rowcount is configurable (for UPDATE checks)."""
     cur = MagicMock()
@@ -194,6 +210,36 @@ class TestProjectRegistryVerifyToken:
         cm = _make_mock_conn_cm("not-a-real-argon2-hash")
         registry = ProjectRegistry(cm)
         assert registry.verify_token("proj", "anytoken") is False
+
+
+class TestProjectRegistryDistinctHashedTokenParamSets:
+    """TAP-7682 round 3: the readiness self-test reads these to cover the
+    argon2 parameter sets production actually stores, not one pinned set.
+    """
+
+    def test_empty_table_returns_empty_list(self) -> None:
+        cm = _make_mock_conn_cm_fetchall([])
+        registry = ProjectRegistry(cm)
+        assert registry.distinct_hashed_token_param_sets() == []
+
+    def test_returns_parsed_int_triples(self) -> None:
+        cm = _make_mock_conn_cm_fetchall([(65536, 3, 4), (102400, 2, 8)])
+        registry = ProjectRegistry(cm)
+        result = registry.distinct_hashed_token_param_sets()
+        assert result == [(65536, 3, 4), (102400, 2, 8)]
+        for m, t, p in result:
+            assert isinstance(m, int)
+            assert isinstance(t, int)
+            assert isinstance(p, int)
+
+    def test_null_regexp_match_row_is_skipped(self) -> None:
+        """A row whose hashed_token failed to match the argon2 pattern
+        (regexp_match returns NULL, not a 3-element array) must not crash
+        the caller — skip it rather than propagate a None triple.
+        """
+        cm = _make_mock_conn_cm_fetchall([(None, None, None), (65536, 3, 4)])
+        registry = ProjectRegistry(cm)
+        assert registry.distinct_hashed_token_param_sets() == [(65536, 3, 4)]
 
 
 # ---------------------------------------------------------------------------
