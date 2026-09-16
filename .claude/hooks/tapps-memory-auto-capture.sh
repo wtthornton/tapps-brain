@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # TappsMCP Stop hook - Auto-Capture (Epic 65.5)
-# Extracts durable facts from context and saves via tapps_memory save_bulk.
+# Extracts durable facts from the transcript via `tapps-mcp auto-capture` (CLI -> BrainBridge); does not call the `tapps_memory` MCP tool.
 # Runs tapps-mcp auto-capture with stdin; configurable max_facts, min_context.
 INPUT=$(cat)
 PYBIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
