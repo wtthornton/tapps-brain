@@ -7,7 +7,7 @@ allowed-tools: mcp__nlt-linear-issues__tapps_linear_snapshot_get mcp__nlt-linear
 argument-hint: "[free-form query, e.g. 'open issues in TAP', 'backlog assigned to me']"
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-read v3.12.89 -->
+<!-- BEGIN: tapps-skill linear-read v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Multi-issue Linear reads are cache-first by contract (TAP-967 audit found 5,368 `list_issues` calls with 0.26% cache adoption — soft rules failed; this skill is the routed path the agent reaches for instead). Invoke ANY time the user asks for a list, batch, or filtered view of Linear issues.
@@ -74,6 +74,19 @@ Three sequential `list_issues({state: "backlog"})`, `({state: "unstarted"})`, `(
 - `query` — full-text search across title and description
 - `includeArchived` — default `true`; pass `false` to skip archived
 - `limit` — max 250
+
+## Degrades without
+
+- `mcp__plugin_linear_linear__` (`list_issues`, `get_issue`) — belongs to the
+  separate, independently installed Linear plugin (TAP-7771: this bundle
+  cannot safely declare it a dependency without risking the same
+  unsatisfiable-dependency failure TAP-7758 fixed). Without that plugin
+  installed and loaded, steps 3-4 of the core flow cannot fetch or refresh
+  issue data — the cache-first snapshot mechanics (`tapps_linear_snapshot_get`
+  / `_put`, both bundled) still work, but only ever serve whatever was
+  cached before the plugin went missing. This skill carries zero
+  `docs-mcp` references, so it is otherwise fully usable in this bundle
+  whenever the Linear plugin is co-installed.
 <!-- END: tapps-skill -->
 
 <!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->

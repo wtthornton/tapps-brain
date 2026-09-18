@@ -8,7 +8,7 @@ mcp_tools:
   - docs_check_completeness
   - docs_check_diataxis
 ---
-<!-- BEGIN: tapps-skill tapps-docs-report v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-docs-report v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Run scan + completeness + Diataxis; present summary table.

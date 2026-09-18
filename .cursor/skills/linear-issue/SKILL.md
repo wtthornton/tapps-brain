@@ -13,7 +13,7 @@ mcp_tools:
   - tapps_linear_snapshot_invalidate
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-issue v3.12.89 -->
+<!-- BEGIN: tapps-skill linear-issue v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Work with Linear issues for AI-agent consumption. Infer intent from the user's prompt and act autonomously within scope. The user's original request is standing authorization for the full generator → validator → save chain — do NOT pause mid-flow to ask "should I create this?"

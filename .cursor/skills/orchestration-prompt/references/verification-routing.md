@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/verification-routing.md v3.12.89 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/verification-routing.md v3.12.90 -->
 # Verification routing and honest reporting
 
 Ten rules promoted from a consuming project's local region, where they were working and reaching nobody else. `references/field-rules-and-rulings.md` is about whether a proof is sound; these are about who runs it, over what population, and how its result gets reported.
@@ -83,6 +83,30 @@ are about *who runs it, over what population, and how its result gets reported*.
    restates tracker state says so in the same breath. Close an issue by ticking each box
    with its evidence pointer, or leaving it unticked and saying in the body why:
    unticked-and-silent is the only version that is not honest.
+
+   **A validation-contract ID is not the issue's acceptance criteria — audit every box
+   before any close.** Measured across five issues in one program: the validation
+   contract covered 12 of 22 acceptance checkboxes (per-issue: 2/4, 3/5, 3/4, 2/4,
+   2/5) — built from each epic's headline defects, so roughly two of every four or
+   five boxes became a VAL row and nothing noticed the rest, because every VAL id was
+   green. The cost was a wrong close: one issue was marked Done on a green
+   verification id — merged PR, hundreds of passing tests, both controls red — while
+   its own box asked for an explicit recorded decision on whether a feature was
+   shippable, and the shipped documentation said the opposite: the operator must
+   still decide. Four boxes, one green VAL, one box never met.
+   - **Build the validation contract FROM the issues' `- [ ]` boxes, not from the
+     epic's headline**, enumerated during triage; map each box to a VAL id or to an
+     explicit `not covered`. **The coverage table's denominator is boxes, not
+     issues.**
+   - **No issue reaches Done without a box-by-box audit**, one of four verdicts per
+     box — `YES` / `NO` / `PARTIAL` / `NOT-CODE` — each `YES` carrying a `file:line`,
+     a test name, or a command and its output. A green VAL is necessary and never
+     sufficient; this is a **Done-when clause**, not advice, and it does not replace
+     the ticking-or-saying-why rule above — it adds the verdict vocabulary and the
+     per-`YES` evidence requirement to it.
+   - **A box that is a decision, not code, gets its own decide ticket at triage
+     time** — surfacing it at close time is how a shippability call sits unmade
+     behind a green gate.
 8. **"Blocked" is a first-class lane outcome — say so, or lanes optimise for the number.**
    A lane that cannot clear a gate honestly, refuses to bypass it, and reports blocked with
    a diagnosis has usually located a real defect in the *gate*. A prompt silent on this

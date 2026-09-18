@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/field-rules-and-rulings.md v3.12.89 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/field-rules-and-rulings.md v3.12.90 -->
 # Field rules and rulings
 
 Read while filling Guardrails, the Validation contract, or the Plane map. Twelve field rules distilled from postmortems of this skill's own emitted prompts, followed by eight rulings that pin edge cases the proof-shape table (`references/method-detail.md` §5) does not spell out on its own.
@@ -26,6 +26,24 @@ each — they are not optional flavor text.
    same blind spots. Run the fix's proof against the unpatched tree and confirm it
    fails there; a proof that never ran against a failing baseline proves nothing about
    whether the fix did anything.
+
+   **This governs a fix's proof at verify time. A separate, earlier obligation governs
+   a Done-when gate at authoring time** — before any fix exists: measure every
+   threshold, constant, and gate a Done-when clause names, from source or a run
+   against the tree, at the moment the prompt is authored, and paste the measured
+   value into the prompt. Never carry one from a program record, a triage report, or
+   a prior prompt — those drift and nothing re-checks them. Two measurements from one
+   program: a brief required `make lint` + `make typecheck` exit 0 on a repo where
+   `make typecheck` **exits 2 with 265 errors at base** and has never been green — the
+   achievable clause is "adds no new error, proven by an error-**identity** diff"
+   (normalise each line to `file|error|message`, strip line numbers, show `comm -23`
+   and `comm -13` both empty; **counts are not identities** — 265 at head and 265 at
+   base can be two different sets). A second brief cited `PAGE_MINIMUM = 30` from a
+   program record when the real value, stale since an earlier issue, was **15** — the
+   same program had already shipped a brief demanding a 16-page rejection against a
+   floor of 15, after which the lane quietly swapped in a working fixture. A prompt
+   that asserts a green nobody has seen is a prompt whose controls cannot
+   discriminate; write a red-at-base gate as an identity diff, never as "exits 0".
 4. **A merge-gating verifier reports the PR's own CI by name and state, and re-runs
    the CI job's own command.** When a verdict gates a merge, name the actual CI
    check(s) on that PR and their actual state — not a locally-run proxy — and re-run
@@ -58,6 +76,15 @@ each — they are not optional flavor text.
    separately greps for other call sites of the same symbol or pattern — a bug fixed
    at one call site and left in three siblings is how a round-2 verify still turns up
    a fresh, different failure.
+
+   **The fix prompt states, explicitly, which rows are already verified and must not
+   be re-derived** — list them by name — and the re-verifier is handed the same list
+   with its budget pointed at the delta alone. Without this, a three-round lane
+   re-derived the same 17-row text-identity table and the same cover-clearance
+   non-regression in rounds 2 and 3, both already established in round 1 — roughly
+   doubling the lane's cost: **$9.99 against $4.09 for a single round**, and its wall
+   clock. A round-2 or round-3 verifier that re-checks what round 1 already settled is
+   spending frontier tokens on a foregone conclusion.
 10. **A successor to a partially-failed program needs a disposition disjunction with
     a numeric floor and an anti-escape guard.** When a prior run stopped short, the
     next prompt's Done-when states an explicit disjunction of acceptable dispositions

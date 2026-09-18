@@ -7,7 +7,7 @@ allowed-tools: mcp__nlt-linear-issues__docs_generate_epic mcp__nlt-linear-issues
 argument-hint: "[create-epic|create-story|lint TAP-###|validate|triage] [free-form detail]"
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-issue v3.12.89 -->
+<!-- BEGIN: tapps-skill linear-issue v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Work with Linear issues for AI-agent consumption. Infer intent from the user's prompt and act autonomously within scope — see `autonomy.md`. The user's original request is the authorization for the full generator → validator → save_issue chain; do NOT pause mid-flow to ask "should I create this?"

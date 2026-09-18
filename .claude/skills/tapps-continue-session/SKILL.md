@@ -10,7 +10,7 @@ description: >-
 allowed-tools: mcp__nlt-build__tapps_session_start mcp__plugin_linear_linear__get_issue Bash Read
 argument-hint: "[slot] [optional Linear issue id e.g. TAP-1234]"
 ---
-<!-- BEGIN: tapps-skill tapps-continue-session v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-continue-session v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Start work in a fresh context window by assembling structured state — not a user paste.
@@ -57,6 +57,19 @@ Start work in a fresh context window by assembling structured state — not a us
 6. **Re-verify live state** when **Cumulative** is present — handoff is a pointer, not proof (orchestration §7 / cold-start companion). Step 3 covers sha, P0 status, and named PRs; also re-read any *metric* the handoff quotes (test count, score, coverage) from its newest artifact rather than inheriting the prose.
 
 7. **Proceed on P0.** Ask only if P0 is ambiguous; otherwise start using normal TAPPS workflow (`tapps_quick_check` after Python edits). Do **not** ask the user to re-paste prior context when handoff files exist.
+
+## Degrades without
+
+- `mcp__plugin_linear_linear__` (`get_issue`) — belongs to the separate,
+  independently installed Linear plugin (TAP-7771: this bundle cannot
+  safely declare it a dependency without risking the same
+  unsatisfiable-dependency failure TAP-7758 fixed). Without that plugin
+  installed and loaded, step 4's `TAP-####` lookup cannot run, so a P0
+  named by Linear id cannot be re-verified against the live tracker — but
+  every other step (session bootstrap, handoff discovery and loading, the
+  sha/PR ground-truth checks, and emitting the continue block) still works
+  from bundled tools and local git/gh state alone. Handoff rehydration is
+  never blocked by a missing Linear plugin.
 <!-- END: tapps-skill -->
 
 <!-- tapps-skill-project-customizations: preserved from the pre-marker version — review and trim any content the managed block above now covers -->

@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/multi-session-programs.md v3.12.89 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/multi-session-programs.md v3.12.90 -->
 # Multi-session programs
 
 ## Multi-session programs

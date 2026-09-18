@@ -1,5 +1,5 @@
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
-<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/method-detail.md v3.12.89 -->
+<!-- BEGIN: tapps-skill-asset orchestration-prompt/references/method-detail.md v3.12.90 -->
 # Method detail — the nine load-bearing parts, in full
 
 Read this while drafting a Goal or a Loop. `SKILL.md` carries the index (the one-line-per-part summary and the proof-shape table); this file carries the elaboration each part actually needs to be followed correctly.
@@ -222,10 +222,13 @@ mechanical burndown and a contested identity read came to cost the same. State t
 floor instead: **the emitted runner default is `sonnet` + `medium`** (and `haiku` +
 `low` for closed transcription), carried literally in the emitted prompt's Session
 setup line and in the launch block. A cell above the floor is legitimate, but it
-carries a **one-clause reason in the same Plane-map row** — "gates a merge", "open
-judgement", "cheaper tier failed this step twice". Those three are the escalation
-criteria; a row that escalates without naming one is an unpriced default, not a
-decision.
+carries a **one-clause reason in the same Plane-map row** — "open judgement",
+"cheaper tier failed this step twice". Those two are the escalation criteria; a row
+that escalates without naming one is an unpriced default, not a decision.
+**Merging is not itself an escalation criterion** — every lane verification ends in
+one, so naming that fact alone would swallow the whole tiering (see §5's
+adjudication-depth rule); consequence changes what the driver does with a verdict,
+never the tier that produced it.
 
 This is a change in posture, not in rigour. The proof-shape table (§5) still governs
 verifier tiers, so a cheap *driver* never yields a cheap *verdict* on an irreversible
@@ -316,10 +319,17 @@ then pick the row:
 | **Deterministic** — exit code, `grep -c`, test-count line, file present | re-runs one command and reads its output; there is nothing to judge | `haiku` | `low` |
 | **Comparative** — two outputs differ, a count did not shrink, a diff is confined to N files | re-runs both sides and compares; still closed, but it must compare the right two things | `sonnet` | `medium` |
 | **Semantic** — "the section says what it claims", "the fix addresses the root cause", "the wording no longer instructs X" | reads artifacts and renders a judgement no command can settle | `opus` | `high` or `xhigh` |
-| **Gates an irreversible step** — merge, deploy, delete, publish, tracker write | any shape, but a wrong PASS is unrecoverable | `opus` | `high`+ |
 
-**Consequence overrides shape.** A deterministic proof whose verdict gates a deploy is
-an `opus` row. Shape decides the tier only while the step is reversible.
+**Consequence promotes the adjudication depth the driver owes, never the tier.**
+Measured over nine verifier runs in one program: four changed the outcome, five were
+`opus` confirming a mechanically checkable claim, and the cheapest run (`sonnet`,
+201s) produced the cleanest result on a claim that was purely comparative. A fourth
+row keyed on "gates a merge" swallows the three shape rows above it and collapses
+every verifier to `opus` — the defect is the row's existence, not its justification.
+Tier by proof shape only. Where a cheap verdict would gate an irreversible step, the
+driver re-reads `observed_output` and re-derives the conclusion itself before
+acting — something it already owes regardless of tier — rather than paying frontier
+rates to be told a `grep -c` returned 3.
 
 **This table is authoritative.** A project note pinning verifier models means *pin explicitly, for a named reason, on the specific step where it applies* — never "pin
 all high" as a blanket override of the table for the rest of the run.

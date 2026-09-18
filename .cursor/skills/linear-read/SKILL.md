@@ -9,7 +9,7 @@ mcp_tools:
   - linear_get_issue
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill linear-read v3.12.89 -->
+<!-- BEGIN: tapps-skill linear-read v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Multi-issue Linear reads are cache-first by contract (TAP-967 audit: 5,368 `list_issues` calls / 0.26% cache adoption). Invoke ANY time the user asks for a list, batch, or filtered view of Linear issues.

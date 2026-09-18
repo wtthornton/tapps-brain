@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tapps-mcp-hook-version: 3.12.89
+# tapps-mcp-hook-version: 3.12.90
 # tapps-mcp-hook-content-sha: 48c17deb
 # TappsMCP Stop hook — TAP-1326 / TAP-1327
 # Phase 1 (always when transcript exists): scan tool calls, write loop-metrics.jsonl

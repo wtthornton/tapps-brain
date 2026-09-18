@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-// BEGIN: tapps-skill-asset orchestration-prompt/scripts/check-prompt-shape.js v3.12.89
+// BEGIN: tapps-skill-asset orchestration-prompt/scripts/check-prompt-shape.js v3.12.90
 // Validate an emitted orchestration prompt carries every required shape
 // element before it is handed to a runner. Exit 0 when the shape holds;
 // exit 1 naming every defect found; exit 2 on a usage/read error.

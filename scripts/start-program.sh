@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-# BEGIN: tapps-skill-asset orchestration-prompt/scripts/start-program.sh v3.12.89
+# BEGIN: tapps-skill-asset orchestration-prompt/scripts/start-program.sh v3.12.90
 # Kick off a MULTI-SESSION orchestration program.
 #
 # Usage: scripts/start-program.sh <slug> <driver-prompt> <integrator> <session>...

@@ -9,7 +9,7 @@ allowed-tools: mcp__nlt-build__tapps_validate_changed mcp__nlt-build__tapps_chec
 argument-hint: "[file paths]"
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill tapps-flow-review v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-flow-review v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Prefer `/tapps-review-pipeline` for multiple Python files. Otherwise:

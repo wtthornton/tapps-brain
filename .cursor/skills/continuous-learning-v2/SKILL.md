@@ -10,7 +10,7 @@ origin: ECC
 version: 2.1.0
 disable-model-invocation: true
 ---
-<!-- BEGIN: tapps-skill continuous-learning-v2 v3.12.89 -->
+<!-- BEGIN: tapps-skill continuous-learning-v2 v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 # Continuous Learning v2.1 - Instinct-Based Architecture

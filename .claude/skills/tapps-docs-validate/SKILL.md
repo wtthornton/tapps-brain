@@ -1,5 +1,6 @@
 ---
 name: tapps-docs-validate
+user-invocable: true
 description: >-
   Validate documentation quality. Checks drift, freshness, links, and
   Diataxis balance. Use for a lighter validation pass than tapps-docs-finish-task.
@@ -9,7 +10,7 @@ allowed-tools: >-
   mcp__nlt-project-docs__docs_check_links
   mcp__nlt-project-docs__docs_check_diataxis
 ---
-<!-- BEGIN: tapps-skill tapps-docs-validate v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-docs-validate v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Validate documentation quality across the project:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-# BEGIN: tapps-skill-asset measure-script/scripts/measure.py v3.12.89
+# BEGIN: tapps-skill-asset measure-script/scripts/measure.py v3.12.90
 """Extract a metric from many JSON records, with the probe discipline enforced rather than remembered.
 
     scripts/measure.py --repo <path> --files '<glob>' --key clipped_fraction --expect 0.982345
