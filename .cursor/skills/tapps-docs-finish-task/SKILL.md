@@ -11,7 +11,7 @@ mcp_tools:
   - docs_release_gate
   - tapps_checklist
 ---
-<!-- BEGIN: tapps-skill tapps-docs-finish-task v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-docs-finish-task v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Run drift → links → cross_refs → completeness; add `docs_release_gate` for releases; finish with `tapps_checklist(task_type=documentation)`.

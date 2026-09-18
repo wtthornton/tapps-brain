@@ -23,7 +23,7 @@ allowed-tools: >-
   mcp__nlt-project-docs__docs_check_style
 argument-hint: "[--exclude docs/archive]"
 ---
-<!-- BEGIN: tapps-skill tapps-docs-refresh v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-docs-refresh v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Run the full documentation refresh pipeline. Requires **nlt-project-docs** (and **nlt-build** for code edits). Do not skip failed validation steps.

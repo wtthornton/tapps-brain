@@ -1,5 +1,6 @@
 ---
 name: tapps-docs-generate
+user-invocable: true
 description: >-
   Quick doc generation: README, llms.txt, changelog. Use for a minimal
   generate pass; prefer tapps-docs-bootstrap for new projects.
@@ -10,7 +11,7 @@ allowed-tools: >-
   mcp__nlt-project-docs__docs_generate_runbook
   mcp__nlt-project-docs__docs_generate_postmortem
 ---
-<!-- BEGIN: tapps-skill tapps-docs-generate v3.12.89 -->
+<!-- BEGIN: tapps-skill tapps-docs-generate v3.12.90 -->
 <!-- upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched. -->
 
 Generate documentation artifacts:

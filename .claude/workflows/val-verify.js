@@ -1,5 +1,5 @@
 // upgrade-policy: managed-block. Edits made inside this BEGIN/END block are regenerated and lost on the next tapps_upgrade — put project-specific customizations below the END marker instead, where they survive every upgrade untouched.
-// BEGIN: tapps-skill-asset workflows/.claude/workflows/val-verify.js v3.12.89
+// BEGIN: tapps-skill-asset workflows/.claude/workflows/val-verify.js v3.12.90
 export const meta = {
   name: 'val-verify',
   description: 'Independent adversarial VAL verification: per-VAL fresh-context refuters running BOTH a negative and a positive control, a standing-invariant pass not scoped to the diff, then one identity read of the human-facing artifacts bound to the shipping commit and gated on allGreen',
